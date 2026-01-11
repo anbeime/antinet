@@ -98,16 +98,17 @@ const ImportModal: React.FC<ImportModalProps> = ({
     color: CardColor;
     confidence: number;
     address: string;
+    gtdCategory: GTDCategory;
   }> => {
     // 分割文本为段落
     const paragraphs = content.split('\n\n')
       .filter(para => para.trim().length > 0)
       .map(para => para.trim());
-    
+
     if (paragraphs.length === 0) {
       throw new Error('未找到有效内容，请确保文本包含完整的知识记录');
     }
-    
+
     // 模拟分类结果
     const results: Array<{
       title: string;
@@ -115,6 +116,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
       color: CardColor;
       confidence: number;
       address: string;
+      gtdCategory: GTDCategory;
     }> = [];
     
     // 简单的关键词匹配规则来模拟AI分类
@@ -169,6 +171,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         color: bestMatch.color,
         confidence: bestMatch.confidence,
         address: generateAddress(bestMatch.color),
+        gtdCategory: 'inbox' // 默认放入收集箱
       });
     });
     
