@@ -103,6 +103,17 @@ const DataAnalysisPanel: React.FC = () => {
         })
       });
 
+      if (response.status === 503) {
+        // 模型未加载
+        const errorData = await response.json();
+        const steps = errorData.detail.steps || [];
+        toast(`${errorData.detail.message}\n\n部署步骤:\n${steps.join('\n')}`, {
+          className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+          duration: 10000
+        });
+        return;
+      }
+
       if (!response.ok) {
         throw new Error('分析请求失败');
       }
@@ -111,9 +122,7 @@ const DataAnalysisPanel: React.FC = () => {
       setResult(data);
 
       // 显示性能指标
-      const perfMsg = data.performance.inference_time_ms > 0
-        ? `NPU推理: ${data.performance.inference_time_ms.toFixed(0)}ms | 总耗时: ${data.performance.total_time_ms.toFixed(0)}ms`
-        : `总耗时: ${data.performance.total_time_ms.toFixed(0)}ms (模拟模式)`;
+      const perfMsg = `NPU推理: ${data.performance.inference_time_ms.toFixed(0)}ms | 总耗时: ${data.performance.total_time_ms.toFixed(0)}ms`;
 
       toast(`✓ 分析完成! ${perfMsg}`, {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'

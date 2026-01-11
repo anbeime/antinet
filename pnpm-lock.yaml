@@ -13,7 +13,10 @@ importers:
         version: 2.1.1
       framer-motion:
         specifier: ^12.9.2
-        version: 12.10.0(react-dom@18.3.1)(react@18.3.1)
+        version: 12.10.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      lucide-react:
+        specifier: ^0.383.0
+        version: 0.383.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -22,13 +25,13 @@ importers:
         version: 18.3.1(react@18.3.1)
       react-router-dom:
         specifier: ^7.3.0
-        version: 7.5.3(react-dom@18.3.1)(react@18.3.1)
+        version: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       recharts:
         specifier: ^2.15.1
-        version: 2.15.3(react-dom@18.3.1)(react@18.3.1)
+        version: 2.15.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       sonner:
         specifier: ^2.0.2
-        version: 2.0.3(react-dom@18.3.1)(react@18.3.1)
+        version: 2.0.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       tailwind-merge:
         specifier: ^3.0.2
         version: 3.2.0
@@ -44,7 +47,7 @@ importers:
         version: 18.3.7(@types/react@18.3.21)
       '@vitejs/plugin-react':
         specifier: ^4.3.4
-        version: 4.4.1(vite@6.3.5)
+        version: 4.4.1(vite@6.3.5(jiti@1.21.7)(yaml@2.7.1))
       autoprefixer:
         specifier: ^10.4.21
         version: 10.4.21(postcss@8.5.3)
@@ -59,10 +62,10 @@ importers:
         version: 5.7.3
       vite:
         specifier: ^6.2.0
-        version: 6.3.5
+        version: 6.3.5(jiti@1.21.7)(yaml@2.7.1)
       vite-tsconfig-paths:
         specifier: ^5.1.4
-        version: 5.1.4(typescript@5.7.3)(vite@6.3.5)
+        version: 5.1.4(typescript@5.7.3)(vite@6.3.5(jiti@1.21.7)(yaml@2.7.1))
 
 packages:
 
@@ -851,6 +854,11 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
+  lucide-react@0.383.0:
+    resolution: {integrity: sha512-13xlG0CQCJtzjSQYwwJ3WRqMHtRj3EXmLlorrARt7y+IHnxUCp3XyFNL1DfaGySWxHObDvnu1u1dV+0VMKHUSg==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0
+
   merge2@1.4.1:
     resolution: {integrity: sha512-8q7VEgMJW4J8tcfVPy8g09NcQwZdbwFEqhe/WZkoIzjn/3TGDwtOCYtXGxA3O8tPzpczCCDgv+P2P5y00ZJOOg==}
     engines: {node: '>= 8'}
@@ -1611,14 +1619,14 @@ snapshots:
       '@types/prop-types': 15.7.14
       csstype: 3.1.3
 
-  '@vitejs/plugin-react@4.4.1(vite@6.3.5)':
+  '@vitejs/plugin-react@4.4.1(vite@6.3.5(jiti@1.21.7)(yaml@2.7.1))':
     dependencies:
       '@babel/core': 7.27.1
       '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.27.1)
       '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.27.1)
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 6.3.5
+      vite: 6.3.5(jiti@1.21.7)(yaml@2.7.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -1818,7 +1826,7 @@ snapshots:
       reusify: 1.1.0
 
   fdir@6.4.4(picomatch@4.0.2):
-    dependencies:
+    optionalDependencies:
       picomatch: 4.0.2
 
   fill-range@7.1.1:
@@ -1832,13 +1840,14 @@ snapshots:
 
   fraction.js@4.3.7: {}
 
-  framer-motion@12.10.0(react-dom@18.3.1)(react@18.3.1):
+  framer-motion@12.10.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       motion-dom: 12.10.0
       motion-utils: 12.9.4
+      tslib: 2.8.1
+    optionalDependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      tslib: 2.8.1
 
   fsevents@2.3.3:
     optional: true
@@ -1924,6 +1933,10 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
+  lucide-react@0.383.0(react@18.3.1):
+    dependencies:
+      react: 18.3.1
+
   merge2@1.4.1: {}
 
   micromatch@4.0.8:
@@ -1999,8 +2012,9 @@ snapshots:
   postcss-load-config@4.0.2(postcss@8.5.3):
     dependencies:
       lilconfig: 3.1.3
-      postcss: 8.5.3
       yaml: 2.7.1
+    optionalDependencies:
+      postcss: 8.5.3
 
   postcss-nested@6.2.0(postcss@8.5.3):
     dependencies:
@@ -2040,29 +2054,30 @@ snapshots:
 
   react-refresh@0.17.0: {}
 
-  react-router-dom@7.5.3(react-dom@18.3.1)(react@18.3.1):
+  react-router-dom@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      react-router: 7.5.3(react-dom@18.3.1)(react@18.3.1)
+      react-router: 7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
-  react-router@7.5.3(react-dom@18.3.1)(react@18.3.1):
+  react-router@7.5.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       cookie: 1.0.2
       react: 18.3.1
-      react-dom: 18.3.1(react@18.3.1)
       set-cookie-parser: 2.7.1
       turbo-stream: 2.4.0
+    optionalDependencies:
+      react-dom: 18.3.1(react@18.3.1)
 
-  react-smooth@4.0.4(react-dom@18.3.1)(react@18.3.1):
+  react-smooth@4.0.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       fast-equals: 5.2.2
       prop-types: 15.8.1
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      react-transition-group: 4.4.5(react-dom@18.3.1)(react@18.3.1)
+      react-transition-group: 4.4.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
-  react-transition-group@4.4.5(react-dom@18.3.1)(react@18.3.1):
+  react-transition-group@4.4.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@babel/runtime': 7.27.1
       dom-helpers: 5.2.1
@@ -2087,7 +2102,7 @@ snapshots:
     dependencies:
       decimal.js-light: 2.5.1
 
-  recharts@2.15.3(react-dom@18.3.1)(react@18.3.1):
+  recharts@2.15.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       clsx: 2.1.1
       eventemitter3: 4.0.7
@@ -2095,7 +2110,7 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
       react-is: 18.3.1
-      react-smooth: 4.0.4(react-dom@18.3.1)(react@18.3.1)
+      react-smooth: 4.0.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       recharts-scale: 0.4.5
       tiny-invariant: 1.3.3
       victory-vendor: 36.9.2
@@ -2154,7 +2169,7 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
-  sonner@2.0.3(react-dom@18.3.1)(react@18.3.1):
+  sonner@2.0.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
@@ -2244,7 +2259,7 @@ snapshots:
   ts-interface-checker@0.1.13: {}
 
   tsconfck@3.1.5(typescript@5.7.3):
-    dependencies:
+    optionalDependencies:
       typescript: 5.7.3
 
   tslib@2.8.1: {}
@@ -2278,17 +2293,18 @@ snapshots:
       d3-time: 3.1.0
       d3-timer: 3.0.1
 
-  vite-tsconfig-paths@5.1.4(typescript@5.7.3)(vite@6.3.5):
+  vite-tsconfig-paths@5.1.4(typescript@5.7.3)(vite@6.3.5(jiti@1.21.7)(yaml@2.7.1)):
     dependencies:
       debug: 4.4.0
       globrex: 0.1.2
       tsconfck: 3.1.5(typescript@5.7.3)
-      vite: 6.3.5
+    optionalDependencies:
+      vite: 6.3.5(jiti@1.21.7)(yaml@2.7.1)
     transitivePeerDependencies:
       - supports-color
       - typescript
 
-  vite@6.3.5:
+  vite@6.3.5(jiti@1.21.7)(yaml@2.7.1):
     dependencies:
       esbuild: 0.25.4
       fdir: 6.4.4(picomatch@4.0.2)
@@ -2298,6 +2314,8 @@ snapshots:
       tinyglobby: 0.2.13
     optionalDependencies:
       fsevents: 2.3.3
+      jiti: 1.21.7
+      yaml: 2.7.1
 
   which@2.0.2:
     dependencies:

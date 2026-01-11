@@ -62,6 +62,19 @@ const NPUPerformanceDashboard: React.FC = () => {
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/performance/benchmark`);
+
+      if (response.status === 503) {
+        // 模型未加载
+        const errorData = await response.json();
+        const steps = errorData.detail.steps || [];
+        toast(`${errorData.detail.message}\n\n部署步骤:\n${steps.join('\n')}`, {
+          className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+          duration: 10000
+        });
+        setBenchmarkData({ device: 'NPU', model: 'Qwen2-1.5B', tests: [], error: errorData.detail.message });
+        return;
+      }
+
       const data: BenchmarkResult = await response.json();
 
       if (data.error) {

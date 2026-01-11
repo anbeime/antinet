@@ -100,42 +100,16 @@ def load_model_if_needed():
         return model
 
     except ImportError:
-        logger.warning("QAI AppBuilder未安装,使用模拟模式")
-        logger.info("在AIPC上部署时请安装: pip install qai_appbuilder-xxx.whl")
+        logger.error("QAI AppBuilder未安装")
+        logger.error("=" * 60)
+        logger.error("请在AIPC上安装QAI AppBuilder:")
+        logger.error("pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl")
+        logger.error("=" * 60)
         return None
 
     except Exception as e:
         logger.error(f"模型加载失败: {e}")
         return None
-
-
-def mock_inference(query: str) -> Dict[str, Any]:
-    """模拟推理 (用于开发测试)"""
-    logger.info(f"[模拟模式] 处理查询: {query}")
-
-    # 模拟四色卡片生成
-    return {
-        "facts": [
-            f"根据数据显示,{query}相关指标为85%",
-            f"样本总数为1,234条记录",
-            f"时间范围: 2025年1月1日 - 2025年1月10日"
-        ],
-        "explanations": [
-            f"该指标上升的主要原因是市场需求增加",
-            f"季节性因素也起到了一定作用",
-            f"与去年同期相比增长了15%"
-        ],
-        "risks": [
-            f"未来可能面临的风险包括供应链不稳定",
-            f"竞争对手的价格战可能影响利润率",
-            f"原材料成本上涨趋势明显"
-        ],
-        "actions": [
-            f"建议增加库存备货20%以应对需求高峰",
-            f"优化供应链管理,寻找替代供应商",
-            f"启动成本控制计划,提高运营效率"
-        ]
-    }
 
 
 def real_inference(query: str, model) -> Dict[str, Any]:
@@ -238,20 +212,28 @@ async def analyze_data(request: QueryRequest):
     logger.info(f"收到分析请求: {request.query}")
 
     try:
-        start_time = time.time()
-
-        # 加载模型
+        # 检查模型是否加载
         current_model = load_model_if_needed()
 
-        # 执行推理
-        if current_model is not None and model_loaded:
-            # 真实NPU推理
-            raw_result = real_inference(request.query, current_model)
-            inference_time = raw_result.get("inference_time_ms", 0)
-        else:
-            # 模拟推理 (开发模式)
-            raw_result = mock_inference(request.query)
-            inference_time = 0
+        if current_model is None or not model_loaded:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "模型未加载",
+                    "message": "请先部署QNN模型到AIPC",
+                    "steps": [
+                        "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
+                        "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
+                        "3. 重启后端服务: python main.py"
+                    ]
+                }
+            )
+
+        start_time = time.time()
+
+        # 执行NPU推理
+        raw_result = real_inference(request.query, current_model)
+        inference_time = raw_result.get("inference_time_ms", 0)
 
         # 生成四色卡片
         cards = []
@@ -388,10 +370,18 @@ async def run_benchmark():
     current_model = load_model_if_needed()
 
     if current_model is None or not model_loaded:
-        return {
-            "error": "模型未加载,无法进行基准测试",
-            "hint": "请先部署QNN模型到AIPC"
-        }
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "模型未加载,无法进行基准测试",
+                "message": "请先部署QNN模型到AIPC",
+                "steps": [
+                    "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
+                    "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
+                    "3. 重启后端服务: python main.py"
+                ]
+            }
+        )
 
     try:
         import numpy as np
