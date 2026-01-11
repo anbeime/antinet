@@ -61,6 +61,7 @@ backend/models/qnn/*.bin
 *.sqlite
 *.sqlite3
 backend/data/
+!backend/data/demo/
 
 # 环境变量
 .env
