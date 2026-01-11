@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Brain, 
-  Users, 
-  Network, 
-  Database, 
-  Search, 
-  ChevronRight, 
+import {
+  Brain,
+  Users,
+  Network,
+  Database,
+  Search,
+  ChevronRight,
   PlusCircle,
   BarChart3,
   Calendar,
@@ -21,7 +21,9 @@ import {
   Upload,
   X,
   CheckCircle2,
-  Users as UsersIcon
+  Users as UsersIcon,
+  TrendingUp,
+  Gauge
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -37,6 +39,7 @@ import LuhmannSystemChecklist from '@/components/LuhmannSystemChecklist';
 import TeamKnowledgeManagement from '@/components/TeamKnowledgeManagement';
 import AttachSprite from '@/components/AttachSprite';
 import DataAnalysisPanel from '@/components/DataAnalysisPanel';
+import NPUPerformanceDashboard from '@/components/NPUPerformanceDashboard';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -197,7 +200,7 @@ const applicationScenarios = [
 
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'team' | 'analytics' | 'gtd' | 'checklist' | 'team-knowledge' | 'data-analysis'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'team' | 'analytics' | 'gtd' | 'checklist' | 'team-knowledge' | 'data-analysis' | 'npu-performance'>('dashboard');
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -479,6 +482,13 @@ const Home: React.FC = () => {
               >
                 <TrendingUp size={18} />
                 <span>数据分析</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('npu-performance')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'npu-performance' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <Gauge size={18} />
+                <span>NPU性能</span>
               </button>
             </div>
             
@@ -904,6 +914,11 @@ const Home: React.FC = () => {
          {/* 数据分析视图 */}
          {activeTab === 'data-analysis' && (
            <DataAnalysisPanel />
+         )}
+
+         {/* NPU性能监控视图 */}
+         {activeTab === 'npu-performance' && (
+           <NPUPerformanceDashboard />
          )}
        </main>
 
