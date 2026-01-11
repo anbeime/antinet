@@ -1,4 +1,11 @@
 # Antinet智能知识管家 - 后端依赖
+# ========================================
+# 安装方法: pip install -r requirements.txt
+# 详细说明: 见 DEPENDENCIES.md
+# ========================================
+
+# ===== 必需依赖（运行后端必须安装） =====
+
 # 基础Web框架
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
@@ -6,7 +13,6 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 
 # AI推理相关
-# qai-appbuilder  # 需要在AIPC上手动安装whl文件
 onnx==1.15.0
 onnxruntime==1.17.0
 
@@ -25,3 +31,21 @@ sqlalchemy==2.0.25
 
 # 日志
 loguru==0.7.2
+
+# ===== QAI AppBuilder（必需，手动安装） =====
+#
+# 在AIPC上运行以下命令：
+# pip install C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl
+#
+# 或使用项目下载的版本：
+# pip install "C:\D\compet\xiaolong\资料参考\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
+#
+
+# ===== 可选依赖（仅模型转换时需要） =====
+#
+# 如果要在AIPC上运行完整模型转换流程，额外安装：
+# pip install transformers==4.36.0
+# pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cpu
+#
+# 如果已在本地转换好ONNX模型，不需要安装这些库
+#
