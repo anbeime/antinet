@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir C:)",
+      "Bash(dir C:model)",
+      "Bash(dir C:workspace)",
+      "Bash(powershell.exe -Command \"Get-ChildItem C:\\\\model -Force | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize\")",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

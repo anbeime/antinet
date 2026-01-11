@@ -1,0 +1,27 @@
+# Antinet智能知识管家 - 后端依赖
+# 基础Web框架
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# AI推理相关
+# qai-appbuilder  # 需要在AIPC上手动安装whl文件
+onnx==1.15.0
+onnxruntime==1.17.0
+
+# 数据处理
+numpy==1.26.3
+pandas==2.2.0
+duckdb==0.10.0
+
+# 工具库
+python-multipart==0.0.6
+aiofiles==23.2.1
+python-dotenv==1.0.0
+
+# 数据库
+sqlalchemy==2.0.25
+
+# 日志
+loguru==0.7.2
