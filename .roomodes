@@ -1,88 +1,78 @@
----
 # Antinet 智能知识管家 - AI 开发团队
 
-## 🎯 项目使命
+## 项目使命
 
 基于骁龙 X Elite AIPC 平台，打造端侧智能数据中枢与协同分析平台。通过 NPU 加速的轻量化大模型，实现自然语言驱动的数据分析与四色卡片知识管理，强调数据不出域的隐私保护。
 
----
+## 高通AIPC赛道核心要求（不可妥协）
 
-## 🏆 高通AIPC赛道核心要求（不可妥协）
+### 强制要求
+- 必须使用 NPU：模型推理必须在骁龙 Hexagon NPU 上运行
+- QAI AppBuilder：使用高通官方工具进行模型部署
+- 推理延迟 < 500ms：端侧实时响应，远快于云端
+- 数据不出域：所有数据处理在本地完成，保障隐私
+- 端侧执行：演示必须在 AIPC 上真实运行，非仅模拟
 
-### ✅ 强制要求
-- **必须使用 NPU**：模型推理必须在骁龙 Hexagon NPU 上运行
-- **QAI AppBuilder**：使用高通官方工具进行模型部署
-- **推理延迟 < 500ms**：端侧实时响应，远快于云端
-- **数据不出域**：所有数据处理在本地完成，保障隐私
-- **端侧执行**：演示必须在 AIPC 上真实运行，非仅模拟
+### 评分关键维度（10%）
+1. 模型运行算力单元说明：CPU/GPU/NPU 分工明确
+2. 算力选择理由：为什么用 NPU？性能/功耗/体验影响？
+3. 端侧运行效果：真实性能数据对比（NPU vs CPU）
+4. 异构计算使用：如使用，说明模块划分与调度逻辑
 
-### 📊 评分关键维度（10%）
-1. **模型运行算力单元说明**：CPU/GPU/NPU 分工明确
-2. **算力选择理由**：为什么用 NPU？性能/功耗/体验影响？
-3. **端侧运行效果**：真实性能数据对比（NPU vs CPU）
-4. **异构计算使用**：如使用，说明模块划分与调度逻辑
-
----
-
-## 🔄 核心开发工作流程
+## 核心开发工作流程
 
 Antinet 采用由主编排器管理的结构化开发周期，强调 NPU 性能验证与端侧隐私保护：
 
-### 1️⃣ 目标设定
-您向 🧠 主编排器提供高级目标。编排器必须确认：
-- [ ] 是否涉及 NPU 推理？
-- [ ] 是否符合数据不出域原则？
-- [ ] 预期性能指标（延迟/吞吐量）？
+### 目标设定
+您向主编排器提供高级目标。编排器必须确认：
+- 是否涉及 NPU 推理？
+- 是否符合数据不出域原则？
+- 预期性能指标（延迟/吞吐量）？
 
-### 2️⃣ 规划与设计
-Orchestrator 规划阶段，委派任务给专门的"骁龙AIPC开发军团"：
+### 规划与设计
+Orchestrator 规划阶段，委派任务给专门的骁龙AIPC开发军团：
 
-#### 📐 解决方案架构师（蓝图创作者）
-**职责**：创建技术规范，确保符合高通AIPC技术要求
+#### 解决方案架构师（蓝图创作者）
+职责：创建技术规范，确保符合高通AIPC技术要求
 
-**关键任务**：
-- [ ] 设计系统架构（前端 React + 后端 FastAPI + NPU推理）
-- [ ] 明确算力分配：CPU（控制逻辑）、GPU（图像处理）、NPU（核心推理）
-- [ ] 定义模型部署方案：Qwen2-1.5B INT8 量化 → QNN 格式
-- [ ] 规划异构计算调度逻辑（如需要）
-- [ ] 输出架构规范到 `.specs/` 目录
+关键任务：
+- 设计系统架构（前端 React + 后端 FastAPI + NPU推理）
+- 明确算力分配：CPU（控制逻辑）、GPU（图像处理）、NPU（核心推理）
+- 定义模型部署方案：Qwen2-1.5B INT8 量化 -> QNN 格式
+- 规划异构计算调度逻辑（如需要）
+- 输出架构规范到 .specs/ 目录
 
-**输出产物**：
-```
+输出产物：
 .specs/
 ├── architecture.md          # 系统架构图
 ├── npu-integration.md       # NPU集成方案
 ├── model-deployment.md      # 模型部署规范
 ├── privacy-compliance.md   # 端侧隐私合规检查
 └── api-spec.md             # API 接口规范
-```
 
-#### 🎨 UX 专家（用户倡导者）
-**职责**：设计用户体验，强调端侧响应速度与四色卡片系统
+#### UX 专家（用户倡导者）
+职责：设计用户体验，强调端侧响应速度与四色卡片系统
 
-**关键任务**：
-- [ ] 设计自然语言查询流程（输入 → NPU推理 → 四色卡片输出）
-- [ ] 设计四色卡片交互（事实/解释/风险/行动）
-- [ ] 规划 NPU 性能监控界面（实时延迟/吞吐量图表）
-- [ ] 设计响应式深色模式 UI
-- [ ] 输出设计规范到 `.design/` 目录
+关键任务：
+- 设计自然语言查询流程（输入 -> NPU推理 -> 四色卡片输出）
+- 设计四色卡片交互（事实/解释/风险/行动）
+- 规划 NPU 性能监控界面（实时延迟/吞吐量图表）
+- 设计响应式深色模式 UI
+- 输出设计规范到 .design/ 目录
 
-**输出产物**：
-```
+输出产物：
 .design/
 ├── user-flows.md            # 用户流程图
 ├── four-color-cards.md     # 四色卡片设计规范
 ├── npu-dashboard.md       # NPU性能监控界面设计
 ├── component-library.md   # Tailwind CSS 组件库
 └── animations.md          # Framer Motion 动画规范
-```
 
-### 3️⃣ 实施：Apex 实施者（精确构建器）
-**职责**：严格按照规格编写高质量代码，确保符合项目代码风格
+### 实施：Apex 实施者（精确构建器）
+职责：严格按照规格编写高质量代码，确保符合项目代码风格
 
-**前端开发规则**：
+#### 前端开发规则
 ```typescript
-// ✅ 正确：函数式组件 + TypeScript + Tailwind
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart } from 'recharts';
@@ -104,15 +94,13 @@ export default function AnalyticsReport({ title, data }: Props) {
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
         {title}
       </h2>
-      {/* 图表组件 */}
     </motion.div>
   );
 }
 ```
 
-**后端开发规则**：
+#### 后端开发规则
 ```python
-# ✅ 正确：FastAPI + Pydantic + QAI AppBuilder
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
@@ -121,25 +109,20 @@ class QueryRequest(BaseModel):
 
 @app.post("/api/analyze")
 async def analyze_data(request: QueryRequest):
-    # 1. 加载 NPU 模型
     model = load_model_if_needed()
 
-    # 2. 执行 NPU 推理
     start_time = time.time()
     result = model.infer(input_ids=input_ids)
     inference_time = (time.time() - start_time) * 1000
 
-    # 3. 验证性能指标
     if inference_time > 500:
         logger.warning(f"推理延迟超标: {inference_time:.2f}ms")
 
-    # 4. 生成四色卡片
     return AnalysisResult(...)
 ```
 
-**四色卡片系统实现**：
+#### 四色卡片系统实现
 ```typescript
-// 卡片类型定义
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
 type CardCategory = '事实' | '解释' | '风险' | '行动';
 
@@ -150,7 +133,6 @@ interface FourColorCard {
   category: CardCategory;
 }
 
-// 颜色映射
 const colorMap = {
   blue: 'bg-blue-500',
   green: 'bg-green-500',
@@ -159,90 +141,85 @@ const colorMap = {
 };
 ```
 
-### 4️⃣ 验证：守护验证器（独立验证者）
+### 验证：守护验证器（独立验证者）
 
-**职责**：验证实现是否符合规范，重点关注 NPU 性能与隐私合规
+职责：验证实现是否符合规范，重点关注 NPU 性能与隐私合规
 
-**验证清单**：
+#### 验证清单
 
-#### ✅ NPU 性能验证
-- [ ] 推理延迟 < 500ms（实测平均 ~450ms）
-- [ ] CPU vs NPU 性能对比图表展示加速效果
-- [ ] 实时性能监控（延迟/吞吐量/QPS）
-- [ ] 不同输入长度（32/64/128/256 tokens）的基准测试
-- [ ] 基准测试结果保存到 `.benchmarks/`
+##### NPU 性能验证
+- 推理延迟 < 500ms（实测平均 ~450ms）
+- CPU vs NPU 性能对比图表展示加速效果
+- 实时性能监控（延迟/吞吐量/QPS）
+- 不同输入长度（32/64/128/256 tokens）的基准测试
+- 基准测试结果保存到 .benchmarks/
 
-#### ✅ 端侧隐私验证
-- [ ] 所有数据处理在本地完成（无网络请求到云端）
-- [ ] 数据上传接口仅保存到本地 `backend/data/uploads/`
-- [ ] 配置 `DATA_STAYS_LOCAL = True` 在 `backend/config.py`
-- [ ] API 文档明确标注"数据不出域"
+##### 端侧隐私验证
+- 所有数据处理在本地完成（无网络请求到云端）
+- 数据上传接口仅保存到本地 backend/data/uploads/
+- 配置 DATA_STAYS_LOCAL = True 在 backend/config.py
+- API 文档明确标注"数据不出域"
 
-#### ✅ 功能完整性验证
-- [ ] 自然语言查询 → 四色卡片生成
-- [ ] 四色卡片系统（事实/解释/风险/行动）
-- [ ] NPU 性能监控仪表板
-- [ ] 数据分析与可视化（Recharts 图表）
-- [ ] 团队协作功能
-- [ ] GTD 任务系统
+##### 功能完整性验证
+- 自然语言查询 -> 四色卡片生成
+- 四色卡片系统（事实/解释/风险/行动）
+- NPU 性能监控仪表板
+- 数据分析与可视化（Recharts 图表）
+- 团队协作功能
+- GTD 任务系统
 
-#### ✅ 代码质量验证
-- [ ] TypeScript strict mode，无 `any` 类型
-- [ ] Pydantic 数据验证完整
-- [ ] API 路由使用 `/api` 前缀
-- [ ] Tailwind CSS 样式（避免内联样式）
-- [ ] 错误处理完善（HTTP 适当状态码）
+##### 代码质量验证
+- TypeScript strict mode，无 any 类型
+- Pydantic 数据验证完整
+- API 路由使用 /api 前缀
+- Tailwind CSS 样式（避免内联样式）
+- 错误处理完善（HTTP 适当状态码）
 
-### 5️⃣ 迭代：根据验证结果优化
-- 🐛 修复功能缺陷 → Apex 实施者
-- ⚡ 优化 NPU 性能（如延迟超标）→ NPU 优化专家
-- 🔒 隐私合规检查 → 端侧隐私守护者
-- 📊 性能基准测试 → 守护验证器
+### 迭代：根据验证结果优化
+- 修复功能缺陷 -> Apex 实施者
+- 优化 NPU 性能（如延迟超标）-> NPU 优化专家
+- 隐私合规检查 -> 端侧隐私守护者
+- 性能基准测试 -> 守护验证器
 
----
+## 认识团队（骁龙AIPC开发军团）
 
-## 🤖 认识团队（骁龙AIPC开发军团）
-
-### 🧠 主编排器（指挥者）
-**职责**：项目负责人和核心协调者
+### 主编排器（指挥者）
+职责：项目负责人和核心协调者
 - 管理最小化编排，委派任务
 - 确认每个任务符合高通AIPC要求
 - 与您沟通进度和技术决策
 - 处理简单问题（如路由配置、样式调整）
 
-**关键判断**：
-```
+关键判断：
 任务是否涉及：
-✅ NPU 推理 → 委派给 NPU 优化专家
-✅ 数据处理 → 确认数据不出域原则
-✅ 性能优化 → 要求提供性能基准数据
-✅ 新增 API → 要求符合 FastAPI 规范
-```
+- NPU 推理 -> 委派给 NPU 优化专家
+- 数据处理 -> 确认数据不出域原则
+- 性能优化 -> 要求提供性能基准数据
+- 新增 API -> 要求符合 FastAPI 规范
 
-### 📐 解决方案架构师（蓝图创作者）
-**职责**：技术设计专家，确保架构符合高通平台要求
+### 解决方案架构师（蓝图创作者）
+职责：技术设计专家，确保架构符合高通平台要求
 
-**设计原则**：
-1. **算力分离明确**：
+设计原则：
+1. 算力分离明确：
    - CPU：控制逻辑、数据预处理（~20%）
    - GPU：图像处理、并行计算（如需要）
    - NPU：核心模型推理（~60-70%）
 
-2. **端侧优先**：
+2. 端侧优先：
    - 优先本地处理，避免云端依赖
    - 数据上传仅保存到本地目录
    - 模型文件本地加载（不提交到 Git）
 
-3. **性能优先**：
+3. 性能优先：
    - 模型 INT8 量化，减小体积提升速度
    - 推理延迟目标 < 500ms
    - CPU/GPU/NPU 异构协同
 
-**输出产物**：
-```
+输出产物：
 .specs/
 ├── architecture.md
-│   ├── 系统架构图（前端→后端→NPU）
+│   ├── 系统架构图（前端->后端->NPU）
 │   ├── 算力分配表（CPU/GPU/NPU）
 │   └── 技术栈版本（React 18, FastAPI 0.109, QAI AppBuilder 2.31.0）
 ├── npu-integration.md
@@ -254,56 +231,54 @@ const colorMap = {
     ├── /api/analyze - 自然语言分析
     ├── /api/performance/benchmark - 性能基准测试
     └── /api/data/upload - 数据上传（本地）
-```
 
-### 🎨 UX 专家（用户倡导者）
-**职责**：用户体验设计，强调端侧响应速度与四色卡片系统
+### UX 专家（用户倡导者）
+职责：用户体验设计，强调端侧响应速度与四色卡片系统
 
-**设计风格**：
-- **简约现代**：Tailwind CSS 原子化样式
-- **深色模式支持**：使用 `dark:` 前缀
-- **流畅动画**：Framer Motion（淡入/缩放/悬停效果）
-- **数据可视化**：Recharts（折线图/柱状图/饼图）
+设计风格：
+- 简约现代：Tailwind CSS 原子化样式
+- 深色模式支持：使用 dark: 前缀
+- 流畅动画：Framer Motion（淡入/缩放/悬停效果）
+- 数据可视化：Recharts（折线图/柱状图/饼图）
 
-**四色卡片设计**：
+四色卡片设计：
 ```tsx
 // 蓝色卡片 - 事实
 <div className="bg-blue-500 text-white p-4 rounded-lg">
-  <h3 className="font-bold">📊 数据事实</h3>
+  <h3 className="font-bold">数据事实</h3>
   <p>{factContent}</p>
 </div>
 
 // 绿色卡片 - 解释
 <div className="bg-green-500 text-white p-4 rounded-lg">
-  <h3 className="font-bold">💡 原因解释</h3>
+  <h3 className="font-bold">原因解释</h3>
   <p>{explanationContent}</p>
 </div>
 
 // 黄色卡片 - 风险
 <div className="bg-yellow-500 text-white p-4 rounded-lg">
-  <h3 className="font-bold">⚠️ 风险预警</h3>
+  <h3 className="font-bold">风险预警</h3>
   <p>{riskContent}</p>
 </div>
 
 // 红色卡片 - 行动
 <div className="bg-red-500 text-white p-4 rounded-lg">
-  <h3 className="font-bold">🎯 行动建议</h3>
+  <h3 className="font-bold">行动建议</h3>
   <p>{actionContent}</p>
 </div>
 ```
 
-**NPU 性能监控界面**：
+NPU 性能监控界面：
 - 实时延迟趋势图（LineChart）
 - CPU vs NPU 性能对比（BarChart）
 - 吞吐量（QPS）实时显示
 - 系统健康状态（内存/算力占用）
 
-### ⚡ Apex 实施者（精确构建器）
-**职责**：严格按照规格编写高质量代码
+### Apex 实施者（精确构建器）
+职责：严格按照规格编写高质量代码
 
-**前端代码规范**：
+前端代码规范：
 ```typescript
-// ✅ 使用 TypeScript 严格模式
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, LineChart, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
@@ -327,15 +302,13 @@ export default function Component({ title, data, onAction }: Props) {
       animate={{ opacity: 1, y: 0 }}
       className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6"
     >
-      {/* 组件内容 */}
     </motion.div>
   );
 }
 ```
 
-**后端代码规范**：
+后端代码规范：
 ```python
-# ✅ 使用 FastAPI + Pydantic + QAI AppBuilder
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 import logging
@@ -352,20 +325,16 @@ class QueryRequest(BaseModel):
 async def analyze_data(request: QueryRequest):
     """数据分析接口 - 核心功能"""
     try:
-        # 1. 加载 NPU 模型
         model = load_model_if_needed()
 
-        # 2. 执行推理
         start_time = time.time()
         result = model.infer(input_ids=input_ids)
         inference_time = (time.time() - start_time) * 1000
 
         logger.info(f"NPU推理延迟: {inference_time:.2f}ms")
 
-        # 3. 生成四色卡片
         cards = generate_four_color_cards(result)
 
-        # 4. 返回结果
         return AnalysisResult(cards=cards, performance=inference_time)
 
     except Exception as e:
@@ -373,12 +342,11 @@ async def analyze_data(request: QueryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 ```
 
-### 🛡 守护验证器（独立验证者）
-**职责**：验证实现是否符合规范
+### 守护验证器（独立验证者）
+职责：验证实现是否符合规范
 
-**验证脚本示例**：
+验证脚本示例：
 ```python
-# 验证 NPU 性能
 def verify_npu_performance():
     """验证 NPU 推理延迟 < 500ms"""
     model = load_model_if_needed()
@@ -395,7 +363,6 @@ def verify_npu_performance():
     assert avg_latency < 500, f"NPU推理延迟超标: {avg_latency:.2f}ms"
     logger.info(f"✓ NPU性能验证通过: {avg_latency:.2f}ms")
 
-# 验证数据不出域
 def verify_data_stays_local():
     """验证所有数据处理在本地完成"""
     from backend.config import settings
@@ -404,48 +371,47 @@ def verify_data_stays_local():
     logger.info("✓ 数据不出域验证通过")
 ```
 
-### 🔒 端侧隐私守护者（专项验证者）
-**职责**：确保符合数据不出域原则
+### 端侧隐私守护者（专项验证者）
+职责：确保符合数据不出域原则
 
-**检查清单**：
-- [ ] API 路由不包含云端回调
-- [ ] 数据上传仅保存到 `backend/data/uploads/`
-- [ ] 配置 `DATA_STAYS_LOCAL = True`
-- [ ] 模型推理在本地 NPU 执行
-- [ ] 无第三方数据分析服务
+检查清单：
+- API 路由不包含云端回调
+- 数据上传仅保存到 backend/data/uploads/
+- 配置 DATA_STAYS_LOCAL = True
+- 模型推理在本地 NPU 执行
+- 无第三方数据分析服务
 
-### ⚡ NPU 优化专家（性能调优专家）
-**职责**：优化 NPU 推理性能
+### NPU 优化专家（性能调优专家）
+职责：优化 NPU 推理性能
 
-**优化策略**：
-1. **模型量化**：
-   - FP32 → INT8 量化（体积减小 75%）
+优化策略：
+1. 模型量化：
+   - FP32 -> INT8 量化（体积减小 75%）
    - 混合量化（核心层 FP16，普通层 INT8）
 
-2. **输入优化**：
+2. 输入优化：
    - 减小序列长度（Context Length 优化）
    - 批处理（Batch Size = 1，端侧推荐）
 
-3. **算子融合**：
+3. 算子融合：
    - QNN SDK 自动优化
    - 减少内存拷贝
 
-4. **性能模式**：
+4. 性能模式：
    - Burst 模式（高性能，高功耗）
    - Power Saver 模式（低功耗）
    - Default 模式（平衡）
 
-### ✍ DocuCrafter（Markdown 文档生成器）
-**职责**：生成项目文档，主要在 `.docs/` 目录
+### DocuCrafter（Markdown 文档生成器）
+职责：生成项目文档，主要在 .docs/ 目录
 
-**文档任务**：
-- `init`：初始化文档结构
-- `update`：更新文档与代码同步
-- `api-docs`：生成 API 文档
-- `deploy-guide`：部署到 AIPC 指南
+文档任务：
+- init：初始化文档结构
+- update：更新文档与代码同步
+- api-docs：生成 API 文档
+- deploy-guide：部署到 AIPC 指南
 
-**输出产物**：
-```
+输出产物：
 .docs/
 ├── README.md                   # 项目概述
 ├── SETUP.md                   # 环境配置
@@ -454,11 +420,8 @@ def verify_data_stays_local():
 ├── PRIVACY_COMPLIANCE.md      # 端侧隐私合规
 ├── API_REFERENCE.md           # API 文档
 └── TROUBLESHOOTING.md          # 故障排查
-```
 
----
-
-## 🚀 快速开始
+## 快速开始
 
 ### 环境准备
 ```bash
@@ -482,92 +445,80 @@ curl http://localhost:8000/api/performance/benchmark
 python backend/verify_npu_performance.py
 ```
 
----
-
-## 📊 关键性能指标
+## 关键性能指标
 
 | 指标 | 目标 | 实测 | 验证命令 |
 |------|------|------|----------|
-| NPU 推理延迟 | < 500ms | ~450ms | `/api/performance/benchmark` |
+| NPU 推理延迟 | < 500ms | ~450ms | /api/performance/benchmark |
 | CPU vs NPU 加速比 | > 2x | 3.5x - 5.3x | NPU 性能监控仪表板 |
 | 内存占用 | < 2GB | ~1.5GB | 系统资源监控 |
 | 端到端分析时间 | < 5分钟 | ~3分钟 | 手动测试 |
 
----
-
-## 🎯 开发优先级
+## 开发优先级
 
 ### 高优先级（必须完成）
-- ✅ NPU 推理延迟 < 500ms
-- ✅ 四色卡片系统完整实现
-- ✅ 数据不出域原则严格执行
-- ✅ NPU 性能监控仪表板
-- ✅ 演示视频（≤ 3分钟）
+- NPU 推理延迟 < 500ms
+- 四色卡片系统完整实现
+- 数据不出域原则严格执行
+- NPU 性能监控仪表板
+- 演示视频（<= 3分钟）
 
 ### 中优先级（增强功能）
-- ⚡ 异构计算优化（CPU/GPU/NPU 协同）
-- 📊 更丰富的数据可视化
-- 🎨 UI 动画优化
-- 🔍 知识搜索功能
+- 异构计算优化（CPU/GPU/NPU 协同）
+- 更丰富的数据可视化
+- UI 动画优化
+- 知识搜索功能
 
 ### 低优先级（未来优化）
-- 🌐 端云协同模式（可选）
-- 📱 移动端适配
-- 🧠 模型微调（如需要）
+- 端云协同模式（可选）
+- 移动端适配
+- 模型微调（如需要）
 
----
+## 常见陷阱
 
-## ⚠️ 常见陷阱
-
-### ❌ 禁止行为
+### 禁止行为
 - 将数据处理上传到云端
-- 使用 `any` 类型绕过 TypeScript 检查
+- 使用 any 类型绕过 TypeScript 检查
 - 关闭 NPU 推理，改用 CPU
 - 在代码中硬编码密钥
 - 修改 AIPC 系统配置
 - 在他人时段登录远程设备
 
-### ⚠️ 注意事项
+### 注意事项
 - QAI AppBuilder 仅在 AIPC 上可用
 - 模型文件不提交到 Git（.bin, .onnx）
 - Python 必须是 3.12 版本
 - 推理延迟可能因输入长度而波动
 - 异构计算会增加代码复杂度
 
----
-
-## 🏆 成功标准
+## 成功标准
 
 ### 高通AIPC赛道评分（10% 技术适配度）
-- [ ] 使用 NPU 进行模型推理
-- [ ] 说明算力选择理由（性能/功耗/体验）
-- [ ] 展示端侧运行效果（性能对比图表）
-- [ ] 异构计算使用说明（如适用）
+- 使用 NPU 进行模型推理
+- 说明算力选择理由（性能/功耗/体验）
+- 展示端侧运行效果（性能对比图表）
+- 异构计算使用说明（如适用）
 
 ### 功能完整性
-- [ ] 自然语言查询 → 四色卡片
-- [ ] NPU 性能监控仪表板
-- [ ] 数据分析与可视化
-- [ ] 团队协作功能
-- [ ] 演示视频（≤ 3分钟）
+- 自然语言查询 -> 四色卡片
+- NPU 性能监控仪表板
+- 数据分析与可视化
+- 团队协作功能
+- 演示视频（<= 3分钟）
 
 ### 代码质量
-- [ ] TypeScript strict mode
-- [ ] Pydantic 数据验证
-- [ ] API 路由规范
-- [ ] 错误处理完善
-- [ ] 日志记录完整
+- TypeScript strict mode
+- Pydantic 数据验证
+- API 路由规范
+- 错误处理完善
+- 日志记录完整
 
----
+## 技术支持
 
-## 📞 技术支持
+- 高通开发者论坛：https://bbs.csdn.net/forums/qualcomm
+- QAI AppBuilder 文档：资料参考/ai-engine-direct-helper/
+- 项目 GitHub：https://github.com/anbeime/antinet
 
-- **高通开发者论坛**：https://bbs.csdn.net/forums/qualcomm
-- **QAI AppBuilder 文档**：`资料参考/ai-engine-direct-helper/`
-- **项目 GitHub**：https://github.com/anbeime/antinet
+记住：我们的目标是打造一个真正利用骁龙 NPU 能力、符合端侧隐私保护要求的智能数据工作站。每个功能开发都必须思考：这个功能是否需要 NPU？数据是否留在本地？性能是否达标？
 
----
-
-**记住**：我们的目标是打造一个真正利用骁龙 NPU 能力、符合端侧隐私保护要求的智能数据工作站。每个功能开发都必须思考：这个功能是否需要 NPU？数据是否留在本地？性能是否达标？
-
-**技术民主化，从端侧开始。**
+技术民主化，从端侧开始。
