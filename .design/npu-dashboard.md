@@ -1,0 +1,511 @@
+# NPU 性能监控界面设计
+
+## 概述
+
+NPU 性能监控仪表板是 Antinet 智能知识管理系统的核心界面,用于实时展示骁龙 X Elite NPU 的性能指标,包括推理延迟、吞吐量、CPU vs NPU 对比等。
+
+## 设计目标
+
+### 核心目标
+
+1. **实时监控**: 展示 NPU 实时性能数据
+2. **可视化对比**: CPU vs NPU 性能对比图表
+3. **趋势分析**: 推理延迟趋势图
+4. **交互测试**: 运行基准测试,验证性能
+5. **状态显示**: 系统健康状态和模型加载状态
+
+### 性能指标
+
+| 指标 | 目标 | 显示方式 |
+|------|------|----------|
+| NPU 推理延迟 | < 500ms | 实时数字卡片 |
+| 平均吞吐量 | > 2 QPS | 实时数字卡片 |
+| 峰值性能 | 最高 QPS | 实时数字卡片 |
+| CPU vs NPU | 3.5x - 5.3x | 柱状图 |
+| 延迟趋势 | 时间序列 | 折线图 |
+
+## 界面布局
+
+### 整体结构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  页面标题 + 运行基准测试按钮                           │
+├─────────────────────────────────────────────────────────┤
+│  系统状态卡片 (设备、模型、数据安全、运行状态)           │
+├─────────────────────────────────────────────────────────┤
+│  实时性能指标 (平均延迟、平均吞吐量、峰值性能)            │
+├─────────────────────────────────────────────────────────┤
+│  CPU vs NPU 性能对比柱状图                           │
+├─────────────────────────────────────────────────────────┤
+│  推理延迟趋势折线图                                   │
+├─────────────────────────────────────────────────────────┤
+│  详细测试结果表格                                     │
+└─────────────────────────────────────────────────────────┘
+```
+
+## 组件设计
+
+### 1. 页面标题区
+
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: -20 }}
+  animate={{ opacity: 1, y: 0 }}
+  className="flex items-center justify-between"
+>
+  <div>
+    <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+      NPU 性能监控仪表板
+    </h1>
+    <p className="text-gray-600 dark:text-gray-400 mt-2">
+      骁龙 X Elite NPU 实时性能分析与基准测试
+    </p>
+  </div>
+
+  <motion.button
+    whileHover={{ scale: 1.05 }}
+    whileTap={{ scale: 0.95 }}
+    onClick={runBenchmark}
+    disabled={isRunning}
+    className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-medium transition-colors ${
+      isRunning
+        ? 'bg-gray-400 cursor-not-allowed'
+        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white'
+    }`}
+  >
+    {isRunning ? (
+      <>
+        <Activity className="animate-spin" size={20} />
+        <span>测试进行中...</span>
+      </>
+    ) : (
+      <>
+        <Zap size={20} />
+        <span>运行基准测试</span>
+      </>
+    )}
+  </motion.button>
+</motion.div>
+```
+
+### 2. 系统状态卡片
+
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.1 }}
+  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+>
+  <div className="flex items-center justify-between mb-4">
+    <h2 className="text-xl font-bold">系统状态</h2>
+    {healthStatus?.model_loaded ? (
+      <span className="flex items-center text-green-600 dark:text-green-400">
+        <CheckCircle size={20} className="mr-1" />
+        NPU 已就绪
+      </span>
+    ) : (
+      <span className="flex items-center text-amber-600 dark:text-amber-400">
+        <AlertCircle size={20} className="mr-1" />
+        模拟模式
+      </span>
+    )}
+  </div>
+
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-600 dark:text-gray-400">设备</span>
+        <Cpu size={20} className="text-blue-600" />
+      </div>
+      <p className="text-2xl font-bold text-blue-600">{healthStatus?.device || 'NPU'}</p>
+    </div>
+
+    <div className="p-4 bg-purple-50 dark:bg-purple-950/40 rounded-lg">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-600 dark:text-gray-400">模型</span>
+        <Zap size={20} className="text-purple-600" />
+      </div>
+      <p className="text-lg font-bold text-purple-600">{healthStatus?.model || 'Qwen2-1.5B'}</p>
+    </div>
+
+    <div className="p-4 bg-green-50 dark:bg-green-950/40 rounded-lg">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-600 dark:text-gray-400">数据安全</span>
+        <CheckCircle size={20} className="text-green-600" />
+      </div>
+      <p className="text-lg font-bold text-green-600">
+        {healthStatus?.data_stays_local ? '不出域' : 'N/A'}
+      </p>
+    </div>
+
+    <div className="p-4 bg-amber-50 dark:bg-amber-950/40 rounded-lg">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-600 dark:text-gray-400">状态</span>
+        <Activity size={20} className="text-amber-600" />
+      </div>
+      <p className="text-lg font-bold text-amber-600">
+        {healthStatus?.status === 'healthy' ? '运行中' : '离线'}
+      </p>
+    </div>
+  </div>
+</motion.div>
+```
+
+### 3. 实时性能指标
+
+```tsx
+{benchmarkData && !benchmarkData.error && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.2 }}
+    className="grid grid-cols-1 md:grid-cols-3 gap-6"
+  >
+    {/* 平均延迟 */}
+    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md p-6 text-white">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-blue-100">平均延迟</span>
+        <Clock size={24} />
+      </div>
+      <p className="text-4xl font-bold">{realtimeMetrics.currentLatency.toFixed(1)}</p>
+      <p className="text-blue-100 text-sm mt-1">毫秒 (ms)</p>
+      <div className="mt-4 flex items-center">
+        <TrendingUp size={16} className="mr-1" />
+        <span className="text-sm">目标: &lt; 500ms</span>
+      </div>
+    </div>
+
+    {/* 平均吞吐量 */}
+    <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-md p-6 text-white">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-purple-100">平均吞吐量</span>
+        <BarChart3 size={24} />
+      </div>
+      <p className="text-4xl font-bold">{realtimeMetrics.avgThroughput.toFixed(2)}</p>
+      <p className="text-purple-100 text-sm mt-1">查询/秒 (QPS)</p>
+      <div className="mt-4 flex items-center">
+        <Zap size={16} className="mr-1" />
+        <span className="text-sm">NPU 加速</span>
+      </div>
+    </div>
+
+    {/* 峰值性能 */}
+    <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-md p-6 text-white">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-green-100">峰值性能</span>
+        <Gauge size={24} />
+      </div>
+      <p className="text-4xl font-bold">{realtimeMetrics.peakPerformance.toFixed(2)}</p>
+      <p className="text-green-100 text-sm mt-1">QPS (最高)</p>
+      <div className="mt-4 flex items-center">
+        <CheckCircle size={16} className="mr-1" />
+        <span className="text-sm">优化执行</span>
+      </div>
+    </div>
+  </motion.div>
+)}
+```
+
+### 4. CPU vs NPU 性能对比
+
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.3 }}
+  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+>
+  <h2 className="text-xl font-bold mb-4">CPU vs NPU 性能对比</h2>
+  <div className="h-80">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={comparisonData}>
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft' }} />
+        <Tooltip />
+        <Legend />
+        <Bar dataKey="CPU" fill="#94a3b8" name="CPU 推理" />
+        <Bar dataKey="NPU" fill="#3b82f6" name="NPU 推理 (骁龙)" />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+  <div className="mt-4 grid grid-cols-2 gap-4">
+    <div className="p-4 bg-blue-50 dark:bg-blue-950/40 rounded-lg">
+      <p className="text-sm text-gray-600 dark:text-gray-400">加速比</p>
+      <p className="text-3xl font-bold text-blue-600">3.5x - 5.3x</p>
+      <p className="text-xs text-gray-500 mt-1">相比CPU推理</p>
+    </div>
+    <div className="p-4 bg-green-50 dark:bg-green-950/40 rounded-lg">
+      <p className="text-sm text-gray-600 dark:text-gray-400">功耗效率</p>
+      <p className="text-3xl font-bold text-green-600">优秀</p>
+      <p className="text-xs text-gray-500 mt-1">端侧低功耗运行</p>
+    </div>
+  </div>
+</motion.div>
+```
+
+### 5. 推理延迟趋势
+
+```tsx
+{latencyTrendData.length > 0 && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.4 }}
+    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+  >
+    <h2 className="text-xl font-bold mb-4">推理延迟趋势</h2>
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={latencyTrendData}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" label={{ value: 'Token 数量', position: 'insideBottom', offset: -5 }} />
+          <YAxis label={{ value: '延迟 (ms)', angle: -90, position: 'insideLeft' }} />
+          <Tooltip />
+          <Legend />
+          <Line type="monotone" dataKey="延迟" stroke="#3b82f6" strokeWidth={2} name="平均延迟" />
+          <Line type="monotone" dataKey="最小" stroke="#22c55e" strokeWidth={1} strokeDasharray="5 5" name="最小延迟" />
+          <Line type="monotone" dataKey="最大" stroke="#ef4444" strokeWidth={1} strokeDasharray="5 5" name="最大延迟" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  </motion.div>
+)}
+```
+
+### 6. 详细测试结果表格
+
+```tsx
+{benchmarkData && !benchmarkData.error && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay: 0.5 }}
+    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+  >
+    <h2 className="text-xl font-bold mb-4">详细测试结果</h2>
+    <div className="overflow-x-auto">
+      <table className="w-full text-left">
+        <thead className="bg-gray-50 dark:bg-gray-700">
+          <tr>
+            <th className="px-4 py-3 text-sm font-semibold">序列长度</th>
+            <th className="px-4 py-3 text-sm font-semibold">平均延迟</th>
+            <th className="px-4 py-3 text-sm font-semibold">最小延迟</th>
+            <th className="px-4 py-3 text-sm font-semibold">最大延迟</th>
+            <th className="px-4 py-3 text-sm font-semibold">吞吐量</th>
+          </tr>
+        </thead>
+        <tbody>
+          {benchmarkData.tests.map((test, index) => (
+            <tr key={index} className="border-t border-gray-200 dark:border-gray-700">
+              <td className="px-4 py-3">{test.sequence_length} tokens</td>
+              <td className="px-4 py-3 font-semibold text-blue-600">{test.avg_latency_ms} ms</td>
+              <td className="px-4 py-3 text-green-600">{test.min_latency_ms} ms</td>
+              <td className="px-4 py-3 text-red-600">{test.max_latency_ms} ms</td>
+              <td className="px-4 py-3">{test.throughput_qps} QPS</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </motion.div>
+)}
+```
+
+## 数据源
+
+### 健康状态检查
+
+```typescript
+const checkHealth = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/health`);
+    const data = await response.json();
+    setHealthStatus(data);
+  } catch (error) {
+    console.error('健康检查失败:', error);
+  }
+};
+```
+
+### 基准测试
+
+```typescript
+const runBenchmark = async () => {
+  setIsRunning(true);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/performance/benchmark`);
+
+    if (response.status === 503) {
+      // 模型未加载
+      const errorData = await response.json();
+      toast(`${errorData.detail.message}`, {
+        className: 'bg-amber-50 text-amber-800',
+        duration: 10000
+      });
+      return;
+    }
+
+    const data: BenchmarkResult = await response.json();
+    setBenchmarkData(data);
+
+    // 计算汇总指标
+    const avgLatency = data.tests.reduce((sum, t) => sum + t.avg_latency_ms, 0) / data.tests.length;
+    const avgThroughput = data.tests.reduce((sum, t) => sum + t.throughput_qps, 0) / data.tests.length;
+    const peakPerformance = Math.max(...data.tests.map(t => t.throughput_qps));
+
+    setRealtimeMetrics({
+      currentLatency: avgLatency,
+      avgThroughput: avgThroughput,
+      peakPerformance: peakPerformance
+    });
+
+    toast(`✓ 基准测试完成! 平均延迟: ${avgLatency.toFixed(1)}ms`, {
+      className: 'bg-green-50 text-green-800'
+    });
+  } catch (error) {
+    toast('基准测试失败，请检查后端服务', {
+      className: 'bg-red-50 text-red-800'
+    });
+  } finally {
+    setIsRunning(false);
+  }
+};
+```
+
+## 响应式设计
+
+### 断点布局
+
+```tsx
+{/* 移动端: 单列 */}
+<div className="grid grid-cols-1 gap-6">
+  {cards.map(card => <Card key={card.id} />)}
+</div>
+
+{/* 平板: 双列 */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+  {cards.map(card => <Card key={card.id} />)}
+</div>
+
+{/* 桌面: 多列 */}
+<div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+  {cards.map(card => <Card key={card.id} />)}
+</div>
+```
+
+### 深色模式
+
+```tsx
+<div className="bg-white dark:bg-gray-800 rounded-xl p-6">
+  <h2 className="text-gray-900 dark:text-gray-100">
+    系统状态
+  </h2>
+</div>
+```
+
+## 动画效果
+
+### 进入动画
+
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.1 }}
+>
+  {/* 卡片内容 */}
+</motion.div>
+```
+
+### 悬停效果
+
+```tsx
+<motion.div
+  whileHover={{ scale: 1.05 }}
+  whileTap={{ scale: 0.95 }}
+  className="px-6 py-3 rounded-lg"
+>
+  按钮
+</motion.div>
+```
+
+### 加载动画
+
+```tsx
+<Activity className="animate-spin" size={20} />
+```
+
+## 错误处理
+
+### 模型未加载
+
+```tsx
+{benchmarkData?.error && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-6"
+  >
+    <div className="flex items-start">
+      <AlertCircle size={24} className="text-amber-600 mr-3 flex-shrink-0" />
+      <div>
+        <h3 className="font-semibold text-amber-900 dark:text-amber-100 mb-2">
+          {benchmarkData.error}
+        </h3>
+        {benchmarkData.hint && (
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            提示: {benchmarkData.hint}
+          </p>
+        )}
+      </div>
+    </div>
+  </motion.div>
+)}
+```
+
+## 最佳实践
+
+### 性能优化
+
+1. ✅ 使用 `useEffect` 周期性检查健康状态
+2. ✅ 避免频繁的基准测试 (间隔 > 5 分钟)
+3. ✅ 使用 `ResponsiveContainer` 响应式图表
+4. ✅ 懒加载图表组件
+
+### 用户体验
+
+1. ✅ 清晰的错误提示
+2. ✅ 加载状态显示
+3. ✅ Toast 通知
+4. ✅ 一键运行测试
+
+### 数据可视化
+
+1. ✅ 使用 Recharts 统一图表库
+2. ✅ 一致的配色方案
+3. ✅ 清晰的图例和标签
+4. ✅ 响应式图表容器
+
+## 总结
+
+NPU 性能监控仪表板设计:
+
+1. **实时监控**: 系统状态 + 性能指标
+2. **可视化对比**: CPU vs NPU 柱状图
+3. **趋势分析**: 推理延迟折线图
+4. **详细数据**: 测试结果表格
+5. **交互测试**: 一键运行基准测试
+
+**核心特性**:
+
+- ✅ 实时性能数据展示
+- ✅ CPU vs NPU 对比
+- ✅ 延迟趋势分析
+- ✅ 详细测试结果
+- ✅ 响应式设计
+- ✅ 深色模式支持
+- ✅ 流畅动画效果

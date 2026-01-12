@@ -16,6 +16,7 @@ dist-ssr
 .claude/
 .cursor/
 .windsurf/
+.codebuddy/
 
 # Editor directories and files
 .vscode/*
