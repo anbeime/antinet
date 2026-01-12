@@ -16,6 +16,7 @@ import json
 import time
 
 from config import settings
+from routes.npu_routes import router as npu_router  # 导入 NPU 路由
 
 # 配置日志
 logging.basicConfig(
@@ -39,6 +40,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 注册路由
+app.include_router(npu_router)  # NPU 推理路由
 
 # 全局变量 - 模型实例
 model = None
