@@ -2,7 +2,6 @@
  * NPU 推理服务
  * 调用后端 NPU API 进行数据分析
  */
-import axios from 'axios';
 
 const API_BASE = 'http://localhost:8000/api/npu';
 
@@ -62,8 +61,19 @@ export const npuService = {
    */
   async analyze(request: AnalyzeRequest): Promise<AnalyzeResponse> {
     try {
-      const response = await axios.post(`${API_BASE}/analyze`, request);
-      return response.data;
+      const response = await fetch(`${API_BASE}/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('NPU 分析失败:', error);
       throw error;
@@ -75,8 +85,13 @@ export const npuService = {
    */
   async listModels(): Promise<ModelInfo[]> {
     try {
-      const response = await axios.get(`${API_BASE}/models`);
-      return response.data;
+      const response = await fetch(`${API_BASE}/models`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('获取模型列表失败:', error);
       throw error;
@@ -88,8 +103,13 @@ export const npuService = {
    */
   async benchmark(): Promise<BenchmarkResponse> {
     try {
-      const response = await axios.get(`${API_BASE}/benchmark`);
-      return response.data;
+      const response = await fetch(`${API_BASE}/benchmark`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('性能测试失败:', error);
       throw error;
@@ -101,8 +121,13 @@ export const npuService = {
    */
   async getStatus(): Promise<any> {
     try {
-      const response = await axios.get(`${API_BASE}/status`);
-      return response.data;
+      const response = await fetch(`${API_BASE}/status`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return await response.json();
     } catch (error) {
       console.error('获取状态失败:', error);
       throw error;
