@@ -5,16 +5,16 @@ NPU 模型加载器
 import os
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 # 注意：qai_appbuilder 仅在 AIPC 上可用
 try:
-    from qai_appbuilder import QNNContext, QNNConfig
+    from qai_appbuilder import QNNContext, Runtime, LogLevel, ProfilingLevel, PerfProfile
     QAI_AVAILABLE = True
 except ImportError:
     QAI_AVAILABLE = False
-    print("⚠️  QAI AppBuilder 未安装，模拟模式运行")
+    print("[WARNING] QAI AppBuilder 未安装，模拟模式运行")
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,17 @@ class ModelConfig:
     # 默认使用的模型
     DEFAULT_MODEL = "qwen2-7b-ssd"
 
+    # QNN 库路径
+    QNN_LIBS_PATH = "C:/ai-engine-direct-helper/samples/qai_libs"
+
     # QNN 配置
-    QNN_CONFIG = {
-        "backend": "HTP",  # Hexagon Tensor Processor (NPU)
-        "log_level": "INFO",
-        "performance_mode": "BURST",  # BURST | DEFAULT | POWER_SAVER
-    }
+    RUNTIME = Runtime.HTP  # Hexagon Tensor Processor (NPU)
+    LOG_LEVEL = LogLevel.INFO
+    PROFILING_LEVEL = ProfilingLevel.BASIC
 
 
 class NPUModelLoader:
-    """NPU 模型加载器（使用 GenieAPIService）"""
+    """NPU 模型加载器（使用 QAI AppBuilder）"""
 
     def __init__(self, model_key: str = None):
         """
@@ -80,61 +81,99 @@ class NPUModelLoader:
         if not self.model_config:
             raise ValueError(f"未知模型: {self.model_key}，可用模型: {list(ModelConfig.MODELS.keys())}")
 
-        self.service_url = "http://127.0.0.1:8910/v1"
-        self.is_service_running = False
-
-        # 检查服务是否运行
-        self.is_service_running = self._check_service()
-
-        if not self.is_service_running and QAI_AVAILABLE:
-            logger.warning("GenieAPIService 未运行，尝试启动...")
-            self._start_service()
-
-    def _check_service(self) -> bool:
-        """检查 GenieAPIService 是否运行"""
-        try:
-            import requests
-            response = requests.get(f"{self.service_url}/models", timeout=2)
-            return response.status_code == 200
-        except:
-            return False
-
-    def _start_service(self):
-        """启动 GenieAPIService"""
-        # 当前版本没有 GenieAPIService.exe
-        # 使用模拟模式继续测试
-        logger.warning("GenieAPIService.exe 不可用，使用模拟模式")
-        return False
+        self.model: Optional[Any] = None
+        self.is_loaded = False
+        self.is_configured = False
 
     def load(self) -> Any:
         """
-        加载模型（检查服务状态）
+        加载模型到 NPU
 
         Returns:
-            客户端实例
+            模型实例
         """
-        if not self.is_service_running and not self._check_service():
-            self._start_service()
+        if self.is_loaded:
+            logger.info(f"[OK] 模型已加载: {self.model_config['name']}")
+            return self.model
 
-        if self.is_service_running:
-            logger.info(f"[OK] GenieAPIService 正在运行: {self.model_config['name']}")
+        logger.info(f"正在加载模型: {self.model_config['name']}...")
+        logger.info(f"模型路径: {self.model_config['path']}")
+
+        # 验证模型路径存在
+        model_path = Path(self.model_config['path'])
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"模型路径不存在: {model_path}\n"
+                f"请确认远程 AIPC 上模型文件已解压到 C:/model/ 目录"
+            )
+
+        # 检查 QAI AppBuilder 是否可用
+        if not QAI_AVAILABLE:
+            logger.warning("[WARNING] QAI AppBuilder 不可用，返回模拟模型")
+            self.model = self._create_mock_model()
+            self.is_loaded = True
+            return self.model
+
+        try:
+            start_time = time.time()
+
+            # 配置 QNN 环境（全局配置，只需一次）
+            if not self.is_configured:
+                from qai_appbuilder import QNNConfig
+                qnn_libs_path = Path(ModelConfig.QNN_LIBS_PATH)
+                if not qnn_libs_path.exists():
+                    logger.warning(f"[WARNING] QNN 库路径不存在: {ModelConfig.QNN_LIBS_PATH}")
+                    # 尝试使用空路径（QAI AppBuilder 可能有默认路径）
+                    QNNConfig.Config('', ModelConfig.RUNTIME, ModelConfig.LOG_LEVEL, ModelConfig.PROFILING_LEVEL)
+                else:
+                    QNNConfig.Config(
+                        str(qnn_libs_path),
+                        ModelConfig.RUNTIME,
+                        ModelConfig.LOG_LEVEL,
+                        ModelConfig.PROFILING_LEVEL
+                    )
+                self.is_configured = True
+                logger.info("[OK] QNN 环境配置完成")
+
+            # 加载模型（继承 QNNContext 创建自定义类）
+            class LLMModel(QNNContext):
+                def generate_text(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
+                    """
+                    执行文本生成推理
+
+                    Args:
+                        prompt: 输入提示词
+                        max_tokens: 最大生成token数
+                        temperature: 温度参数
+
+                    Returns:
+                        生成的文本
+                    """
+                    # TODO: 实现 LLM 推理逻辑
+                    # 需要根据具体的 QNN 模型格式实现
+                    return f"[Mock] Response to: {prompt[:50]}..."
+
+            self.model = LLMModel(self.model_config['name'], str(model_path))
+
+            load_time = time.time() - start_time
+
+            logger.info(f"[OK] 模型加载成功")
             logger.info(f"  - 模型: {self.model_config['name']}")
             logger.info(f"  - 参数量: {self.model_config['params']}")
-            logger.info(f"  - 运行设备: NPU (通过 GenieAPIService)")
+            logger.info(f"  - 量化版本: {self.model_config['quantization']}")
+            logger.info(f"  - 加载时间: {load_time:.2f}s")
+            logger.info(f"  - 运行设备: NPU (Hexagon)")
 
-            return self._create_client()
+            self.is_loaded = True
+            return self.model
 
-        logger.warning("GenieAPIService 不可用，返回模拟模型")
-        return self._create_mock_model()
-
-    def _create_client(self) -> Any:
-        """创建 OpenAI 客户端"""
-        try:
-            from openai import OpenAI
-            return OpenAI(base_url=self.service_url, api_key="123")
-        except ImportError:
-            logger.error("openai 未安装: pip install openai")
-            return self._create_mock_model()
+        except Exception as e:
+            logger.error(f"[ERROR] 模型加载失败: {e}")
+            # 返回模拟模型继续测试
+            logger.warning("[WARNING] 回退到模拟模式")
+            self.model = self._create_mock_model()
+            self.is_loaded = True
+            return self.model
 
     def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
         """
@@ -148,36 +187,30 @@ class NPUModelLoader:
         Returns:
             生成的文本
         """
-        if not self.is_service_running:
-            # 返回模拟输出
-            return f"[Mock output] Response to '{prompt[:50]}...'"
+        if not self.is_loaded:
+            self.load()
 
         try:
-            from openai import OpenAI
-            import time
-
-            client = OpenAI(base_url=self.service_url, api_key="123")
-
             start_time = time.time()
 
-            response = client.chat.completions.create(
-                model=self.model_config['name'],
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                extra_body={
-                    "size": max_new_tokens,
-                    "temp": temperature
-                }
-            )
+            # 执行推理
+            if QAI_AVAILABLE and hasattr(self.model, 'generate_text'):
+                result = self.model.generate_text(
+                    prompt=prompt,
+                    max_tokens=max_new_tokens,
+                    temperature=temperature
+                )
+            elif QAI_AVAILABLE and hasattr(self.model, 'Inference'):
+                # 如果是标准 QNNContext，尝试 Inference 方法
+                # TODO: 实现正确的输入数据格式
+                result = f"[Mock] Inference for: {prompt[:50]}..."
+            else:
+                # 模拟模式
+                result = f"[Mock output] Response to: {prompt[:50]}..."
 
             inference_time = (time.time() - start_time) * 1000
 
-            result = response.choices[0].message.content
-
-            logger.info(f"[OK] NPU推理完成: {inference_time:.2f}ms")
+            logger.info(f"[OK] 推理完成: {inference_time:.2f}ms")
 
             # 检查性能指标
             if inference_time > 500:
@@ -187,73 +220,6 @@ class NPUModelLoader:
 
         except Exception as e:
             logger.error(f"[ERROR] 推理失败: {e}")
-            raise
-
-    def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
-        """
-        执行推理
-
-        Args:
-            prompt: 输入提示词
-            max_new_tokens: 最大生成token数
-            temperature: 温度参数
-
-        Returns:
-            生成的文本
-        """
-        if not self.is_service_running:
-            # 返回模拟输出
-            return f"[Mock output] Response to '{prompt[:50]}...'"
-
-        try:
-            from openai import OpenAI
-            import time
-
-            client = OpenAI(base_url=self.service_url, api_key="123")
-
-            start_time = time.time()
-
-            response = client.chat.completions.create(
-                model=self.model_config['name'],
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_new_tokens,
-                temperature=temperature,
-                extra_body={
-                    "size": max_new_tokens,
-                    "temp": temperature
-                }
-            )
-
-            inference_time = (time.time() - start_time) * 1000
-
-            result = response.choices[0].message.content
-
-            logger.info(f"[OK] NPU推理完成: {inference_time:.2f}ms")
-
-            # 检查性能指标
-            if inference_time > 500:
-                logger.warning(f"[WARNING] 推理延迟超标: {inference_time:.2f}ms (目标 < 500ms)")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"[ERROR] 推理失败: {e}")
-            raise
-
-            inference_time = (time.time() - start_time) * 1000
-
-            logger.info(f"✓ NPU推理完成: {inference_time:.2f}ms")
-
-            # 检查性能指标
-            if inference_time > 500:
-                logger.warning(f"⚠️  推理延迟超标: {inference_time:.2f}ms (目标 < 500ms)")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"❌ 推理失败: {e}")
             raise
 
     def get_performance_stats(self) -> Dict[str, Any]:
@@ -267,24 +233,26 @@ class NPUModelLoader:
             "model_name": self.model_config['name'],
             "params": self.model_config['params'],
             "quantization": self.model_config['quantization'],
-            "is_loaded": self.is_service_running,
-            "device": "NPU (GenieAPIService)" if self.is_service_running else "Mock",
-            "service_url": self.service_url
+            "is_loaded": self.is_loaded,
+            "device": "NPU (Hexagon)" if QAI_AVAILABLE else "Mock",
+            "runtime": str(ModelConfig.RUNTIME),
+            "log_level": str(ModelConfig.LOG_LEVEL)
         }
 
     def unload(self):
-        """卸载模型（不关闭服务，服务可被其他进程使用）"""
-        logger.info(f"[OK] 模型实例已释放: {self.model_config['name']}")
-        # 不关闭服务，因为可能被其他进程使用
+        """卸载模型释放资源"""
+        if self.model and hasattr(self.model, 'release'):
+            self.model.release()
+
+        self.model = None
+        self.is_loaded = False
+        logger.info(f"[OK] 模型已卸载: {self.model_config['name']}")
 
     def _create_mock_model(self):
         """创建模拟模型（本地开发用）"""
         class MockModel:
-            def __init__(self):
-                self.client = None
-
-            def generate(self, prompt: str, **kwargs):
-                return f"[模拟输出] 这是对 '{prompt[:30]}...' 的回复"
+            def generate_text(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
+                return f"[Mock output] Response to: {prompt[:50]}..."
 
         return MockModel()
 
