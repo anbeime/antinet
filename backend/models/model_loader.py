@@ -5,16 +5,16 @@ NPU 模型加载器
 import os
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 # 注意：qai_appbuilder 仅在 AIPC 上可用
 try:
-    from qai_appbuilder import QNNContext, QNNConfig
+    from qai_appbuilder import QNNContext, Runtime, LogLevel, ProfilingLevel, PerfProfile
     QAI_AVAILABLE = True
 except ImportError:
     QAI_AVAILABLE = False
-    print("⚠️  QAI AppBuilder 未安装，模拟模式运行")
+    print("[WARNING] QAI AppBuilder 未安装，模拟模式运行")
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,21 @@ class ModelConfig:
     # 默认使用的模型
     DEFAULT_MODEL = "qwen2-7b-ssd"
 
+    # QNN 库路径
+    QNN_LIBS_PATH = "C:/ai-engine-direct-helper/samples/qai_libs"
+
     # QNN 配置
-    QNN_CONFIG = {
-        "backend": "HTP",  # Hexagon Tensor Processor (NPU)
-        "log_level": "INFO",
-        "performance_mode": "BURST",  # BURST | DEFAULT | POWER_SAVER
-    }
+    RUNTIME = Runtime.HTP  # Hexagon Tensor Processor (NPU)
+    LOG_LEVEL = LogLevel.INFO
+    PROFILING_LEVEL = ProfilingLevel.BASIC
 
 
 class NPUModelLoader:
+<<<<<<< HEAD
     """NPU 模型加载器"""
+=======
+    """NPU 模型加载器（使用 QAI AppBuilder）"""
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
 
     def __init__(self, model_key: str = None):
         """
@@ -82,6 +87,10 @@ class NPUModelLoader:
 
         self.model: Optional[Any] = None
         self.is_loaded = False
+<<<<<<< HEAD
+=======
+        self.is_configured = False
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
 
     def load(self) -> Any:
         """
@@ -91,7 +100,11 @@ class NPUModelLoader:
             模型实例
         """
         if self.is_loaded:
+<<<<<<< HEAD
             logger.info(f"✓ 模型已加载: {self.model_config['name']}")
+=======
+            logger.info(f"[OK] 模型已加载: {self.model_config['name']}")
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
             return self.model
 
         logger.info(f"正在加载模型: {self.model_config['name']}...")
@@ -107,7 +120,11 @@ class NPUModelLoader:
 
         # 检查 QAI AppBuilder 是否可用
         if not QAI_AVAILABLE:
+<<<<<<< HEAD
             logger.warning("⚠️  QAI AppBuilder 不可用，返回模拟模型")
+=======
+            logger.warning("[WARNING] QAI AppBuilder 不可用，返回模拟模型")
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
             self.model = self._create_mock_model()
             self.is_loaded = True
             return self.model
@@ -115,6 +132,7 @@ class NPUModelLoader:
         try:
             start_time = time.time()
 
+<<<<<<< HEAD
             # 配置 QNN
             config = QNNConfig(
                 backend=ModelConfig.QNN_CONFIG["backend"],
@@ -132,6 +150,49 @@ class NPUModelLoader:
             load_time = time.time() - start_time
 
             logger.info(f"✓ 模型加载成功")
+=======
+            # 配置 QNN 环境（全局配置，只需一次）
+            if not self.is_configured:
+                from qai_appbuilder import QNNConfig
+                qnn_libs_path = Path(ModelConfig.QNN_LIBS_PATH)
+                if not qnn_libs_path.exists():
+                    logger.warning(f"[WARNING] QNN 库路径不存在: {ModelConfig.QNN_LIBS_PATH}")
+                    # 尝试使用空路径（QAI AppBuilder 可能有默认路径）
+                    QNNConfig.Config('', ModelConfig.RUNTIME, ModelConfig.LOG_LEVEL, ModelConfig.PROFILING_LEVEL)
+                else:
+                    QNNConfig.Config(
+                        str(qnn_libs_path),
+                        ModelConfig.RUNTIME,
+                        ModelConfig.LOG_LEVEL,
+                        ModelConfig.PROFILING_LEVEL
+                    )
+                self.is_configured = True
+                logger.info("[OK] QNN 环境配置完成")
+
+            # 加载模型（继承 QNNContext 创建自定义类）
+            class LLMModel(QNNContext):
+                def generate_text(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
+                    """
+                    执行文本生成推理
+
+                    Args:
+                        prompt: 输入提示词
+                        max_tokens: 最大生成token数
+                        temperature: 温度参数
+
+                    Returns:
+                        生成的文本
+                    """
+                    # TODO: 实现 LLM 推理逻辑
+                    # 需要根据具体的 QNN 模型格式实现
+                    return f"[Mock] Response to: {prompt[:50]}..."
+
+            self.model = LLMModel(self.model_config['name'], str(model_path))
+
+            load_time = time.time() - start_time
+
+            logger.info(f"[OK] 模型加载成功")
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
             logger.info(f"  - 模型: {self.model_config['name']}")
             logger.info(f"  - 参数量: {self.model_config['params']}")
             logger.info(f"  - 量化版本: {self.model_config['quantization']}")
@@ -140,11 +201,66 @@ class NPUModelLoader:
 
             self.is_loaded = True
             return self.model
+<<<<<<< HEAD
+=======
+
+        except Exception as e:
+            logger.error(f"[ERROR] 模型加载失败: {e}")
+            # 返回模拟模型继续测试
+            logger.warning("[WARNING] 回退到模拟模式")
+            self.model = self._create_mock_model()
+            self.is_loaded = True
+            return self.model
+
+    def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
+        """
+        执行推理
+
+        Args:
+            prompt: 输入提示词
+            max_new_tokens: 最大生成token数
+            temperature: 温度参数
+
+        Returns:
+            生成的文本
+        """
+        if not self.is_loaded:
+            self.load()
+
+        try:
+            start_time = time.time()
+
+            # 执行推理
+            if QAI_AVAILABLE and hasattr(self.model, 'generate_text'):
+                result = self.model.generate_text(
+                    prompt=prompt,
+                    max_tokens=max_new_tokens,
+                    temperature=temperature
+                )
+            elif QAI_AVAILABLE and hasattr(self.model, 'Inference'):
+                # 如果是标准 QNNContext，尝试 Inference 方法
+                # TODO: 实现正确的输入数据格式
+                result = f"[Mock] Inference for: {prompt[:50]}..."
+            else:
+                # 模拟模式
+                result = f"[Mock output] Response to: {prompt[:50]}..."
+
+            inference_time = (time.time() - start_time) * 1000
+
+            logger.info(f"[OK] 推理完成: {inference_time:.2f}ms")
+
+            # 检查性能指标
+            if inference_time > 500:
+                logger.warning(f"[WARNING] 推理延迟超标: {inference_time:.2f}ms (目标 < 500ms)")
+
+            return result
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
 
         except Exception as e:
             logger.error(f"❌ 模型加载失败: {e}")
             raise
 
+<<<<<<< HEAD
     def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
         """
         执行推理
@@ -187,6 +303,8 @@ class NPUModelLoader:
             logger.error(f"❌ 推理失败: {e}")
             raise
 
+=======
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
     def get_performance_stats(self) -> Dict[str, Any]:
         """
         获取性能统计数据
@@ -200,7 +318,12 @@ class NPUModelLoader:
             "quantization": self.model_config['quantization'],
             "is_loaded": self.is_loaded,
             "device": "NPU (Hexagon)" if QAI_AVAILABLE else "Mock",
+<<<<<<< HEAD
             "performance_mode": ModelConfig.QNN_CONFIG["performance_mode"]
+=======
+            "runtime": str(ModelConfig.RUNTIME),
+            "log_level": str(ModelConfig.LOG_LEVEL)
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
         }
 
     def unload(self):
@@ -210,13 +333,22 @@ class NPUModelLoader:
 
         self.model = None
         self.is_loaded = False
+<<<<<<< HEAD
         logger.info(f"✓ 模型已卸载: {self.model_config['name']}")
+=======
+        logger.info(f"[OK] 模型已卸载: {self.model_config['name']}")
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
 
     def _create_mock_model(self):
         """创建模拟模型（本地开发用）"""
         class MockModel:
+<<<<<<< HEAD
             def generate(self, prompt: str, **kwargs):
                 return f"[模拟输出] 这是对 '{prompt[:30]}...' 的回复"
+=======
+            def generate_text(self, prompt: str, max_tokens: int = 512, temperature: float = 0.7):
+                return f"[Mock output] Response to: {prompt[:50]}..."
+>>>>>>> 52834a3 (fix: 修正 NPU 架构，回退到 qai_appbuilder 直接调用)
 
         return MockModel()
 
