@@ -33,8 +33,30 @@ print("[OK] 文件存在")
 print(f"\n[2] 加载模型...")
 try:
     # GenieContext 初始化：参数=config.json路径
-    genie = GenieContext(str(config_path))
-    print("[OK] 模型加载成功！")
+    print("    开始创建 GenieContext 实例...")
+    print(f"    配置文件: {config_path}")
+    
+    import time
+    start_time = time.time()
+    print(f"    开始时间: {time.strftime('%H:%M:%S')}")
+    
+    try:
+        genie = GenieContext(str(config_path))
+    except Exception as e:
+        print(f"[ERROR] GenieContext 创建失败: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    
+    load_time = time.time() - start_time
+    end_time = time.strftime('%H:%M:%S')
+    
+    print(f"[OK] 模型加载成功！")
+    print(f"    结束时间: {end_time}")
+    print(f"    加载耗时: {load_time:.2f}s")
+    
+    if load_time > 60:
+        print(f"[WARNING] 加载时间较长（{load_time:.0f}s），属于正常现象（7B模型）")
     print(f"    类型: {type(genie).__name__}")
     print(f"    设备: NPU (GenieContext)")
 
