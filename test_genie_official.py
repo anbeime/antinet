@@ -49,7 +49,7 @@ try:
     print(f"    开始时间: {time.strftime('%H:%M:%S')}")
 
     # 官方示例：只传1个参数
-    dialog = GenieContext(config_path)
+    dialog = GenieContext(config_path, False)
 
     load_time = time.time() - start_time
 

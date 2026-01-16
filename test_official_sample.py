@@ -35,7 +35,7 @@ import time
 start = time.time()
 
 try:
-    dialog = GenieContext(config)
+    dialog = GenieContext(config, False)
     elapsed = time.time() - start
     print(f"[OK] GenieContext 创建成功！耗时: {elapsed:.2f}s")
 

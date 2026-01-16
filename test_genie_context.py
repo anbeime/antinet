@@ -41,7 +41,7 @@ try:
     print(f"    开始时间: {time.strftime('%H:%M:%S')}")
     
     try:
-        genie = GenieContext(str(config_path))
+        genie = GenieContext(str(config_path), False)
     except Exception as e:
         print(f"[ERROR] GenieContext 创建失败: {e}")
         import traceback

@@ -1,0 +1,16 @@
+============================================================
+直接测试 qai_appbuilder 和 GenieContext
+============================================================
+[1] 添加库路径: C:\ai-engine-direct-helper\samples\qai_libs
+[2] 导入 qai_appbuilder...
+[ERROR] 测试过程出错: 'gbk' codec can't encode character '\u2705' in position 4: illegal multibyte sequence
+Traceback (most recent call last):
+  File "c:\test\antinet\direct_test.py", line 39, in <module>
+    print(f"    ✅ 导入成功")
+  File "c:\test\antinet\direct_test.py", line 15, in write
+    f.write(data)
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2705' in position 4: illegal multibyte sequence
+
+============================================================
+测试完成
+============================================================

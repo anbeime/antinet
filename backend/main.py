@@ -85,34 +85,18 @@ def load_model_if_needed():
 
     logger.info("正在加载QNN模型...")
 
-    if not settings.MODEL_PATH.exists():
-        logger.error(f"模型文件不存在: {settings.MODEL_PATH}")
-        logger.info("请先运行模型转换和部署流程")
-        logger.info("详见 backend/model_converter.py")
-        return None
-
     try:
-        # 尝试加载QAI AppBuilder
-        import qai_appbuilder as qai
+        from models.model_loader import NPUModelLoader
 
-        model = qai.load_model(
-            str(settings.MODEL_PATH),
-            device=settings.QNN_DEVICE
-        )
+        model_loader = NPUModelLoader()
+        model = model_loader.load()
         model_loaded = True
-        logger.info(f"✓ 模型加载成功 (设备: {settings.QNN_DEVICE})")
+        logger.info("✓ 模型加载成功")
         return model
-
-    except ImportError:
-        logger.error("QAI AppBuilder未安装")
-        logger.error("=" * 60)
-        logger.error("请在AIPC上安装QAI AppBuilder:")
-        logger.error("pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl")
-        logger.error("=" * 60)
-        return None
 
     except Exception as e:
         logger.error(f"模型加载失败: {e}")
+        logger.warning("回退到模拟模式")
         return None
 
 
@@ -121,21 +105,25 @@ def real_inference(query: str, model) -> Dict[str, Any]:
     logger.info(f"[NPU推理] 处理查询: {query}")
 
     try:
-        import numpy as np
-
-        # 准备输入 (实际应用中需要真实的tokenizer)
-        # 这里使用模拟输入
-        input_ids = np.random.randint(0, 1000, (1, 128), dtype=np.int64)
-
-        # NPU推理
+        # NPU推理 - 使用文本prompt
         start_time = time.time()
-        output = model.infer(input_ids=input_ids)
+        if hasattr(model, 'infer'):
+            # 使用NPUModelLoader的infer方法
+            response = model.infer(
+                prompt=f"请分析以下数据查询并生成四色卡片分析结果: {query}",
+                max_new_tokens=512,
+                temperature=0.7
+            )
+        else:
+            # 模拟模式
+            response = f"[Mock] 分析结果 for: {query}"
+
         inference_time = (time.time() - start_time) * 1000
 
         logger.info(f"  推理延迟: {inference_time:.2f}ms")
 
         # 解析输出为四色卡片
-        # 实际应用中需要解码模型输出
+        # 实际应用中需要解析模型输出，这里使用模拟解析
         result = {
             "facts": [
                 f"基于NPU分析,{query}的核心数据如下...",

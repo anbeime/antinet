@@ -34,7 +34,7 @@ try:
     start = time.time()
 
     # 只传 1 个参数（根据当前版本的 API）
-    dialog = GenieContext(config)
+    dialog = GenieContext(config, False)
 
     elapsed = time.time() - start
 

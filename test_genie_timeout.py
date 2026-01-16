@@ -31,7 +31,7 @@ def create_genie_context():
         start = time.time()
         print(f"\n[{time.strftime('%H:%M:%S')}] 开始创建 GenieContext...")
 
-        dialog = GenieContext(config)
+        dialog = GenieContext(config, False)
 
         elapsed = time.time() - start
         result["success"] = True

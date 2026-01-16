@@ -32,7 +32,7 @@ print(f"    开始时间: {time.strftime('%H:%M:%S')}")
 try:
     start = time.time()
 
-    dialog = GenieContext(config)
+    dialog = GenieContext(config, False)
 
     elapsed = time.time() - start
 
