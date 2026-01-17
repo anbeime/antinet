@@ -1,133 +1,148 @@
-"""GenieContext 测试 - 修复版本，使用绝对路径和详细调试"""
-import os
+#!/usr/bin/env python3
+"""
+修复后的 GenieContext 测试脚本
+修复了参数错误：GenieContext(config_path) 只接受一个参数
+"""
 import sys
+import os
 import time
+from pathlib import Path
 
 print("=" * 70)
-print("GenieContext 测试 - 修复版本")
+print("修复后的 GenieContext 测试 - Qwen2.0-7B-SSD 模型")
 print("=" * 70)
 
-# [1] 设置环境 - 绝对路径
-print("\n[步骤 1] 设置环境...")
+# 设置 PATH 环境变量
 lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
-original_path = os.getenv('PATH', '')
-print(f"    原始 PATH 长度: {len(original_path)}")
-print(f"    库路径存在: {os.path.exists(lib_path)}")
+if lib_path not in os.getenv('PATH', ''):
+    os.environ['PATH'] = lib_path + ";" + os.getenv('PATH', '')
+    print(f"[OK] QNN 库已添加到 PATH")
 
-# 添加库路径到 PATH
-if lib_path not in original_path:
-    os.environ['PATH'] = lib_path + ";" + original_path
-    print(f"    已添加库路径到 PATH")
-else:
-    print(f"    库路径已在 PATH 中")
-
-print(f"    当前 PATH 包含 qai_libs: {'qai_libs' in os.getenv('PATH', '')}")
-
-# [2] 导入
-print("\n[步骤 2] 导入 qai_appbuilder...")
+# 检查 qai_appbuilder 是否可用
 try:
-    sys.path.insert(0, 'C:/ai-engine-direct-helper/samples')
     from qai_appbuilder import GenieContext
-    print("[OK] 导入成功")
-    print(f"    GenieContext 类: {GenieContext}")
+    print("[OK] 导入 qai_appbuilder.GenieContext 成功")
 except ImportError as e:
-    print(f"[ERROR] 导入失败: {e}")
+    print(f"[ERROR] 无法导入 qai_appbuilder: {e}")
     sys.exit(1)
 
-# [3] 配置 - 使用 Qwen2.0 模型
-print("\n[步骤 3] 配置路径...")
-config = "C:/model/Qwen2.0-7B-SSD-8380-2.34/config.json"
-print(f"    配置文件: {config}")
-print(f"    文件存在: {os.path.exists(config)}")
+# 配置路径
+config_path = Path("C:/model/Qwen2.0-7B-SSD-8380-2.34/config.json")
+prompt_path = Path("C:/model/Qwen2.0-7B-SSD-8380-2.34/prompt.conf")
 
-# 检查模型文件
-model_dir = "C:/model/Qwen2.0-7B-SSD-8380-2.34"
-print(f"    模型目录存在: {os.path.exists(model_dir)}")
-if os.path.exists(model_dir):
-    bin_files = [f for f in os.listdir(model_dir) if f.endswith('.bin')]
-    print(f"    .bin 文件数量: {len(bin_files)}")
-    for i, f in enumerate(bin_files[:5]):
-        print(f"      {i+1}. {f}")
+print(f"\n[1] 检查文件...")
+print(f"    配置路径: {config_path}")
+print(f"    提示路径: {prompt_path}")
 
-# [4] 创建 GenieContext（带超时）
-print("\n[步骤 4] 创建 GenieContext...")
-print(f"    参数: {config}")
-print(f"    开始时间: {time.strftime('%H:%M:%S')}")
+if not config_path.exists():
+    print(f"[ERROR] 配置文件不存在: {config_path}")
+    sys.exit(1)
+print("[OK] 配置文件存在")
 
+# 读取 prompt.conf
+prompt_template = "User: {query}\nAssistant: "
+if prompt_path.exists():
+    with open(prompt_path, 'r', encoding='utf-8') as f:
+        lines = f.read().strip().split('\n')
+        if lines:
+            prompt_template = lines[0].split(': ')[1].strip()
+            print(f"[OK] 加载提示模板: {prompt_template}")
+else:
+    print(f"[WARNING] prompt.conf 不存在，使用默认模板")
+
+print(f"\n[2] 加载模型...")
 try:
-    start = time.time()
+    print("    开始创建 GenieContext 实例...")
+    print(f"    配置文件: {config_path}")
     
-    # 设置超时（10分钟）
-    import threading
-    result = {"dialog": None, "error": None, "done": False}
-    
-    def create_context():
-        try:
-            result["dialog"] = GenieContext(config, False)
-            result["done"] = True
-        except Exception as e:
-            result["error"] = e
-            result["done"] = True
-    
-    thread = threading.Thread(target=create_context, daemon=True)
-    thread.start()
-    
-    # 等待最多10分钟
-    timeout = 600  # 10分钟
-    waited = 0
-    interval = 5   # 每5秒检查一次
-    
-    while waited < timeout and not result["done"]:
-        time.sleep(interval)
-        waited += interval
-        if waited % 30 == 0:  # 每30秒打印一次
-            print(f"    [{time.strftime('%H:%M:%S')}] 已等待 {waited} 秒...")
-    
-    if not result["done"]:
-        print(f"\n[TIMEOUT] 超时！已等待 {timeout} 秒")
-        print(f"    GenieContext 仍在初始化中（可能正在加载大型模型）")
-        print(f"    Qwen2.0-7B-SSD 模型约 5GB，首次加载可能需要较长时间")
-        sys.exit(0)
-    
-    if result["error"]:
-        raise result["error"]
-    
-    elapsed = time.time() - start
-    
-    print(f"\n[SUCCESS] GenieContext 创建成功！")
-    print(f"    结束时间: {time.strftime('%H:%M:%S')}")
-    print(f"    耗时: {elapsed:.2f}s")
-    print(f"    类型: {type(result['dialog']).__name__}")
-
-    # 测试推理
-    print(f"\n[步骤 5] 测试推理...")
-    def response(text):
-        print(f"    推理输出: {text}", end='', flush=True)
-        return True
-    
-    prompt = "你好，请简单介绍一下高通骁龙 X Elite AIPC。"
-    print(f"    查询: {prompt}")
+    start_time = time.time()
+    print(f"    开始时间: {time.strftime('%H:%M:%S')}")
     
     try:
-        # 设置推理参数
-        result["dialog"].SetParams(64, 0.7, 40, 0.95)
-        print(f"    参数已设置")
-        
-        # 执行推理
-        result["dialog"].Query(prompt, response)
-        print(f"\n    [推理完成]")
+        # 修复：只传入一个参数 config_path
+        genie = GenieContext(str(config_path))
+    except TypeError as e:
+        print(f"[ERROR] 参数错误: {e}")
+        print(f"        提示: GenieContext 只接受一个参数 (config.json 路径)")
+        print(f"        请检查代码中是否有多余的参数")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
-        print(f"\n    [推理错误] {e}")
-
+        print(f"[ERROR] GenieContext 创建失败: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    
+    load_time = time.time() - start_time
+    end_time = time.strftime('%H:%M:%S')
+    
+    print(f"[OK] 模型加载成功！")
+    print(f"    结束时间: {end_time}")
+    print(f"    加载耗时: {load_time:.2f}s")
+    
+    if load_time > 60:
+        print(f"[WARNING] 加载时间较长（{load_time:.0f}s），属于正常现象（7B模型）")
+    print(f"    类型: {type(genie).__name__}")
+    print(f"    设备: NPU (GenieContext)")
+    
 except Exception as e:
-    elapsed = time.time() - start if 'start' in locals() else 0
-    print(f"\n[ERROR] GenieContext 创建失败！")
-    print(f"    耗时: {elapsed:.2f}s")
-    print(f"    错误: {e}")
-    print(f"    类型: {type(e).__name__}")
+    print(f"[ERROR] 模型加载失败: {e}")
     import traceback
     traceback.print_exc()
+    sys.exit(1)
+
+print(f"\n[3] 测试推理...")
+try:
+    # 设置推理参数
+    max_length = 128
+    temperature = 0.8
+    top_k = 40
+    top_p = 0.95
+
+    genie.SetParams(max_length, temperature, top_k, top_p)
+    print("[OK] 参数设置完成")
+    print(f"    max_length={max_length}, temperature={temperature}, top_k={top_k}, top_p={top_p}")
+
+    # 构造查询提示
+    query = "你好，请简单介绍一下高通骁龙 X Elite AIPC。"
+    prompt = prompt_template.format(query=query)
+    
+    # 定义响应回调函数
+    response_parts = []
+    def response_callback(text):
+        response_parts.append(text)
+        print(text, end="", flush=True)
+
+    print(f"\n[4] 执行推理...")
+    print(f"    查询: {query}")
+    print(f"    提示: {prompt[:100]}...")
+    print(f"    回答: ", end="")
+
+    start_time = time.time()
+    genie.Query(prompt, response_callback)
+    inference_time = (time.time() - start_time) * 1000
+
+    response_text = ''.join(response_parts)
+
+    print(f"\n\n[OK] 推理完成！")
+    print(f"    推理延迟: {inference_time:.2f}ms")
+    print(f"    回答长度: {len(response_text)} 字符")
+    print(f"    回答摘要: {response_text[:200]}...")
+
+    # 获取性能数据
+    try:
+        profile_data = genie.GetProfile()
+        print(f"    性能数据: {profile_data[:200]}..." if len(profile_data) > 200 else f"    性能数据: {profile_data}")
+    except Exception as e:
+        print(f"    性能数据获取失败: {e}")
+
+except Exception as e:
+    print(f"\n[ERROR] 推理失败: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 print("\n" + "=" * 70)
-print("测试完成")
+print("测试完成 - 修复版本")
 print("=" * 70)

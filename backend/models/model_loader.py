@@ -10,7 +10,7 @@ from pathlib import Path
 
 # 注意：qai_appbuilder 仅在 AIPC 上可用
 try:
-    from qai_appbuilder import QNNContext, GenieContext, Runtime, LogLevel, ProfilingLevel, PerfProfile
+    from qai_appbuilder import QNNContext, GenieContext, Runtime, LogLevel, ProfilingLevel, PerfProfile, QNNConfig
     QAI_AVAILABLE = True
 except ImportError:
     QAI_AVAILABLE = False
@@ -116,6 +116,7 @@ class NPUModelLoader:
             return self.model
 
         try:
+            qnn_libs_path = Path(ModelConfig.QNN_LIBS_PATH)
             start_time = time.time()
 
             # 尝试HTP模式（NPU）
@@ -239,6 +240,7 @@ class NPUModelLoader:
             self.load()
 
         try:
+            qnn_libs_path = Path(ModelConfig.QNN_LIBS_PATH)
             start_time = time.time()
 
             # 执行推理 - GenieContext 使用 Query() 方法
