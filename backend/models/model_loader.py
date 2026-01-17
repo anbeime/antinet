@@ -280,7 +280,7 @@ class NPUModelLoader:
             return result
 
         except Exception as e:
-            logger.error(f"❌ 推理失败: {e}")
+            logger.error(f"[ERROR] 推理失败: {e}")
             raise
 
     def get_performance_stats(self) -> Dict[str, Any]:

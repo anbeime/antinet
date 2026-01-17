@@ -57,6 +57,7 @@ try:
     
     if load_time > 60:
         print(f"[WARNING] 加载时间较长（{load_time:.0f}s），属于正常现象（7B模型）")
+    
     print(f"    类型: {type(genie).__name__}")
     print(f"    设备: NPU (GenieContext)")
 

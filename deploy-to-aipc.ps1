@@ -126,6 +126,19 @@ if (Test-Path $modelPath) {
 }
 
 Write-Host ""
+Write-Host "[步骤 7/7] 验证 NPU 环境..." -ForegroundColor Yellow
+if (Test-Path "test_genie_context.py") {
+    Write-Host "  正在运行 NPU 测试..." -ForegroundColor Gray
+    try {
+        python test_genie_context.py
+    } catch {
+        Write-Host "  ⚠ NPU 测试失败，请检查模型文件和环境" -ForegroundColor Red
+    }
+} else {
+     Write-Host "⚠ test_genie_context.py 未找到，跳过验证" -ForegroundColor Yellow
+}
+
+Write-Host ""
 Write-Host "================================================================" -ForegroundColor Green
 Write-Host "  部署完成!" -ForegroundColor Green
 Write-Host "================================================================" -ForegroundColor Green
