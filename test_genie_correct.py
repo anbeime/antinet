@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-最简单的 GenieContext 测试
+正确的 GenieContext 使用示例
+基于官方示例
 """
 import os
 import sys
-import time
 from pathlib import Path
 
 # 设置环境变量
@@ -12,7 +12,7 @@ lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
 if lib_path not in os.getenv('PATH', ''):
     os.environ['PATH'] = lib_path + ";" + os.getenv('PATH', '')
 
-print(f"PATH 已更新")
+print(f"PATH 已更新: {os.getenv('PATH')[:200]}...")
 
 # 导入 QAI AppBuilder
 try:
@@ -51,27 +51,40 @@ try:
     print(f"  加载时间: {load_time:.2f}s")
     print(f"  模型类型: {type(dialog)}")
     
-    # 定义回调函数
-    def response(text):
-        print(text, end='', flush=True)
-        return True
-    
-    # 简单推理测试
-    print("\n\n简单推理测试...")
-    prompt = "你好"
-    print(f"输入: {prompt}")
-    print("输出: ", end='')
-    
-    start_time = time.time()
-    dialog.Query(prompt, response)
-    inference_time = (time.time() - start_time) * 1000
-    
-    print(f"\n\n推理延迟: {inference_time:.2f}ms")
-    
 except Exception as e:
     print(f"[ERROR] 模型加载失败: {e}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
 
-print("\n测试完成")
+# 定义回调函数
+def response(text):
+    print(text, end='', flush=True)
+    return True
+
+# 测试推理
+print("\n\n执行推理测试...")
+prompts = [
+    "分析一下端侧AI的优势",
+    "总结数据的主要趋势",
+    "这个问题的解决方案是什么"
+]
+
+for i, prompt in enumerate(prompts, 1):
+    print(f"\n测试 {i}/{len(prompts)}: {prompt}")
+    
+    try:
+        start_time = time.time()
+        
+        # 执行推理
+        dialog.Query(prompt, response)
+        
+        inference_time = (time.time() - start_time) * 1000
+        print(f"\n  延迟: {inference_time:.2f}ms")
+        
+    except Exception as e:
+        print(f"[ERROR] 推理失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+print("\n\n测试完成")

@@ -124,8 +124,10 @@ class NPUModelLoader:
                 logger.info("[INFO] 尝试HTP模式（NPU）...")
                 QNNConfig.Config(
                     str(qnn_libs_path),
-                    'Htp',  # Hexagon Tensor Processor
-                    2, 0, ''
+                    ModelConfig.RUNTIME,
+                    ModelConfig.LOG_LEVEL,
+                    ModelConfig.PROFILING_LEVEL,
+                    "None"
                 )
                 logger.info("[OK] QNN HTP配置成功")
                 self.npu_mode = True
@@ -137,8 +139,10 @@ class NPUModelLoader:
                     logger.info("[INFO] 回退到CPU模式...")
                     QNNConfig.Config(
                         str(qnn_libs_path),
-                        'Cpu',  # CPU fallback
-                        2, 0, ''
+                        Runtime.CPU,
+                        ModelConfig.LOG_LEVEL,
+                        ModelConfig.PROFILING_LEVEL,
+                        "None"
                     )
                     logger.info("[OK] QNN CPU配置成功")
                     self.npu_mode = False
@@ -149,7 +153,7 @@ class NPUModelLoader:
             self.is_configured = True
 
             # 加载模型（使用 GenieContext，适用于7B+大模型）
-            from qai_appbuilder import GenieContext
+            # GenieContext 已在模块顶部导入
             
             # 设置PATH环境变量（必需）
             lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
@@ -191,7 +195,6 @@ class NPUModelLoader:
                 # 临时解决方案：尝试CPU模式
                 try:
                     logger.info("[INFO] 尝试CPU模式...")
-                    from qai_appbuilder import QNNConfig
                     qnn_libs_path = Path(ModelConfig.QNN_LIBS_PATH)
                     if qnn_libs_path.exists():
                         QNNConfig.Config(

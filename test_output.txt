@@ -1,0 +1,4 @@
+  File "c:\test\antinet\test_genie_fixed.py", line 114
+    nonlocal response_text
+    ^^^^^^^^^^^^^^^^^^^^^^
+SyntaxError: no binding for nonlocal 'response_text' found
