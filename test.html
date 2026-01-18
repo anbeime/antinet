@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antinet 测试页面</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #3b82f6; margin-bottom: 20px; }
+        .section { background: #1e293b; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .section h2 { color: #10b981; margin-bottom: 15px; }
+        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        button:hover { background: #2563eb; }
+        .result { background: #0f172a; padding: 15px; border-radius: 4px; margin-top: 15px; font-family: 'Courier New', monospace; white-space: pre-wrap; }
+        .status { padding: 10px; border-radius: 4px; margin-bottom: 10px; }
+        .status.success { background: #059669; }
+        .status.error { background: #dc2626; }
+        .status.info { background: #2563eb; }
+        input[type="text"] { width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px; margin-bottom: 10px; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px; }
+        .card { padding: 20px; border-radius: 8px; }
+        .card.blue { background: #3b82f6; }
+        .card.green { background: #10b981; }
+        .card.yellow { background: #f59e0b; }
+        .card.red { background: #ef4444; }
+        .card h3 { margin-bottom: 10px; font-size: 18px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Antinet 智能知识管家 - 测试页面</h1>
+        
+        <div class="section">
+            <h2>📊 服务状态</h2>
+            <button onclick="checkHealth()">检查后端健康状态</button>
+            <button onclick="checkModels()">查看可用模型</button>
+            <div id="healthResult" class="result"></div>
+        </div>
+
+        <div class="section">
+            <h2>🧠 NPU 数据分析</h2>
+            <input type="text" id="queryInput" placeholder="输入要分析的问题，例如：分析一下端侧AI的优势" value="分析一下端侧AI的优势">
+            <br>
+            <button onclick="analyzeData()">执行 NPU 推理</button>
+            <div id="analyzeResult"></div>
+        </div>
+
+        <div class="section">
+            <h2>📈 性能监控</h2>
+            <button onclick="runBenchmark()">运行性能基准测试</button>
+            <div id="benchmarkResult" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function checkHealth() {
+            const result = document.getElementById('healthResult');
+            try {
+                const response = await fetch(`${API_BASE}/api/health`);
+                const data = await response.json();
+                result.innerHTML = `<div class="status success">✅ 后端运行正常</div>
+<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } catch (error) {
+                result.innerHTML = `<div class="status error">❌ 连接失败：${error.message}</div>`;
+            }
+        }
+
+        async function checkModels() {
+            const result = document.getElementById('healthResult');
+            try {
+                const response = await fetch(`${API_BASE}/api/npu/models`);
+                const data = await response.json();
+                result.innerHTML = `<div class="status info">📋 可用模型</div>
+<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } catch (error) {
+                result.innerHTML = `<div class="status error">❌ 获取模型失败：${error.message}</div>`;
+            }
+        }
+
+        async function analyzeData() {
+            const query = document.getElementById('queryInput').value;
+            const result = document.getElementById('analyzeResult');
+            
+            result.innerHTML = '<div class="status info">⏳ 正在执行 NPU 推理，请稍候...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/npu/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, max_tokens: 128 })
+                });
+                const data = await response.json();
+                
+                if (data.cards) {
+                    const cardsHtml = data.cards.map(card => `
+                        <div class="card ${card.color}">
+                            <h3>${card.category} - ${card.title}</h3>
+                            <p>${card.content}</p>
+                        </div>
+                    `).join('');
+                    
+                    result.innerHTML = `
+                        <div class="status success">✅ 推理完成 (耗时: ${data.performance?.toFixed(2) || 'N/A'}ms)</div>
+                        <div class="cards">${cardsHtml}</div>
+                    `;
+                } else {
+                    result.innerHTML = `<div class="status success">✅ 推理完成</div>
+<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="status error">❌ 推理失败：${error.message}</div>`;
+            }
+        }
+
+        async function runBenchmark() {
+            const result = document.getElementById('benchmarkResult');
+            result.innerHTML = '<div class="status info">⏳ 正在运行基准测试，请稍候...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/performance/benchmark`);
+                const data = await response.json();
+                
+                let html = '<div class="status success">✅ 基准测试完成</div>\n';
+                html += '<h3>性能指标</h3>\n';
+                
+                if (data.metrics) {
+                    html += `<table style="width: 100%; border-collapse: collapse;">`;
+                    html += `<tr style="background: #1e293b;"><th style="padding: 8px; text-align: left;">指标</th><th style="padding: 8px; text-align: left;">值</th></tr>`;
+                    for (const [key, value] of Object.entries(data.metrics)) {
+                        html += `<tr style="border-bottom: 1px solid #334155;"><td style="padding: 8px;">${key}</td><td style="padding: 8px;">${value}</td></tr>`;
+                    }
+                    html += `</table>`;
+                }
+                
+                result.innerHTML = html;
+            } catch (error) {
+                result.innerHTML = `<div class="status error">❌ 基准测试失败：${error.message}</div>`;
+            }
+        }
+
+        // 自动检查健康状态
+        checkHealth();
+    </script>
+</body>
+</html>
