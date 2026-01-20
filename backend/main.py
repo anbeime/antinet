@@ -5,6 +5,33 @@ Antinet智能知识管家 - 后端API服务
 基于FastAPI,提供数据分析和知识管理接口
 """
 
+# 必须在任何导入之前设置环境变量
+import os
+import sys
+
+# 设置NPU库路径 - 必须在导入模型加载器之前完成
+lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
+bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+
+# 确保两个目录都在 PATH 中
+paths_to_add = [lib_path, bridge_lib_path]
+current_path = os.environ.get('PATH', '')
+for p in paths_to_add:
+    if p not in current_path:
+        current_path = p + ';' + current_path
+os.environ['PATH'] = current_path
+os.environ['QAI_LIBS_PATH'] = lib_path
+
+# 显式添加 DLL 目录（Python 3.8+）
+for p in paths_to_add:
+    if os.path.exists(p):
+        os.add_dll_directory(p)
+
+print(f"[SETUP] NPU library paths configured:")
+print(f"  - qai_libs: {lib_path}")
+print(f"  - bridge libs: {bridge_lib_path}")
+print(f"  - PATH updated: {lib_path in os.environ['PATH']}")
+
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

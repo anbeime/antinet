@@ -16,11 +16,21 @@ if GENIE_PATH not in sys.path:
 
 # 设置必要的环境变量，确保导入 GenieContext 前 NPU 库路径在 PATH 中
 lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
-if 'PATH' in os.environ:
-    os.environ['PATH'] = lib_path + ";" + os.environ['PATH']
-else:
-    os.environ['PATH'] = lib_path
+bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+
+# 确保两个目录都在 PATH 中
+paths_to_add = [lib_path, bridge_lib_path]
+current_path = os.environ.get('PATH', '')
+for p in paths_to_add:
+    if p not in current_path:
+        current_path = p + ';' + current_path
+os.environ['PATH'] = current_path
 os.environ['QAI_LIBS_PATH'] = lib_path
+
+# 显式添加 DLL 目录（Python 3.8+）
+for p in paths_to_add:
+    if os.path.exists(p):
+        os.add_dll_directory(p)
 
 try:
     from qai_appbuilder import GenieContext
