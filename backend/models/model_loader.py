@@ -14,14 +14,23 @@ GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
+# 设置必要的环境变量，确保导入 GenieContext 前 NPU 库路径在 PATH 中
+lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
+if 'PATH' in os.environ:
+    os.environ['PATH'] = lib_path + ";" + os.environ['PATH']
+else:
+    os.environ['PATH'] = lib_path
+os.environ['QAI_LIBS_PATH'] = lib_path
+
 try:
     from qai_appbuilder import GenieContext
-    GENIE_CONTEXT_AVAILABLE = True
 except ImportError as e:
-    GENIE_CONTEXT_AVAILABLE = False
-    print(f"[FATAL] GenieContext不可用: {e}")
+    raise RuntimeError(f"无法导入GenieContext: {e}。请确保已安装qai_appbuilder库。")
 
 logger = logging.getLogger(__name__)
+
+
+
 
 
 class ModelConfig:
@@ -80,14 +89,13 @@ class NPUModelLoader:
 
         self.model: Optional[Any] = None
         self.is_loaded = False
-        self.npu_mode = True  # 我们假设在AIPC上运行，总是使用NPU模式
 
     def load(self) -> Any:
         """
         加载模型到 NPU
 
         Returns:
-            模型实例
+            模型实例（真实 NPU）
         """
         if self.is_loaded:
             logger.info(f"[OK] 模型已加载: {self.model_config['name']}")
@@ -99,38 +107,21 @@ class NPUModelLoader:
         # 验证模型路径存在
         model_path = Path(self.model_config['path'])
         if not model_path.exists():
-            raise FileNotFoundError(
-                f"模型路径不存在: {model_path}\n"
-                f"请确认 AIPC 上模型文件已解压到 C:/model/ 目录"
-            )
-
-        # 检查 GenieContext 是否可用
-        if not GENIE_CONTEXT_AVAILABLE:
-            logger.error("[FATAL] GenieContext 不可用！无法使用NPU推理")
-            raise RuntimeError("GenieContext 未安装，无法使用真实NPU推理。请确保 AIPC 预装环境已配置。")
+            raise FileNotFoundError(f"模型路径不存在: {model_path}，请确保模型文件已部署到AIPC")
 
         start_time = time.time()
 
         try:
-            # 使用 config.json 路径创建 GenieContext
+            # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
             config_path = str(model_path / "config.json")
             logger.info(f"[INFO] 创建 GenieContext: {config_path}")
-            
-            # 设置必要的环境变量
-            lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
-            if 'PATH' in os.environ:
-                os.environ['PATH'] = lib_path + ";" + os.environ['PATH']
-            else:
-                os.environ['PATH'] = lib_path
-            
-            os.environ['QAI_LIBS_PATH'] = lib_path
 
-            # GenieContext 第二个参数是 DEBUG 布尔值，不是 'debug'
-            self.model = GenieContext(config_path, False)
+            # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
+            self.model = GenieContext(config_path)
 
             load_time = time.time() - start_time
 
-            logger.info(f"[OK] 模型加载成功")
+            logger.info(f"[OK] NPU 模型加载成功")
             logger.info(f"  - 模型: {self.model_config['name']}")
             logger.info(f"  - 参数量: {self.model_config['params']}")
             logger.info(f"  - 量化版本: {self.model_config['quantization']}")
@@ -141,8 +132,8 @@ class NPUModelLoader:
             return self.model
 
         except Exception as e:
-            logger.error(f"[ERROR] 模型加载失败: {e}")
-            raise RuntimeError(f"NPU模型加载失败: {e}\n请检查：\n1. 模型文件是否存在 {model_path}\n2. QNN库路径是否正确 {lib_path}\n3. 是否在 AIPC 上运行")
+            logger.error(f"[ERROR] NPU 模型加载失败: {e}")
+            raise RuntimeError(f"NPU模型加载失败: {e}")
 
     def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
         """

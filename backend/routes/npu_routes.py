@@ -238,7 +238,7 @@ async def model_status():
             "model_name": stats['model_name'],
             "params": stats['params'],
             "device": stats['device'],
-            "performance_mode": stats['performance_mode'],
+            "runtime": stats['runtime'],
             "message": "✓ 模型已加载" if stats['is_loaded'] else "模型未加载"
         }
 

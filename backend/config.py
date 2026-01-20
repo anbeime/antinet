@@ -14,10 +14,9 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
-    # 模型配置（使用远程 AIPC 预装模型）
+    # 模型配置（使用 AIPC 预装模型）
     MODEL_NAME: str = "Qwen2.0-7B-SSD"
     MODEL_PATH: Path = Path("C:/model/Qwen2.0-7B-SSD-8380-2.34")
-    USE_NPU: bool = True  # 是否使用NPU加速
 
     # QNN配置
     QNN_BACKEND: str = "HTP"  # HTP (Hexagon Tensor Processor) = NPU

@@ -145,12 +145,9 @@ def real_inference(query: str, model) -> Dict[str, Any]:
             if len(sentences) > 4:
                 facts.extend(sentences[4:])
         else:
-            # 如果响应为空，使用模拟数据（临时方案）
-            logger.warning("模型响应为空，使用模拟数据")
-            facts = [f"基于NPU分析,{query}的核心数据如下..."]
-            explanations = ["NPU加速分析显示主要驱动因素是..."]
-            risks = ["需要关注的风险点包括..."]
-            actions = ["推荐的行动方案: ..."]
+            # 如果响应为空，抛出错误（模拟数据已被禁止）
+            logger.error("模型响应为空，推理失败")
+            raise RuntimeError("模型推理返回空响应，NPU推理失败")
         
         result = {
             "facts": facts,
@@ -181,8 +178,11 @@ async def startup_event():
     # 创建必要的目录
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 尝试加载模型
-    load_model_if_needed()
+    # 尝试加载模型（临时跳过，确保后端启动）
+    try:
+        load_model_if_needed()
+    except Exception as e:
+        logger.error(f"模型加载失败，但后端继续运行: {e}")
 
 
 @app.get("/")

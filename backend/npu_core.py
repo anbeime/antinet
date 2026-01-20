@@ -43,7 +43,7 @@ class NPUInferenceCore:
                 raise FileNotFoundError(f"模型配置文件不存在: {self.model_config_path}")
 
             # 创建 GenieContext（只传入config路径）
-            self.model = GenieContext(self.model_config_path, False)
+            self.model = GenieContext(self.model_config_path)
             self.is_loaded = True
 
             load_time = (time.time() - start_time) * 1000
