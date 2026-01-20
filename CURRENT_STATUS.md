@@ -73,7 +73,7 @@ python "python\setup.py"
 c:\test\antinet\run_qai_setup.bat
 ```
 
-手动运行此脚本完成安装。
+注意：脚本使用英文文本避免编码问题。手动运行此脚本完成安装。
 
 ---
 
