@@ -205,9 +205,12 @@ async def startup_event():
     # 创建必要的目录
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 尝试加载模型（临时跳过，确保后端启动）
+    # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
     try:
-        load_model_if_needed()
+        from models.model_loader import get_model_loader
+        loader = get_model_loader()
+        loader.load()
+        logger.info("✓ 全局模型加载器已初始化")
     except Exception as e:
         logger.error(f"模型加载失败，但后端继续运行: {e}")
 
@@ -228,12 +231,21 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
+    # 实时检查模型加载状态
+    try:
+        # 尝试加载模型（如果尚未加载）
+        current_model = load_model_if_needed()
+        is_loaded = current_model is not None
+    except Exception as e:
+        is_loaded = False
+
     return {
-        "status": "healthy",
+        "status": "healthy" if is_loaded else "degraded",
         "model": settings.MODEL_NAME,
-        "model_loaded": model_loaded,
+        "model_loaded": is_loaded,
         "device": settings.QNN_DEVICE,
-        "data_stays_local": settings.DATA_STAYS_LOCAL
+        "data_stays_local": settings.DATA_STAYS_LOCAL,
+        "qai_libs_path": os.environ.get('QAI_LIBS_PATH', 'Not set')
     }
 
 
@@ -250,19 +262,32 @@ async def analyze_data(request: QueryRequest):
         # 检查模型是否加载
         current_model = load_model_if_needed()
 
-        if current_model is None or not model_loaded:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "模型未加载",
-                    "message": "请先部署QNN模型到AIPC",
-                    "steps": [
-                        "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
-                        "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
-                        "3. 重启后端服务: python main.py"
-                    ]
-                }
-            )
+        if current_model is None:
+            # 动态检查模型加载状态
+            try:
+                test_loader = load_model_if_needed()
+                if test_loader is None:
+                    raise RuntimeError("模型加载失败")
+            except Exception as e:
+                logger.error(f"模型加载失败: {e}")
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "error": "模型加载失败",
+                        "message": str(e),
+                        "debug_info": {
+                            "model_path": settings.MODEL_PATH,
+                            "qai_libs_exists": os.path.exists("C:/ai-engine-direct-helper/samples/qai_libs/QnnHtp.dll"),
+                            "bridge_libs_exists": os.path.exists("C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc/QnnHtp.dll")
+                        },
+                        "suggestions": [
+                            "检查模型文件是否存在: dir C:\\model\\Qwen2.0-7B-SSD-8380-2.34",
+                            "检查DLL文件: dir C:\\ai-engine-direct-helper\\samples\\qai_libs\\QnnHtp.dll",
+                            "查看后端日志中的详细错误信息",
+                            "确保后端服务已完全启动（等待30秒）"
+                        ]
+                    }
+                )
 
         start_time = time.time()
 
@@ -404,19 +429,29 @@ async def run_benchmark():
     # 加载模型
     current_model = load_model_if_needed()
 
-    if current_model is None or not model_loaded:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "模型未加载,无法进行基准测试",
-                "message": "请先部署QNN模型到AIPC",
-                "steps": [
-                    "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
-                    "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
-                    "3. 重启后端服务: python main.py"
-                ]
-            }
-        )
+    if current_model is None:
+        # 动态检查模型加载状态
+        try:
+            test_loader = load_model_if_needed()
+            if test_loader is None:
+                raise RuntimeError("模型加载失败")
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "message": "模型加载失败,无法进行基准测试",
+                    "steps": [
+                        "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
+                        "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
+                        "3. 重启后端服务: python main.py"
+                    ],
+                    "debug_info": {
+                        "model_path": settings.MODEL_PATH,
+                        "model_exists": os.path.exists(settings.MODEL_PATH),
+                        "error": str(e)
+                    }
+                }
+            )
 
     try:
         import numpy as np

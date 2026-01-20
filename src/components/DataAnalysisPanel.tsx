@@ -16,26 +16,26 @@ import { toast } from 'sonner';
 // API配置
 const API_BASE_URL = 'http://localhost:8000';
 
-// 类型定义
+// 类型定义（匹配后端 /api/npu/analyze 返回格式）
 interface FourColorCard {
   color: 'blue' | 'green' | 'yellow' | 'red';
   title: string;
   content: string;
-  category: string;
+  category: '事实' | '解释' | '风险' | '行动';
 }
 
 interface AnalysisResult {
+  success: boolean;
   query: string;
-  facts: string[];
-  explanations: string[];
-  risks: string[];
-  actions: string[];
   cards: FourColorCard[];
-  visualizations: any[];
+  raw_output: string;
   performance: {
-    total_time_ms: number;
     inference_time_ms: number;
+    total_time_ms: number;
+    model: string;
     device: string;
+    tokens_generated: number;
+    meets_target: boolean;
   };
 }
 
@@ -91,25 +91,24 @@ const DataAnalysisPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+      const response = await fetch(`${API_BASE_URL}/api/npu/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           query: query,
-          data_source: 'local',
-          context: {}
+          max_tokens: 128,
+          temperature: 0.7
         })
       });
 
       if (response.status === 503) {
         // 模型未加载
         const errorData = await response.json();
-        const steps = errorData.detail.steps || [];
-        toast(`${errorData.detail.message}\n\n部署步骤:\n${steps.join('\n')}`, {
-          className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
-          duration: 10000
+        toast(`模型加载失败: ${errorData.detail}`, {
+          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100',
+          duration: 5000
         });
         return;
       }
