@@ -43,43 +43,63 @@ C:\ai-engine-direct-helper\samples\qai_libs
 
 ## 尝试过的解决方案
 
-### 方案1：运行官方setup.py（失败）
+### ✅ 方案1：运行官方setup.py（找到正确流程）
+
+**发现的问题**：
+- 之前缺少 `qai-hub==0.30.0` 依赖
+
+**已修复**：
 ```bash
-cd C:\ai-engine-direct-helper\samples
-python python\setup.py
+# 1. 安装依赖（已完成）
+pip install requests==2.32.3 py3-wget==1.0.12 tqdm==4.67.1 importlib-metadata==8.5.0 qai-hub==0.30.0
+
+# 2. 运行setup.py（待执行）
+cd "C:\ai-engine-direct-helper\samples"
+python "python\setup.py"
 ```
 
-**错误**：
-```
-ModuleNotFoundError: No module named 'qai_hub'
+**setup.py会做什么**：
+1. 下载 QAI AppBuilder wheel包
+2. 下载 QNN SDK（2.38版本）到 `C:\Qualcomm\AIStack\QAIRT\`
+3. 复制DLL文件到 `C:\ai-engine-direct-helper\samples\qai_libs`
+
+**架构信息**：
+- 目标平台：`arm64x-windows-msvc`（Python x64 + Windows ARM64的桥接库）
+- QNN SDK位置：`C:\Qualcomm\AIStack\QAIRT\`
+- 目标目录：`C:\ai-engine-direct-helper\samples\qai_libs`
+
+**已创建脚本**：
+```bash
+c:\test\antinet\run_qai_setup.bat
 ```
 
-**后续尝试**：
-- 尝试安装qai_hub（未成功）
-- 缺少具体的依赖版本信息
+手动运行此脚本完成安装。
 
 ---
 
 ## 🎯 今晚直播问高通技术支持的问题
 
-### 最核心的问题
-**1. 如何获取 qai_libs 目录下的DLL文件？**
-   - setup.py的qai_hub错误如何解决？
-   - 是否可以手动下载DLL文件？从哪里下载？
-   - 需要哪些具体的DLL文件？
+### 当前状态
+**已经找到正确的安装流程**：
+1. ✅ 安装依赖：`pip install qai-hub==0.30.0`（已完成）
+2. ⏳ 运行setup.py下载QNN SDK（待执行）
 
-### 备选方案
-**2. 能否使用 GenieAPIService（HTTP API）代替？**
-   - 官方文档推荐C++版本，可以用Python版本吗？
-   - 有什么限制或性能差异？
+### 仍然需要确认的问题
 
-### 环境兼容性
-**3. Windows ARM64 + Python x64 的兼容性**
-   - 这个组合是否支持？
-   - 有什么已知问题？
+**1. setup.py下载失败怎么办？**
+   - qai_hub的hub_id是否需要配置？
+   - 是否需要高通账号登录？
+   - 如何配置API token？
 
-### API确认
-**4. GenieContext 的正确用法（基于我们的修复）**
+**2. DLL文件确认**
+   - setup.py成功后，qai_libs目录应该包含哪些DLL文件？
+   - 如何验证DLL文件正确？
+
+**3. Python架构兼容性**
+   - Python x64 + Windows ARM64 是否完全支持？
+   - 是否推荐使用ARM64 Python？
+
+**4. API确认（基于我们的修复）**
    ```python
    # 当前代码
    self.model = GenieContext(config_path)
@@ -87,25 +107,39 @@ ModuleNotFoundError: No module named 'qai_hub'
    - 是否正确？
    - 还需要什么配置？
 
-### 其他
-**5. QNN SDK 版本要求**
-   - 需要 2.34/2.37/2.38 的哪个版本？
-   - 如何检查当前系统安装的版本？
-
 ---
 
 ## 当前可运行的测试
 
-### 测试脚本
-没有，所有测试脚本已删除。
+### 第一步：运行setup.py（必须）
+```bash
+# 方式1：直接运行
+cd "C:\ai-engine-direct-helper\samples"
+python "python\setup.py"
 
-### 手动测试方式
+# 方式2：使用批处理脚本
+c:\test\antinet\run_qai_setup.bat
+```
+
+**预期**：
+- 下载QAI AppBuilder wheel包
+- 下载QNN SDK到C:\Qualcomm\AIStack\QAIRT\
+- 复制DLL文件到qai_libs目录
+
+### 第二步：验证DLL文件
+```bash
+dir "C:\ai-engine-direct-helper\samples\qai_libs"
+```
+
+**预期**：应该看到多个DLL文件（之前只有1个.cat文件）
+
+### 第三步：测试模型加载
 ```bash
 cd backend
 python main.py
 ```
 
-**预期**：模型加载失败，报错 `dlopen error #126`
+**预期**：模型加载成功（如果DLL文件正确）
 
 ---
 
@@ -144,5 +178,14 @@ fix: 修复NPU模型加载器，移除模拟模式
 ## 总结
 
 **代码层面**：已修复完成，基于官方GenieSample.py
-**环境层面**：缺少DLL文件，阻塞测试
-**下一步**：等待今晚直播咨询高通技术支持
+
+**环境层面**：
+- ✅ qai-hub依赖已安装
+- ⏳ 需要运行setup.py下载QNN SDK和DLL文件
+
+**下一步**：
+1. 运行 `c:\test\antinet\run_qai_setup.bat`
+2. 验证qai_libs目录的DLL文件
+3. 测试模型加载
+
+**备选方案**：如果setup.py失败，今晚直播咨询高通技术支持
