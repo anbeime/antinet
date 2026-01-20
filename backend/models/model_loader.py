@@ -125,7 +125,7 @@ class NPUModelLoader:
             
             os.environ['QAI_LIBS_PATH'] = lib_path
             
-            self.model = GenieContext(config_path, debug=False)
+            self.model = GenieContext(config_path)
 
             load_time = time.time() - start_time
 
