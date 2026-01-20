@@ -297,8 +297,8 @@ def test_inference(model):
     for prompt in test_prompts:
         print(f"\\n提示词: {{prompt}}")
 
-        # 模拟tokenization (实际应用中需要真实的tokenizer)
-        input_ids = np.random.randint(0, 1000, (1, 64), dtype=np.int64)
+        # 真实tokenization（需要实现）
+        raise NotImplementedError("真实tokenization未实现。请使用真实的tokenizer将提示词转换为input_ids。")
 
         start = time.time()
         output = model.infer(input_ids=input_ids)

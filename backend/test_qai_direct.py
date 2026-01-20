@@ -88,7 +88,7 @@ try:
             # TODO: 实现真实的 NPU 推理
             # 需要分析 QNN 模型的输入输出格式
             # 并正确构造输入数据
-            return f"[NPU Mock] 这是对 '{prompt[:30]}...' 的 NPU 推理结果"
+            raise NotImplementedError("真实NPU推理未实现。请使用NPUModelLoader进行真实推理。")
 
     model = LLMModel("Qwen2.0-7B-SSD", str(model_path))
 

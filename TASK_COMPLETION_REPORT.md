@@ -8,7 +8,7 @@
 **问题**:
 - `backend/models/model_loader.py` 存在局部导入问题
 - 错误: `cannot access local variable 'QNNConfig' where it is not associated with a value`
-- 导致模型加载失败，回退到模拟模式
+
 
 **修复**:
 1. 移除第198行的局部导入: `from qai_appbuilder import QNNConfig`

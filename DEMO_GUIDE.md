@@ -151,7 +151,6 @@ pip list | findstr qai
 pip install C:\ai-engine-direct-helper\samples\qai_appbuilder*.whl
 ```
 
-**注意**: 模拟模式不影响界面展示和基准测试图表，适合演示视频录制
 
 ---
 

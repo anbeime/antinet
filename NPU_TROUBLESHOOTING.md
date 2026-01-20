@@ -284,7 +284,6 @@ print(f"设备: {stats['device']}")
 **预期输出**:
 ```
 设备: NPU (Hexagon)  # 正确
-设备: Mock              # 错误 - 使用了模拟模式
 设备: CPU (回退模式)     # 错误 - NPU 不可用
 ```
 
@@ -485,7 +484,6 @@ type backend_error.log
 **A**: 检查 `get_performance_stats()` 返回的 `device` 字段:
 - `NPU (Hexagon)` - 使用 NPU
 - `CPU (回退模式)` - 使用 CPU
-- `Mock` - 使用模拟模式
 
 ### Q3: 可以同时测试多个模型吗？
 **A**: 可以，但建议先验证推荐模型 (Qwen2.0-7B-SSD)，再测试其他模型。

@@ -96,7 +96,6 @@ def load_model_if_needed():
 
     except Exception as e:
         logger.error(f"模型加载失败: {e}")
-        logger.warning("回退到模拟模式")
         return None
 
 
@@ -115,32 +114,49 @@ def real_inference(query: str, model) -> Dict[str, Any]:
                 temperature=0.7
             )
         else:
-            # 模拟模式
-            response = f"[Mock] 分析结果 for: {query}"
+            # 模型没有infer方法，抛出异常
+            raise RuntimeError(f"模型实例缺少infer方法，无法执行推理。模型类型: {type(model).__name__}")
 
         inference_time = (time.time() - start_time) * 1000
 
         logger.info(f"  推理延迟: {inference_time:.2f}ms")
 
-        # 解析输出为四色卡片
-        # 实际应用中需要解析模型输出，这里使用模拟解析
+        # 解析模型输出为四色卡片
+        # 将响应按句号分割成句子
+        sentences = [s.strip() for s in response.split('。') if s.strip()]
+        
+        # 分配句子到不同类别（简单启发式）
+        facts = []
+        explanations = []
+        risks = []
+        actions = []
+        
+        if sentences:
+            # 第一个句子作为事实
+            facts.append(sentences[0])
+            # 如果有更多句子，分配给其他类别
+            if len(sentences) > 1:
+                explanations.append(sentences[1])
+            if len(sentences) > 2:
+                risks.append(sentences[2])
+            if len(sentences) > 3:
+                actions.append(sentences[3])
+            # 剩余句子添加到事实中
+            if len(sentences) > 4:
+                facts.extend(sentences[4:])
+        else:
+            # 如果响应为空，使用模拟数据（临时方案）
+            logger.warning("模型响应为空，使用模拟数据")
+            facts = [f"基于NPU分析,{query}的核心数据如下..."]
+            explanations = ["NPU加速分析显示主要驱动因素是..."]
+            risks = ["需要关注的风险点包括..."]
+            actions = ["推荐的行动方案: ..."]
+        
         result = {
-            "facts": [
-                f"基于NPU分析,{query}的核心数据如下...",
-                "关键指标达到预期目标",
-            ],
-            "explanations": [
-                f"NPU加速分析显示主要驱动因素是...",
-                "数据趋势符合历史规律",
-            ],
-            "risks": [
-                "需要关注的风险点包括...",
-                "建议建立监控机制",
-            ],
-            "actions": [
-                "推荐的行动方案: ...",
-                "优先级建议: 高",
-            ],
+            "facts": facts,
+            "explanations": explanations,
+            "risks": risks,
+            "actions": actions,
             "inference_time_ms": inference_time
         }
 

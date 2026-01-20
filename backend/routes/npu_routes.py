@@ -193,8 +193,9 @@ async def performance_benchmark():
         min_latency = min(latencies)
         max_latency = max(latencies)
 
-        # 模拟 CPU vs NPU 加速比（实际需要真实测试）
-        cpu_vs_npu_speedup = 4.5  # 典型值 4-5x
+        # CPU vs NPU 加速比（需要真实CPU基准测试）
+        # 暂时返回占位符值，需要实现真实CPU推理对比
+        cpu_vs_npu_speedup = 0.0  # 需要真实测试
 
         stats = loader.get_performance_stats()
 
@@ -261,34 +262,45 @@ def generate_four_color_cards(raw_output: str, query: str) -> List[FourColorCard
     Returns:
         四色卡片列表
     """
-    # 这里是简化版本，实际需要根据模型输出智能解析
-    # 可以使用提示词工程让模型直接输出结构化的四色卡片
-
-    cards = [
-        FourColorCard(
-            color="blue",
-            category="事实",
-            title="数据事实",
-            content=f"针对查询 '{query}'，模型分析的关键事实..."
-        ),
-        FourColorCard(
-            color="green",
-            category="解释",
-            title="原因解释",
-            content="基于数据的深层次原因分析..."
-        ),
-        FourColorCard(
-            color="yellow",
-            category="风险",
-            title="风险预警",
-            content="识别到的潜在风险和注意事项..."
-        ),
-        FourColorCard(
-            color="red",
-            category="行动",
-            title="行动建议",
-            content="基于分析的具体行动建议..."
-        )
-    ]
-
+    # 将原始输出按句号分割成句子
+    sentences = [s.strip() for s in raw_output.split('。') if s.strip()]
+    
+    # 颜色和类别映射
+    colors = ["blue", "green", "yellow", "red"]
+    categories = ["事实", "解释", "风险", "行动"]
+    titles = ["数据事实", "原因解释", "风险预警", "行动建议"]
+    
+    cards = []
+    
+    # 生成最多四个卡片
+    for i in range(min(4, len(sentences))):
+        # 使用句子作为内容，如果句子太长则截断
+        content = sentences[i]
+        if len(content) > 200:
+            content = content[:200] + "..."
+        
+        cards.append(FourColorCard(
+            color=colors[i],
+            category=categories[i],
+            title=titles[i],
+            content=content
+        ))
+    
+    # 如果句子少于四个，使用默认内容填充剩余卡片
+    if len(cards) < 4:
+        logger.warning(f"模型输出句子不足，使用默认内容填充 {4 - len(cards)} 个卡片")
+        default_contents = [
+            f"针对查询 '{query}'，模型分析的关键事实...",
+            "基于数据的深层次原因分析...",
+            "识别到的潜在风险和注意事项...",
+            "基于分析的具体行动建议..."
+        ]
+        for i in range(len(cards), 4):
+            cards.append(FourColorCard(
+                color=colors[i],
+                category=categories[i],
+                title=titles[i],
+                content=default_contents[i]
+            ))
+    
     return cards

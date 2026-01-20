@@ -251,13 +251,7 @@ curl http://localhost:8000/api/health
 # allow_origins=["http://localhost:3000"]
 ```
 
-### Q4: 模拟模式运行
 
-如果QNN模型未部署,后端会自动切换到模拟模式:
-
-- ⚠ 不使用真实NPU推理
-- ⚠ 返回模拟的分析结果
-- ✅ 可用于前端界面测试
 
 ## 📝 开发模式 vs 生产模式
 
