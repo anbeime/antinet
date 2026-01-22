@@ -1,0 +1,116 @@
+﻿python : [INFO]  "Using create From Binary"
+所在位置 行:1 字符: 33
++ Set-Location 'C:\test\antinet'; python simple_test.py 2>&1 | Out-File ...
++                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([INFO]  "Using create From Binary":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[INFO]  "Allocated total size = 175915520 across 10 buffers"
+================================================================================
+绠€鍖栨ā鍨嬪姞杞芥祴璇?
+================================================================================
+
+[1] 娴嬭瘯瀵煎叆 qai_appbuilder...
+    鉁?鎴愬姛
+
+[2] 娴嬭瘯鍒涘缓 GenieContext...
+    鉁?鎴愬姛
+
+[3] 娴嬭瘯鎺ㄧ悊...
+    鉁?鎴愬姛
+    杈撳嚭: 锛佹垜濂冲効4宀佸崐锛屾槰澶╂櫄涓婄潯瑙夊墠寮€濮嬫湁鐐瑰挸鍡芥湁鐥帮紝浠婂ぉ鏃╀笂璧锋潵鍜崇殑澶氫竴鐐癸紝涓崍鍚冧簡鍎跨姝㈠挸绯栨祮锛屽垰鎵嶉噺浣撴俯37.6搴︼紝璇烽棶鏄笉鏄劅鍐掍簡锛熼渶瑕佹€庝箞澶勭悊锛?
+
+鎮ㄥソ锛佹牴鎹偍鐨勬弿杩帮紝鎮ㄧ殑濂冲効鍙兘鍑虹幇浜嗘劅鍐掔棁鐘躲€?..
+
+================================================================================
+鉁?鎵€鏈夋祴璇曢€氳繃
+================================================================================
+ <W> Initializing HtpProvider
+ <W> Specified config ARCH, ignoring on real target
+ <W> Specified config SOC, ignoring on real target
+ <E> DspTransport.openSession qnn_open failed, 0x80000406, prio 100
+ <E> IDspTransport: Unable to load lib 0x80000406
+ <E> DspTransport.getHandle failed, error 0x00000008
+ <E> createDspTransportInstance failed to config transport object
+ <E> error in creation of transport instance
+ <W> Failed to create transport instance: 1002
+ <W> Failed to load skel, error: 1002
+ <W> Traditional path not available. Switching to user driver path
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2015
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2004
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2005
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2006
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2007
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2008
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2009
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2010
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2011
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2012
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2013
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2014
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2016
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2017
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2018
+ <W> HTP user driver is loaded. Switched to user driver path
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <E> fastrpc memory failed to unmap for fd: 74 with length: 512 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 74 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 1 when getting driver graph map entry
+ <W> Cannot find graph with id 2 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 84 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 84 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 83 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 83 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 3 when getting driver graph map entry
+ <W> Cannot find graph with id 4 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 86 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 86 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 91 with length: 1081344 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 91 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 88 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 88 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 85 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 85 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 5 when getting driver graph map entry
+ <W> Cannot find graph with id 6 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 88 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 88 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 87 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 87 from FastRpc failed on domain 11
+ <W> Cannot find graph with id 7 when getting driver graph map entry
+ <W> Cannot find graph with id 8 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 90 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 90 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 91 with length: 1081344 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 91 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 89 with length: 71987200 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 89 from FastRpc failed on domain 11
+ <W> Cannot find graph with id 9 when getting driver graph map entry
+ <W> Cannot find graph with id 10 when getting driver graph map entry
+ <W> Logs will be sent to the system's default channel

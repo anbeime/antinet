@@ -86,8 +86,9 @@ async def analyze_data(request: AnalyzeRequest):
     try:
         start_time = time.time()
 
-        # 加载模型
-        loader = NPUModelLoader(model_key=request.model)
+        # 加载模型（使用全局单例）
+        from models.model_loader import get_model_loader
+        loader = get_model_loader(request.model)
         model = loader.load()
 
         # NPU 推理
@@ -109,7 +110,7 @@ async def analyze_data(request: AnalyzeRequest):
             "inference_time_ms": round(inference_time, 2),
             "total_time_ms": round(total_time, 2),
             "model": loader.model_config['name'],
-            "device": "NPU (Hexagon)",
+            "device": "NPU",
             "tokens_generated": request.max_tokens,
             "meets_target": inference_time < 500  # 目标 < 500ms
         }
@@ -225,6 +226,8 @@ async def model_status():
     try:
         from models.model_loader import _global_model_loader
 
+        logger.info(f"[/api/npu/status] _global_model_loader: {_global_model_loader is not None}")
+
         if _global_model_loader is None:
             return {
                 "loaded": False,
@@ -232,6 +235,7 @@ async def model_status():
             }
 
         stats = _global_model_loader.get_performance_stats()
+        logger.info(f"[/api/npu/status] stats: {stats}")
 
         return {
             "loaded": stats['is_loaded'],

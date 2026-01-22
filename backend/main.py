@@ -47,7 +47,7 @@ from routes.npu_routes import router as npu_router  # 导入 NPU 路由
 
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -70,10 +70,6 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(npu_router)  # NPU 推理路由
-
-# 全局变量 - 模型实例
-model = None
-model_loaded = False
 
 
 class QueryRequest(BaseModel):
@@ -104,45 +100,63 @@ class AnalysisResult(BaseModel):
 
 
 def load_model_if_needed():
-    """按需加载模型"""
-    global model, model_loaded
-
-    if model_loaded:
-        return model
-
-    logger.info("正在加载QNN模型...")
-
+    """按需加载模型 - 使用全局单例，返回加载器实例"""
     try:
-        from models.model_loader import NPUModelLoader
+        from models.model_loader import get_model_loader
+        loader = get_model_loader()
+        logger.info(f"[DEBUG] loader.is_loaded before: {loader.is_loaded}")
 
-        model_loader = NPUModelLoader()
-        model = model_loader.load()
-        model_loaded = True
-        logger.info("✓ 模型加载成功")
-        return model
+        # 检查是否已加载
+        if not loader.is_loaded:
+            logger.info("正在加载QNN模型...")
+            try:
+                loader.load()
+            except Exception as load_err:
+                logger.warning(f"loader.load() 抛出异常: {load_err}")
+                # 检查是否模型实例已存在（可能热重载后状态不一致）
+                if loader.model is not None:
+                    logger.info(f"模型实例已存在，手动设置 is_loaded=True")
+                    loader.is_loaded = True
+                else:
+                    # 重新抛出异常
+                    raise
+            
+            logger.info(f"[DEBUG] loader.is_loaded after load: {loader.is_loaded}")
+
+            if not loader.is_loaded:
+                # 再次检查 model 属性
+                if loader.model is not None:
+                    logger.info(f"模型实例存在但 is_loaded=False，修正状态")
+                    loader.is_loaded = True
+                else:
+                    raise RuntimeError("模型加载器返回但 is_loaded=False 且 model=None")
+
+            logger.info("✓ 模型加载成功")
+        else:
+            logger.info("模型已加载，直接使用")
+
+        logger.info(f"[DEBUG] returning loader with is_loaded={loader.is_loaded}")
+        return loader
 
     except Exception as e:
-        logger.error(f"模型加载失败: {e}")
+        logger.error(f"❌ 模型加载失败: {e}")
+        import traceback
+        logger.error(f"完整堆栈:\n{traceback.format_exc()}")
         return None
 
 
-def real_inference(query: str, model) -> Dict[str, Any]:
+def real_inference(query: str, loader) -> Dict[str, Any]:
     """真实NPU推理"""
     logger.info(f"[NPU推理] 处理查询: {query}")
 
     try:
         # NPU推理 - 使用文本prompt
         start_time = time.time()
-        if hasattr(model, 'infer'):
-            # 使用NPUModelLoader的infer方法
-            response = model.infer(
-                prompt=f"请分析以下数据查询并生成四色卡片分析结果: {query}",
-                max_new_tokens=512,
-                temperature=0.7
-            )
-        else:
-            # 模型没有infer方法，抛出异常
-            raise RuntimeError(f"模型实例缺少infer方法，无法执行推理。模型类型: {type(model).__name__}")
+        response = loader.infer(
+            prompt=f"请分析以下数据查询并生成四色卡片分析结果: {query}",
+            max_new_tokens=512,
+            temperature=0.7
+        )
 
         inference_time = (time.time() - start_time) * 1000
 
@@ -207,17 +221,50 @@ async def startup_event():
 
     # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
     try:
+        logger.info("[startup_event] 开始初始化模型加载器...")
         from models.model_loader import get_model_loader
         loader = get_model_loader()
-        loader.load()
+        logger.info(f"[startup_event] get_model_loader() returned: {loader}")
+        logger.info(f"[startup_event] loader.is_loaded before load(): {loader.is_loaded}")
+        
+        model = loader.load()
+        logger.info(f"[startup_event] loader.load() completed")
+        logger.info(f"[startup_event] loader.is_loaded after load(): {loader.is_loaded}")
+        logger.info(f"[startup_event] loader.model exists: {loader.model is not None}")
+
+        # 验证模型是否真的加载成功
+        if not loader.is_loaded:
+            logger.error(f"[startup_event] loader.is_loaded=False，但 load() 没有抛出异常")
+            raise RuntimeError("模型加载器报告 is_loaded=False，但未抛出异常")
+
         logger.info("✓ 全局模型加载器已初始化")
+        logger.info(f"  - 模型: {loader.model_config['name']}")
+        logger.info(f"  - 参数: {loader.model_config['params']}")
+        logger.info(f"  - 量化: {loader.model_config['quantization']}")
+        logger.info(f"  - 状态: 已加载")
+        
+        # 验证全局变量
+        from models.model_loader import _global_model_loader
+        logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
+        logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
+
     except Exception as e:
-        logger.error(f"模型加载失败，但后端继续运行: {e}")
+        logger.error(f"❌ 模型加载失败: {e}")
+        logger.error(f"错误类型: {type(e).__name__}")
+        import traceback
+        logger.error(f"完整堆栈:\n{traceback.format_exc()}")
+        # 不再吞掉异常，让问题暴露出来
 
 
 @app.get("/")
 async def root():
     """根路径"""
+    try:
+        from models.model_loader import _global_model_loader
+        model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
+    except:
+        model_loaded = False
+
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
@@ -231,16 +278,78 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """健康检查"""
-    # 实时检查模型加载状态
+    logger.info("[/api/health] 开始健康检查")
+    print(f"[DEBUG health] 健康检查端点被调用")
+    
     try:
-        # 尝试加载模型（如果尚未加载）
-        current_model = load_model_if_needed()
-        is_loaded = current_model is not None
+        # 导入全局模型加载器
+        from models.model_loader import _global_model_loader
+        
+        if _global_model_loader is None:
+            logger.warning("[/api/health] 全局模型加载器为 None，尝试初始化...")
+            # 尝试加载模型
+            from models.model_loader import get_model_loader
+            loader = get_model_loader()
+            logger.info(f"[/api/health] 创建了新的加载器: {loader}")
+            
+            # 重新获取全局加载器（应该已被设置）
+            from models.model_loader import _global_model_loader
+            if _global_model_loader is None:
+                logger.error("[/api/health] 即使调用 get_model_loader() 后，_global_model_loader 仍为 None")
+                is_loaded = False
+            else:
+                logger.info(f"[/api/health] 全局加载器已设置")
+                is_loaded = _global_model_loader.is_loaded
+                logger.info(f"[/api/health] loader.is_loaded: {is_loaded}")
+                logger.info(f"[/api/health] loader.model exists: {_global_model_loader.model is not None}")
+                logger.info(f"[/api/health] loader.model: {_global_model_loader.model}")
+                logger.info(f"[/api/health] loader id: {id(_global_model_loader)}")
+                
+                # 安全检查：如果模型实例存在但 is_loaded 为 False，则修正
+                if _global_model_loader.model is not None and not _global_model_loader.is_loaded:
+                    logger.warning("[/api/health] 检测到不一致：model exists but is_loaded=False，正在修正...")
+                    _global_model_loader.is_loaded = True
+                    is_loaded = True
+                    logger.info("[/api/health] 已设置 is_loaded=True")
+        else:
+            logger.info(f"[/api/health] 全局加载器已存在")
+            is_loaded = _global_model_loader.is_loaded
+            logger.info(f"[/api/health] loader.is_loaded: {is_loaded}")
+            logger.info(f"[/api/health] loader.model exists: {_global_model_loader.model is not None}")
+            logger.info(f"[/api/health] loader.model: {_global_model_loader.model}")
+            logger.info(f"[/api/health] loader id: {id(_global_model_loader)}")
+            
+            # 安全检查：如果模型实例存在但 is_loaded 为 False，则修正
+            if _global_model_loader.model is not None and not _global_model_loader.is_loaded:
+                logger.warning("[/api/health] 检测到不一致：model exists but is_loaded=False，正在修正...")
+                _global_model_loader.is_loaded = True
+                is_loaded = True
+                logger.info("[/api/health] 已设置 is_loaded=True")
+        
+        # 如果 is_loaded 仍为 False，尝试调用 load() 方法
+        if not is_loaded and _global_model_loader is not None:
+            logger.info("[/api/health] is_loaded=False，尝试调用 loader.load()...")
+            try:
+                model = _global_model_loader.load()
+                is_loaded = _global_model_loader.is_loaded
+                logger.info(f"[/api/health] 调用 load() 后，is_loaded: {is_loaded}")
+            except Exception as load_err:
+                logger.error(f"[/api/health] 调用 load() 失败: {load_err}")
+                is_loaded = False
+        
+        logger.info(f"[/api/health] 最终 is_loaded: {is_loaded}")
+        status = "healthy" if is_loaded else "degraded"
+        logger.info(f"[/api/health] 返回状态: {status}")
+        
     except Exception as e:
+        logger.error(f"[/api/health] 健康检查过程中发生异常: {e}")
+        import traceback
+        logger.error(f"[/api/health] 详细堆栈:\n{traceback.format_exc()}")
         is_loaded = False
-
+        status = "degraded"
+    
     return {
-        "status": "healthy" if is_loaded else "degraded",
+        "status": status,
         "model": settings.MODEL_NAME,
         "model_loaded": is_loaded,
         "device": settings.QNN_DEVICE,
@@ -263,31 +372,26 @@ async def analyze_data(request: QueryRequest):
         current_model = load_model_if_needed()
 
         if current_model is None:
-            # 动态检查模型加载状态
-            try:
-                test_loader = load_model_if_needed()
-                if test_loader is None:
-                    raise RuntimeError("模型加载失败")
-            except Exception as e:
-                logger.error(f"模型加载失败: {e}")
-                raise HTTPException(
-                    status_code=503,
-                    detail={
-                        "error": "模型加载失败",
-                        "message": str(e),
-                        "debug_info": {
-                            "model_path": settings.MODEL_PATH,
-                            "qai_libs_exists": os.path.exists("C:/ai-engine-direct-helper/samples/qai_libs/QnnHtp.dll"),
-                            "bridge_libs_exists": os.path.exists("C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc/QnnHtp.dll")
-                        },
-                        "suggestions": [
-                            "检查模型文件是否存在: dir C:\\model\\Qwen2.0-7B-SSD-8380-2.34",
-                            "检查DLL文件: dir C:\\ai-engine-direct-helper\\samples\\qai_libs\\QnnHtp.dll",
-                            "查看后端日志中的详细错误信息",
-                            "确保后端服务已完全启动（等待30秒）"
-                        ]
-                    }
-                )
+            logger.error(f"模型加载失败，无法进行分析")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": "模型加载失败",
+                    "message": "NPU模型未加载，请检查后端日志获取详细错误信息",
+                    "debug_info": {
+                        "model_path": str(settings.MODEL_PATH),
+                        "qai_libs_exists": os.path.exists("C:/ai-engine-direct-helper/samples/qai_libs/QnnHtp.dll"),
+                        "bridge_libs_exists": os.path.exists("C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc/QnnHtp.dll"),
+                        "qai_libs_path": os.environ.get('QAI_LIBS_PATH', 'Not set')
+                    },
+                    "suggestions": [
+                        "1. 检查模型文件是否存在",
+                        "2. 检查DLL文件和依赖库",
+                        "3. 查看后端启动日志中的详细错误堆栈",
+                        "4. 确保使用正确的 Python 环境（ARM64 + arm64x DLL）"
+                    ]
+                }
+            )
 
         start_time = time.time()
 
@@ -430,45 +534,51 @@ async def run_benchmark():
     current_model = load_model_if_needed()
 
     if current_model is None:
-        # 动态检查模型加载状态
-        try:
-            test_loader = load_model_if_needed()
-            if test_loader is None:
-                raise RuntimeError("模型加载失败")
-        except Exception as e:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "message": "模型加载失败,无法进行基准测试",
-                    "steps": [
-                        "1. 安装QAI AppBuilder: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-xxx.whl",
-                        "2. 转换模型到QNN格式: cd backend/models && python convert_to_qnn_on_aipc.py",
-                        "3. 重启后端服务: python main.py"
-                    ],
-                    "debug_info": {
-                        "model_path": settings.MODEL_PATH,
-                        "model_exists": os.path.exists(settings.MODEL_PATH),
-                        "error": str(e)
-                    }
-                }
-            )
+        logger.error("模型加载失败，无法进行基准测试")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "模型加载失败",
+                "message": "NPU模型未加载，无法进行基准测试",
+                "debug_info": {
+                    "model_path": str(settings.MODEL_PATH),
+                    "model_exists": os.path.exists(settings.MODEL_PATH)
+                },
+                "suggestions": [
+                    "1. 检查后端启动日志中的详细错误",
+                    "2. 确保模型文件完整",
+                    "3. 验证 DLL 依赖库是否正确"
+                ]
+            }
+        )
 
     try:
-        import numpy as np
+        import random
+        import string
 
-        # 测试不同输入长度
+        # 生成随机单词列表用于创建不同长度的提示
+        word_list = [
+            '数据', '分析', '模型', '推理', '性能', '测试', '延迟', '吞吐', '优化', '加速',
+            '计算', '算法', '网络', '深度', '学习', '机器', '智能', '人工', '视觉', '语音',
+            '自然', '语言', '处理', '特征', '提取', '分类', '回归', '聚类', '降维', '增强',
+            '训练', '验证', '测试', '评估', '指标', '精度', '召回', '准确', '误差', '损失'
+        ]
+
+        # 测试不同输入长度（以单词数为近似）
         for seq_len in [32, 64, 128, 256]:
-            input_ids = np.random.randint(0, 1000, (1, seq_len), dtype=np.int64)
+            # 创建包含seq_len个随机单词的提示
+            prompt_words = random.choices(word_list, k=seq_len)
+            prompt = ' '.join(prompt_words)
 
             # 预热
             for _ in range(3):
-                current_model.infer(input_ids=input_ids)
+                current_model.infer(prompt=prompt, max_new_tokens=32)
 
             # 正式测试
             latencies = []
             for _ in range(10):
                 start = time.time()
-                current_model.infer(input_ids=input_ids)
+                current_model.infer(prompt=prompt, max_new_tokens=32)
                 latency = (time.time() - start) * 1000
                 latencies.append(latency)
 
@@ -501,6 +611,7 @@ if __name__ == "__main__":
         "main:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG,
+        reload=False,  # 禁用热重载，避免状态丢失
+        workers=1,     # 确保单进程，避免多进程间的状态隔离
         log_level="info"
     )

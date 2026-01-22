@@ -107,8 +107,16 @@ class NPUModelLoader:
         Returns:
             模型实例（真实 NPU）
         """
+        logger.info(f"[DEBUG load] self.is_loaded={self.is_loaded}, self.model={self.model is not None}")
         if self.is_loaded:
             logger.info(f"[OK] 模型已加载: {self.model_config['name']}")
+            return self.model
+
+        # 安全检查：如果模型实例已存在，直接返回并设置 is_loaded
+        if self.model is not None:
+            logger.warning(f"模型实例存在但 is_loaded=False，修正状态")
+            self.is_loaded = True
+            logger.info(f"[DEBUG load] 修正后 self.is_loaded={self.is_loaded}")
             return self.model
 
         logger.info(f"正在加载模型: {self.model_config['name']}...")
@@ -121,29 +129,48 @@ class NPUModelLoader:
 
         start_time = time.time()
 
-        try:
-            # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
-            config_path = str(model_path / "config.json")
-            logger.info(f"[INFO] 创建 GenieContext: {config_path}")
+        max_retries = 2
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.warning(f"重试加载模型 (尝试 {attempt+1}/{max_retries})")
+                    # 等待一小段时间再重试
+                    time.sleep(1.0)
+                
+                # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
+                config_path = str(model_path / "config.json")
+                logger.info(f"[INFO] 创建 GenieContext: {config_path}")
 
-            # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
-            self.model = GenieContext(config_path)
+                # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
+                self.model = GenieContext(config_path)
 
-            load_time = time.time() - start_time
+                load_time = time.time() - start_time
 
-            logger.info(f"[OK] NPU 模型加载成功")
-            logger.info(f"  - 模型: {self.model_config['name']}")
-            logger.info(f"  - 参数量: {self.model_config['params']}")
-            logger.info(f"  - 量化版本: {self.model_config['quantization']}")
-            logger.info(f"  - 加载时间: {load_time:.2f}s")
-            logger.info(f"  - 运行设备: NPU (Hexagon)")
+                logger.info(f"[OK] NPU 模型加载成功")
+                logger.info(f"  - 模型: {self.model_config['name']}")
+                logger.info(f"  - 参数量: {self.model_config['params']}")
+                logger.info(f"  - 量化版本: {self.model_config['quantization']}")
+                logger.info(f"  - 加载时间: {load_time:.2f}s")
+                logger.info(f"  - 运行设备: NPU (Hexagon)")
 
-            self.is_loaded = True
-            return self.model
+                self.is_loaded = True
+                logger.info(f"[DEBUG load] 成功加载后 self.is_loaded={self.is_loaded}")
+                return self.model
 
-        except Exception as e:
-            logger.error(f"[ERROR] NPU 模型加载失败: {e}")
-            raise RuntimeError(f"NPU模型加载失败: {e}")
+            except Exception as e:
+                last_exception = e
+                logger.error(f"[ERROR] NPU 模型加载失败 (尝试 {attempt+1}/{max_retries}): {e}")
+                import traceback
+                logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+                # 如果是最后一次尝试，则抛出异常
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"NPU模型加载失败，重试 {max_retries} 次后仍失败: {e}")
+                # 否则继续重试
+        
+        # 不应到达此处
+        raise RuntimeError(f"NPU模型加载失败，未知错误: {last_exception}")
 
     def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
         """
@@ -157,6 +184,11 @@ class NPUModelLoader:
         Returns:
             生成的文本
         """
+        # 安全检查：如果模型实例已存在但 is_loaded=False，修正状态
+        if self.model is not None and not self.is_loaded:
+            logger.warning(f"模型实例存在但 is_loaded=False，在 infer() 中修正状态")
+            self.is_loaded = True
+        
         if not self.is_loaded:
             self.load()
 
@@ -194,6 +226,8 @@ class NPUModelLoader:
 
         except Exception as e:
             logger.error(f"[ERROR] 推理失败: {e}")
+            import traceback
+            logger.error(f"详细堆栈:\n{traceback.format_exc()}")
             raise
 
     def get_performance_stats(self) -> Dict[str, Any]:
@@ -249,6 +283,8 @@ class NPUModelLoader:
 # 全局模型实例（单例模式）
 _global_model_loader: Optional[NPUModelLoader] = None
 
+logger.info(f"[MODULE INIT] _global_model_loader initialized to: {_global_model_loader}")
+
 
 def get_model_loader(model_key: str = None) -> NPUModelLoader:
     """
@@ -261,9 +297,15 @@ def get_model_loader(model_key: str = None) -> NPUModelLoader:
         模型加载器实例
     """
     global _global_model_loader
+    
+    logger.info(f"[get_model_loader] _global_model_loader before: {_global_model_loader}")
 
     if _global_model_loader is None:
+        logger.info(f"[get_model_loader] Creating new NPUModelLoader with key: {model_key}")
         _global_model_loader = NPUModelLoader(model_key)
+        logger.info(f"[get_model_loader] Created: {_global_model_loader}")
+    else:
+        logger.info(f"[get_model_loader] Returning existing: {_global_model_loader}")
 
     return _global_model_loader
 

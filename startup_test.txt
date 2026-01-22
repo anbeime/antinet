@@ -1,0 +1,170 @@
+﻿python : [INFO]  "Using create From Binary"
+所在位置 行:1 字符: 41
++ ...  'C:\test\antinet\backend'; python test_startup_logic.py 2>&1 | Out-F ...
++                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([INFO]  "Using create From Binary":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[INFO]  "Allocated total size = 175915520 across 10 buffers"
+================================================================================
+测试后端 startup_event 逻辑
+================================================================================
+
+[模拟 startup_event]
+1. 导入 get_model_loader...
+2. 调用 get_model_loader()...
+3. 检查 loader.is_loaded: False
+4. 调用 loader.load()...
+   -> load() 调用完成，耗时: 8.77s
+   -> loader.is_loaded 现在是: True
+   -> loader.model 类型: <class 'qai_appbuilder.geniecontext.GenieContext'>
+ <W> Initializing HtpProvider
+ <W> Specified config ARCH, ignoring on real target
+ <W> Specified config SOC, ignoring on real target
+ <E> DspTransport.openSession qnn_open failed, 0x80000406, prio 100
+ <E> IDspTransport: Unable to load lib 0x80000406
+ <E> DspTransport.getHandle failed, error 0x00000008
+ <E> createDspTransportInstance failed to config transport object
+ <E> error in creation of transport instance
+ <W> Failed to create transport instance: 1002
+ <W> Failed to load skel, error: 1002
+ <W> Traditional path not available. Switching to user driver path
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2015
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2004
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2005
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2006
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2007
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2008
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2009
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2010
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2011
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2012
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2013
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2014
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2016
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2017
+ <W> Incompatible profiling event. Consider upgrading Driver to support new profiling events - 2018
+ <W> HTP user driver is loaded. Switched to user driver path
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+ <W> Cannot find reservation group id from the context configs!
+ <W> Cannot find reservation group id from the context configs!
+ <W> This option (6) is only for create context from binary use case.
+Traceback (most recent call last):
+  File "C:\test\antinet\backend\test_startup_logic.py", line 62, in <module>
+    print("\n   \u2713 成功：模型已加载")
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2713' in position 5: illegal multibyte sequence
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\test\antinet\backend\test_startup_logic.py", line 70, in <module>
+    print(f"\n\u274c 异常: {e}")
+UnicodeEncodeError: 'gbk' codec can't encode character '\u274c' in position 2: illegal multibyte sequence
+ <E> fastrpc memory failed to unmap for fd: 74 with length: 512 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 74 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 1 when getting driver graph map entry
+ <W> Cannot find graph with id 2 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 84 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 84 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 83 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 83 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 3 when getting driver graph map entry
+ <W> Cannot find graph with id 4 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 86 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 86 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 91 with length: 1081344 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 91 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 88 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 88 from FastRpc failed on domain 3
+ <E> fastrpc memory failed to unmap for fd: 85 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 85 from FastRpc failed on domain 3
+ <W> Cannot find graph with id 5 when getting driver graph map entry
+ <W> Cannot find graph with id 6 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 88 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 88 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 87 with length: 33058816 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 87 from FastRpc failed on domain 11
+ <W> Cannot find graph with id 7 when getting driver graph map entry
+ <W> Cannot find graph with id 8 when getting driver graph map entry
+ <E> fastrpc memory failed to unmap for fd: 90 with length: 917504 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 90 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 91 with length: 1081344 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 91 from FastRpc failed on domain 11
+ <E> fastrpc memory failed to unmap for fd: 89 with length: 71987200 failed with error: 0x3a
+ <E> fastrpc memory unmap error reporting failed
+ <E> UnMapping buffer fd 89 from FastRpc failed on domain 11
+ <W> Cannot find graph with id 9 when getting driver graph map entry
+ <W> Cannot find graph with id 10 when getting driver graph map entry
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 8
+ <W> Wrong array type 0! Expected 2
+ <W> Wrong array type 0! Expected 2
+ <W> Logs will be sent to the system's default channel
