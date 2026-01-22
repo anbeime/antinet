@@ -79,19 +79,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [showResults, setShowResults] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
-  // 生成地址建议
-  const generateAddress = (color: CardColor) => {
-    const colors: Record<CardColor, string> = {
-      blue: 'A',
-      green: 'B',
-      yellow: 'C',
-      red: 'D'
-    };
-    const randomNumber = Math.floor(Math.random() * 100) + 1;
-    return `${colors[color]}${randomNumber}`;
-  };
-
-  // 模拟AI分类逻辑
+  // AI分类逻辑 - 需要后端支持
   const autoClassifyContent = (content: string): Array<{
     title: string;
     content: string;
@@ -109,132 +97,42 @@ const ImportModal: React.FC<ImportModalProps> = ({
       throw new Error('未找到有效内容，请确保文本包含完整的知识记录');
     }
 
-    // 模拟分类结果
-    const results: Array<{
-      title: string;
-      content: string;
-      color: CardColor;
-      confidence: number;
-      address: string;
-      gtdCategory: GTDCategory;
-    }> = [];
-    
-    // 简单的关键词匹配规则来模拟AI分类
-    const classificationRules: Record<string, { color: CardColor, confidence: number }> = {
-      // 蓝色卡片 - 核心概念关键词
-      '理论|概念|模型|框架|原则|方法|策略|范式|体系': { color: 'blue', confidence: 0.85 },
-      // 绿色卡片 - 关联链接关键词
-      '关联|联系|连接|关系|结合|整合|对比|区别|相似': { color: 'green', confidence: 0.8 },
-      // 黄色卡片 - 参考来源关键词
-      '参考|来源|引用|文献|资料|文档|链接|URL|来源链接|文章|书籍|研究': { color: 'yellow', confidence: 0.9 },
-      // 红色卡片 - 索引关键词
-      '定义|术语|关键词|索引|标签|分类|类型|范畴|类别': { color: 'red', confidence: 0.75 }
-    };
-    
-    paragraphs.forEach(paragraph => {
-      // 尝试从段落中提取标题
-      let title = paragraph.substring(0, Math.min(50, paragraph.indexOf('.') !== -1 ? paragraph.indexOf('.') + 1 : 50));
-      if (title.length > 30) {
-        title = title.substring(0, 30) + '...';
-      }
-      
-      // 查找最匹配的分类
-      let bestMatch: { color: CardColor, confidence: number } = { color: 'blue', confidence: 0.5 };
-      let maxScore = 0;
-      
-      Object.entries(classificationRules).forEach(([keywords, { color, confidence }]) => {
-        const keywordList = keywords.split('|');
-        let score = 0;
-        
-        keywordList.forEach(keyword => {
-          if (paragraph.toLowerCase().includes(keyword.toLowerCase())) {
-            score += 1;
-          }
-        });
-        
-        if (score > maxScore) {
-          maxScore = score;
-          bestMatch = { color, confidence: Math.min(1, confidence + (score * 0.1)) };
-        }
-      });
-      
-      // 如果没有找到匹配项，随机分配一个类型
-      if (maxScore === 0) {
-        const colors: CardColor[] = ['blue', 'green', 'yellow', 'red'];
-        bestMatch.color = colors[Math.floor(Math.random() * colors.length)];
-        bestMatch.confidence = 0.5;
-      }
-      
-      results.push({
-        title: title.replace(/\.$/, ''), // 移除末尾的句号
-        content: paragraph,
-        color: bestMatch.color,
-        confidence: bestMatch.confidence,
-        address: generateAddress(bestMatch.color),
-        gtdCategory: 'inbox' // 默认放入收集箱
-      });
-    });
-    
-    return results;
+    // 分类功能需要后端API支持
+    throw new Error('文本分类功能需要后端服务支持。请确保后端服务已启动，并调用NPU进行真实推理。');
   };
 
-  // 模拟解析PDF文件内容
-  const parsePDFFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      // 模拟PDF解析延迟
-      setTimeout(() => {
-        // 模拟从PDF中提取的内容
-        const mockContent = `PDF文档内容示例：\n\n第一章 核心概念\n知识管理是组织或个人对知识进行识别、获取、开发、使用、存储和共享的过程。有效的知识管理可以提高组织的创新能力和竞争优势。\n\n第二章 最佳实践\n建立知识共享文化是知识管理成功的关键因素之一。组织应该鼓励员工分享经验和见解，创造开放的交流环境。\n\n第三章 技术工具\n现代知识管理系统通常包含内容管理、搜索引擎、协作工具和分析功能等核心组件。这些工具帮助组织更有效地管理和利用知识资产。`;
-        resolve(mockContent);
-      }, 1000);
-    });
+  // PDF文件解析功能需要后端支持
+  const parsePDFFile = (_file: File): Promise<string> => {
+    return Promise.reject(new Error('PDF解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
   };
 
-  // 模拟解析Excel文件内容
-  const parseExcelFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      // 模拟Excel解析延迟
-      setTimeout(() => {
-        // 模拟从Excel中提取的内容
-        const mockContent = `Excel表格数据示例：\n\n核心概念：知识管理\n知识管理是组织或个人对知识进行识别、获取、开发、使用、存储和共享的过程。\n\n关联链接：知识管理与创新\n知识管理系统可以促进组织内部的知识流动和共享，为创新提供必要的基础和支持。\n\n参考来源：《知识管理：获取竞争优势的利器》\n这本书详细介绍了知识管理的理论基础和实践方法，提供了丰富的案例分析和实施指南。\n\n索引关键词：知识资产、知识共享、知识创新`;
-        resolve(mockContent);
-      }, 1000);
-    });
+  // Excel文件解析功能需要后端支持
+  const parseExcelFile = (_file: File): Promise<string> => {
+    return Promise.reject(new Error('Excel解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
   };
 
-  // 模拟解析Word文件内容
-  const parseWordFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      // 模拟Word解析延迟
-      setTimeout(() => {
-        // 模拟从Word中提取的内容
-        const mockContent = `Word文档内容示例：\n\n第一章 知识管理概述\n知识管理是组织或个人对知识进行识别、获取、开发、使用、存储和共享的过程。有效的知识管理可以提高组织的创新能力和竞争优势。\n\n第二章 知识管理系统\n现代知识管理系统通常包含内容管理、搜索引擎、协作工具和分析功能等核心组件。这些工具帮助组织更有效地管理和利用知识资产。\n\n第三章 实施策略\n成功实施知识管理需要组织文化的支持、明确的目标和有效的执行计划。高层领导的支持和员工的积极参与是关键因素。`;
-        resolve(mockContent);
-      }, 1000);
-    });
+  // Word文件解析功能需要后端支持
+  const parseWordFile = (_file: File): Promise<string> => {
+    return Promise.reject(new Error('Word文档解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
   };
 
-  // 模拟解析图片文件内容
-  const parseImageFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      // 模拟图片解析延迟
-      setTimeout(() => {
-        // 模拟从图片中提取的内容（OCR结果）
-        const mockContent = `图片内容OCR识别结果：\n\n这张图片包含了关于知识管理的重要信息，主要包括以下几点：\n\n1. 知识管理的核心目标是提高组织的创新能力和竞争优势\n2. 有效的知识管理系统应该支持内容创建、存储、共享和发现\n3. 知识管理需要组织文化的支持和员工的积极参与\n4. 知识管理可以帮助组织更好地利用内部资源，提高决策质量`;
-        resolve(mockContent);
-      }, 1500);
-    });
+  // 图片文件解析功能需要后端支持
+  const parseImageFile = (_file: File): Promise<string> => {
+    return Promise.reject(new Error('图片OCR解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
   };
 
-  // 模拟解析Markdown文件内容
+  // Markdown文件解析 - 直接读取文本内容
   const parseMarkdownFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      // 模拟Markdown解析延迟
-      setTimeout(() => {
-        // 模拟从Markdown中提取的内容
-        const mockContent = `Markdown文档内容示例：\n\n# 核心概念\n\n## 知识管理\n知识管理是组织或个人对知识进行识别、获取、开发、使用、存储和共享的过程。\n\n## 卢曼卡片方法\n卢曼卡片盒是一种高效的知识管理系统，通过索引卡片和笔记卡片的关联，构建个人知识网络。\n\n# 关联链接\n\n知识管理系统与AI技术的结合可以增强知识发现和关联能力，创造更有价值的知识网络。\n\n# 参考来源\n\n《如何阅读一本书》\n这本书提供了系统的阅读方法，强调主动阅读和笔记的重要性。\n\n# 索引关键词\n\n知识管理、卢曼卡片、AI增强、知识网络、学习方法`;
-        resolve(mockContent);
-      }, 1000);
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        resolve(content);
+      };
+      reader.onerror = () => {
+        reject(new Error('读取Markdown文件失败'));
+      };
+      reader.readAsText(file);
     });
   };
 
@@ -266,7 +164,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
             });
             const content = await parsePDFFile(file);
             setImportContent(content);
-          } else if (['doc', 'docx'].includes(fileExtension)) {
+          } else if (fileExtension && ['doc', 'docx'].includes(fileExtension)) {
             toast('正在解析Word文档，请稍候...', {
               icon: <Loader2 size={16} className="animate-spin" />,
               className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
@@ -280,14 +178,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
             });
             const content = await parseMarkdownFile(file);
             setImportContent(content);
-          } else if (['jpg', 'jpeg', 'png'].includes(fileExtension)) {
+          } else if (fileExtension && ['jpg', 'jpeg', 'png'].includes(fileExtension)) {
             toast('正在解析图片文件，请稍候...', {
               icon: <Loader2 size={16} className="animate-spin" />,
               className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
             });
             const content = await parseImageFile(file);
             setImportContent(content);
-          } else if (['xls', 'xlsx'].includes(fileExtension)) {
+          } else if (fileExtension && ['xls', 'xlsx'].includes(fileExtension)) {
             toast('正在解析Excel文件，请稍候...', {
               icon: <Loader2 size={16} className="animate-spin" />,
               className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
@@ -320,7 +218,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setIsProcessing(true);
     
     try {
-      // 模拟处理延迟
+      // 处理延迟（UI反馈）
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       const content = importType === 'paste' ? importContent : importContent;

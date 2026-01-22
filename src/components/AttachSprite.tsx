@@ -1,11 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import { Bot, AlertCircle } from 'lucide-react';
 
 interface AttachSpriteProps {
   onClick?: () => void;
+  serviceAvailable?: boolean;
 }
 
-const AttachSprite: React.FC<AttachSpriteProps> = ({ onClick }) => {
+const AttachSprite: React.FC<AttachSpriteProps> = ({ onClick, serviceAvailable = true }) => {
   return (
     <motion.div
       className="fixed bottom-6 right-6 z-40 cursor-pointer"
@@ -29,12 +31,20 @@ const AttachSprite: React.FC<AttachSpriteProps> = ({ onClick }) => {
         }
       }}
       whileTap={{ scale: 0.9 }}
+      title={serviceAvailable ? "Antinet 使用答疑助手" : "答疑服务不可用，点击查看修复步骤"}
     >
-      <img 
-        src="https://lf-code-agent.coze.cn/obj/x-ai-cn/265060818434/attachment/img-default_20251120183412.gif" 
-        alt="精灵助手"
-        className="w-24 h-24 object-contain"
-      />
+      <div className={`w-24 h-24 rounded-full flex items-center justify-center shadow-lg ${serviceAvailable ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-gradient-to-r from-gray-400 to-gray-600'}`}>
+        {serviceAvailable ? (
+          <Bot className="w-12 h-12 text-white" />
+        ) : (
+          <AlertCircle className="w-12 h-12 text-white" />
+        )}
+      </div>
+      {!serviceAvailable && (
+        <div className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+          <span className="text-xs text-white font-bold">!</span>
+        </div>
+      )}
     </motion.div>
   );
 };

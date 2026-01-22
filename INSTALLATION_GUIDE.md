@@ -10,6 +10,7 @@
 - Python 3.12
 - 高通骁龙 X Elite/Plus 平台 NPU 驱动
 - 至少 16GB RAM
+- Node.js 18+ (用于前端)
 
 ## 必需依赖包
 
@@ -64,18 +65,23 @@ C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.w
 
 ```powershell
 # 1. 创建虚拟环境
-python -m venv venv
+python -m venv venv_arm64
 
 # 2. 激活虚拟环境
-.\venv\Scripts\Activate
+.\venv_arm64\Scripts\Activate
 
 # 3. 升级 pip
 python -m pip install --upgrade pip
 
-# 4. 安装必需依赖
-pip install -r backend/requirements.txt
+# 4. 安装后端依赖
+cd data-analysis-iteration
+pip install -r requirements.txt
+cd ..
 
-# 5. 安装 QAI AppBuilder
+# 5. 安装前端依赖
+npm install
+
+# 6. 安装 QAI AppBuilder
 pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
 ```
 
@@ -83,8 +89,11 @@ pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp31
 使用 `--user` 标志安装到用户目录。
 
 ```powershell
-# 安装必需依赖
-python -m pip install --user -r backend/requirements.txt
+# 安装后端依赖
+python -m pip install --user -r data-analysis-iteration/requirements.txt
+
+# 安装前端依赖
+npm install
 
 # 安装 QAI AppBuilder
 python -m pip install --user "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
@@ -92,8 +101,17 @@ python -m pip install --user "C:\ai-engine-direct-helper\samples\qai_appbuilder-
 
 ### 方案三：直接安装（如有管理员权限）
 ```powershell
-pip install -r backend/requirements.txt
+cd data-analysis-iteration
+pip install -r requirements.txt
+cd ..
+npm install
 pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
+```
+
+## 前端依赖安装
+
+```powershell
+npm install
 ```
 
 ## 模型转换（如需）
@@ -137,35 +155,23 @@ print("✓ 所有必需包导入成功")
 
 ### 3. 测试模型加载
 ```powershell
-cd backend
-python -c "from models.model_loader import NPUModelLoader; loader = NPUModelLoader(); model = loader.load(); print('模型加载成功:', loader.is_loaded)"
+cd data-analysis-iteration
+python -c "import qai_hub; print('NPU SDK OK')"
 ```
 
-预期输出：`模型加载成功: True`
+预期输出：`NPU SDK OK`
 
 ## 故障排除
 
-### 问题：`model_loaded: False` 但模型实际已加载
+### 问题：NPU SDK未找到
 
-**症状**：前端显示"模拟模式"，但后端日志显示模型加载成功。
-
-**原因**：`_global_model_loader.is_loaded` 标志未正确设置。
+**症状**：启动时报错 `NPU SDK未安装或不可用！`
 
 **解决方案**：
-
-1. 手动修复（临时）：
-```python
-# 在 Python 交互环境中执行
-import sys
-sys.path.append('backend')
-from models.model_loader import _global_model_loader
-if _global_model_loader and _global_model_loader.model is not None:
-    _global_model_loader.is_loaded = True
-    print("已手动设置 is_loaded=True")
-```
-
-2. 永久修复：
-编辑 `backend/models/model_loader.py` 中的 `load` 方法，确保在成功加载后设置 `self.is_loaded = True`。
+1. 确认已安装 qai_appbuilder：`pip show qai_appbuilder`
+2. 如未安装，运行：`pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"`
+3. 检查 NPU 驱动是否已安装
+4. 重启终端或 IDE
 
 ### 问题：无法导入 qai_appbuilder
 
@@ -177,6 +183,25 @@ if _global_model_loader and _global_model_loader.model is not None:
 1. 确认 .whl 文件路径正确
 2. 使用完整路径安装：`pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"`
 3. 检查 Python 版本匹配（3.12）
+4. 确保已激活正确的虚拟环境（`venv_arm64`）
+
+### 问题：前端启动失败
+
+**症状**：`npm run dev` 报错
+
+**解决方案**：
+1. 确认已安装 Node.js 18+：`node --version`
+2. 删除 node_modules 重新安装：`rm -rf node_modules && npm install`
+3. 检查端口 3000 是否被占用
+
+### 问题：后端启动失败
+
+**症状**：`python main.py` 报错
+
+**解决方案**：
+1. 确认已激活虚拟环境：`.\venv_arm64\Scripts\Activate`
+2. 检查依赖是否完整：`pip list`
+3. 查看错误日志：检查 `data-analysis-iteration/logs/` 目录
 
 ### 问题：DLL 加载失败
 
@@ -192,20 +217,62 @@ if _global_model_loader and _global_model_loader.model is not None:
 
 ## 部署步骤总结
 
-1. **安装依赖**：使用虚拟环境或用户级安装
+1. **安装依赖**：使用虚拟环境或用户级安装（backend + frontend）
 2. **安装 QAI AppBuilder**：从本地 .whl 文件安装
 3. **转换模型**（如需）：运行转换脚本
-4. **启动后端**：`cd backend && python main.py`
-5. **启动前端**：`npm run dev`
-6. **验证**：访问 `http://localhost:3000`，检查 NPU 状态
+4. **一键启动**：双击 `start_simple.bat`
+   - 或手动启动：
+     - 后端：`cd data-analysis-iteration && python main.py`
+     - 前端：`npm run dev`
+5. **验证**：访问 `http://localhost:3000`，检查 NPU 状态
+
+## 启动方式
+
+### 方式一：一键启动（推荐）
+双击项目根目录下的 `start_simple.bat`，自动启动前后端。
+
+### 方式二：手动启动
+
+**启动后端**：
+```powershell
+.\venv_arm64\Scripts\Activate
+cd data-analysis-iteration
+python main.py
+```
+
+**启动前端**（新开一个终端）：
+```powershell
+npm run dev
+```
 
 ## 支持
 
 如遇问题，请检查：
-- 后端日志 `backend.log`
-- 系统 PATH 环境变量
-- Python 版本和包版本兼容性
+- 后端日志：`data-analysis-iteration/logs/`
+- 前端控制台错误
+- 系统 PATH 环境变量（NPU 库路径）
+- Python 版本（3.12）和包版本兼容性
 - NPU 驱动状态
+- 端口占用情况（8000 后端，3000 前端）
+
+## 快速启动命令参考
+
+```powershell
+# 安装所有依赖
+.\venv_arm64\Scripts\Activate
+cd data-analysis-iteration
+pip install -r requirements.txt
+cd ..
+npm install
+
+# 启动服务（一键）
+start_simple.bat
+
+# 或手动启动
+cd data-analysis-iteration
+python main.py  # 后端
+npm run dev     # 前端（新终端）
+```
 
 ---
-*文档版本：1.0 | 更新日期：2026-01-21*
+*文档版本：2.0 | 更新日期：2026-01-22*

@@ -116,16 +116,15 @@ const NPUPerformanceDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // CPU vs NPU 对比数据（模拟）
-  const comparisonData = [
-    { name: '32 tokens', CPU: 580, NPU: 120 },
-    { name: '64 tokens', CPU: 1150, NPU: 230 },
-    { name: '128 tokens', CPU: 2200, NPU: 450 },
-    { name: '256 tokens', CPU: 4500, NPU: 850 }
-  ];
+  // CPU vs NPU 对比数据（从后端API获取真实基准测试数据）
+  const comparisonData = benchmarkData?.tests.map((test, _index) => ({
+    name: `${test.sequence_length} tokens`,
+    CPU: 0, // 需要从后端获取CPU基准测试数据
+    NPU: test.avg_latency_ms || 0
+  })) || [];
 
   // 延迟趋势数据
-  const latencyTrendData = benchmarkData?.tests.map((test, index) => ({
+  const latencyTrendData = benchmarkData?.tests.map((test, _index) => ({
     name: `${test.sequence_length}`,
     延迟: test.avg_latency_ms,
     最小: test.min_latency_ms,
@@ -189,9 +188,9 @@ const NPUPerformanceDashboard: React.FC = () => {
               NPU 已就绪
             </span>
           ) : (
-            <span className="flex items-center text-amber-600 dark:text-amber-400">
+            <span className="flex items-center text-red-600 dark:text-red-400">
               <AlertCircle size={20} className="mr-1" />
-              模拟模式
+              NPU未就绪
             </span>
           )}
         </div>

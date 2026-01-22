@@ -76,7 +76,7 @@ print("\n" + "=" * 60)
 print("测试 /api/health 端点逻辑...")
 print("=" * 60)
 
-# 模拟健康检查端点的逻辑
+# 测试健康检查端点的逻辑
 try:
     from models.model_loader import _global_model_loader
     

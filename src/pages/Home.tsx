@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
@@ -38,6 +38,7 @@ import GTDSystem from '@/components/GTDSystem';
 import LuhmannSystemChecklist from '@/components/LuhmannSystemChecklist';
 import TeamKnowledgeManagement from '@/components/TeamKnowledgeManagement';
 import AttachSprite from '@/components/AttachSprite';
+import ChatBotModal from '@/components/ChatBotModal';
 import DataAnalysisPanel from '@/components/DataAnalysisPanel';
 import NPUPerformanceDashboard from '@/components/NPUPerformanceDashboard';
 
@@ -107,46 +108,6 @@ const cardTypeMap = {
   }
 };
 
-// 模拟卡片数据
-const mockCards: KnowledgeCard[] = [
-  {
-    id: '1',
-    color: 'blue',
-    title: '卢曼卡片盒方法',
-    content: '一种高效的知识管理系统，通过索引卡片和笔记卡片的关联，构建个人知识网络。核心在于卡片间的连接和知识的演进。',
-    address: 'A1',
-    createdAt: '2025-10-27T10:30:00Z',
-    relatedCards: ['2', '3']
-  },
-  {
-    id: '2',
-    color: 'green',
-    title: '卢曼方法与AI结合',
-    content: 'AI技术可以增强卢曼卡片系统的关联发现能力，自动识别概念间的隐性联系，加速知识网络的构建过程。',
-    address: 'B2',
-    createdAt: '2025-10-27T14:15:00Z',
-    relatedCards: ['1', '4']
-  },
-  {
-    id: '3',
-    color: 'yellow',
-    title: '《如何阅读一本书》',
-    content: '这本书提供了系统的阅读方法，强调主动阅读和笔记的重要性，对构建个人知识体系有重要参考价值。',
-    address: 'C3',
-    createdAt: '2025-10-26T09:45:00Z',
-    relatedCards: ['1']
-  },
-  {
-    id: '4',
-    color: 'red',
-    title: '知识管理',
-    content: '知识管理是组织或个人对知识进行识别、获取、开发、使用、存储和共享的过程。',
-    address: 'D4',
-    createdAt: '2025-10-26T16:20:00Z',
-    relatedCards: ['2']
-  }
-];
-
 // 知识统计数据
 const knowledgeStats = [
   { name: '蓝色卡片', value: 42, color: '#3b82f6' },
@@ -201,14 +162,16 @@ const applicationScenarios = [
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'team' | 'analytics' | 'gtd' | 'checklist' | 'team-knowledge' | 'data-analysis' | 'npu-performance'>('dashboard');
+  const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [cards, setCards] = useState<KnowledgeCard[]>(mockCards);
+  const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
+  const [isChatServiceAvailable, setIsChatServiceAvailable] = useState<boolean>(false);
 
   // 格式化日期时间
   const formatDate = (dateString: string) => {
@@ -381,6 +344,38 @@ const Home: React.FC = () => {
     }
   }, []);
 
+  // 检查答疑服务是否可用
+  useEffect(() => {
+    const checkChatService = async () => {
+      try {
+        // 尝试连接GenieAPIService (端口8910)
+        const response = await fetch('http://localhost:8910/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'Qwen2.0-7B-SSD',
+            messages: [{ role: 'system', content: 'test' }],
+            max_tokens: 1,
+            temperature: 0.1,
+          }),
+        });
+        // 即使返回错误状态码（如400），也说明服务在运行
+        // 只有网络错误或连接拒绝才表示服务不可用
+        setIsChatServiceAvailable(true);
+      } catch (error) {
+        console.error('答疑服务不可用:', error);
+        setIsChatServiceAvailable(false);
+      }
+    };
+
+    checkChatService();
+    // 每30秒检查一次
+    const interval = setInterval(checkChatService, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // 更新卡片
   const handleUpdateCard = (updatedCard: KnowledgeCard) => {
     // 确保关联卡片数组存在
@@ -476,7 +471,7 @@ const Home: React.FC = () => {
                 <CheckCircle2 size={18} />
                 <span>功能检查</span>
               </button>
-              <button
+              <button 
                 onClick={() => setActiveTab('data-analysis')}
                 className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
               >
@@ -979,7 +974,13 @@ const Home: React.FC = () => {
           onImport={handleImportCards}
         />
         
-        <AttachSprite />
+        {/* 聊天机器人模态框 */}
+        <ChatBotModal
+          isOpen={showChatModal}
+          onClose={() => setShowChatModal(false)}
+        />
+        
+        <AttachSprite onClick={() => setShowChatModal(true)} serviceAvailable={isChatServiceAvailable} />
       </div>
   );
 };

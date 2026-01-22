@@ -1,24 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Users, 
-  FileText, 
-  Shield, 
-  Clock, 
-  MoreHorizontal, 
-  Search, 
+import {
+  Clock,
+  MoreHorizontal,
+  Search,
   PlusCircle,
   X,
   Check,
-  AlertCircle,
-  ChevronRight,
   ChevronDown,
   UserPlus,
   Settings,
-  Bell,
   Share2,
   History,
-  Lock,
   Users as UsersIcon,
   Book,
   FileCheck,
@@ -39,6 +32,7 @@ interface TeamMember {
   lastActive: string;
   permissions: string[];
   contribution: number;
+  email?: string;
 }
 
 // 定义知识空间类型
@@ -76,174 +70,14 @@ interface Comment {
   replies: Comment[];
 }
 
-// 模拟团队成员数据
-const initialTeamMembers: TeamMember[] = [
-  { 
-    id: '1', 
-    name: '张明', 
-    role: '产品经理', 
-    avatar: '👨‍💼', 
-    online: true, 
-    joinDate: '2025-09-01', 
-    lastActive: '1分钟前',
-    permissions: ['admin', 'edit', 'delete'],
-    contribution: 85
-  },
-  { 
-    id: '2', 
-    name: '李华', 
-    role: 'UI设计师', 
-    avatar: '🎨', 
-    online: true, 
-    joinDate: '2025-09-15', 
-    lastActive: '3分钟前',
-    permissions: ['edit', 'comment'],
-    contribution: 62
-  },
-  { 
-    id: '3', 
-    name: '王强', 
-    role: '前端开发', 
-    avatar: '💻', 
-    online: false, 
-    joinDate: '2025-10-01', 
-    lastActive: '2小时前',
-    permissions: ['edit', 'comment'],
-    contribution: 78
-  },
-  { 
-    id: '4', 
-    name: '陈静', 
-    role: '后端开发', 
-    avatar: '🛠️', 
-    online: true, 
-    joinDate: '2025-10-15', 
-    lastActive: '10分钟前',
-    permissions: ['edit', 'comment'],
-    contribution: 70
-  },
-  { 
-    id: '5', 
-    name: '赵伟', 
-    role: '数据分析师', 
-    avatar: '📊', 
-    online: false, 
-    joinDate: '2025-11-01', 
-    lastActive: '昨天',
-    permissions: ['view', 'comment'],
-    contribution: 45
-  }
-];
-
-// 模拟知识空间数据
-const initialKnowledgeSpaces: KnowledgeSpace[] = [
-  {
-    id: '1',
-    name: '产品创新知识库',
-    description: '存储产品创新相关的知识、案例和想法',
-    members: ['1', '2', '3', '4'],
-    owner: '1',
-    createdAt: '2025-10-01',
-    updatedAt: '2025-11-11',
-    cardCount: 45,
-    isPublic: false
-  },
-  {
-    id: '2',
-    name: '技术架构文档',
-    description: '技术架构设计文档和最佳实践',
-    members: ['1', '3', '4'],
-    owner: '3',
-    createdAt: '2025-09-15',
-    updatedAt: '2025-11-10',
-    cardCount: 32,
-    isPublic: false
-  },
-  {
-    id: '3',
-    name: '市场研究报告',
-    description: '市场分析和竞争对手研究资料',
-    members: ['1', '2', '5'],
-    owner: '1',
-    createdAt: '2025-10-15',
-    updatedAt: '2025-11-09',
-    cardCount: 28,
-    isPublic: false
-  }
-];
-
-// 模拟知识版本数据
-const initialKnowledgeVersions: KnowledgeVersion[] = [
-  {
-    id: '1',
-    cardId: '1',
-    content: '更新了产品创新流程，增加了用户验证环节',
-    updatedBy: '1',
-    updatedAt: '2025-11-11T10:30:00Z',
-    reason: '优化产品开发流程'
-  },
-  {
-    id: '2',
-    cardId: '1',
-    content: '初始版本：产品创新基础方法论',
-    updatedBy: '1',
-    updatedAt: '2025-11-10T14:15:00Z',
-    reason: '创建基础文档'
-  }
-];
-
-// 模拟评论数据
-const initialComments: Comment[] = [
-  {
-    id: '1',
-    cardId: '1',
-    userId: '2',
-    userName: '李华',
-    userAvatar: '🎨',
-    content: '这个流程设计得很好，建议在用户验证环节增加更多的细节说明',
-    createdAt: '2025-11-11T10:45:00Z',
-    replies: [
-      {
-        id: '2',
-        cardId: '1',
-        userId: '1',
-        userName: '张明',
-        userAvatar: '👨‍💼',
-        content: '同意，我会在下次更新中添加更多细节',
-        createdAt: '2025-11-11T11:00:00Z',
-        replies: []
-      }
-    ]
-  },
-  {
-    id: '3',
-    cardId: '1',
-    userId: '3',
-    userName: '王强',
-    userAvatar: '💻',
-    content: '从技术实现角度看，这个流程是可行的',
-    createdAt: '2025-11-11T11:30:00Z',
-    replies: []
-  }
-];
-
-// 模拟贡献数据
-const contributionData = [
-  { name: '张明', 贡献值: 85 },
-  { name: '李华', 贡献值: 62 },
-  { name: '王强', 贡献值: 78 },
-  { name: '陈静', 贡献值: 70 },
-  { name: '赵伟', 贡献值: 45 },
-];
-
 const TeamKnowledgeManagement: React.FC = () => {
   // 状态管理
   const [activeTab, setActiveTab] = useState<'spaces' | 'members' | 'activity' | 'approval' | 'settings'>('spaces');
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(initialTeamMembers);
-  const [knowledgeSpaces, setKnowledgeSpaces] = useState<KnowledgeSpace[]>(initialKnowledgeSpaces);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [knowledgeSpaces, setKnowledgeSpaces] = useState<KnowledgeSpace[]>([]);
   const [selectedSpace, setSelectedSpace] = useState<KnowledgeSpace | null>(null);
-  const [knowledgeVersions, setKnowledgeVersions] = useState<KnowledgeVersion[]>(initialKnowledgeVersions);
-  const [comments, setComments] = useState<Comment[]>(initialComments);
+  const [knowledgeVersions, setKnowledgeVersions] = useState<KnowledgeVersion[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateSpaceModal, setShowCreateSpaceModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -252,15 +86,39 @@ const TeamKnowledgeManagement: React.FC = () => {
   const [newComment, setNewComment] = useState('');
   const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
   const [showApprovalQueue, setShowApprovalQueue] = useState(false);
-  
-  // 模拟实时活动数据
-  const realtimeActivities = [
-    { id: 1, user: '张明', action: '更新了', content: '产品创新流程文档', time: '1分钟前' },
-    { id: 2, user: '李华', action: '评论了', content: '产品创新流程文档', time: '3分钟前' },
-    { id: 3, user: '王强', action: '创建了新卡片', content: '前端架构优化方案', time: '10分钟前' },
-    { id: 4, user: '陈静', action: '加入了知识空间', content: '技术架构文档', time: '30分钟前' },
-    { id: 5, user: '赵伟', action: '分享了报告', content: 'Q3市场分析报告', time: '1小时前' },
-  ];
+  const [realtimeActivities, setRealtimeActivities] = useState<any[]>([]);
+  const [contributionData, setContributionData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 从后端API加载知识管理数据
+  useEffect(() => {
+    const loadKnowledgeData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // TODO: 调用后端API获取真实知识管理数据
+        // const response = await fetch('/api/team/knowledge');
+        // const data = await response.json();
+
+        // 初始为空状态
+        setTeamMembers([]);
+        setKnowledgeSpaces([]);
+        setKnowledgeVersions([]);
+        setComments([]);
+        setRealtimeActivities([]);
+        setContributionData([]);
+      } catch (err) {
+        setError('加载知识管理数据失败，请检查后端连接');
+        console.error('Knowledge management data load error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadKnowledgeData();
+  }, []);
 
   // 初始化时加载第一个知识空间
   useEffect(() => {
@@ -269,7 +127,7 @@ const TeamKnowledgeManagement: React.FC = () => {
     }
   }, [knowledgeSpaces, selectedSpace]);
 
-  // 模拟活动轮播
+  // 活动轮播显示
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentActivityIndex(prev => (prev + 1) % realtimeActivities.length);
@@ -381,6 +239,58 @@ const TeamKnowledgeManagement: React.FC = () => {
     member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     member.role.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // 渲染加载状态
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载知识管理数据中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染错误状态
+  if (error) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-red-600 dark:text-red-400">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">知识管理数据加载失败</h3>
+          <p className="text-sm mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染空状态
+  const hasNoData = teamMembers.length === 0 && knowledgeSpaces.length === 0;
+  
+  if (hasNoData) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-gray-500 dark:text-gray-400">
+          <div className="text-4xl mb-4">🏢</div>
+          <h3 className="text-lg font-semibold mb-2">暂无团队数据</h3>
+          <p className="text-sm mb-4">请先创建团队并添加成员</p>
+          <button 
+            onClick={() => setShowCreateSpaceModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            创建知识空间
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -699,12 +609,12 @@ const TeamKnowledgeManagement: React.FC = () => {
                         👤
                       </div>
                       <div className="flex-1">
-                        <input 
-                          type="text" 
-                          placeholder="添加你的评论..." 
+                        <input
+                          type="text"
+                          placeholder="添加你的评论..."
                           value={newComment}
                           onChange={(e) => setNewComment(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleAddComment()}
+                          onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                           className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                         />
                       </div>

@@ -106,9 +106,9 @@ NPU 性能监控仪表板是 Antinet 智能知识管理系统的核心界面,用
         NPU 已就绪
       </span>
     ) : (
-      <span className="flex items-center text-amber-600 dark:text-amber-400">
+      <span className="flex items-center text-red-600 dark:text-red-400">
         <AlertCircle size={20} className="mr-1" />
-        模拟模式
+        NPU 未就绪
       </span>
     )}
   </div>

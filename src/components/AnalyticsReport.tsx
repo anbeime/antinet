@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   LineChart as LineChartIcon, 
@@ -39,71 +39,16 @@ import {
   ZAxis
 } from 'recharts';
 
-// 模拟知识增长趋势数据
-const knowledgeGrowthData = [
-  { month: '1月', 卡片总数: 45, 蓝色卡片: 15, 绿色卡片: 10, 黄色卡片: 12, 红色卡片: 8 },
-  { month: '2月', 卡片总数: 58, 蓝色卡片: 20, 绿色卡片: 12, 黄色卡片: 14, 红色卡片: 12 },
-  { month: '3月', 卡片总数: 75, 蓝色卡片: 25, 绿色卡片: 18, 黄色卡片: 18, 红色卡片: 14 },
-  { month: '4月', 卡片总数: 92, 蓝色卡片: 30, 绿色卡片: 22, 黄色卡片: 20, 红色卡片: 20 },
-  { month: '5月', 卡片总数: 118, 蓝色卡片: 40, 绿色卡片: 28, 黄色卡片: 25, 红色卡片: 25 },
-  { month: '6月', 卡片总数: 150, 蓝色卡片: 50, 绿色卡片: 35, 黄色卡片: 30, 红色卡片: 35 },
-  { month: '7月', 卡片总数: 185, 蓝色卡片: 65, 绿色卡片: 40, 黄色卡片: 35, 红色卡片: 45 },
-  { month: '8月', 卡片总数: 220, 蓝色卡片: 75, 绿色卡片: 50, 黄色卡片: 40, 红色卡片: 55 },
-  { month: '9月', 卡片总数: 260, 蓝色卡片: 90, 绿色卡片: 60, 黄色卡片: 50, 红色卡片: 60 },
-  { month: '10月', 卡片总数: 300, 蓝色卡片: 105, 绿色卡片: 70, 黄色卡片: 60, 红色卡片: 65 }
-];
-
-// 模拟关联网络数据
-const networkData = [
-  { subject: '产品设计', A: 80, fullMark: 100 },
-  { subject: '技术开发', A: 90, fullMark: 100 },
-  { subject: '市场营销', A: 70, fullMark: 100 },
-  { subject: '用户研究', A: 75, fullMark: 100 },
-  { subject: '数据分析', A: 85, fullMark: 100 },
-  { subject: '项目管理', A: 95, fullMark: 100 }
-];
-
-// 模拟知识热度数据
-const knowledgeHeatData = [
-  { name: 'AI技术', 热度值: 90, 增长率: 25 },
-  { name: '用户体验', 热度值: 85, 增长率: 18 },
-  { name: '产品创新', 热度值: 80, 增长率: 22 },
-  { name: '数据分析', 热度值: 75, 增长率: 15 },
-  { name: '技术架构', 热度值: 70, 增长率: 10 },
-  { name: '团队协作', 热度值: 65, 增长率: 12 },
-  { name: '市场策略', 热度值: 60, 增长率: 8 }
-];
-
-// 模拟ROI数据
-const roiData = [
-  { name: '知识检索时间', 实施前: 100, 实施后: 45, 改进率: 55 },
-  { name: '团队协作效率', 实施前: 100, 实施后: 140, 改进率: 40 },
-  { name: '员工知识贡献', 实施前: 100, 实施后: 160, 改进率: 60 },
-  { name: '项目知识复用', 实施前: 100, 实施后: 135, 改进率: 35 },
-  { name: '创新想法产生', 实施前: 100, 实施后: 150, 改进率: 50 },
-  { name: '决策质量', 实施前: 100, 实施后: 130, 改进率: 30 }
-];
-
-// 模拟关联强度数据
-const connectionStrengthData = [
-  { name: '强关联', value: 35, color: '#3b82f6' },
-  { name: '中等关联', value: 45, color: '#22c55e' },
-  { name: '弱关联', value: 20, color: '#eab308' }
-];
-
-// 模拟时间节省数据
-const timeSavingData = [
-  { name: '员工A', x: 20, y: 30, z: 40 },
-  { name: '员工B', x: 40, y: 30, z: 30 },
-  { name: '员工C', x: 30, y: 40, z: 60 },
-  { name: '员工D', x: 40, y: 60, z: 80 },
-  { name: '员工E', x: 60, y: 50, z: 70 },
-  { name: '员工F', x: 50, y: 70, z: 90 },
-  { name: '员工G', x: 70, y: 60, z: 80 },
-];
-
 const AnalyticsReport: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'growth' | 'network' | 'heatmap' | 'roi'>('growth');
+  const [knowledgeGrowthData, setKnowledgeGrowthData] = useState<any[]>([]);
+  const [networkData, setNetworkData] = useState<any[]>([]);
+  const [knowledgeHeatData, setKnowledgeHeatData] = useState<any[]>([]);
+  const [roiData, setRoiData] = useState<any[]>([]);
+  const [connectionStrengthData, setConnectionStrengthData] = useState<any[]>([]);
+  const [timeSavingData, setTimeSavingData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // 动画变体
   const containerVariants = {
@@ -126,8 +71,87 @@ const AnalyticsReport: React.FC = () => {
     }
   };
 
-  // 颜色配置
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+  // 从后端API加载数据
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // TODO: 调用后端API获取真实数据
+        // const response = await fetch('/api/analytics/report');
+        // const data = await response.json();
+
+        // 初始为空状态
+        setKnowledgeGrowthData([]);
+        setNetworkData([]);
+        setKnowledgeHeatData([]);
+        setRoiData([]);
+        setConnectionStrengthData([]);
+        setTimeSavingData([]);
+      } catch (err) {
+        setError('加载数据失败，请检查后端连接');
+        console.error('Analytics data load error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
+  // 渲染加载状态
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载分析数据中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染错误状态
+  if (error) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-red-600 dark:text-red-400">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">数据加载失败</h3>
+          <p className="text-sm mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染空状态
+  const hasNoData = knowledgeGrowthData.length === 0 && networkData.length === 0 && 
+                    knowledgeHeatData.length === 0 && roiData.length === 0;
+  
+  if (hasNoData) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-gray-500 dark:text-gray-400">
+          <div className="text-4xl mb-4">📊</div>
+          <h3 className="text-lg font-semibold mb-2">暂无分析数据</h3>
+          <p className="text-sm mb-4">请先导入文件并生成知识卡片</p>
+          <a 
+            href="/#import"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors inline-block"
+          >
+            导入文件
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">

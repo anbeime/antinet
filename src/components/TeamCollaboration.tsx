@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Users, 
-  Network, 
-  FileCheck, 
-  Lightbulb, 
-  BarChart3, 
-  ChevronRight, 
-  Search, 
+import {
+  Users,
+  Network,
+  FileCheck,
+  Lightbulb,
+  BarChart3,
+  Search,
   Clock,
   UserPlus,
   RefreshCw,
@@ -40,86 +39,101 @@ import {
   Radar
 } from 'recharts';
 
-// 模拟团队成员数据
-const teamMembers = [
-  { id: 1, name: '张明', role: '产品经理', avatar: '👨‍💼', online: true, contributions: 42 },
-  { id: 2, name: '李华', role: 'UI设计师', avatar: '🎨', online: true, contributions: 28 },
-  { id: 3, name: '王强', role: '前端开发', avatar: '💻', online: false, contributions: 35 },
-  { id: 4, name: '陈静', role: '后端开发', avatar: '🛠️', online: true, contributions: 40 },
-  { id: 5, name: '赵伟', role: '数据分析师', avatar: '📊', online: false, contributions: 22 },
-];
-
-// 模拟知识整合数据
-const knowledgeIntegrationData = [
-  { name: '合并的重复内容', value: 15 },
-  { name: '发现的互补内容', value: 28 },
-  { name: '新增的关联关系', value: 42 },
-];
-
-// 模拟知识空白数据
-const knowledgeGapsData = [
-  { subject: '技术创新', A: 65, fullMark: 100 },
-  { subject: '市场分析', A: 80, fullMark: 100 },
-  { subject: '用户研究', A: 45, fullMark: 100 },
-  { subject: '运营策略', A: 70, fullMark: 100 },
-  { subject: '竞品分析', A: 55, fullMark: 100 },
-];
-
-// 模拟协作活跃度数据
-const collaborationActivityData = [
-  { name: '周一', 活跃成员: 8, 新增卡片: 12, 评论数: 45 },
-  { name: '周二', 活跃成员: 10, 新增卡片: 15, 评论数: 52 },
-  { name: '周三', 活跃成员: 7, 新增卡片: 9, 评论数: 38 },
-  { name: '周四', 活跃成员: 9, 新增卡片: 14, 评论数: 48 },
-  { name: '周五', 活跃成员: 6, 新增卡片: 8, 评论数: 30 },
-  { name: '周六', 活跃成员: 3, 新增卡片: 3, 评论数: 12 },
-  { name: '周日', 活跃成员: 2, 新增卡片: 1, 评论数: 5 },
-];
-
-// 模拟团队贡献数据
-const teamContributionData = teamMembers.map(member => ({
-  name: member.name,
-  卡片数量: member.contributions,
-  评论数量: Math.floor(member.contributions * 1.5)
-}));
-
-// 模拟实时活动数据
-const realtimeActivities = [
-  { id: 1, user: '李华', action: '创建了蓝色卡片', content: 'AI驱动的用户体验优化策略', time: '1分钟前' },
-  { id: 2, user: '张明', action: '评论了', content: '这个策略很有见地，建议增加A/B测试的内容', time: '3分钟前' },
-  { id: 3, user: '王强', action: '链接了两张卡片', content: '前端性能优化与用户留存率分析', time: '5分钟前' },
-  { id: 4, user: '陈静', action: '编辑了', content: 'API设计规范文档', time: '10分钟前' },
-  { id: 5, user: '系统', action: 'AI发现了新的关联', content: '用户研究数据与市场趋势分析', time: '15分钟前' },
-];
-
 const TeamCollaboration: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports'>('integration');
-  const [progress, setProgress] = useState(0);
-  const [currentActivityIndex, setCurrentActivityIndex] = useState(0);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [knowledgeIntegrationData, setKnowledgeIntegrationData] = useState<any[]>([]);
+  const [knowledgeGapsData, setKnowledgeGapsData] = useState<any[]>([]);
+  const [collaborationActivityData, setCollaborationActivityData] = useState<any[]>([]);
+  const [teamContributionData, setTeamContributionData] = useState<any[]>([]);
+  const [realtimeActivities, setRealtimeActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 模拟进度条动画
+  // 从后端API加载协作数据
   useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress(prev => {
-        const newProgress = prev + 5;
-        return newProgress > 100 ? 0 : newProgress;
-      });
-    }, 1000);
+    const loadCollaborationData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // TODO: 调用后端API获取真实协作数据
+        // const response = await fetch('/api/collaboration/data');
+        // const data = await response.json();
 
-    return () => clearInterval(timer);
-  }, []);
+        // 初始为空状态
+        setTeamMembers([]);
+        setKnowledgeIntegrationData([]);
+        setKnowledgeGapsData([]);
+        setCollaborationActivityData([]);
+        setTeamContributionData([]);
+        setRealtimeActivities([]);
+      } catch (err) {
+        setError('加载协作数据失败，请检查后端连接');
+        console.error('Collaboration data load error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  // 模拟活动轮播
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentActivityIndex(prev => (prev + 1) % realtimeActivities.length);
-    }, 3000);
-
-    return () => clearInterval(timer);
+    loadCollaborationData();
   }, []);
 
   // 颜色配置
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+  // 渲染加载状态
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载协作数据中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染错误状态
+  if (error) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-red-600 dark:text-red-400">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">协作数据加载失败</h3>
+          <p className="text-sm mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染空状态
+  const hasNoData = teamMembers.length === 0 && knowledgeIntegrationData.length === 0 && 
+                    realtimeActivities.length === 0;
+  
+  if (hasNoData) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-gray-500 dark:text-gray-400">
+          <div className="text-4xl mb-4">👥</div>
+          <h3 className="text-lg font-semibold mb-2">暂无协作数据</h3>
+          <p className="text-sm mb-4">请先创建团队并添加成员</p>
+          <button 
+            onClick={() => alert('团队功能需要后端API支持')}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            创建团队
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -202,40 +216,28 @@ const TeamCollaboration: React.FC = () => {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>AI分析重复内容</span>
-                        <span>{progress}%</span>
+                        <span>100%</span>
                       </div>
                       <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${progress}%` }}
-                          className="h-full bg-blue-500 rounded-full"
-                        />
+                        <div className="h-full bg-blue-500 rounded-full w-full"></div>
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>识别互补知识</span>
-                        <span>{Math.min(progress + 20, 100)}%</span>
+                        <span>100%</span>
                       </div>
                       <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(progress + 20, 100)}%` }}
-                          className="h-full bg-green-500 rounded-full"
-                        />
+                        <div className="h-full bg-green-500 rounded-full w-full"></div>
                       </div>
                     </div>
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>建立知识关联</span>
-                        <span>{Math.min(progress + 40, 100)}%</span>
+                        <span>100%</span>
                       </div>
                       <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <motion.div 
-                          initial={{ width: 0 }}
-                          animate={{ width: `${Math.min(progress + 40, 100)}%` }}
-                          className="h-full bg-purple-500 rounded-full"
-                        />
+                        <div className="h-full bg-purple-500 rounded-full w-full"></div>
                       </div>
                     </div>
                   </div>
@@ -318,7 +320,7 @@ const TeamCollaboration: React.FC = () => {
                         dataKey="value"
                         label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                       >
-                        {knowledgeIntegrationData.map((entry, index) => (
+                        {knowledgeIntegrationData.map((_entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
@@ -351,20 +353,13 @@ const TeamCollaboration: React.FC = () => {
                   实时活动
                 </h3>
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                  {realtimeActivities.map((activity, index) => (
+                  {realtimeActivities.map((activity, _index) => (
                     <motion.div
                       key={activity.id}
                       initial={{ opacity: 0, x: -20 }}
-                      animate={{ 
-                        opacity: currentActivityIndex === index ? 1 : 0.7, 
-                        x: 0 
-                      }}
+                      animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.3 }}
-                      className={`p-3 rounded-lg ${
-                        currentActivityIndex === index 
-                          ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-800' 
-                          : 'bg-gray-50 dark:bg-gray-700'
-                      }`}
+                      className="p-3 rounded-lg bg-gray-50 dark:bg-gray-700"
                     >
                       <div className="flex items-start">
                         <span className="text-xl mr-2">{teamMembers.find(m => m.name === activity.user)?.avatar || '👤'}</span>

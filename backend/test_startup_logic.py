@@ -33,9 +33,9 @@ print("=" * 80)
 print("测试后端 startup_event 逻辑")
 print("=" * 80)
 
-# 完全模拟 startup_event 的代码
+# 测试 startup_event 的代码
 try:
-    print("\n[模拟 startup_event]")
+    print("\n[测试 startup_event]")
     print("1. 导入 get_model_loader...")
     from models.model_loader import get_model_loader
     

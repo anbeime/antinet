@@ -90,7 +90,7 @@ const LuhmannSystemChecklist: React.FC = () => {
           id: 'physical-layout',
           title: '1.2 物理空间布局',
           icon: <Layout size={16} />,
-          description: '利用墙面或白板创建"活的知识树"，模拟卢曼的树状结构',
+          description: '利用墙面或白板创建"活的知识树"，复现卢曼的树状结构',
           status: 'partial',
           details: '基础的分类和可视化已实现，但完整的树状知识结构可视化需要增强'
         }

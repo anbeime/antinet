@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Inbox, 
@@ -42,77 +42,46 @@ const GTDSystem: React.FC = () => {
     priority: 'medium'
   });
 
-  // 模拟任务数据
+// GTD任务数据
   const [tasks, setTasks] = useState<Record<Category, Task[]>>({
-    inbox: [
-      {
-        id: '1',
-        title: '完成项目提案',
-        description: '准备下周会议的项目提案文档',
-        priority: 'high',
-        createdAt: '2025-11-07T09:00:00Z'
-      },
-      {
-        id: '2',
-        title: '学习新的前端框架',
-        description: '研究 React 最新特性和最佳实践',
-        priority: 'medium',
-        createdAt: '2025-11-07T10:30:00Z'
-      }
-    ],
-    today: [
-      {
-        id: '3',
-        title: '团队周会',
-        description: '每周项目进度同步会议',
-        priority: 'high',
-        dueDate: '2025-11-07T14:00:00Z',
-        createdAt: '2025-11-06T16:00:00Z'
-      },
-      {
-        id: '4',
-        title: '代码审查',
-        description: '审查团队成员提交的代码',
-        priority: 'medium',
-        dueDate: '2025-11-07T16:00:00Z',
-        createdAt: '2025-11-06T10:00:00Z'
-      }
-    ],
-    later: [
-      {
-        id: '5',
-        title: '更新个人简历',
-        description: '添加最近完成的项目经验',
-        priority: 'low',
-        createdAt: '2025-11-05T15:00:00Z'
-      },
-      {
-        id: '6',
-        title: '计划团队建设活动',
-        description: '组织下季度的团队建设活动',
-        priority: 'medium',
-        createdAt: '2025-11-04T11:00:00Z'
-      }
-    ],
-    archive: [
-      {
-        id: '7',
-        title: '完成季度报告',
-        description: '编写并提交Q3季度工作报告',
-        priority: 'high',
-        createdAt: '2025-10-25T14:00:00Z'
-      }
-    ],
-    projects: [
-      {
-        id: '8',
-        title: '知识管理系统优化',
-        description: '改进现有知识管理系统的用户界面和功能',
-        priority: 'high',
-        createdAt: '2025-11-01T09:00:00Z'
-      }
-    ]
+    inbox: [],
+    today: [],
+    later: [],
+    archive: [],
+    projects: []
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 从后端API加载GTD数据
+  useEffect(() => {
+    const loadGTDData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // TODO: 调用后端API获取真实GTD数据
+        // const response = await fetch('/api/gtd/tasks');
+        // const data = await response.json();
+
+        // 初始为空状态
+        setTasks({
+          inbox: [],
+          today: [],
+          later: [],
+          archive: [],
+          projects: []
+        });
+      } catch (err) {
+        setError('加载GTD数据失败，请检查后端连接');
+        console.error('GTD data load error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadGTDData();
+  }, []);
 
   // 格式化日期
   const formatDate = (dateString: string) => {
@@ -202,6 +171,37 @@ const GTDSystem: React.FC = () => {
       task.description.toLowerCase().includes(query)
     );
   });
+
+  // 渲染加载状态
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载GTD数据中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 渲染错误状态
+  if (error) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
+        <div className="text-center text-red-600 dark:text-red-400">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-lg font-semibold mb-2">GTD数据加载失败</h3>
+          <p className="text-sm mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+          >
+            重新加载
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">

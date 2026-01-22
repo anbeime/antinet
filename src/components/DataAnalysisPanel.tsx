@@ -7,16 +7,14 @@ import {
   TrendingUp,
   Database,
   Zap,
-  AlertCircle,
-  CheckCircle,
-  BarChart3
+  CheckCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // API配置
 const API_BASE_URL = 'http://localhost:8000';
 
-// 类型定义（匹配后端 /api/npu/analyze 返回格式）
+// 类型定义（匹配8-Agent后端 /api/generate/cards 返回格式）
 interface FourColorCard {
   color: 'blue' | 'green' | 'yellow' | 'red';
   title: string;
@@ -25,10 +23,13 @@ interface FourColorCard {
 }
 
 interface AnalysisResult {
-  success: boolean;
   query: string;
-  cards: FourColorCard[];
-  raw_output: string;
+  cards: Record<string, FourColorCard>;
+  facts: Record<string, FourColorCard>;
+  explanations: Record<string, FourColorCard>;
+  risks: Record<string, FourColorCard>;
+  actions: Record<string, FourColorCard>;
+  execution_time: number;
   performance: {
     inference_time_ms: number;
     total_time_ms: number;
@@ -37,6 +38,7 @@ interface AnalysisResult {
     tokens_generated: number;
     meets_target: boolean;
   };
+  visualizations?: any[];
 }
 
 interface HealthStatus {
@@ -80,7 +82,7 @@ const DataAnalysisPanel: React.FC = () => {
     }
   };
 
-  // 执行数据分析
+  // 执行数据分析（8-Agent协作）
   const handleAnalyze = async () => {
     if (!query.trim()) {
       toast('请输入查询内容', {
@@ -91,15 +93,16 @@ const DataAnalysisPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/npu/analyze`, {
+      // 调用8-Agent后端API
+      const response = await fetch(`${API_BASE_URL}/api/generate/cards`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           query: query,
-          max_tokens: 128,
-          temperature: 0.7
+          data_source: null,  // 可选：数据源路径
+          analysis_type: null  // 可选：分析类型
         })
       });
 
@@ -114,16 +117,17 @@ const DataAnalysisPanel: React.FC = () => {
       }
 
       if (!response.ok) {
-        throw new Error('分析请求失败');
+        const errorData = await response.json();
+        throw new Error(errorData.detail || '分析请求失败');
       }
 
       const data: AnalysisResult = await response.json();
       setResult(data);
 
       // 显示性能指标
-      const perfMsg = `NPU推理: ${data.performance.inference_time_ms.toFixed(0)}ms | 总耗时: ${data.performance.total_time_ms.toFixed(0)}ms`;
+      const perfMsg = `8-Agent协作: ${(data.execution_time * 1000).toFixed(0)}ms`;
 
-      toast(`✓ 分析完成! ${perfMsg}`, {
+      toast(`✓ 8-Agent分析完成! ${perfMsg}`, {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
       });
 
@@ -223,7 +227,7 @@ const DataAnalysisPanel: React.FC = () => {
                 placeholder="输入您的问题,例如: 分析上个月的销售数据趋势..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && !loading && handleAnalyze()}
+                onKeyDown={(e) => e.key === 'Enter' && !loading && handleAnalyze()}
                 className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600"
               />
             </div>
@@ -278,11 +282,11 @@ const DataAnalysisPanel: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm opacity-90">分析完成</div>
-                <div className="text-2xl font-bold mt-1">{result.cards.length} 张卡片</div>
+                <div className="text-2xl font-bold mt-1">{Object.keys(result.cards).length} 张卡片</div>
               </div>
               <div className="text-right">
                 <div className="text-sm opacity-90">
-                  {result.performance.device === 'NPU' ? 'NPU加速' : '模拟模式'}
+                  {result.performance.device || 'NPU加速'}
                 </div>
                 <div className="text-lg font-semibold mt-1">
                   {result.performance.inference_time_ms > 0
@@ -294,13 +298,13 @@ const DataAnalysisPanel: React.FC = () => {
             </div>
           </div>
 
-          {/* 四色卡片展示 */}
+          {/* 四色卡片展示 - 8-Agent结果 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {result.cards.map((card, idx) => {
+            {Object.entries(result.cards).map(([key, card], idx) => {
               const config = colorConfig[card.color];
               return (
                 <motion.div
-                  key={idx}
+                  key={key}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.3, delay: idx * 0.1 }}
@@ -326,19 +330,6 @@ const DataAnalysisPanel: React.FC = () => {
               );
             })}
           </div>
-
-          {/* 可视化区域 (预留) */}
-          {result.visualizations && result.visualizations.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="font-semibold mb-4 flex items-center gap-2">
-                <BarChart3 size={18} />
-                数据可视化
-              </h3>
-              <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-                可视化组件开发中...
-              </div>
-            </div>
-          )}
         </motion.div>
       )}
 

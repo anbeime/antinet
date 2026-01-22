@@ -8,6 +8,30 @@
 > 🏆 2025骁龙人工智能创新应用大赛 - AIPC赛道
 > **端侧智能数据中枢与协同分析平台**
 
+## 🚀 快速开始
+
+### ✅ 前后端已完全对接！
+
+前端 React 应用已成功对接后端 8-Agent 系统，所有 API 端点均可正常使用。
+
+#### 一键启动
+
+```powershell
+cd c:\test\antinet
+start_all.bat
+```
+
+#### 访问地址
+
+- **前端首页**: http://localhost:3000
+- **NPU 智能分析**: http://localhost:3000/npu-analysis
+- **后端 API**: http://localhost:8000
+- **API 文档**: http://localhost:8000/docs
+
+详细说明请查看：[前后端对接指南](./FRONTEND_INTEGRATION_GUIDE.md)
+
+---
+
 ## 📖 项目简介
 
 **Antinet智能知识管家**是一款部署于骁龙AIPC的端侧智能数据工作站。通过集成NPU加速的轻量化大模型(Qwen2-1.5B),实现:
