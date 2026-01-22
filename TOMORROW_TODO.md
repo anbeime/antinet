@@ -2,7 +2,72 @@
 
 ## 🚨 高优先级（必须完成）
 
-### 1. API 功能测试与验证
+### 0. 大规模MOCK数据清理（超紧急）
+- [ ] **清理800+ MOCK数据（115个文件）**
+  - [ ] **Home.tsx**: 清理knowledgeStats(4个统计)、featureHighlights(4个特性)、applicationScenarios(3个场景)等硬编码数组数据
+  - [ ] **NPUDashboard.tsx**: 清理大量模拟性能数据（温度、功耗、利用率、频率等）
+  - [ ] **其他组件**: 系统性识别和清理所有硬编码数组数据
+  - [ ] **改为API驱动**: 将所有硬编码模拟数据替换为真实API调用
+  - [ ] **工作量评估**: 比之前清理的4个组件大10倍以上，需要批量自动化处理
+
+### 1. 骁龙AIPC使用问题咨询（高通技术支持）
+- [ ] **问题1: Python架构兼容性**
+  - 确认是否支持x64 Python在ARM64设备上运行
+  - 获取Windows ARM64上加载Qwen2.0-7B-SSD的完整Python示例
+  - 解决NPU通信失败：DspTransport.openSession qnn_open failed
+  - 当前：x64 Python可加载模型但NPU通信失败，ARM64 Python报wheel不支持
+
+- [ ] **问题2: wheel文件获取**
+  - 获取官方qai_appbuilder-2.38.0-cp312-cp312-win_arm64.whl下载链接
+  - 从高通模型广场 https://www.aidevhome.com/data/models/ 或Hugging Face确认
+  - METADATA显示存在但未找到具体下载URL
+
+- [ ] **问题3: 环境要求明确**
+  - QAI AppBuilder版本：当前使用哪个版本？需≥2.34
+  - QNN SDK版本：需要2.34/2.37/2.38中的哪个？建议2.38
+  - NPU驱动版本：骁龙X Elite专用版本，可能需要30.0.145.1000
+  - 依赖库：QnnHtp.dll等，需包含QNN运行时库
+  - Python：必须3.12+ ARM64原生，不能用x64仿真
+
+- [ ] **问题4: 替代方案评估**
+  - 方案①：x64 Python仿真+win_amd64 wheel（当前方案，NPU通信失败）
+  - 方案②：C++版本+特定编译（推荐，性能更优）
+  - 方案③：GenieAPIService HTTP API
+  - GenieContext参数确认：
+    ```python
+    self.model = GenieContext(
+        config_path="config.json",
+        device_id="npu0",    # 是否需要？
+        debug=False,          # 是否需要？
+        perf_mode="high"      # 是否需要？
+    )
+    ```
+
+- [ ] **问题5: 技术规格要求**
+  - Python：3.12.x ARM64原生（非x64仿真）
+  - QNN SDK：≥2.34，建议2.38
+  - NPU驱动：骁龙X Elite专用，支持MCDM架构
+  - 模型文件格式：C:/model/Qwen2.0-7B-SSD-8380-2.34/需包含：
+    - model.bin（QNN格式权重）
+    - config.json（量化参数，需指定{"precision": "INT8", "quant_method": "QAT"}）
+    - tokenizer.json
+
+- [ ] **问题6: Query回调机制**
+  - 确认callback返回值：True=继续生成，False=终止推理
+  - 验证当前用法：
+    ```python
+    def callback(text):
+        result_parts.append(text)
+        return True  # 返回True是什么意思？
+    ```
+
+- [ ] **提交高通技术支持工单**
+  - 整理6个问题完整清单
+  - 附上backend_new.log错误日志
+  - 包含当前配置和环境信息
+  - 请求官方技术支持和最佳实践
+
+### 2. API 功能测试与验证
 - [ ] **测试 `/api/analyze` 接口**
   - 验证 NPU 推理功能是否正常
   - 检查四色卡片生成逻辑
