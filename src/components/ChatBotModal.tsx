@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Bot, User } from 'lucide-react';
+import { X, Send, Bot, User, FileText, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  sources?: any[];
+  cards?: any[];
 }
 
 interface ChatBotModalProps {
@@ -20,7 +23,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的答疑助手。我可以帮您解答关于系统使用、数据分析、知识卡片管理等问题。有什么可以帮您的？',
+      content: '你好！我是Antinet智能知识管家的知识库助手。我可以基于知识库为您解答关于数据分析、风险评估、行动建议等问题。我会检索知识库中的四色卡片（事实/解释/风险/行动）来回答您的问题。有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -42,48 +45,47 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     setIsLoading(true);
 
     try {
-      // 调用 GenieAPIService 聊天接口
-      const response = await fetch('http://localhost:8910/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'Qwen2.0-7B-SSD',
-          messages: [
-            { role: 'system', content: '你是一个专业的Antinet智能知识管家使用助手。请用中文回答用户关于系统使用的疑问，提供清晰、有用的指导。' },
-            ...messages.map(msg => ({ role: msg.role, content: msg.content })),
-            { role: 'user', content: input },
-          ],
-          max_tokens: 500,
-          temperature: 0.7,
-        }),
-      });
+      // 调用知识库查询API
+      const history = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      })) as ChatMessage[];
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      const response = await chatService.query(input, history);
+
+      // 构建回复消息
+      let responseContent = response.response;
+
+      // 添加来源信息
+      if (response.sources && response.sources.length > 0) {
+        responseContent += '\n\n📚 **参考来源：**\n';
+        response.sources.slice(0, 5).forEach((source, index) => {
+          const cardType = formatCardType(source.card_type);
+          const similarity = formatSimilarity(source.similarity);
+          responseContent += `${index + 1}. [${cardType}] ${source.title} (相似度: ${similarity})\n`;
+        });
       }
 
-      const data = await response.json();
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.choices[0].message.content,
+        content: responseContent,
         timestamp: new Date(),
+        sources: response.sources,
+        cards: response.cards,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Chat error:', error);
-      // 禁止模拟回复，只显示错误信息和修复指导
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `答疑服务暂时不可用。错误详情: ${error instanceof Error ? error.message : '未知错误'}\n\n请按以下步骤修复:\n1. 确保 GenieAPIService 正在运行 (端口8910)\n2. 检查命令提示符是否显示服务已启动\n3. 如果服务未运行，请运行 start_genie_service.bat\n4. 检查防火墙设置，确保端口8910可访问\n5. 重启后端服务 (运行 start_all.bat)\n\n禁止使用模拟回复，必须修复底层服务问题。`,
+        content: `知识库服务暂时不可用。错误详情: ${error instanceof Error ? error.message : '未知错误'}\n\n请按以下步骤修复:\n1. 确保后端服务正在运行 (端口8000)\n2. 检查后端日志确认知识库已初始化\n3. 如果服务未运行，请运行 start_backend.bat\n4. 检查防火墙设置，确保端口8000可访问\n5. 确认知识库数据库文件存在 (data/knowledge.db)\n\n知识库功能需要后端支持，无法使用模拟回复。`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
-      toast.error('答疑服务不可用，请修复后端服务');
+      toast.error('知识库服务不可用，请检查后端服务');
     } finally {
       setIsLoading(false);
     }
@@ -114,7 +116,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[80vh] max-h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
           >
             {/* 标题栏 */}
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -122,10 +124,10 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                 <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
                   <Bot className="w-6 h-6 text-white" />
                 </div>
-                <div>
-                  <h2 className="text-xl font-bold">Antinet 使用答疑助手</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">基于 GenieAPIService 的智能指南</p>
-                </div>
+              <div>
+                <h2 className="text-xl font-bold">Antinet 知识库助手</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">基于四色卡片知识库的智能查询</p>
+              </div>
               </div>
               <button
                 onClick={onClose}
@@ -158,13 +160,31 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                         <User className="w-4 h-4" />
                       )}
                       <span className="font-medium">
-                        {message.role === 'assistant' ? '答疑助手' : '您'}
+                        {message.role === 'assistant' ? '知识库助手' : '您'}
                       </span>
                       <span className="text-xs opacity-70">
                         {message.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <div className="whitespace-pre-wrap">{message.content}</div>
+                    {/* 显示知识来源 */}
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
+                        <div className="text-xs opacity-80 mb-2">📚 知识来源：</div>
+                        <div className="space-y-1">
+                          {message.sources.slice(0, 3).map((source, idx) => (
+                            <div key={idx} className="flex items-center space-x-2 text-xs">
+                              {source.card_type === 'blue' && <Info className="w-3 h-3 text-blue-500" />}
+                              {source.card_type === 'green' && <FileText className="w-3 h-3 text-green-500" />}
+                              {source.card_type === 'yellow' && <AlertTriangle className="w-3 h-3 text-yellow-500" />}
+                              {source.card_type === 'red' && <CheckCircle className="w-3 h-3 text-red-500" />}
+                              <span>{formatCardType(source.card_type)}: {source.title}</span>
+                              <span className="opacity-60">({formatSimilarity(source.similarity)})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}
@@ -177,7 +197,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                   <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-gray-100 dark:bg-gray-700 p-4">
                     <div className="flex items-center space-x-2">
                       <Bot className="w-4 h-4" />
-                      <span className="font-medium">答疑助手</span>
+                      <span className="font-medium">知识库助手</span>
                     </div>
                     <div className="flex space-x-1 mt-2">
                       <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" />
@@ -212,7 +232,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                 </motion.button>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-                提示：您可以询问关于知识卡片、数据分析、团队协作、GTD系统等问题。按 Enter 发送，Shift+Enter 换行。
+                提示：我会基于知识库中的事实、解释、风险、行动卡片回答您的问题。按 Enter 发送，Shift+Enter 换行。
               </p>
             </div>
           </motion.div>

@@ -10,24 +10,18 @@ import {
   PlusCircle,
   BarChart3,
   Calendar,
-  Tag,
-  Flag,
-  Clock,
-  MoreHorizontal,
-  ChevronDown,
   Lightbulb,
-  MessageSquare,
   Briefcase,
   Upload,
   X,
   CheckCircle2,
   Users as UsersIcon,
   TrendingUp,
-  Gauge
+  Gauge,
+  AlertCircle
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 import { useTheme } from '@/hooks/useTheme';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import AnalyticsReport from '@/components/AnalyticsReport';

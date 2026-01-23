@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { teamMemberService, knowledgeSpaceService, activityService, commentService } from '../services/dataService';
 
 // 定义团队成员类型
 interface TeamMember {
@@ -97,21 +98,118 @@ const TeamKnowledgeManagement: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        
-        // TODO: 调用后端API获取真实知识管理数据
-        // const response = await fetch('/api/team/knowledge');
-        // const data = await response.json();
 
-        // 初始为空状态
-        setTeamMembers([]);
-        setKnowledgeSpaces([]);
-        setKnowledgeVersions([]);
-        setComments([]);
-        setRealtimeActivities([]);
-        setContributionData([]);
+        // 调用后端API获取真实知识管理数据
+        const [members, spaces, activities, comments] = await Promise.all([
+          teamMemberService.getAll(),
+          knowledgeSpaceService.getAll(),
+          activityService.getRecent(20),
+          commentService.getByTarget(1, 'space')
+        ]);
+
+        // 设置团队成员数据
+        setTeamMembers(members.map(m => {
+          let permissions: string[] = ['read'];
+          if (m.permissions) {
+            if (typeof m.permissions === 'string') {
+              try {
+                permissions = JSON.parse(m.permissions);
+              } catch {
+                permissions = ['read'];
+              }
+            } else if (Array.isArray(m.permissions)) {
+              permissions = m.permissions;
+            }
+          }
+          
+          return {
+            id: m.id?.toString() || '',
+            name: m.name,
+            role: m.role,
+            avatar: m.avatar || '👤',
+            online: m.online || false,
+            joinDate: m.join_date || '',
+            lastActive: m.last_active || '',
+            permissions,
+            contribution: m.contribution || 0,
+            email: m.email
+          };
+        }));
+
+        // 设置知识空间数据
+        setKnowledgeSpaces(spaces.map(s => {
+          let membersList: string[] = [];
+          if (s.members) {
+            if (typeof s.members === 'string') {
+              try {
+                membersList = JSON.parse(s.members);
+              } catch {
+                membersList = [];
+              }
+            } else if (Array.isArray(s.members)) {
+              membersList = s.members;
+            }
+          }
+          
+          return {
+            id: s.id?.toString() || '',
+            name: s.name,
+            description: s.description || '',
+            members: membersList,
+            owner: s.owner || '',
+            createdAt: s.created_at || '',
+            updatedAt: s.updated_at || '',
+            cardCount: s.card_count || 0,
+            isPublic: s.is_public || false
+          };
+        }));
+
+        // 设置活动数据
+        setRealtimeActivities(activities.map(a => ({
+          id: a.id?.toString() || '',
+          user: a.user_name,
+          avatar: '👤',
+          action: a.action,
+          target: a.content || '',
+          timestamp: a.timestamp || '',
+          metadata: a.metadata || ''
+        })));
+
+        // 设置评论数据
+        setComments(comments.map(c => ({
+          id: c.id?.toString() || '',
+          cardId: c.target_id?.toString() || '1',
+          userId: c.id?.toString() || '',
+          userName: c.user_name,
+          userAvatar: c.user_avatar || '👤',
+          content: c.content,
+          createdAt: c.created_at || '',
+          replies: []
+        })));
+
+        // 贡献数据
+        const contributionChartData = members
+          .sort((a, b) => (b.contribution || 0) - (a.contribution || 0))
+          .slice(0, 5)
+          .map(m => ({
+            name: m.name,
+            contribution: m.contribution || 0
+          }));
+        setContributionData(contributionChartData);
+
+        // 知识版本数据（基于知识空间）
+        setKnowledgeVersions(spaces.map(s => ({
+          id: s.id?.toString() || '',
+          cardId: s.id?.toString() || '',
+          content: s.name,
+          updatedBy: s.owner || '',
+          updatedAt: s.updated_at || '',
+          reason: '初始版本'
+        })));
       } catch (err) {
         setError('加载知识管理数据失败，请检查后端连接');
         console.error('Knowledge management data load error:', err);
+        toast.error('加载数据失败');
       } finally {
         setLoading(false);
       }
@@ -509,9 +607,9 @@ const TeamKnowledgeManagement: React.FC = () => {
                             </span>
                             <div>
                               <p className="text-sm">
-                                <span className="font-medium">{activity.user}</span> {activity.action} <span className="text-blue-600 dark:text-blue-400">{activity.content}</span>
+                                <span className="font-medium">{activity.user}</span> {activity.action} <span className="text-blue-600 dark:text-blue-400">{activity.target}</span>
                               </p>
-                              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{activity.time}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{activity.timestamp}</p>
                             </div>
                           </div>
                         ))}
@@ -781,9 +879,9 @@ const TeamKnowledgeManagement: React.FC = () => {
                     <div>
                       <p className="text-sm">
                         <span className="font-medium">{realtimeActivities[currentActivityIndex].user}</span> {realtimeActivities[currentActivityIndex].action} 
-                        <span className="text-blue-600 dark:text-blue-400"> {realtimeActivities[currentActivityIndex].content}</span>
+                        <span className="text-blue-600 dark:text-blue-400"> {realtimeActivities[currentActivityIndex].target}</span>
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{realtimeActivities[currentActivityIndex].time}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{realtimeActivities[currentActivityIndex].timestamp}</p>
                     </div>
                   </div>
                 </motion.div>
@@ -799,7 +897,7 @@ const TeamKnowledgeManagement: React.FC = () => {
                       <div className="flex-1">
                         <p className="text-sm">
                           <span className="font-medium">{activity.user}</span> {activity.action} 
-                          <span className="text-blue-600 dark:text-blue-400"> {activity.content}</span>
+                          <span className="text-blue-600 dark:text-blue-400"> {activity.target}</span>
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{activity.time}</p>
                       </div>
@@ -848,7 +946,7 @@ const TeamKnowledgeManagement: React.FC = () => {
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="font-medium">新市场调研报告</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 赵伟 创建于 10分钟前</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 团队成员 创建</p>
                       </div>
                       <div className="flex items-center space-x-2">
                         <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors">
@@ -865,7 +963,7 @@ const TeamKnowledgeManagement: React.FC = () => {
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="font-medium">产品路线图更新</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 张明 更新于 30分钟前</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 团队成员 更新</p>
                       </div>
                       <div className="flex items-center space-x-2">
                         <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors">
@@ -882,7 +980,7 @@ const TeamKnowledgeManagement: React.FC = () => {
                     <div className="flex justify-between items-start">
                       <div>
                         <h4 className="font-medium">API文档更新</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 陈静 更新于 1小时前</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">由 团队成员 更新</p>
                       </div>
                       <div className="flex items-center space-x-2">
                         <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors">

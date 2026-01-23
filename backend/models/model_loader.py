@@ -172,6 +172,30 @@ class NPUModelLoader:
         # 不应到达此处
         raise RuntimeError(f"NPU模型加载失败，未知错误: {last_exception}")
 
+    def _format_prompt(self, user_input: str) -> str:
+        """
+        格式化用户输入为模型期望的提示格式
+        
+        根据prompt.conf文件格式：
+        prompt_tags_1: <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n
+        prompt_tags_2: <|im_end|>\n<|im_start|>assistant\n
+        
+        Args:
+            user_input: 用户输入文本
+            
+        Returns:
+            格式化后的完整提示
+        """
+        # 硬编码的提示格式（从prompt.conf解析）
+        prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
+        
+        # 构建完整提示
+        formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
+        logger.debug(f"提示格式化: 用户输入={repr(user_input)}, 格式化后长度={len(formatted_prompt)}")
+        
+        return formatted_prompt
+
     def infer(self, prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> str:
         """
         执行推理
@@ -195,24 +219,43 @@ class NPUModelLoader:
         try:
             start_time = time.time()
 
+            # 格式化提示词为模型期望的格式
+            formatted_prompt = self._format_prompt(prompt)
+            logger.debug(f"推理提示词: {repr(prompt[:100])}... -> 格式化后长度: {len(formatted_prompt)}")
+            
             # 设置推理参数
             if hasattr(self.model, 'SetParams'):
                 try:
-                    self.model.SetParams(max_new_tokens, temperature, 40, 0.95)
+                    # SetParams需要字符串参数
+                    max_tokens_str = str(max_new_tokens)
+                    temp_str = str(temperature)
+                    top_k_str = str(40)  # top_k参数
+                    top_p_str = str(0.95)  # top_p参数
+                    logger.debug(f"设置推理参数: max_tokens={max_tokens_str}, temperature={temp_str}")
+                    success = self.model.SetParams(max_tokens_str, temp_str, top_k_str, top_p_str)
+                    logger.debug(f"SetParams返回: {success}")
                 except Exception as param_error:
-                    logger.debug(f"SetParams失败，使用默认参数: {param_error}")
+                    logger.warning(f"SetParams失败，使用默认参数: {param_error}")
 
             # 创建回调函数收集结果
             result_parts = []
+            callback_count = 0
             
             def callback(text):
+                nonlocal callback_count
+                callback_count += 1
                 result_parts.append(text)
-                logger.debug(f"生成内容: {text}")
+                # 只记录前几次回调，避免日志过多
+                if callback_count <= 5:
+                    logger.debug(f"回调 #{callback_count}: {repr(text[:50])}...")
                 return True
             
             # 执行推理
-            self.model.Query(prompt, callback)
+            logger.debug(f"开始NPU推理...")
+            self.model.Query(formatted_prompt, callback)
+            logger.debug(f"推理完成，回调总次数: {callback_count}")
             result = ''.join(result_parts)
+            logger.debug(f"总结果长度: {len(result)}")
 
             inference_time = (time.time() - start_time) * 1000
 
@@ -342,7 +385,7 @@ if __name__ == "__main__":
         print(f"  [{key}] {config['name']} ({config['params']})")
         print(f"      - {config['description']}")
         if config.get('recommended'):
-            print(f"      - ⭐️ 推荐首选")
+            print(f"      - * 推荐首选")
 
     # 2. 加载推荐模型
     print(f"\n正在加载推荐模型...")

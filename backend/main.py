@@ -44,6 +44,9 @@ import time
 
 from config import settings
 from routes.npu_routes import router as npu_router  # 导入 NPU 路由
+from routes import data_routes  # 导入数据管理模块
+from routes.chat_routes import router as chat_router  # 导入聊天机器人路由
+from database import DatabaseManager
 
 # 配置日志
 logging.basicConfig(
@@ -59,6 +62,15 @@ app = FastAPI(
     description="端侧智能数据中枢与协同分析平台"
 )
 
+# 初始化数据库
+logger.info(f"[Database] 正在初始化数据库: {settings.DB_PATH}")
+settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+db_manager = DatabaseManager(settings.DB_PATH)
+
+# 设置data_routes的数据库管理器
+data_routes.set_db_manager(db_manager)
+logger.info("[Database] 数据库初始化完成，已加载默认数据")
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +82,8 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(npu_router)  # NPU 推理路由
+app.include_router(data_routes.router)  # 数据管理路由
+app.include_router(chat_router)  # 聊天机器人路由
 
 
 class QueryRequest(BaseModel):

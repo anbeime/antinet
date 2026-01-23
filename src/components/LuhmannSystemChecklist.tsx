@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   CheckCircle2, 
@@ -6,19 +6,7 @@ import {
   Circle, 
   ChevronDown, 
   ChevronUp,
-  BookOpen,
-  Layout,
-  Code,
-  Link as LinkIcon,
-  FileText,
-  Search,
-  Settings,
-  Lightbulb,
-  Briefcase,
-  AlertTriangle,
-  BarChart3,
-  Brain,
-  TrendingUp
+  AlertTriangle
 } from 'lucide-react';
 
 // 定义检查项类型
