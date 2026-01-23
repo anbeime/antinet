@@ -176,12 +176,8 @@ const DataAnalysisPanel: React.FC = () => {
     }
   };
 
-  // 示例查询
-  const exampleQueries = [
-    "分析上个月的销售数据趋势",
-    "本季度客户满意度调查结果",
-    "预测下个月的营收增长情况"
-  ];
+  // 示例查询 - TODO: 从API加载示例查询或用户自定义
+  const [exampleQueries, setExampleQueries] = useState<string[]>([]);
 
   return (
     <div className="space-y-6">
@@ -251,20 +247,22 @@ const DataAnalysisPanel: React.FC = () => {
           </div>
 
           {/* 示例查询 */}
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">示例查询:</p>
-            <div className="flex flex-wrap gap-2">
-              {exampleQueries.map((example, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setQuery(example)}
-                  className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
-                >
-                  {example}
-                </button>
-              ))}
+          {exampleQueries.length > 0 && (
+            <div>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">示例查询:</p>
+              <div className="flex flex-wrap gap-2">
+                {exampleQueries.map((example, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setQuery(example)}
+                    className="text-xs px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-full transition-colors"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

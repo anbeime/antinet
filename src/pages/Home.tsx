@@ -108,56 +108,7 @@ const cardTypeMap = {
   }
 };
 
-// 知识统计数据
-const knowledgeStats = [
-  { name: '蓝色卡片', value: 42, color: '#3b82f6' },
-  { name: '绿色卡片', value: 28, color: '#22c55e' },
-  { name: '黄色卡片', value: 18, color: '#eab308' },
-  { name: '红色卡片', value: 12, color: '#ef4444' },
-];
 
-// 特性亮点数据
-const featureHighlights = [
-  {
-    title: 'AI增强关联发现',
-    icon: <Brain className="w-6 h-6" />,
-    description: '智能识别概念间隐性联系，超越人工链接能力',
-  },
-  {
-    title: '团队智慧共创',
-    icon: <Users className="w-6 h-6" />,
-    description: '个人知识网络有机整合，激发集体创造力',
-  },
-  {
-    title: '实时可视化图谱',
-    icon: <Network className="w-6 h-6" />,
-    description: '动态展示知识发展过程，直观呈现知识结构',
-  },
-  {
-    title: '智能内容建议',
-    icon: <Lightbulb className="w-6 h-6" />,
-    description: '基于AI的知识发展建议，促进深度思考与学习',
-  },
-];
-
-// 企业应用场景数据
-const applicationScenarios = [
-  {
-    title: '研发团队知识管理',
-    icon: <Database className="w-6 h-6" />,
-    description: '整合技术方案，促进经验传承，加速创新过程',
-  },
-  {
-    title: '市场营销知识库',
-    icon: <BarChart3 className="w-6 h-6" />,
-    description: '统一市场洞察，优化策略连续性，提升营销效果',
-  },
-  {
-    title: '客户服务知识体系',
-    icon: <MessageSquare className="w-6 h-6" />,
-    description: '沉淀问题解决方案，提高服务质量与效率',
-  },
-];
 
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -172,6 +123,13 @@ const Home: React.FC = () => {
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
   const [isChatServiceAvailable, setIsChatServiceAvailable] = useState<boolean>(false);
+  
+  // Mock数据状态管理
+  const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
+  const [featureHighlights, setFeatureHighlights] = useState<any[]>([]);
+  const [applicationScenarios, setApplicationScenarios] = useState<any[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   // 格式化日期时间
   const formatDate = (dateString: string) => {
@@ -375,6 +333,36 @@ const Home: React.FC = () => {
     const interval = setInterval(checkChatService, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // 加载仪表板数据
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (activeTab !== 'dashboard') return;
+      
+      setStatsLoading(true);
+      setStatsError(null);
+      
+      try {
+        // TODO: 替换为真实的API端点
+        // const response = await fetch('/api/dashboard/stats');
+        // const data = await response.json();
+        
+        // 临时使用空数组，等待后端API实现
+        setKnowledgeStats([]);
+        setFeatureHighlights([]);
+        setApplicationScenarios([]);
+        
+        console.log('仪表板数据加载完成（待接入真实API）');
+      } catch (error) {
+        console.error('加载仪表板数据失败:', error);
+        setStatsError('加载统计数据失败');
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [activeTab]);
 
   // 更新卡片
   const handleUpdateCard = (updatedCard: KnowledgeCard) => {
@@ -617,23 +605,40 @@ const Home: React.FC = () => {
                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
                >
                  <h2 className="text-xl font-bold mb-4">特性亮点</h2>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {featureHighlights.map((feature, index) => (
-                     <motion.div 
-                       key={index}
-                       whileHover={{ x: 5 }}
-                       className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                     >
-                       <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
-                         {feature.icon}
-                       </div>
-                       <div>
-                         <h3 className="font-medium">{feature.title}</h3>
-                         <p className="text-sm text-gray-600 dark:text-gray-300">{feature.description}</p>
-                       </div>
-                     </motion.div>
-                   ))}
-                 </div>
+                 {statsLoading ? (
+                   <div className="text-center py-8">
+                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
+                   </div>
+                 ) : statsError ? (
+                   <div className="text-center py-8">
+                     <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                     <p className="text-red-600 dark:text-red-400">{statsError}</p>
+                   </div>
+                 ) : featureHighlights.length === 0 ? (
+                   <div className="text-center py-8">
+                     <Lightbulb className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                     <p className="text-gray-500 dark:text-gray-400">暂无特性亮点数据</p>
+                   </div>
+                 ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {featureHighlights.map((feature, index) => (
+                       <motion.div 
+                         key={index}
+                         whileHover={{ x: 5 }}
+                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                       >
+                         <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
+                           {feature.icon}
+                         </div>
+                         <div>
+                           <h3 className="font-medium">{feature.title}</h3>
+                           <p className="text-sm text-gray-600 dark:text-gray-300">{feature.description}</p>
+                         </div>
+                       </motion.div>
+                     ))}
+                   </div>
+                 )}
                </motion.div>
             </div>
 
@@ -647,51 +652,65 @@ const Home: React.FC = () => {
                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
                >
                  <h2 className="text-xl font-bold mb-4">知识分布</h2>
-                 <div className="h-64">
-                   <ResponsiveContainer width="100%" height="100%">
-                     <PieChart>
-                       <Pie
-                         data={[
-                           { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
-                           { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
-                           { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
-                           { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
-                         ]}
-                         cx="50%"
-                         cy="50%"
-                         innerRadius={60}
-                         outerRadius={80}
-                         fill="#8884d8"
-                         paddingAngle={5}
-                         dataKey="value"
-                         label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                         labelLine={false}
-                       >
-                         {[
-                           { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
-                           { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
-                           { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
-                           { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
-                         ].map((entry, index) => (
-                           <Cell key={`cell-${index}`} fill={entry.color} />
-                         ))}
-                       </Pie>
-                     </PieChart>
-                   </ResponsiveContainer>
-                 </div>
-                 <div className="grid grid-cols-2 gap-2 mt-4">
-                   {[
-                     { name: '蓝色卡片', color: '#3b82f6' },
-                     { name: '绿色卡片', color: '#22c55e' },
-                     { name: '黄色卡片', color: '#eab308' },
-                     { name: '红色卡片', color: '#ef4444' },
-                   ].map((stat, index) => (
-                     <div key={index} className="flex items-center space-x-2">
-                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
-                       <span className="text-sm">{stat.name}</span>
+                 {statsLoading ? (
+                   <div className="text-center py-8">
+                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
+                   </div>
+                 ) : cards.length === 0 ? (
+                   <div className="text-center py-8">
+                     <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                     <p className="text-gray-500 dark:text-gray-400">暂无卡片数据</p>
+                   </div>
+                 ) : (
+                   <>
+                     <div className="h-64">
+                       <ResponsiveContainer width="100%" height="100%">
+                         <PieChart>
+                           <Pie
+                             data={[
+                               { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                               { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                               { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                               { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
+                             ]}
+                             cx="50%"
+                             cy="50%"
+                             innerRadius={60}
+                             outerRadius={80}
+                             fill="#8884d8"
+                             paddingAngle={5}
+                             dataKey="value"
+                             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                             labelLine={false}
+                           >
+                             {[
+                               { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                               { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                               { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                               { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
+                             ].map((entry, index) => (
+                               <Cell key={`cell-${index}`} fill={entry.color} />
+                             ))}
+                           </Pie>
+                         </PieChart>
+                       </ResponsiveContainer>
                      </div>
-                   ))}
-                 </div>
+                     <div className="grid grid-cols-2 gap-2 mt-4">
+                       {[
+                         { name: '蓝色卡片', color: '#3b82f6' },
+                         { name: '绿色卡片', color: '#22c55e' },
+                         { name: '黄色卡片', color: '#eab308' },
+                         { name: '红色卡片', color: '#ef4444' },
+                       ].map((stat, index) => (
+                         <div key={index} className="flex items-center space-x-2">
+                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
+                           <span className="text-sm">{stat.name}</span>
+                         </div>
+                       ))}
+                     </div>
+                   </>
+                 )}
                </motion.div>
 
                {/* 提升知识管理效率 */}
@@ -732,23 +751,40 @@ const Home: React.FC = () => {
                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
                >
                  <h2 className="text-xl font-bold mb-4">企业应用场景</h2>
-                 <div className="space-y-4">
-                   {applicationScenarios.map((scenario, index) => (
-                     <motion.div 
-                       key={index}
-                       whileHover={{ x: 5 }}
-                       className="flex items-start"
-                     >
-                       <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
-                         {scenario.icon}
-                       </div>
-                       <div>
-                         <h3 className="font-medium">{scenario.title}</h3>
-                         <p className="text-sm text-gray-600 dark:text-gray-300">{scenario.description}</p>
-                       </div>
-                     </motion.div>
-                   ))}
-                 </div>
+                 {statsLoading ? (
+                   <div className="text-center py-8">
+                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
+                   </div>
+                 ) : statsError ? (
+                   <div className="text-center py-8">
+                     <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                     <p className="text-red-600 dark:text-red-400">{statsError}</p>
+                   </div>
+                 ) : applicationScenarios.length === 0 ? (
+                   <div className="text-center py-8">
+                     <Briefcase className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+                     <p className="text-gray-500 dark:text-gray-400">暂无应用场景数据</p>
+                   </div>
+                 ) : (
+                   <div className="space-y-4">
+                     {applicationScenarios.map((scenario, index) => (
+                       <motion.div 
+                         key={index}
+                         whileHover={{ x: 5 }}
+                         className="flex items-start"
+                       >
+                         <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
+                           {scenario.icon}
+                         </div>
+                         <div>
+                           <h3 className="font-medium">{scenario.title}</h3>
+                           <p className="text-sm text-gray-600 dark:text-gray-300">{scenario.description}</p>
+                         </div>
+                       </motion.div>
+                     ))}
+                   </div>
+                 )}
                </motion.div>
              </div>
           </div>
