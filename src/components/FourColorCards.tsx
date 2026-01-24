@@ -2,15 +2,18 @@
  * 四色卡片组件
  * 展示 NPU 分析生成的四色卡片（事实/解释/风险/行动）
  */
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FourColorCard as CardType } from '@/services/npuService';
+import { toast } from 'sonner';
+import { chatService } from '@/services/chatService';
 
-interface Props {
-  cards: CardType[] | Record<string, CardType[]>;
-  facts?: Record<string, CardType[]>;
-  explanations?: Record<string, CardType[]>;
-  risks?: Record<string, CardType[]>;
-  actions?: Record<string, CardType[]>;
+interface CardType {
+  card_id: string;
+  card_type: string;
+  title: string;
+  content: string;
+  category: string;
+  similarity?: number;
 }
 
 const colorMap = {
@@ -55,35 +58,105 @@ const categoryIcons = {
   '行动': '🎯',
 };
 
-// 将所有卡片合并到一个数组
-function mergeCards(
-  cards?: CardType[] | Record<string, CardType[]>,
-  additionalCards?: Record<string, CardType[]>
-): CardType[] {
-  let allCards: CardType[] = [];
+// 后端API返回的卡片格式转换为组件需要的格式
+function convertApiCardToComponentCard(apiCard: any): CardType {
+  const content = apiCard.content || {};
+  let contentText = '';
 
-  if (Array.isArray(cards)) {
-    allCards = cards;
-  } else if (typeof cards === 'object' && cards !== null) {
-    Object.values(cards).forEach(cardArray => {
-      allCards = allCards.concat(cardArray);
-    });
+  if (typeof content === 'object' && content !== null) {
+    // 根据卡片类型提取内容
+    if (content.description) contentText = content.description;
+    else if (content.explanation) contentText = content.explanation;
+    else if (content.action) contentText = content.action;
+    else if (content.description) contentText = content.description;
+    else contentText = JSON.stringify(content);
+  } else if (typeof content === 'string') {
+    contentText = content;
   }
 
-  if (additionalCards) {
-    Object.values(additionalCards).forEach(cardArray => {
-      allCards = allCards.concat(cardArray);
-    });
-  }
+  // 映射card_type到color
+  const colorMapType: Record<string, string> = {
+    'blue': 'blue',
+    'green': 'green',
+    'yellow': 'yellow',
+    'red': 'red'
+  };
+  const color = colorMapType[apiCard.card_type] || 'blue';
 
-  return allCards;
+  // 映射card_type到category
+  const categoryMap: Record<string, string> = {
+    'blue': '事实',
+    'green': '解释',
+    'yellow': '风险',
+    'red': '行动'
+  };
+  const category = categoryMap[apiCard.card_type] || '事实';
+
+  return {
+    card_id: apiCard.card_id,
+    card_type: apiCard.card_type,
+    color: color,
+    title: apiCard.title,
+    content: contentText,
+    category: category,
+    similarity: apiCard.similarity
+  };
 }
 
-export default function FourColorCards({ cards, facts, explanations, risks, actions }: Props) {
-  // 合并所有卡片
-  const allCards = mergeCards(cards, { ...facts, ...explanations, ...risks, ...actions });
+export default function FourColorCards() {
+  const [cards, setCards] = useState<CardType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!allCards || allCards.length === 0) {
+  // 从API加载四色卡片数据
+  useEffect(() => {
+    const loadCards = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // 调用API获取所有卡片
+        const response = await chatService.listCards();
+
+        // 转换API卡片格式为组件需要的格式
+        const componentCards = response.cards.map(convertApiCardToComponentCard);
+
+        setCards(componentCards);
+      } catch (err) {
+        console.error('加载四色卡片失败:', err);
+        setError(err instanceof Error ? err.message : '加载失败');
+        toast.error('加载四色卡片失败，请检查后端服务');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCards();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+          <p className="mt-4 text-gray-500 dark:text-gray-400">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center text-red-500 dark:text-red-400">
+          <p className="mb-2">加载失败</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!cards || cards.length === 0) {
     return (
       <div className="text-center py-12 text-gray-500 dark:text-gray-400">
         暂无分析结果
@@ -93,10 +166,10 @@ export default function FourColorCards({ cards, facts, explanations, risks, acti
 
   // 按颜色分组统计
   const colorStats = {
-    blue: allCards.filter(c => c.color === 'blue').length,
-    green: allCards.filter(c => c.color === 'green').length,
-    yellow: allCards.filter(c => c.color === 'yellow').length,
-    red: allCards.filter(c => c.color === 'red').length,
+    blue: cards.filter(c => c.color === 'blue').length,
+    green: cards.filter(c => c.color === 'green').length,
+    yellow: cards.filter(c => c.color === 'yellow').length,
+    red: cards.filter(c => c.color === 'red').length,
   };
 
   return (
@@ -123,13 +196,13 @@ export default function FourColorCards({ cards, facts, explanations, risks, acti
 
       {/* 卡片列表 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {allCards.map((card, index) => {
+        {cards.map((card, index) => {
           const colors = colorMap[card.color];
           const icon = categoryIcons[card.category] || '📌';
 
           return (
             <motion.div
-              key={index}
+              key={card.card_id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
