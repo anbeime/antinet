@@ -8,24 +8,10 @@ import {
   ChevronUp,
   AlertTriangle
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { checklistService, CheckItem as CheckItemType, Section as SectionType } from '@/services/dataService';
 
-// 定义检查项类型
-interface CheckItem {
-  id: string;
-  title: string;
-  icon: React.ReactNode;
-  description: string;
-  status: 'completed' | 'partial' | 'missing';
-  details?: string;
-}
 
-// 定义部分类型
-interface Section {
-  id: string;
-  title: string;
-  icon: React.ReactNode;
-  items: CheckItem[];
-}
 
 const LuhmannSystemChecklist: React.FC = () => {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -59,8 +45,8 @@ const LuhmannSystemChecklist: React.FC = () => {
     }
   };
 
-  // 检查列表数据 - TODO: 从API加载或配置文件读取
-  const [sections, setSections] = useState<Section[]>([]);
+  // 检查列表数据
+  const [sections, setSections] = useState<SectionType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,16 +57,18 @@ const LuhmannSystemChecklist: React.FC = () => {
         setLoading(true);
         setError(null);
         
-        // TODO: 调用后端API获取真实检查清单数据
-        // const response = await fetch('/api/checklist/data');
-        // const data = await response.json();
-        // setSections(data);
+        // 调用后端API获取真实检查清单数据
+        const data = await checklistService.getAll();
+        setSections(data);
         
-        // 临时：初始为空状态
-        setSections([]);
+        // 如果数据为空，显示提示
+        if (!data || data.length === 0) {
+          setError('暂无检查清单数据，请添加一些检查项');
+        }
       } catch (err) {
-        setError('加载检查清单失败');
+        setError('加载检查清单失败，请检查后端服务是否启动');
         console.error('Checklist data load error:', err);
+        toast.error('检查清单数据加载失败');
       } finally {
         setLoading(false);
       }

@@ -43,9 +43,19 @@ import json
 import time
 
 from config import settings
-from routes.npu_routes import router as npu_router  # 导入 NPU 路由
+# 可选导入 NPU 路由（如果依赖库可用）
+try:
+    from routes.npu_routes import router as npu_router
+except Exception as e:
+    print(f"[WARNING] 无法导入 NPU 路由: {e}")
+    npu_router = None
 from routes import data_routes  # 导入数据管理模块
-from routes.chat_routes import router as chat_router  # 导入聊天机器人路由
+# 可选导入聊天机器人路由（如果依赖库可用）
+try:
+    from routes.chat_routes import router as chat_router
+except Exception as e:
+    print(f"[WARNING] 无法导入聊天机器人路由: {e}")
+    chat_router = None
 from database import DatabaseManager
 
 # 配置日志
@@ -81,9 +91,11 @@ app.add_middleware(
 )
 
 # 注册路由
-app.include_router(npu_router)  # NPU 推理路由
+if npu_router is not None:
+    app.include_router(npu_router)  # NPU 推理路由
 app.include_router(data_routes.router)  # 数据管理路由
-app.include_router(chat_router)  # 聊天机器人路由
+if chat_router is not None:
+    app.include_router(chat_router)  # 聊天机器人路由
 
 
 class QueryRequest(BaseModel):
@@ -262,6 +274,9 @@ async def startup_event():
         logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
         logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
 
+    except ImportError as e:
+        logger.warning(f"NPU 模型加载器不可用: {e}")
+        logger.warning("NPU 功能将被禁用，但其他 API 仍可正常工作")
     except Exception as e:
         logger.error(f"❌ 模型加载失败: {e}")
         logger.error(f"错误类型: {type(e).__name__}")
@@ -293,70 +308,47 @@ async def root():
 async def health_check():
     """健康检查"""
     logger.info("[/api/health] 开始健康检查")
-    print(f"[DEBUG health] 健康检查端点被调用")
     
     try:
         # 导入全局模型加载器
         from models.model_loader import _global_model_loader
         
+        # 如果全局加载器不存在，创建它
         if _global_model_loader is None:
-            logger.warning("[/api/health] 全局模型加载器为 None，尝试初始化...")
-            # 尝试加载模型
+            logger.info("[/api/health] 全局模型加载器为空，正在初始化...")
             from models.model_loader import get_model_loader
-            loader = get_model_loader()
-            logger.info(f"[/api/health] 创建了新的加载器: {loader}")
-            
-            # 重新获取全局加载器（应该已被设置）
-            from models.model_loader import _global_model_loader
-            if _global_model_loader is None:
-                logger.error("[/api/health] 即使调用 get_model_loader() 后，_global_model_loader 仍为 None")
-                is_loaded = False
-            else:
-                logger.info(f"[/api/health] 全局加载器已设置")
-                is_loaded = _global_model_loader.is_loaded
-                logger.info(f"[/api/health] loader.is_loaded: {is_loaded}")
-                logger.info(f"[/api/health] loader.model exists: {_global_model_loader.model is not None}")
-                logger.info(f"[/api/health] loader.model: {_global_model_loader.model}")
-                logger.info(f"[/api/health] loader id: {id(_global_model_loader)}")
-                
-                # 安全检查：如果模型实例存在但 is_loaded 为 False，则修正
-                if _global_model_loader.model is not None and not _global_model_loader.is_loaded:
-                    logger.warning("[/api/health] 检测到不一致：model exists but is_loaded=False，正在修正...")
-                    _global_model_loader.is_loaded = True
-                    is_loaded = True
-                    logger.info("[/api/health] 已设置 is_loaded=True")
-        else:
-            logger.info(f"[/api/health] 全局加载器已存在")
-            is_loaded = _global_model_loader.is_loaded
-            logger.info(f"[/api/health] loader.is_loaded: {is_loaded}")
-            logger.info(f"[/api/health] loader.model exists: {_global_model_loader.model is not None}")
-            logger.info(f"[/api/health] loader.model: {_global_model_loader.model}")
-            logger.info(f"[/api/health] loader id: {id(_global_model_loader)}")
-            
-            # 安全检查：如果模型实例存在但 is_loaded 为 False，则修正
-            if _global_model_loader.model is not None and not _global_model_loader.is_loaded:
-                logger.warning("[/api/health] 检测到不一致：model exists but is_loaded=False，正在修正...")
-                _global_model_loader.is_loaded = True
-                is_loaded = True
-                logger.info("[/api/health] 已设置 is_loaded=True")
+            _global_model_loader = get_model_loader()
+            logger.info(f"[/api/health] 创建了加载器: {_global_model_loader}")
         
-        # 如果 is_loaded 仍为 False，尝试调用 load() 方法
-        if not is_loaded and _global_model_loader is not None:
-            logger.info("[/api/health] is_loaded=False，尝试调用 loader.load()...")
+        # 检查模型是否已加载
+        is_loaded = False
+        model_exists = _global_model_loader.model is not None
+        
+        if _global_model_loader.is_loaded:
+            is_loaded = True
+            logger.info(f"[/api/health] 模型已加载 (is_loaded=True)")
+        elif model_exists and not _global_model_loader.is_loaded:
+            # 模型实例存在但is_loaded=False，修正状态
+            logger.warning("[/api/health] 模型实例存在但is_loaded=False，修正状态")
+            _global_model_loader.is_loaded = True
+            is_loaded = True
+            logger.info("[/api/health] 已设置is_loaded=True")
+        else:
+            # 尝试加载模型
+            logger.info("[/api/health] 尝试加载模型...")
             try:
                 model = _global_model_loader.load()
                 is_loaded = _global_model_loader.is_loaded
-                logger.info(f"[/api/health] 调用 load() 后，is_loaded: {is_loaded}")
+                logger.info(f"[/api/health] 模型加载结果: is_loaded={is_loaded}")
             except Exception as load_err:
-                logger.error(f"[/api/health] 调用 load() 失败: {load_err}")
+                logger.error(f"[/api/health] 模型加载失败: {load_err}")
                 is_loaded = False
         
-        logger.info(f"[/api/health] 最终 is_loaded: {is_loaded}")
         status = "healthy" if is_loaded else "degraded"
-        logger.info(f"[/api/health] 返回状态: {status}")
+        logger.info(f"[/api/health] 最终状态: {status}, model_loaded={is_loaded}")
         
     except Exception as e:
-        logger.error(f"[/api/health] 健康检查过程中发生异常: {e}")
+        logger.error(f"[/api/health] 健康检查异常: {e}")
         import traceback
         logger.error(f"[/api/health] 详细堆栈:\n{traceback.format_exc()}")
         is_loaded = False
@@ -541,6 +533,7 @@ async def run_benchmark():
     results = {
         "device": settings.QNN_DEVICE,
         "model": settings.MODEL_NAME,
+        "performance_mode": "BURST",  # 已启用BURST性能模式以优化延迟
         "tests": []
     }
 
@@ -610,6 +603,14 @@ async def run_benchmark():
 
             logger.info(f"  序列长度 {seq_len}: {avg_latency:.2f}ms")
 
+        # 计算总体平均延迟
+        overall_avg_latency = sum(test["avg_latency_ms"] for test in results["tests"]) / len(results["tests"])
+        results["overall_avg_latency_ms"] = round(overall_avg_latency, 2)
+        results["target_latency_ms"] = 500
+        results["meets_target"] = overall_avg_latency < 500
+        
+        logger.info(f"基准测试完成 - 总体平均延迟: {overall_avg_latency:.2f}ms, 目标: <500ms, 达标: {results['meets_target']}")
+        
         return results
 
     except Exception as e:

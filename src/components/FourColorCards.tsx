@@ -13,10 +13,20 @@ interface CardType {
   title: string;
   content: string;
   category: string;
+  color: 'blue' | 'green' | 'yellow' | 'red';
   similarity?: number;
 }
 
-const colorMap = {
+interface ColorStyle {
+  bg: string;
+  border: string;
+  text: string;
+  bgLight: string;
+  darkBg: string;
+  darkText: string;
+}
+
+const colorMap: Record<'blue' | 'green' | 'yellow' | 'red', ColorStyle> = {
   blue: {
     bg: 'bg-blue-500',
     border: 'border-blue-600',
@@ -51,7 +61,7 @@ const colorMap = {
   },
 };
 
-const categoryIcons = {
+const categoryIcons: Record<'事实' | '解释' | '风险' | '行动', string> = {
   '事实': '📊',
   '解释': '💡',
   '风险': '⚠️',
@@ -75,13 +85,13 @@ function convertApiCardToComponentCard(apiCard: any): CardType {
   }
 
   // 映射card_type到color
-  const colorMapType: Record<string, string> = {
+  const colorMapType: Record<string, 'blue' | 'green' | 'yellow' | 'red'> = {
     'blue': 'blue',
     'green': 'green',
     'yellow': 'yellow',
     'red': 'red'
   };
-  const color = colorMapType[apiCard.card_type] || 'blue';
+  const color: 'blue' | 'green' | 'yellow' | 'red' = colorMapType[apiCard.card_type] || 'blue';
 
   // 映射card_type到category
   const categoryMap: Record<string, string> = {
@@ -165,7 +175,7 @@ export default function FourColorCards() {
   }
 
   // 按颜色分组统计
-  const colorStats = {
+  const colorStats: Record<'blue' | 'green' | 'yellow' | 'red', number> = {
     blue: cards.filter(c => c.color === 'blue').length,
     green: cards.filter(c => c.color === 'green').length,
     yellow: cards.filter(c => c.color === 'yellow').length,
@@ -198,7 +208,7 @@ export default function FourColorCards() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {cards.map((card, index) => {
           const colors = colorMap[card.color];
-          const icon = categoryIcons[card.category] || '📌';
+          const icon = categoryIcons[card.category as keyof typeof categoryIcons] || '📌';
 
           return (
             <motion.div

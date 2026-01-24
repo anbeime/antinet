@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { npuService, AnalyzeResponse } from '@/services/npuService';
 import FourColorCards from '@/components/FourColorCards';
@@ -181,13 +181,7 @@ export default function NPUAnalysis() {
             8-Agent 协作分析结果
           </h2>
 
-          <FourColorCards
-            cards={result.cards}
-            facts={result.facts}
-            explanations={result.explanations}
-            risks={result.risks}
-            actions={result.actions}
-          />
+          <FourColorCards />
 
           {result.generated_at && (
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center">

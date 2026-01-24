@@ -13,16 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-// 定义任务类型
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  priority: 'low' | 'medium' | 'high';
-  dueDate?: string;
-  createdAt: string;
-}
+import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
 
 // 定义分类类型
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
@@ -42,8 +33,8 @@ const GTDSystem: React.FC = () => {
     priority: 'medium'
   });
 
-// GTD任务数据
-  const [tasks, setTasks] = useState<Record<Category, Task[]>>({
+  // GTD任务数据
+  const [tasks, setTasks] = useState<Record<Category, GtdTaskType[]>>({
     inbox: [],
     today: [],
     later: [],
@@ -60,21 +51,28 @@ const GTDSystem: React.FC = () => {
         setLoading(true);
         setError(null);
         
-        // TODO: 调用后端API获取真实GTD数据
-        // const response = await fetch('/api/gtd/tasks');
-        // const data = await response.json();
-
-        // 初始为空状态
-        setTasks({
-          inbox: [],
-          today: [],
-          later: [],
-          archive: [],
-          projects: []
-        });
+        // 调用后端API获取真实GTD数据
+        const allTasks = await gtdTaskService.getAll();
+        
+        // 按分类组织任务
+        const organizedTasks: Record<Category, GtdTaskType[]> = {
+          inbox: allTasks.filter(task => task.category === 'inbox'),
+          today: allTasks.filter(task => task.category === 'today'),
+          later: allTasks.filter(task => task.category === 'later'),
+          archive: allTasks.filter(task => task.category === 'archive'),
+          projects: allTasks.filter(task => task.category === 'projects')
+        };
+        
+        setTasks(organizedTasks);
+        
+        // 如果数据为空，显示提示
+        if (allTasks.length === 0) {
+          setError('暂无GTD任务，请添加一些任务');
+        }
       } catch (err) {
-        setError('加载GTD数据失败，请检查后端连接');
+        setError('加载GTD数据失败，请检查后端服务是否启动');
         console.error('GTD data load error:', err);
+        toast.error('GTD数据加载失败');
       } finally {
         setLoading(false);
       }
@@ -126,7 +124,7 @@ const GTDSystem: React.FC = () => {
   };
 
   // 创建新任务
-  const handleCreateTask = () => {
+  const handleCreateTask = async () => {
     if (!newTask.title.trim()) {
       toast('请输入任务标题', {
         className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
@@ -134,32 +132,38 @@ const GTDSystem: React.FC = () => {
       return;
     }
 
-    const task: Task = {
-      id: `task-${Date.now()}`,
-      title: newTask.title,
-      description: newTask.description,
-      priority: newTask.priority,
-      dueDate: newTask.dueDate,
-      createdAt: new Date().toISOString()
-    };
+    try {
+      const newTaskData = await gtdTaskService.add({
+        title: newTask.title,
+        description: newTask.description,
+        priority: newTask.priority as 'low' | 'medium' | 'high',
+        category: activeCategory,
+        dueDate: newTask.dueDate
+      });
 
-    setTasks(prev => ({
-      ...prev,
-      [activeCategory]: [task, ...prev[activeCategory]]
-    }));
+      setTasks(prev => ({
+        ...prev,
+        [activeCategory]: [newTaskData, ...prev[activeCategory]]
+      }));
 
-    // 重置表单
-    setNewTask({
-      title: '',
-      description: '',
-      priority: 'medium'
-    });
-    
-    setShowCreateModal(false);
-    
-    toast('任务创建成功！', {
-      className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-    });
+      // 重置表单
+      setNewTask({
+        title: '',
+        description: '',
+        priority: 'medium'
+      });
+      
+      setShowCreateModal(false);
+      
+      toast('任务创建成功！', {
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
+    } catch (err) {
+      toast('创建任务失败，请重试', {
+        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      });
+      console.error('Create task error:', err);
+    }
   };
 
   // 过滤任务
@@ -168,7 +172,7 @@ const GTDSystem: React.FC = () => {
     const query = searchQuery.toLowerCase();
     return (
       task.title.toLowerCase().includes(query) ||
-      task.description.toLowerCase().includes(query)
+      (task.description || '').toLowerCase().includes(query)
     );
   });
 
@@ -291,7 +295,7 @@ const GTDSystem: React.FC = () => {
                 </div>
                 <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm">{task.description}</p>
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(task.createdAt)}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{task.created_at ? formatDate(task.created_at) : ''}</span>
                   {task.dueDate && (
                     <span className="text-xs bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded-full flex items-center">
                       <Calendar size={12} className="mr-1" />

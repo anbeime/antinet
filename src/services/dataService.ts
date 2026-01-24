@@ -172,3 +172,83 @@ export const analyticsService = {
     });
   },
 };
+
+// ========== 检查清单API ==========
+export interface CheckItem {
+  id: string;
+  title: string;
+  icon: string;
+  description: string;
+  status: 'completed' | 'partial' | 'missing';
+  details?: string;
+}
+
+export interface Section {
+  id: string;
+  title: string;
+  icon: string;
+  items: CheckItem[];
+}
+
+export const checklistService = {
+  // 获取检查清单数据
+  getAll: async (): Promise<Section[]> => {
+    const data = await apiCall<any>('/checklist');
+    return data?.data || [];
+  },
+
+  // 更新检查清单数据
+  update: async (sections: Section[]): Promise<any> => {
+    const data_json = JSON.stringify(sections);
+    return apiCall<any>('/checklist', {
+      method: 'PUT',
+      body: JSON.stringify(data_json),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  },
+};
+
+// ========== GTD任务API ==========
+export interface GtdTask {
+  id?: number;
+  title: string;
+  description?: string;
+  priority: 'low' | 'medium' | 'high';
+  dueDate?: string;
+  category: 'inbox' | 'today' | 'later' | 'archive' | 'projects';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const gtdTaskService = {
+  // 获取所有GTD任务（可选分类筛选）
+  getAll: async (category?: string): Promise<GtdTask[]> => {
+    const url = category ? `/gtd-tasks?category=${category}` : '/gtd-tasks';
+    return apiCall<GtdTask[]>(url);
+  },
+
+  // 添加GTD任务
+  add: async (task: Omit<GtdTask, 'id'>): Promise<GtdTask> => {
+    return apiCall<GtdTask>('/gtd-tasks', {
+      method: 'POST',
+      body: JSON.stringify(task),
+    });
+  },
+
+  // 更新GTD任务
+  update: async (id: number, task: Partial<GtdTask>): Promise<void> => {
+    return apiCall<void>(`/gtd-tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(task),
+    });
+  },
+
+  // 删除GTD任务
+  delete: async (id: number): Promise<void> => {
+    return apiCall<void>(`/gtd-tasks/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};

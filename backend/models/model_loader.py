@@ -34,6 +34,7 @@ for p in paths_to_add:
 
 try:
     from qai_appbuilder import GenieContext
+    from qai_hub_models.models._shared.perf_profile import PerfProfile
 except ImportError as e:
     raise RuntimeError(f"无法导入GenieContext: {e}。请确保已安装qai_appbuilder库。")
 
@@ -145,6 +146,13 @@ class NPUModelLoader:
 
                 # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
                 self.model = GenieContext(config_path)
+
+                # 启用BURST性能模式以优化延迟
+                try:
+                    PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
+                    logger.info("[OK] 已启用BURST性能模式")
+                except Exception as e:
+                    logger.warning(f"[WARNING] 启用BURST模式失败: {e}")
 
                 load_time = time.time() - start_time
 

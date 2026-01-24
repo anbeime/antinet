@@ -29,6 +29,86 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
+  const modalRef = React.useRef<HTMLDivElement>(null);
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+
+  // 自动滚动到底部
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  React.useEffect(() => {
+    scrollToBottom();
+  }, [messages, isOpen]);
+
+  // 打开模态框时聚焦输入框
+  React.useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
+    }
+  }, [isOpen]);
+
+  // 拖拽处理
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - position.x,
+      y: e.clientY - position.y
+    });
+    e.preventDefault();
+  };
+
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
+    if (isDragging) {
+      // 直接使用鼠标移动的增量
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+
+      setPosition({
+        x: newX,
+        y: newY
+      });
+    }
+  }, [isDragging, dragStart]);
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  React.useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove]);
+
+  // 添加调试日志追踪状态
+  React.useEffect(() => {
+    console.log('[ChatBotModal] Component rendered, isOpen:', isOpen);
+  }, [isOpen]);
+
+  React.useEffect(() => {
+    console.log('[ChatBotModal] isLoading changed:', isLoading);
+  }, [isLoading]);
+
+  // 追踪textarea是否挂载
+  React.useEffect(() => {
+    if (textareaRef.current) {
+      console.log('[ChatBotModal] Textarea ref mounted, element:', textareaRef.current);
+      console.log('[ChatBotModal] Textarea disabled:', textareaRef.current.disabled);
+      console.log('[ChatBotModal] Textarea pointer-events:', window.getComputedStyle(textareaRef.current).pointerEvents);
+    }
+  }, [isOpen, isLoading]);
 
   const handleSend = async () => {
     console.log('[ChatBotModal] handleSend called, input:', input);
@@ -124,32 +204,41 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
           
           {/* 模态框 */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl h-[80vh] max-h-[600px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
+            ref={modalRef}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              x: position.x,
+              y: position.y
+            }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="fixed left-1/2 top-1/2 w-[95vw] max-w-3xl max-h-[85vh] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl z-[51] flex flex-col overflow-hidden"
           >
-            {/* 标题栏 */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+            {/* 标题栏 - 只在这里可以拖拽 */}
+            <div
+              className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 cursor-move select-none"
+              onMouseDown={handleMouseDown}
+            >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
                   <Bot className="w-6 h-6 text-white" />
                 </div>
-              <div>
-                <h2 className="text-xl font-bold">Antinet 知识库助手</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">基于四色卡片知识库的智能查询</p>
-              </div>
+                <div>
+                  <h2 className="text-lg font-bold">Antinet 知识库助手</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">基于四色卡片知识库的智能查询 · 拖拽标题栏可移动</p>
+                </div>
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 <X size={20} />
               </button>
             </div>
 
             {/* 消息区域 */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 max-h-[50vh]">
               {messages.map(message => (
                 <motion.div
                   key={message.id}
@@ -158,7 +247,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                   className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-2xl p-4 ${
+                    className={`max-w-[80%] rounded-2xl p-3 ${
                       message.role === 'user'
                         ? 'bg-blue-500 text-white rounded-br-none'
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-none'
@@ -177,7 +266,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                         {message.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
-                    <div className="whitespace-pre-wrap">{message.content}</div>
+                    <div className="whitespace-pre-wrap text-sm">{message.content}</div>
                     {/* 显示知识来源 */}
                     {message.sources && message.sources.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
@@ -205,7 +294,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                   animate={{ opacity: 1 }}
                   className="flex justify-start"
                 >
-                  <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-gray-100 dark:bg-gray-700 p-4">
+                  <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-gray-100 dark:bg-gray-700 p-3">
                     <div className="flex items-center space-x-2">
                       <Bot className="w-4 h-4" />
                       <span className="font-medium">知识库助手</span>
@@ -218,40 +307,47 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                   </div>
                 </motion.div>
               )}
+              {/* 滚动锚点 */}
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* 输入区域 */}
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700">
-              <div className="flex space-x-4">
-                <textarea
-                  value={input}
-                  onChange={(e) => {
-                    console.log('[ChatBotModal] Input changed:', e.target.value);
-                    setInput(e.target.value);
-                  }}
-                  onClick={() => console.log('[ChatBotModal] Textarea clicked')}
-                  onKeyDown={handleKeyDown}
-                  placeholder="输入您关于系统使用的问题..."
-                  className="flex-1 bg-gray-100 dark:bg-gray-700 border-0 rounded-xl p-4 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  rows={2}
-                  disabled={isLoading}
-                />
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => {
-                    console.log('[ChatBotModal] Send button clicked, isLoading:', isLoading);
-                    handleSend();
-                  }}
-                  disabled={isLoading || !input.trim()}
-                  className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-4 rounded-xl self-end transition-colors"
-                >
-                  <Send size={20} />
-                </motion.button>
+            {/* 输入区域 - 固定在底部 */}
+            <div className="flex-none border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+              <div className="p-4">
+                <div className="flex space-x-3">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => {
+                      console.log('[ChatBotModal] Input changed:', e.target.value);
+                      setInput(e.target.value);
+                    }}
+                    onClick={() => console.log('[ChatBotModal] Textarea clicked')}
+                    onFocus={() => console.log('[ChatBotModal] Textarea focused')}
+                    onBlur={() => console.log('[ChatBotModal] Textarea blurred')}
+                    onKeyDown={handleKeyDown}
+                    placeholder="输入您关于系统使用的问题..."
+                    className="flex-1 min-h-[80px] max-h-[200px] bg-gray-100 dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-xl p-4 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none focus:border-blue-500 text-base overflow-y-auto"
+                    rows={3}
+                    disabled={isLoading}
+                  />
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => {
+                      console.log('[ChatBotModal] Send button clicked, isLoading:', isLoading);
+                      handleSend();
+                    }}
+                    disabled={isLoading || !input.trim()}
+                    className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-4 rounded-xl self-end transition-colors shadow-lg flex-none"
+                  >
+                    <Send size={20} />
+                  </motion.button>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex-none">
+                  提示：我会基于知识库中的事实、解释、风险、行动卡片回答您的问题。按 Enter 发送，Shift+Enter 换行。拖拽标题栏可移动对话框。
+                </p>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">
-                提示：我会基于知识库中的事实、解释、风险、行动卡片回答您的问题。按 Enter 发送，Shift+Enter 换行。
-              </p>
             </div>
           </motion.div>
         </>

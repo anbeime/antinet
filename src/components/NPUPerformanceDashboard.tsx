@@ -27,6 +27,10 @@ interface BenchmarkTest {
 interface BenchmarkResult {
   device: string;
   model: string;
+  performance_mode?: string;
+  overall_avg_latency_ms?: number;
+  target_latency_ms?: number;
+  meets_target?: boolean;
   tests: BenchmarkTest[];
   error?: string;
   hint?: string;
@@ -85,19 +89,24 @@ const NPUPerformanceDashboard: React.FC = () => {
       } else {
         setBenchmarkData(data);
 
-        // 计算汇总指标
-        const avgLatency = data.tests.reduce((sum, t) => sum + t.avg_latency_ms, 0) / data.tests.length;
+        // 使用后端提供的总体平均延迟，否则本地计算
+        const overallAvgLatency = data.overall_avg_latency_ms || 
+          data.tests.reduce((sum, t) => sum + t.avg_latency_ms, 0) / data.tests.length;
         const avgThroughput = data.tests.reduce((sum, t) => sum + t.throughput_qps, 0) / data.tests.length;
         const peakPerformance = Math.max(...data.tests.map(t => t.throughput_qps));
+        const performanceMode = data.performance_mode || 'default';
+        const meetsTarget = data.meets_target !== undefined ? data.meets_target : overallAvgLatency < 500;
+        const targetLatency = data.target_latency_ms || 500;
 
         setRealtimeMetrics({
-          currentLatency: avgLatency,
+          currentLatency: overallAvgLatency,
           avgThroughput: avgThroughput,
           peakPerformance: peakPerformance
         });
 
-        toast(`✓ 基准测试完成! 平均延迟: ${avgLatency.toFixed(1)}ms`, {
-          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        const latencyStatus = meetsTarget ? '✓ 达标' : '⚠ 超标';
+        toast(`✓ 基准测试完成! 平均延迟: ${overallAvgLatency.toFixed(1)}ms (${latencyStatus})`, {
+          className: meetsTarget ? 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
         });
       }
     } catch (error) {

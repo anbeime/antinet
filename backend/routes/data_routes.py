@@ -59,6 +59,24 @@ class Comment(BaseModel):
     metadata: Optional[Dict[str, Any]] = {}
 
 
+class ChecklistData(BaseModel):
+    id: Optional[int] = None
+    data_json: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class GtdTask(BaseModel):
+    id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    due_date: Optional[str] = None
+    category: str = "inbox"
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # ========== 全局数据库管理器（在main.py中初始化） ==========
 _db_manager = None
 
@@ -264,4 +282,86 @@ async def update_analytics_data(category: str, data: Dict[str, Any]):
         return updated
     except Exception as e:
         logger.error(f"更新分析数据失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 检查清单API ==========
+@router.get("/checklist")
+async def get_checklist_data():
+    """获取检查清单数据"""
+    try:
+        db = get_db_manager()
+        data = db.get_checklist_data()
+        if not data:
+            return {"data": []}
+        return data
+    except Exception as e:
+        logger.error(f"获取检查清单失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/checklist")
+async def update_checklist_data(data_json: str):
+    """更新检查清单数据"""
+    try:
+        db = get_db_manager()
+        updated = db.update_checklist_data(data_json)
+        return updated
+    except Exception as e:
+        logger.error(f"更新检查清单失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== GTD任务API ==========
+@router.get("/gtd-tasks")
+async def get_gtd_tasks(category: Optional[str] = None):
+    """获取GTD任务"""
+    try:
+        db = get_db_manager()
+        tasks = db.get_gtd_tasks(category)
+        return tasks
+    except Exception as e:
+        logger.error(f"获取GTD任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/gtd-tasks", response_model=GtdTask)
+async def add_gtd_task(task: GtdTask):
+    """添加GTD任务"""
+    try:
+        db = get_db_manager()
+        new_task = db.add_gtd_task(
+            title=task.title,
+            description=task.description,
+            priority=task.priority,
+            category=task.category,
+            due_date=task.due_date
+        )
+        return new_task
+    except Exception as e:
+        logger.error(f"添加GTD任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/gtd-tasks/{task_id}")
+async def update_gtd_task(task_id: int, task: Dict[str, Any]):
+    """更新GTD任务"""
+    try:
+        db = get_db_manager()
+        updated = db.update_gtd_task(task_id, **task)
+        return {"success": updated}
+    except Exception as e:
+        logger.error(f"更新GTD任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/gtd-tasks/{task_id}")
+async def delete_gtd_task(task_id: int):
+    """删除GTD任务"""
+    try:
+        db = get_db_manager()
+        deleted = db.delete_gtd_task(task_id)
+        return {"success": deleted}
+    except Exception as e:
+        logger.error(f"删除GTD任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

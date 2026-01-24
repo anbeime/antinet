@@ -101,6 +101,30 @@ class DatabaseManager:
                 )
             """)
 
+            # 6. 检查清单数据表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS checklist_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data_json TEXT NOT NULL,  -- sections数组的JSON
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 7. GTD任务表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS gtd_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    priority TEXT CHECK(priority IN ('low', 'medium', 'high')),
+                    due_date TEXT,
+                    category TEXT CHECK(category IN ('inbox', 'today', 'later', 'archive', 'projects')),
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.commit()
 
         # 插入默认数据（只插入一次）
@@ -338,9 +362,66 @@ class DatabaseManager:
                     VALUES (?, ?)
                 """, (analytics['category'], analytics['data_json']))
 
+            # 6. 默认检查清单数据
+            default_checklist_data = [
+                {
+                    'data_json': json.dumps([
+                        {
+                            'id': 'philosophy',
+                            'title': '系统哲学',
+                            'icon': '📚',
+                            'items': [
+                                {'id': 'phil1', 'title': '理解Zettelkasten核心思想', 'icon': '💡', 'description': '掌握卢曼卡片系统的核心理念和方法论', 'status': 'completed', 'details': '已完成学习'},
+                                {'id': 'phil2', 'title': '建立知识连接网络', 'icon': '🔗', 'description': '理解卡片间如何形成有机的知识网络', 'status': 'partial', 'details': '部分完成'}
+                            ]
+                        },
+                        {
+                            'id': 'implementation',
+                            'title': '系统实现',
+                            'icon': '🛠️',
+                            'items': [
+                                {'id': 'impl1', 'title': '创建卡片数据结构', 'icon': '🗂️', 'description': '设计卡片的基本数据模型和存储结构', 'status': 'completed'},
+                                {'id': 'impl2', 'title': '实现双向链接功能', 'icon': '↔️', 'description': '支持卡片间的相互引用和链接', 'status': 'partial'}
+                            ]
+                        },
+                        {
+                            'id': 'workflow',
+                            'title': '工作流程',
+                            'icon': '📋',
+                            'items': [
+                                {'id': 'work1', 'title': '设计卡片创建流程', 'icon': '✍️', 'description': '定义从想法到卡片的标准化流程', 'status': 'completed'},
+                                {'id': 'work2', 'title': '建立定期回顾机制', 'icon': '🔄', 'description': '设置定期回顾和更新卡片的机制', 'status': 'missing'}
+                            ]
+                        }
+                    ])
+                }
+            ]
+
+            for checklist in default_checklist_data:
+                cursor.execute("""
+                    INSERT INTO checklist_data (data_json)
+                    VALUES (?)
+                """, (checklist['data_json'],))
+
+            # 7. 默认GTD任务数据
+            default_gtd_tasks = [
+                {'title': '完成项目文档', 'description': '编写项目API文档和用户手册', 'priority': 'high', 'category': 'today'},
+                {'title': '测试聊天机器人', 'description': '验证ChatBotModal输入框功能', 'priority': 'high', 'category': 'inbox'},
+                {'title': '学习向量检索', 'description': '研究向量数据库和相似度搜索技术', 'priority': 'medium', 'category': 'later'},
+                {'title': '优化前端性能', 'description': '分析并优化React组件渲染性能', 'priority': 'medium', 'category': 'projects'},
+                {'title': '整理会议记录', 'description': '整理上周团队会议的重要决策', 'priority': 'low', 'category': 'archive'}
+            ]
+
+            for task in default_gtd_tasks:
+                cursor.execute("""
+                    INSERT INTO gtd_tasks (title, description, priority, category)
+                    VALUES (?, ?, ?, ?)
+                """, (task['title'], task['description'], task['priority'], task['category']))
+
             conn.commit()
             logger.info(f"默认数据插入完成：{len(default_members)}个成员, {len(default_spaces)}个空间, "
-                       f"{len(default_activities)}个活动, {len(default_comments)}个评论")
+                       f"{len(default_activities)}个活动, {len(default_comments)}个评论, "
+                       f"{len(default_checklist_data)}个检查清单, {len(default_gtd_tasks)}个GTD任务")
 
     # ========== 团队成员管理 ==========
     def get_all_team_members(self) -> List[Dict[str, Any]]:
@@ -503,3 +584,89 @@ class DatabaseManager:
             conn.commit()
             cursor.execute("SELECT * FROM analytics_data WHERE id = ?", (data_id,))
             return dict(cursor.fetchone())
+
+    # ========== 检查清单管理 ==========
+    def get_checklist_data(self) -> Optional[Dict[str, Any]]:
+        """获取检查清单数据"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM checklist_data
+                ORDER BY updated_at DESC
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+            if row:
+                data = dict(row)
+                data['data'] = json.loads(data['data_json'])
+                return data
+            return None
+
+    def update_checklist_data(self, data_json: str) -> Dict[str, Any]:
+        """更新检查清单数据"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute("""
+                INSERT INTO checklist_data (data_json, created_at, updated_at)
+                VALUES (?, ?, ?)
+            """, (data_json, now, now))
+            data_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM checklist_data WHERE id = ?", (data_id,))
+            return dict(cursor.fetchone())
+
+    # ========== GTD任务管理 ==========
+    def get_gtd_tasks(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取GTD任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if category:
+                cursor.execute("""
+                    SELECT * FROM gtd_tasks
+                    WHERE category = ?
+                    ORDER BY created_at DESC
+                """, (category,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM gtd_tasks
+                    ORDER BY created_at DESC
+                """)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def add_gtd_task(self, title: str, description: str, priority: str, category: str, due_date: Optional[str] = None) -> Dict[str, Any]:
+        """添加GTD任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO gtd_tasks (title, description, priority, category, due_date)
+                VALUES (?, ?, ?, ?, ?)
+            """, (title, description, priority, category, due_date))
+            task_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM gtd_tasks WHERE id = ?", (task_id,))
+            return dict(cursor.fetchone())
+
+    def update_gtd_task(self, task_id: int, **kwargs) -> bool:
+        """更新GTD任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            values = []
+            for key, value in kwargs.items():
+                updates.append(f"{key} = ?")
+                values.append(value)
+            values.append(task_id)
+            cursor.execute(f"UPDATE gtd_tasks SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
+                          values + [datetime.now().isoformat()])
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_gtd_task(self, task_id: int) -> bool:
+        """删除GTD任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM gtd_tasks WHERE id = ?", (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0

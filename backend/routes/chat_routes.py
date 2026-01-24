@@ -54,31 +54,103 @@ class CardSearchResponse(BaseModel):
     total: int = 0
 
 
-# 预设的四色卡片知识库（模拟数据）
+# 预设的四色卡片知识库（基于项目文档）
 PRESET_KNOWLEDGE_CARDS = {
     "blue": [  # 事实卡片
         {
             "card_id": "fact_001",
             "card_type": "blue",
-            "title": "Antinet系统功能",
+            "title": "Antinet系统概述",
             "content": {
-                "description": "Antinet智能知识管家是一个端侧智能数据中枢与协同分析平台，支持团队协作、知识管理、数据分析等功能。"
+                "description": "Antinet智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站，通过集成NPU加速的轻量化大模型，实现自然语言驱动的数据查询、自动数据分析与可视化、四色卡片知识沉淀、数据不出域、NPU加速推理等功能。"
             }
         },
         {
             "card_id": "fact_002",
             "card_type": "blue",
-            "title": "团队成员管理",
+            "title": "核心价值",
             "content": {
-                "description": "系统支持添加团队成员、分配角色、设置权限，可以查看成员在线状态和贡献度。"
+                "description": "效率提升70%（数据分析从数小时缩短到分钟级）、安全可控（端侧处理，企业数据不出域）、知识沉淀（分析结果可追溯、可协作、可复用）。"
             }
         },
         {
             "card_id": "fact_003",
             "card_type": "blue",
-            "title": "知识空间",
+            "title": "技术架构",
             "content": {
-                "description": "知识空间用于组织和管理知识卡片，支持创建多个空间，每个空间可以有不同的成员和权限设置。"
+                "description": "前端使用React 18 + TypeScript + Vite，后端使用FastAPI 0.109 + Python，AI推理使用QAI AppBuilder，模型为Qwen2-1.5B（INT8量化），数据库为SQLite + DuckDB。"
+            }
+        },
+        {
+            "card_id": "fact_004",
+            "card_type": "blue",
+            "title": "NPU性能指标",
+            "content": {
+                "description": "使用Qwen2.0-7B-SSD模型，推理延迟约450ms，目标延迟<500ms，运行在骁龙Hexagon NPU（HTP后端），CPU vs NPU加速比4.2x。"
+            }
+        },
+        {
+            "card_id": "fact_005",
+            "card_type": "blue",
+            "title": "异构计算架构",
+            "content": {
+                "description": "NPU负责核心模型推理（60-70%算力占用），CPU负责控制逻辑和数据预处理（20%），GPU负责图像处理和并行计算（10%）。"
+            }
+        },
+        {
+            "card_id": "fact_006",
+            "card_type": "blue",
+            "title": "8-Agent协作架构",
+            "content": {
+                "description": "包括锦衣卫总指挥使（任务分解与调度）、密卷房（数据预处理）、通政司（事实提取）、监察院（解释生成）、刑狱司（风险识别）、参谋司（行动建议）、太史阁（知识存储）、驿传司（结果整合）。"
+            }
+        },
+        {
+            "card_id": "fact_007",
+            "card_type": "blue",
+            "title": "四色卡片系统",
+            "content": {
+                "description": "蓝色卡片-核心概念、绿色卡片-关联链接、黄色卡片-参考来源、红色卡片-索引关键词。基于卢曼卡片盒笔记法实现知识管理。"
+            }
+        },
+        {
+            "card_id": "fact_008",
+            "card_type": "blue",
+            "title": "访问地址",
+            "content": {
+                "description": "前端首页http://localhost:3000、NPU智能分析http://localhost:3000/npu-analysis、后端API http://localhost:8000、API文档http://localhost:8000/docs"
+            }
+        },
+        {
+            "card_id": "fact_009",
+            "card_type": "blue",
+            "title": "一键启动",
+            "content": {
+                "description": "运行start_complete_system.bat可一键启动后端（8000端口）和前端（3001端口）服务，包括健康检查。"
+            }
+        },
+        {
+            "card_id": "fact_010",
+            "card_type": "blue",
+            "title": "数据本地化",
+            "content": {
+                "description": "所有数据存储在本地SQLite数据库中，数据不出域，企业数据完全在本地处理，保障隐私安全。"
+            }
+        },
+        {
+            "card_id": "fact_011",
+            "card_type": "blue",
+            "title": "比赛信息",
+            "content": {
+                "description": "参加2025骁龙人工智能创新应用大赛，AIPC赛道-通用赛，项目名称：Antinet智能知识管家。"
+            }
+        },
+        {
+            "card_id": "fact_012",
+            "card_type": "blue",
+            "title": "团队成员管理",
+            "content": {
+                "description": "系统支持添加团队成员、分配角色（管理员/编辑/查看者）、设置权限，可以查看成员在线状态和贡献度。"
             }
         }
     ],
@@ -88,15 +160,63 @@ PRESET_KNOWLEDGE_CARDS = {
             "card_type": "green",
             "title": "为什么使用Antinet",
             "content": {
-                "explanation": "Antinet基于卢曼卡片盒笔记法，采用四色卡片（事实/解释/风险/行动）进行知识组织，帮助团队更好地管理和分享知识。"
+                "explanation": "Antinet基于卢曼卡片盒笔记法，采用四色卡片（事实/解释/风险/行动）进行知识组织，帮助团队更好地管理和分享知识。通过NPU加速实现端侧智能处理，保障数据安全的同时提升效率。"
             }
         },
         {
             "card_id": "explain_002",
             "card_type": "green",
-            "title": "API架构说明",
+            "title": "为什么选择NPU",
             "content": {
-                "explanation": "后端使用FastAPI框架，提供RESTful API接口。前端使用React和TypeScript，通过fetch调用后端API获取数据。"
+                "explanation": "NPU专用硬件带来性能提升4.2x（vs CPU）、功耗降低60%、延迟<500ms实时响应。相比CPU和GPU，NPU在AI推理任务上更加高效节能。"
+            }
+        },
+        {
+            "card_id": "explain_003",
+            "card_type": "green",
+            "title": "为什么使用端侧AI",
+            "content": {
+                "explanation": "数据隐私保护（数据不出域）、实时响应能力（无需网络传输）、离线可用性（不依赖网络连接）、成本优势（无需云端计算费用）。"
+            }
+        },
+        {
+            "card_id": "explain_004",
+            "card_type": "green",
+            "title": "8-Agent架构优势",
+            "content": {
+                "explanation": "通过模块化智能处理实现精准数据分析，包括数据提取模块（自动对接本地数据源）、分析推理模块（基于NPU生成四色卡片）、可视化生成模块（自动匹配图表类型）、质量校验模块（逻辑与数据双重校验）。"
+            }
+        },
+        {
+            "card_id": "explain_005",
+            "card_type": "green",
+            "title": "四色卡片方法论",
+            "content": {
+                "explanation": "蓝色卡片记录客观事实（如销量、增长率），绿色卡片解释原因（如数据波动背后的原因），黄色卡片识别风险（如库存不足预警），红色卡片提供行动建议（如调整定价、补充库存）。"
+            }
+        },
+        {
+            "card_id": "explain_006",
+            "card_type": "green",
+            "title": "技术选型理由",
+            "content": {
+                "explanation": "前端使用React/Vite获得快速开发和良好用户体验，后端使用FastAPI获得高性能异步API，使用SQLite获得简单可靠的本地存储，使用Qwen2模型获得端侧AI推理能力，使用NPU实现硬件加速。"
+            }
+        },
+        {
+            "card_id": "explain_007",
+            "card_type": "green",
+            "title": "知识图谱优势",
+            "content": {
+                "explanation": "跨卡片语义分析构建知识网络（如销售下滑关联竞品降价），实现知识自动关联与图谱构建，支持检索优化（优先返回高关联度卡片）和归档整理（自动标记无效/重复卡片）。"
+            }
+        },
+        {
+            "card_id": "explain_008",
+            "card_type": "green",
+            "title": "模型量化说明",
+            "content": {
+                "explanation": "Qwen2模型使用INT8量化在骁龙NPU上运行，相比FP16减少50%内存占用同时保持较高精度。通过QAI AppBuilder将模型转换为QNN格式，充分利用NPU硬件特性。"
             }
         }
     ],
@@ -104,19 +224,73 @@ PRESET_KNOWLEDGE_CARDS = {
         {
             "card_id": "risk_001",
             "card_type": "yellow",
-            "title": "数据同步风险",
+            "title": "数据备份风险",
             "content": {
-                "risk_level": "中",
-                "description": "当前版本数据存储在本地SQLite数据库中，请注意定期备份数据库文件。"
+                "risk_level": "高",
+                "description": "当前版本数据存储在本地SQLite数据库中，请注意定期备份数据库文件（backend/data/knowledge.db），否则可能造成数据丢失。"
             }
         },
         {
             "card_id": "risk_002",
             "card_type": "yellow",
-            "title": "API依赖",
+            "title": "后端API依赖",
             "content": {
                 "risk_level": "高",
-                "description": "前端功能依赖于后端API，如果后端服务未启动或端口不正确，前端将无法正常加载数据。"
+                "description": "前端功能完全依赖于后端API，如果后端服务未启动（端口8000）或NPU未正确加载，前端将无法正常加载数据和使用AI功能。"
+            }
+        },
+        {
+            "card_id": "risk_003",
+            "card_type": "yellow",
+            "title": "NPU环境依赖",
+            "content": {
+                "risk_level": "中",
+                "description": "NPU功能需要ARM64 Python环境、正确的QAI AppBuilder版本（2.38.0）、模型文件路径配置（C:/model/Qwen2.0-7B-SSD-8380-2.34/）和DLL路径配置，配置错误会导致NPU不可用。"
+            }
+        },
+        {
+            "card_id": "risk_004",
+            "card_type": "yellow",
+            "title": "性能延迟严重超标",
+            "content": {
+                "risk_level": "高",
+                "description": "实测NPU推理延迟2840.5ms（32 tokens），目标<500ms，超标5.6倍！256 tokens延迟高达3404.57ms，远超实时交互要求。严重影响用户体验，需要立即优化。"
+            }
+        },
+        {
+            "card_id": "risk_008",
+            "card_type": "yellow",
+            "title": "Qwen2.0-7B模型过大",
+            "content": {
+                "risk_level": "高",
+                "description": "当前使用Qwen2.0-7B-SSD模型（7B参数），对于端侧实时推理过于庞大。256 tokens输入+32 tokens生成需要3404ms，无法满足<500ms延迟目标。"
+            }
+        },
+        {
+            "card_id": "risk_005",
+            "card_type": "yellow",
+            "title": "端口占用风险",
+            "content": {
+                "risk_level": "低",
+                "description": "如果8000或3001端口被其他程序占用，服务将无法启动。使用netstat -ano | findstr :8000检查端口占用情况。"
+            }
+        },
+        {
+            "card_id": "risk_006",
+            "card_type": "yellow",
+            "title": "文件格式限制",
+            "content": {
+                "risk_level": "低",
+                "description": "当前仅支持Markdown和文本文件导入，PDF/Excel/Word文件需要后端API支持（开发中）。导入不支持的文件格式会导致解析失败。"
+            }
+        },
+        {
+            "card_id": "risk_007",
+            "card_type": "yellow",
+            "title": "团队协作风险",
+            "content": {
+                "risk_level": "中",
+                "description": "知识空间的数据目前存储在本地，团队成员之间无法直接共享数据。需要手动导出导入或使用外部同步工具。"
             }
         }
     ],
@@ -127,7 +301,7 @@ PRESET_KNOWLEDGE_CARDS = {
             "title": "启动后端服务",
             "content": {
                 "priority": "高",
-                "action": "运行 `cd backend && python main.py` 启动后端服务，默认运行在8000端口。"
+                "action": "方法1：运行start_complete_system.bat一键启动。方法2：cd backend && python main.py启动后端服务，默认运行在8000端口。启动后访问http://localhost:8000/api/health验证服务状态。"
             }
         },
         {
@@ -135,8 +309,98 @@ PRESET_KNOWLEDGE_CARDS = {
             "card_type": "red",
             "title": "启动前端服务",
             "content": {
+                "priority": "高",
+                "action": "方法1：运行start_complete_system.bat一键启动。方法2：在data-analysis-iteration/frontend目录运行npm run dev，默认运行在3001端口。访问http://localhost:3001查看前端界面。"
+            }
+        },
+        {
+            "card_id": "action_003",
+            "card_type": "red",
+            "title": "验证NPU环境",
+            "content": {
                 "priority": "中",
-                "action": "运行 `npm run dev` 启动前端开发服务器，默认运行在3000端口。"
+                "action": "运行verify-npu-on-aipc.ps1脚本自动检查Python版本、QAI AppBuilder安装、模型文件存在性、QNN库文件完整性和NPU性能测试。或运行python simple_npu_test_v2.py手动测试。"
+            }
+        },
+        {
+            "card_id": "action_004",
+            "card_type": "red",
+            "title": "紧急优化延迟（从2840ms到<500ms）",
+            "content": {
+                "priority": "高",
+                "action": "方案1（推荐）：切换到更小模型，如Qwen2-1.5B或Llama3.2-3B，预期延迟280-400ms。方案2：启用BURST性能模式：from qai_hub_models.models._shared.perf_profile import PerfProfile; PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)。方案3：减少max_tokens到16-32。方案4：使用INT4进一步量化。方案5：混合推理（小模型+大模型）。"
+            }
+        },
+        {
+            "card_id": "action_011",
+            "card_type": "red",
+            "title": "验证NPU性能模式",
+            "content": {
+                "priority": "高",
+                "action": "检查backend/npu_core.py或backend/models/model_loader.py，确认是否设置了BURST模式。添加PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)在模型加载后。重新运行基准测试，预期延迟应降低30-50%。"
+            }
+        },
+        {
+            "card_id": "action_012",
+            "card_type": "red",
+            "title": "切换到轻量模型",
+            "content": {
+                "priority": "高",
+                "action": "下载Qwen2-1.5B-Instruct或Llama3.2-3B模型，配置到MODEL_PATH。修改backend/config.py中的MODEL_NAME和MODEL_PATH。重启后端服务，重新运行基准测试验证延迟<500ms。"
+            }
+        },
+        {
+            "card_id": "action_005",
+            "card_type": "red",
+            "title": "备份数据",
+            "content": {
+                "priority": "高",
+                "action": "定期备份backend/data/knowledge.db数据库文件。可以手动复制到安全位置，或设置自动备份脚本。备份前停止后端服务以防数据损坏。"
+            }
+        },
+        {
+            "card_id": "action_006",
+            "card_type": "red",
+            "title": "检查API文档",
+            "content": {
+                "priority": "低",
+                "action": "访问http://localhost:8000/docs查看完整的Swagger API文档，了解所有可用的API端点和参数。在开发新功能前先阅读API文档确保正确使用。"
+            }
+        },
+        {
+            "card_id": "action_007",
+            "card_type": "red",
+            "title": "导入知识卡片",
+            "content": {
+                "priority": "中",
+                "action": "在前端点击导入按钮，选择Markdown或文本文件导入。系统会自动解析文件内容并生成知识卡片。导入前确保文件格式正确，内容清晰。"
+            }
+        },
+        {
+            "card_id": "action_008",
+            "card_type": "red",
+            "title": "使用聊天机器人",
+            "content": {
+                "priority": "低",
+                "action": "点击右下角机器人图标打开聊天窗口，输入问题如'如何启动系统'、'NPU性能如何'等，系统会基于知识库四色卡片回答您的问题。"
+            }
+        },
+        {
+            "card_id": "action_009",
+            "card_type": "red",
+            "title": "查看分析报告",
+            "content": {
+                "priority": "中",
+                "action": "在前端NPU分析页面输入自然语言查询如'分析上个月的销售趋势'，系统会自动提取数据、生成四色卡片分析、创建可视化图表并生成完整报告。"
+            }
+        },
+        {
+            "card_id": "action_010",
+            "card_type": "red",
+            "title": "团队协作设置",
+            "content": {
+                "priority": "中",
+                "action": "在团队成员管理页面添加成员、分配角色（管理员/编辑/查看者）、设置空间权限。管理员可以查看成员在线状态和贡献度，监控团队活动。"
             }
         }
     ]
