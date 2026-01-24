@@ -37,15 +37,15 @@
     },
     "engine" : {
       "version" : 1,
-      "n-threads" : 3,
+      "n-threads" : 6,
       "backend" : {
         "version" : 1,
         "type" : "QnnHtp",
         "QnnHtp" : {
           "version" : 1,
-          "use-mmap" : false,
+          "use-mmap" : true,
           "spill-fill-bufsize" : 0,
-          "mmap-budget" : 0,
+          "mmap-budget" : 8589934592,
           "poll" :false,
           "pos-id-dim" : 64,
           "cpu-mask" : "0xe0",

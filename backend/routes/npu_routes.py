@@ -2,7 +2,7 @@
 FastAPI 路由 - NPU 模型推理接口
 整合远程 AIPC 预装模型
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 import time
@@ -13,6 +13,7 @@ from models.model_loader import (
     load_model_if_needed,
     ModelConfig
 )
+from routes.model_router import select_model, get_model_info, estimate_complexity
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +82,21 @@ async def analyze_data(request: AnalyzeRequest):
     - **query**: 自然语言查询（必填）
     - **max_tokens**: 最大生成token数（默认128）
     - **temperature**: 温度参数（默认0.7）
-    - **model**: 指定模型键名（可选，默认使用推荐模型）
+    - **model**: 指定模型键名（可选，默认使用智能路由）
     """
     try:
         start_time = time.time()
 
-        # 加载模型（使用全局单例）
-        from models.model_loader import get_model_loader
-        loader = get_model_loader(request.model)
+        # 智能模型选择（如果未指定）
+        if request.model is None:
+            selected_model_key = select_model(request.query)
+            logger.info(f"[NPU] 自动选择模型: {selected_model_key}")
+        else:
+            selected_model_key = request.model
+            logger.info(f"[NPU] 用户指定模型: {selected_model_key}")
+
+        # 加载模型
+        loader = NPUModelLoader(selected_model_key)
         model = loader.load()
 
         # NPU 推理
@@ -106,10 +114,13 @@ async def analyze_data(request: AnalyzeRequest):
         total_time = (time.time() - start_time) * 1000
 
         # 性能数据
+        model_info = get_model_info(selected_model_key)
         performance = {
             "inference_time_ms": round(inference_time, 2),
             "total_time_ms": round(total_time, 2),
-            "model": loader.model_config['name'],
+            "model_key": selected_model_key,
+            "model_name": loader.model_config['name'],
+            "model_params": loader.model_config['params'],
             "device": "NPU",
             "tokens_generated": request.max_tokens,
             "meets_target": inference_time < 500  # 目标 < 500ms
@@ -249,6 +260,29 @@ async def model_status():
     except Exception as e:
         logger.error(f"❌ 获取状态失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
+
+
+@router.post("/test-router")
+async def test_router(query: str = Query(..., description="测试查询文本")):
+    """
+    测试智能路由器
+
+    返回给定查询的模型选择结果
+    """
+    try:
+        estimation = estimate_complexity(query)
+        selected_model = select_model(query)
+
+        return {
+            "query": query,
+            "complexity": estimation,
+            "selected_model": selected_model,
+            "model_info": get_model_info(selected_model)
+        }
+
+    except Exception as e:
+        logger.error(f"❌ 路由测试失败: {e}")
+        raise HTTPException(status_code=500, detail=f"路由测试失败: {str(e)}")
 
 
 # ==================== 辅助函数 ====================

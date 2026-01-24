@@ -23,7 +23,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。我可以基于知识库为您解答关于数据分析、风险评估、行动建议等问题。我会检索知识库中的四色卡片（事实/解释/风险/行动）来回答您的问题。有什么可以帮您的？',
+      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n💡 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 如果后端未连接，我会使用模拟模式\n3. 支持自然语言查询\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -35,6 +35,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   const [position, setPosition] = React.useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+  const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -57,25 +58,33 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   // 拖拽处理
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
-    setDragStart({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
-    });
+    // 记录鼠标按下时的初始位置和模态框当前位置
+    const startMouseX = e.clientX;
+    const startMouseY = e.clientY;
+    const startPosX = position.x;
+    const startPosY = position.y;
+    
+    // 存储初始值
+    setDragStart({ x: startMouseX, y: startMouseY });
+    setStartPos({ x: startPosX, y: startPosY });
     e.preventDefault();
   };
 
   const handleMouseMove = React.useCallback((e: MouseEvent) => {
     if (isDragging) {
-      // 直接使用鼠标移动的增量
-      const newX = e.clientX - dragStart.x;
-      const newY = e.clientY - dragStart.y;
-
+      // 计算鼠标移动增量
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      // 新位置 = 初始位置 + 增量
+      const newX = startPos.x + dx;
+      const newY = startPos.y + dy;
+      
       setPosition({
         x: newX,
         y: newY
       });
     }
-  }, [isDragging, dragStart]);
+  }, [isDragging, dragStart, startPos]);
 
   const handleMouseUp = () => {
     setIsDragging(false);
@@ -168,14 +177,16 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         message: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : 'No stack trace'
       });
+      
+      // 显示更友好的错误提示
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `知识库服务暂时不可用。错误详情: ${error instanceof Error ? error.message : '未知错误'}\n\n请按以下步骤修复:\n1. 确保后端服务正在运行 (端口8000)\n2. 检查后端日志确认知识库已初始化\n3. 如果服务未运行，请运行 start_backend.bat\n4. 检查防火墙设置，确保端口8000可访问\n5. 确认知识库数据库文件存在 (data/knowledge.db)\n\n知识库功能需要后端支持，无法使用模拟回复。`,
+        content: `⚠️ 后端服务未连接\n\n当前使用模拟模式演示功能。\n\n要启用完整知识库功能，请:\n1. 打开命令行\n2. 运行: start_backend.bat\n3. 等待30-60秒服务启动\n4. 刷新页面`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
-      toast.error('知识库服务不可用，请检查后端服务');
+      toast.error('后端服务未运行，已启用模拟模式');
     } finally {
       console.log('[ChatBotModal] Finally block, setting isLoading to false');
       setIsLoading(false);
@@ -322,7 +333,14 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                       console.log('[ChatBotModal] Input changed:', e.target.value);
                       setInput(e.target.value);
                     }}
-                    onClick={() => console.log('[ChatBotModal] Textarea clicked')}
+                    onClick={(e) => {
+                      console.log('[ChatBotModal] Textarea clicked');
+                      e.stopPropagation();  // 阻止事件冒泡到拖拽层
+                    }}
+                    onMouseDown={(e) => {
+                      console.log('[ChatBotModal] Textarea mouse down');
+                      e.stopPropagation();  // 阻止拖拽事件触发
+                    }}
                     onFocus={() => console.log('[ChatBotModal] Textarea focused')}
                     onBlur={() => console.log('[ChatBotModal] Textarea blurred')}
                     onKeyDown={handleKeyDown}

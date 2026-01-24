@@ -7,7 +7,13 @@ import logging
 import os
 from typing import Optional, Callable
 from qai_appbuilder import GenieContext
-from qai_hub_models.models._shared.perf_profile import PerfProfile
+
+# qai_hub_models是可选的，仅用于性能配置（BURST模式）
+PerfProfile = None
+try:
+    from qai_hub_models.models._shared.perf_profile import PerfProfile
+except ImportError:
+    pass
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -46,10 +52,13 @@ class NPUInferenceCore:
             # 创建 GenieContext（只传入config路径）
             self.model = GenieContext(self.model_config_path)
 
-            # 启用BURST性能模式以优化延迟
+            # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
             try:
-                PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
-                logger.info("[OK] 已启用BURST性能模式")
+                if PerfProfile is not None:
+                    PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
+                    logger.info("[OK] 已启用BURST性能模式")
+                else:
+                    logger.info("[INFO] 使用默认性能配置（qai_hub_models未安装）")
             except Exception as e:
                 logger.warning(f"[WARNING] 启用BURST模式失败: {e}")
 

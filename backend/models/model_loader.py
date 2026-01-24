@@ -9,6 +9,9 @@ import logging
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
+# 强制禁用 qai_hub_models 依赖，防止因缺少该库导致崩溃
+HAS_QAI_HUB = False
+
 # 添加Genie路径
 GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
 if GENIE_PATH not in sys.path:
@@ -32,13 +35,22 @@ for p in paths_to_add:
     if os.path.exists(p):
         os.add_dll_directory(p)
 
+# 提前初始化logger
+logger = logging.getLogger(__name__)
+
+# qai_hub_models是可选的，仅用于性能配置（BURST模式）
+PerfProfile = None
+try:
+    from qai_hub_models.models._shared.perf_profile import PerfProfile
+    HAS_QAI_HUB = True
+    logger.info("[OK] 已导入 qai_hub_models.PerfProfile，性能优化可用")
+except ImportError:
+    logger.warning("[INFO] qai_hub_models 未安装，将使用默认性能配置")
+
 try:
     from qai_appbuilder import GenieContext
-    from qai_hub_models.models._shared.perf_profile import PerfProfile
 except ImportError as e:
     raise RuntimeError(f"无法导入GenieContext: {e}。请确保已安装qai_appbuilder库。")
-
-logger = logging.getLogger(__name__)
 
 
 
@@ -147,10 +159,13 @@ class NPUModelLoader:
                 # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
                 self.model = GenieContext(config_path)
 
-                # 启用BURST性能模式以优化延迟
+                # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
                 try:
-                    PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
-                    logger.info("[OK] 已启用BURST性能模式")
+                    if PerfProfile is not None:
+                        PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
+                        logger.info("[OK] 已启用BURST性能模式")
+                    else:
+                        logger.info("[INFO] 使用默认性能配置（qai_hub_models未安装）")
                 except Exception as e:
                     logger.warning(f"[WARNING] 启用BURST模式失败: {e}")
 
