@@ -31,6 +31,9 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSend = async () => {
+    console.log('[ChatBotModal] handleSend called, input:', input);
+    console.log('[ChatBotModal] current isLoading state:', isLoading);
+
     if (!input.trim()) return;
 
     const userMessage: Message = {
@@ -42,9 +45,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    console.log('[ChatBotModal] Setting isLoading to true');
     setIsLoading(true);
 
     try {
+      console.log('[ChatBotModal] Calling chatService.query...');
       // 调用知识库查询API
       const history = messages.map(msg => ({
         role: msg.role,
@@ -52,6 +57,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       })) as ChatMessage[];
 
       const response = await chatService.query(input, history);
+      console.log('[ChatBotModal] chatService.query response:', response);
 
       // 构建回复消息
       let responseContent = response.response;
@@ -77,7 +83,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
 
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error('[ChatBotModal] Chat error:', error);
+      console.error('[ChatBotModal] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : 'No stack trace'
+      });
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -87,6 +97,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       setMessages(prev => [...prev, errorMessage]);
       toast.error('知识库服务不可用，请检查后端服务');
     } finally {
+      console.log('[ChatBotModal] Finally block, setting isLoading to false');
       setIsLoading(false);
     }
   };
@@ -214,7 +225,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               <div className="flex space-x-4">
                 <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    console.log('[ChatBotModal] Input changed:', e.target.value);
+                    setInput(e.target.value);
+                  }}
+                  onClick={() => console.log('[ChatBotModal] Textarea clicked')}
                   onKeyDown={handleKeyDown}
                   placeholder="输入您关于系统使用的问题..."
                   className="flex-1 bg-gray-100 dark:bg-gray-700 border-0 rounded-xl p-4 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
@@ -224,7 +239,10 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={handleSend}
+                  onClick={() => {
+                    console.log('[ChatBotModal] Send button clicked, isLoading:', isLoading);
+                    handleSend();
+                  }}
                   disabled={isLoading || !input.trim()}
                   className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white p-4 rounded-xl self-end transition-colors"
                 >

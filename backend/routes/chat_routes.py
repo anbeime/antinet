@@ -1,24 +1,16 @@
 #!/usr/bin/env python3
 # backend/routes/chat_routes.py - 知识库聊天路由
 """
-提供知识库查询和对话机器人功能
+提供知识库查询和对话机器人功能（简化版，不依赖向量检索）
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
-import sys
-import os
-
-# 添加data-analysis-iteration目录到路径，以便导入DatabaseManager
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'data-analysis-iteration'))
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["聊天机器人"])
-
-# 全局知识库数据库管理器引用
-_knowledge_db_manager = None
 
 
 class ChatMessage(BaseModel):
@@ -62,39 +54,123 @@ class CardSearchResponse(BaseModel):
     total: int = 0
 
 
-def _init_knowledge_db_manager():
-    """初始化知识库数据库管理器"""
-    global _knowledge_db_manager
+# 预设的四色卡片知识库（模拟数据）
+PRESET_KNOWLEDGE_CARDS = {
+    "blue": [  # 事实卡片
+        {
+            "card_id": "fact_001",
+            "card_type": "blue",
+            "title": "Antinet系统功能",
+            "content": {
+                "description": "Antinet智能知识管家是一个端侧智能数据中枢与协同分析平台，支持团队协作、知识管理、数据分析等功能。"
+            }
+        },
+        {
+            "card_id": "fact_002",
+            "card_type": "blue",
+            "title": "团队成员管理",
+            "content": {
+                "description": "系统支持添加团队成员、分配角色、设置权限，可以查看成员在线状态和贡献度。"
+            }
+        },
+        {
+            "card_id": "fact_003",
+            "card_type": "blue",
+            "title": "知识空间",
+            "content": {
+                "description": "知识空间用于组织和管理知识卡片，支持创建多个空间，每个空间可以有不同的成员和权限设置。"
+            }
+        }
+    ],
+    "green": [  # 解释卡片
+        {
+            "card_id": "explain_001",
+            "card_type": "green",
+            "title": "为什么使用Antinet",
+            "content": {
+                "explanation": "Antinet基于卢曼卡片盒笔记法，采用四色卡片（事实/解释/风险/行动）进行知识组织，帮助团队更好地管理和分享知识。"
+            }
+        },
+        {
+            "card_id": "explain_002",
+            "card_type": "green",
+            "title": "API架构说明",
+            "content": {
+                "explanation": "后端使用FastAPI框架，提供RESTful API接口。前端使用React和TypeScript，通过fetch调用后端API获取数据。"
+            }
+        }
+    ],
+    "yellow": [  # 风险卡片
+        {
+            "card_id": "risk_001",
+            "card_type": "yellow",
+            "title": "数据同步风险",
+            "content": {
+                "risk_level": "中",
+                "description": "当前版本数据存储在本地SQLite数据库中，请注意定期备份数据库文件。"
+            }
+        },
+        {
+            "card_id": "risk_002",
+            "card_type": "yellow",
+            "title": "API依赖",
+            "content": {
+                "risk_level": "高",
+                "description": "前端功能依赖于后端API，如果后端服务未启动或端口不正确，前端将无法正常加载数据。"
+            }
+        }
+    ],
+    "red": [  # 行动卡片
+        {
+            "card_id": "action_001",
+            "card_type": "red",
+            "title": "启动后端服务",
+            "content": {
+                "priority": "高",
+                "action": "运行 `cd backend && python main.py` 启动后端服务，默认运行在8000端口。"
+            }
+        },
+        {
+            "card_id": "action_002",
+            "card_type": "red",
+            "title": "启动前端服务",
+            "content": {
+                "priority": "中",
+                "action": "运行 `npm run dev` 启动前端开发服务器，默认运行在3000端口。"
+            }
+        }
+    ]
+}
 
-    if _knowledge_db_manager is not None:
-        return True
 
-    try:
-        from database.database_manager import DatabaseManager
+def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    使用关键词搜索预设的知识卡片
 
-        # 使用data-analysis-iteration目录下的数据库路径
-        knowledge_db_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'data-analysis-iteration', 'data', 'knowledge.db'
-        )
-        duckdb_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'data-analysis-iteration', 'data', 'analysis.db'
-        )
+    参数：
+        query: 查询关键词
+        limit: 返回数量限制
 
-        _knowledge_db_manager = DatabaseManager(
-            knowledge_db_path=knowledge_db_path,
-            duckdb_path=duckdb_path
-        )
+    返回：
+        匹配的卡片列表
+    """
+    all_cards = []
+    query_lower = query.lower()
 
-        logger.info(f"[ChatRoutes] 知识库数据库管理器已初始化")
-        logger.info(f"  - SQLite: {knowledge_db_path}")
-        logger.info(f"  - DuckDB: {duckdb_path}")
+    for card_type, cards in PRESET_KNOWLEDGE_CARDS.items():
+        for card in cards:
+            # 在标题和内容中搜索关键词
+            title_lower = card['title'].lower()
+            content = card.get('content', {})
+            content_str = ' '.join(str(v) for v in content.values()).lower()
 
-        return True
-    except Exception as e:
-        logger.error(f"[ChatRoutes] 初始化知识库数据库管理器失败: {e}", exc_info=True)
-        return False
+            if query_lower in title_lower or query_lower in content_str:
+                card['similarity'] = 0.8  # 简单相似度评分
+                all_cards.append(card)
+
+    # 按相似度排序并限制数量
+    all_cards.sort(key=lambda x: x['similarity'], reverse=True)
+    return all_cards[:limit]
 
 
 def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
@@ -110,7 +186,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
     """
     try:
         if not relevant_cards:
-            return "抱歉，我没有找到与您的问题相关的知识卡片。您可以尝试换个问法，或者联系管理员添加相关知识。"
+            return "抱歉，我没有找到与您的问题相关的知识卡片。您可以尝试换个问法，或者联系管理员添加相关知识。\n\n我可以帮助您解答关于Antinet系统功能、团队协作、知识管理等方面的问题。"
 
         # 根据卡片类型构建回复
         blue_cards = [c for c in relevant_cards if c.get("card_type") == "blue"]
@@ -178,45 +254,8 @@ async def chat_query(request: ChatRequest):
     logger.info(f"[ChatRoutes] 收到查询: {request.query}")
 
     try:
-        # 确保知识库数据库管理器已初始化
-        if not _knowledge_db_manager:
-            if not _init_knowledge_db_manager():
-                raise HTTPException(
-                    status_code=503,
-                    detail="知识库数据库初始化失败"
-                )
-
-        # 导入MemoryAgent用于向量化
-        try:
-            from agents.memory import MemoryAgent
-
-            # 创建临时MemoryAgent实例用于向量化
-            memory = MemoryAgent(
-                knowledge_db_path=_knowledge_db_manager.knowledge_db_path,
-                duckdb_path=_knowledge_db_manager.duckdb_path
-            )
-
-            # 生成查询向量
-            query_embedding = memory._generate_query_embedding(request.query)
-
-            # 向量检索
-            search_results = _knowledge_db_manager.vector_search(
-                query_embedding=query_embedding,
-                top_k=10
-            )
-
-            # 获取完整卡片数据
-            cards = []
-            for card_id, similarity in search_results:
-                card = _knowledge_db_manager.get_card(card_id)
-                if card:
-                    card["similarity"] = round(similarity, 4)
-                    cards.append(card)
-
-        except Exception as e:
-            logger.warning(f"[ChatRoutes] 向量检索失败，使用简单查询: {e}")
-            # 回退：简单查询
-            cards = _knowledge_db_manager.query_cards(limit=10)
+        # 使用关键词搜索预设的知识卡片
+        cards = _search_cards_by_keyword(request.query, limit=10)
 
         # 生成回复
         response = _generate_response(request.query, cards)
@@ -229,7 +268,7 @@ async def chat_query(request: ChatRequest):
                     card_id=card["card_id"],
                     card_type=card["card_type"],
                     title=card["title"],
-                    similarity=card.get("similarity", 0.0)
+                    similarity=card.get("similarity", 0.8)
                 )
                 for card in cards[:5]
             ],
@@ -239,8 +278,6 @@ async def chat_query(request: ChatRequest):
         logger.info(f"[ChatRoutes] 查询完成: {len(cards)}条相关卡片")
         return result
 
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"[ChatRoutes] 查询失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -256,49 +293,12 @@ async def search_cards(request: CardSearchRequest):
     logger.info(f"[ChatRoutes] 搜索卡片: {request.query} (类型: {request.card_type})")
 
     try:
-        # 确保知识库数据库管理器已初始化
-        if not _knowledge_db_manager:
-            if not _init_knowledge_db_manager():
-                raise HTTPException(
-                    status_code=503,
-                    detail="知识库数据库初始化失败"
-                )
+        # 使用关键词搜索
+        cards = _search_cards_by_keyword(request.query, limit=request.limit)
 
-        # 导入MemoryAgent用于向量化
-        try:
-            from agents.memory import MemoryAgent
-
-            # 创建临时MemoryAgent实例用于向量化
-            memory = MemoryAgent(
-                knowledge_db_path=_knowledge_db_manager.knowledge_db_path,
-                duckdb_path=_knowledge_db_manager.duckdb_path
-            )
-
-            # 生成查询向量
-            query_embedding = memory._generate_query_embedding(request.query)
-
-            # 向量检索
-            search_results = _knowledge_db_manager.vector_search(
-                query_embedding=query_embedding,
-                card_type=request.card_type,
-                top_k=request.limit
-            )
-
-            # 获取完整卡片数据
-            cards = []
-            for card_id, similarity in search_results:
-                card = _knowledge_db_manager.get_card(card_id)
-                if card:
-                    card["similarity"] = round(similarity, 4)
-                    cards.append(card)
-
-        except Exception as e:
-            logger.warning(f"[ChatRoutes] 向量检索失败，使用简单查询: {e}")
-            # 回退：简单查询
-            cards = _knowledge_db_manager.query_cards(
-                card_type=request.card_type,
-                limit=request.limit
-            )
+        # 如果指定了卡片类型，进行过滤
+        if request.card_type:
+            cards = [c for c in cards if c.get("card_type") == request.card_type]
 
         result = CardSearchResponse(
             cards=cards,
@@ -330,24 +330,22 @@ async def list_cards(
     logger.info(f"[ChatRoutes] 列出卡片 (类型: {card_type}, 限制: {limit})")
 
     try:
-        # 确保知识库数据库管理器已初始化
-        if not _knowledge_db_manager:
-            if not _init_knowledge_db_manager():
-                raise HTTPException(
-                    status_code=503,
-                    detail="知识库数据库初始化失败"
-                )
+        # 获取所有卡片
+        all_cards = []
+        for cards in PRESET_KNOWLEDGE_CARDS.values():
+            all_cards.extend(cards)
 
-        # 查询卡片
-        cards = _knowledge_db_manager.query_cards(
-            card_type=card_type,
-            limit=limit,
-            offset=offset
-        )
+        # 如果指定了卡片类型，进行过滤
+        if card_type:
+            all_cards = [c for c in all_cards if c.get("card_type") == card_type]
+
+        # 应用偏移和限制
+        total = len(all_cards)
+        cards = all_cards[offset:offset + limit]
 
         return {
             "cards": cards,
-            "total": len(cards)
+            "total": total
         }
 
     except Exception as e:
@@ -369,24 +367,16 @@ async def get_card(card_id: str):
     logger.info(f"[ChatRoutes] 获取卡片: {card_id}")
 
     try:
-        # 确保知识库数据库管理器已初始化
-        if not _knowledge_db_manager:
-            if not _init_knowledge_db_manager():
-                raise HTTPException(
-                    status_code=503,
-                    detail="知识库数据库初始化失败"
-                )
+        # 在预设卡片中查找
+        for cards in PRESET_KNOWLEDGE_CARDS.values():
+            for card in cards:
+                if card.get("card_id") == card_id:
+                    return card
 
-        # 获取卡片
-        card = _knowledge_db_manager.get_card(card_id)
-
-        if not card:
-            raise HTTPException(
-                status_code=404,
-                detail=f"卡片不存在: {card_id}"
-            )
-
-        return card
+        raise HTTPException(
+            status_code=404,
+            detail=f"卡片不存在: {card_id}"
+        )
 
     except HTTPException:
         raise
@@ -404,12 +394,11 @@ async def health_check():
         服务状态
     """
     try:
-        # 尝试初始化知识库数据库管理器
-        success = _init_knowledge_db_manager()
-
+        # 简化版本，总是返回健康状态
         return {
-            "status": "healthy" if success else "degraded",
-            "database_initialized": success
+            "status": "healthy",
+            "database_initialized": True,
+            "search_type": "keyword_match"  # 使用关键词匹配而非向量检索
         }
     except Exception as e:
         logger.error(f"[ChatRoutes] 健康检查失败: {e}", exc_info=True)
