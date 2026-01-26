@@ -141,7 +141,7 @@ async def analyze_data(request: AnalyzeRequest):
         )
 
     except Exception as e:
-        logger.error(f"❌ 分析失败: {e}")
+        logger.error(f" 分析失败: {e}")
         raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
 
 
@@ -170,7 +170,7 @@ async def list_models():
         return model_list
 
     except Exception as e:
-        logger.error(f"❌ 获取模型列表失败: {e}")
+        logger.error(f" 获取模型列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取模型列表失败: {str(e)}")
 
 
@@ -223,7 +223,7 @@ async def performance_benchmark():
         )
 
     except Exception as e:
-        logger.error(f"❌ 性能测试失败: {e}")
+        logger.error(f" 性能测试失败: {e}")
         raise HTTPException(status_code=500, detail=f"性能测试失败: {str(e)}")
 
 
@@ -258,7 +258,7 @@ async def model_status():
         }
 
     except Exception as e:
-        logger.error(f"❌ 获取状态失败: {e}")
+        logger.error(f" 获取状态失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
 
 
@@ -281,7 +281,7 @@ async def test_router(query: str = Query(..., description="测试查询文本"))
         }
 
     except Exception as e:
-        logger.error(f"❌ 路由测试失败: {e}")
+        logger.error(f" 路由测试失败: {e}")
         raise HTTPException(status_code=500, detail=f"路由测试失败: {str(e)}")
 
 

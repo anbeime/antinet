@@ -67,18 +67,8 @@ async function apiCall<T>(
     return await response.json();
   } catch (error) {
     console.error('API调用失败:', error);
-    // 模拟模式：返回模拟数据
-    console.warn('使用模拟模式返回数据');
-    return {
-      response: '模拟回复：知识库服务正在连接中...',
-      sources: [{
-        card_id: 'sim_001',
-        card_type: 'blue',
-        title: '服务连接中',
-        similarity: 0.95
-      }],
-      cards: []
-    } as T;
+    toast.error('知识库服务不可用，请检查后端服务');
+    throw error;
   }
 }
 
@@ -104,22 +94,6 @@ export const chatService = {
       return apiCall<ChatResponse>('/query', {
         method: 'POST',
         body: JSON.stringify(request),
-      });
-    } catch (error) {
-      console.warn('后端服务不可用，使用模拟模式');
-      // 模拟回复，确保前端可用
-      return {
-        response: `收到您的查询: "${query}"\n\n当前后端服务未运行，知识库功能暂时使用模拟回复。\n\n请按以下步骤启动后端服务:\n1. 打开命令行\n2. 运行: cd backend && python main.py\n3. 等待30-60秒服务启动\n4. 刷新此页面`,
-        sources: [{
-          card_id: 'sim_001',
-          card_type: 'yellow',
-          title: '后端服务未运行',
-          similarity: 1.0
-        }],
-        cards: []
-      };
-    }
-  },
       });
     } catch (error) {
       console.error('知识库查询失败:', error);

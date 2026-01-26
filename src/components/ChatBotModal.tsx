@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Bot, User, FileText, Info, AlertTriangle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
+import { codebuddyChatService, CodeBuddyChatMessage, formatLatency, getEnhancementStatus } from '../services/codebuddyChatService';
 
 interface Message {
   id: string;
@@ -23,12 +24,14 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n💡 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 如果后端未连接，我会使用模拟模式\n3. 支持自然语言查询\n\n有什么可以帮您的？',
+      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n💡 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 基于四色卡片知识库提供答案\n3. 支持自然语言查询\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [useCodeBuddy, setUseCodeBuddy] = useState(false); // 改为 false，使用本地知识库
+  const [sdkAvailable, setSdkAvailable] = useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modalRef = React.useRef<HTMLDivElement>(null);
@@ -52,8 +55,25 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 100);
+      // 检查 CodeBuddy SDK 是否可用
+      checkSdkAvailability();
     }
   }, [isOpen]);
+
+  // 检查 SDK 可用性
+  const checkSdkAvailability = async () => {
+    try {
+      const available = await codebuddyChatService.isSdkAvailable();
+      setSdkAvailable(available);
+      if (!available) {
+        setUseCodeBuddy(false);
+      }
+    } catch (error) {
+      console.error('检查 SDK 可用性失败:', error);
+      setSdkAvailable(false);
+      setUseCodeBuddy(false);
+    }
+  };
 
   // 拖拽处理
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -145,11 +165,32 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         content: msg.content,
       })) as ChatMessage[];
 
-      const response = await chatService.query(input, history);
-      console.log('[ChatBotModal] chatService.query response:', response);
+      let response;
+      if (useCodeBuddy && sdkAvailable) {
+        console.log('[ChatBotModal] 使用 CodeBuddy 增强聊天');
+        response = await codebuddyChatService.chat(input, history);
+      } else {
+        console.log('[ChatBotModal] 使用基础聊天');
+        response = await chatService.query(input, history);
+      }
+      console.log('[ChatBotModal] 聊天响应:', response);
 
       // 构建回复消息
       let responseContent = response.response;
+
+      // 添加增强状态信息
+      if ('enhanced_by_sdk' in response) {
+        const codebuddyResponse = response as any;
+        responseContent = `🤖 ${getEnhancementStatus(codebuddyResponse)}\n\n${responseContent}`;
+
+        if (codebuddyResponse.latency_ms) {
+          responseContent += `\n\n⏱️ 响应时间: ${formatLatency(codebuddyResponse.latency_ms)}`;
+        }
+
+        if (codebuddyResponse.error) {
+          responseContent += `\n\n⚠️ 注意: ${codebuddyResponse.error}`;
+        }
+      }
 
       // 添加来源信息
       if (response.sources && response.sources.length > 0) {
@@ -324,6 +365,45 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
 
             {/* 输入区域 - 固定在底部 */}
             <div className="flex-none border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+              {/* CodeBuddy 增强选项 */}
+              {sdkAvailable && (
+                <div className="px-4 pt-4 pb-2 border-b border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <button
+                        onClick={() => setUseCodeBuddy(!useCodeBuddy)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          useCodeBuddy ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            useCodeBuddy ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                      <span className="text-sm font-medium">CodeBuddy 增强</span>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        useCodeBuddy
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                      }`}>
+                        {useCodeBuddy ? '已启用' : '已禁用'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {sdkAvailable
+                        ? '✨ 使用 CodeBuddy SDK 增强 AI 对话能力'
+                        : '⚠️ CodeBuddy SDK 未安装，增强功能不可用'}
+                    </div>
+                  </div>
+                  {useCodeBuddy && (
+                    <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      启用后，对话将使用 CodeBuddy SDK 进行智能增强，并结合知识库提供更准确的回答。
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="p-4">
                 <div className="flex space-x-3">
                   <textarea

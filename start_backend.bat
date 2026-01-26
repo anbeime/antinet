@@ -1,55 +1,62 @@
 @echo off
-REM 启动Antinet后端服务
+REM ========================================
+REM   Antinet Backend Service Starter
+REM   Using Virtual Environment
+REM ========================================
 echo ========================================
-echo   Antinet 后端服务启动脚本
+echo   Antinet Backend Service
 echo ========================================
 echo.
 
-cd /d "%~dp0backend"
+cd /d "%~dp0"
 
-echo 检查Python环境...
+REM Configure NPU environment
+call set_env.bat
+echo.
+echo Checking Python environment...
 
-REM 优先使用虚拟环境（ARM64版本）
+REM Priority: Use virtual environment (ARM64 version)
 set "PYTHON_EXE=python"
-if exist "..\venv_arm64\Scripts\python.exe" (
-    set "PYTHON_EXE=..\venv_arm64\Scripts\python.exe"
-    echo [信息] 使用 ARM64 虚拟环境
-) else if exist "..\venv\Scripts\python.exe" (
-    set "PYTHON_EXE=..\venv\Scripts\python.exe"
-    echo [信息] 使用 x64 虚拟环境
+if exist "venv_arm64\Scripts\python.exe" (
+    set "PYTHON_EXE=venv_arm64\Scripts\python.exe"
+    echo [INFO] Using ARM64 virtual environment
+) else if exist "venv\Scripts\python.exe" (
+    set "PYTHON_EXE=venv\Scripts\python.exe"
+    echo [INFO] Using x64 virtual environment
 ) else (
-    echo [信息] 使用系统 Python 环境
+    echo [INFO] Using system Python environment
 )
 
 %PYTHON_EXE% --version
 if errorlevel 1 (
-    echo [错误] Python未安装或未添加到PATH
+    echo [ERROR] Python not installed or not in PATH
     pause
     exit /b 1
 )
 
 echo.
-echo 检查依赖...
-%PYTHON_EXE% -c "import fastapi, qai_appbuilder, onnxruntime, numpy, pandas, duckdb, sqlalchemy, loguru; print('所有依赖检查通过')"
+echo Checking dependencies...
+%PYTHON_EXE% -c "import fastapi, qai_appbuilder, onnxruntime, numpy, pandas, duckdb, sqlalchemy, loguru; print('All dependencies OK')"
 if errorlevel 1 (
-    echo [警告] 部分依赖未安装，正在安装...
-    %PYTHON_EXE% -m pip install -r requirements.txt
-    REM 检查是否安装了 qai_appbuilder
+    echo [WARNING] Some dependencies missing, installing...
+    %PYTHON_EXE% -m pip install -r backend\requirements.txt
+    REM Check if QAI AppBuilder is installed
     %PYTHON_EXE% -c "import qai_appbuilder" 2>nul
     if errorlevel 1 (
-        echo [信息] 正在安装 QAI AppBuilder...
-        %PYTHON_EXE% -m pip install "C:\ai-engine-direct-helper\samples\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
+        echo [INFO] Installing QAI AppBuilder ARM64 version...
+        %PYTHON_EXE% -m pip install "C:\test\qai_appbuilder-2.38.0-cp312-cp312-win_arm64.whl"
     )
-    echo [信息] 依赖安装完成
+    echo [INFO] Dependencies installation complete
 )
 
 echo.
-echo 启动后端服务...
-echo 服务地址: http://localhost:8000
-echo API文档: http://localhost:8000/docs
-echo 按 Ctrl+C 停止服务
+echo Starting backend service...
+echo Service URL: http://localhost:8000
+echo API Docs: http://localhost:8000/docs
+echo Press Ctrl+C to stop service
 echo.
 
-%PYTHON_EXE% main.py
+REM Run from project root using module syntax
+%PYTHON_EXE% -m backend.main
 
 pause

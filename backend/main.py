@@ -9,6 +9,11 @@ Antinet智能知识管家 - 后端API服务
 import os
 import sys
 
+# 添加项目根目录到 Python 路径，以支持绝对导入
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
 lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
 bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
@@ -21,6 +26,16 @@ for p in paths_to_add:
         current_path = p + ';' + current_path
 os.environ['PATH'] = current_path
 os.environ['QAI_LIBS_PATH'] = lib_path
+
+# 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
+try:
+    from backend.config import settings
+    qnn_log_level = settings.QNN_LOG_LEVEL
+    os.environ['QNN_LOG_LEVEL'] = qnn_log_level
+    print(f"[SETUP] QNN 日志级别设置为: {qnn_log_level}")
+except ImportError:
+    os.environ['QNN_LOG_LEVEL'] = "DEBUG"
+    print(f"[SETUP] 使用默认 QNN 日志级别: DEBUG")
 
 # 显式添加 DLL 目录（Python 3.8+）
 for p in paths_to_add:
@@ -42,21 +57,29 @@ from pathlib import Path
 import json
 import time
 
-from config import settings
+from backend.config import settings
 # 可选导入 NPU 路由（如果依赖库可用）
 try:
-    from routes.npu_routes import router as npu_router
+    from backend.routes.npu_routes import router as npu_router
 except Exception as e:
     print(f"[WARNING] 无法导入 NPU 路由: {e}")
     npu_router = None
-from routes import data_routes  # 导入数据管理模块
+from backend.routes import data_routes  # 导入数据管理模块
 # 可选导入聊天机器人路由（如果依赖库可用）
 try:
-    from routes.chat_routes import router as chat_router
+    from backend.routes.chat_routes import router as chat_router
 except Exception as e:
     print(f"[WARNING] 无法导入聊天机器人路由: {e}")
     chat_router = None
-from database import DatabaseManager
+
+# 可选导入 CodeBuddy 聊天路由（如果 SDK 可用）
+try:
+    from backend.routes.codebuddy_chat_routes import router as codebuddy_chat_router
+    print("[INFO] CodeBuddy 聊天路由导入成功")
+except Exception as e:
+    print(f"[WARNING] 无法导入 CodeBuddy 聊天路由: {e}")
+    codebuddy_chat_router = None
+from backend.database import DatabaseManager
 
 # 配置日志
 logging.basicConfig(
@@ -96,6 +119,85 @@ if npu_router is not None:
 app.include_router(data_routes.router)  # 数据管理路由
 if chat_router is not None:
     app.include_router(chat_router)  # 聊天机器人路由
+if codebuddy_chat_router is not None:
+    app.include_router(codebuddy_chat_router)  # CodeBuddy 增强聊天路由
+    logger.info("✓ CodeBuddy 聊天路由已注册")
+
+# 注册知识管理路由
+try:
+    from backend.routes.knowledge_routes import router as knowledge_router
+    app.include_router(knowledge_router)  # 知识管理路由
+    logger.info("✓ 知识管理路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入知识管理路由: {e}")
+
+# 注册 8-Agent 系统路由
+try:
+    from backend.routes.agent_routes import router as agent_router
+    app.include_router(agent_router)  # 8-Agent 系统路由
+    logger.info("✓ 8-Agent 系统路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 8-Agent 系统路由: {e}")
+
+# 注册技能系统路由
+try:
+    from backend.routes.skill_routes import router as skill_router
+    app.include_router(skill_router)  # 技能系统路由
+    logger.info("✓ 技能系统路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入技能系统路由: {e}")
+
+# 注册 Excel 导出路由
+try:
+    from backend.routes.excel_routes import router as excel_router
+    app.include_router(excel_router)  # Excel 导出路由
+    logger.info("✓ Excel 导出路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 Excel 导出路由: {e}")
+
+# 注册完整分析路由（数据 + 8-Agent + Excel）
+try:
+    from backend.routes.analysis_routes import router as analysis_router
+    app.include_router(analysis_router)  # 完整分析路由
+    logger.info("✓ 完整分析路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入完整分析路由: {e}")
+
+# 注册 PDF 处理路由
+try:
+    from backend.routes.pdf_routes import router as pdf_router
+    app.include_router(pdf_router)  # PDF 处理路由
+    logger.info("✓ PDF 处理路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 PDF 处理路由: {e}")
+
+# 注册 PPT 处理路由
+try:
+    from backend.routes.ppt_routes import router as ppt_router
+    app.include_router(ppt_router)  # PPT 处理路由
+    logger.info("✓ PPT 处理路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 PPT 处理路由: {e}")
+
+# 初始化 8-Agent 系统
+@app.on_event("startup")
+async def initialize_agent_system():
+    """初始化 8-Agent 系统"""
+    try:
+        logger.info("[AgentSystem] 正在初始化 8-Agent 系统...")
+        from backend.routes.agent_routes import initialize_agents
+        initialize_agents()
+
+        # 初始化技能系统
+        logger.info("[SkillSystem] 正在初始化技能系统...")
+        from backend.services.skill_system import get_skill_registry
+        skill_registry = get_skill_registry()
+        logger.info(f"✓ 技能系统初始化完成，已注册 {len(skill_registry.skills)} 个技能")
+
+        logger.info("✓ 8-Agent 系统初始化完成")
+    except Exception as e:
+        logger.warning(f"8-Agent 系统初始化失败: {e}")
+        logger.info("系统将继续运行，但 8-Agent 功能可能不可用")
 
 
 class QueryRequest(BaseModel):
@@ -128,7 +230,7 @@ class AnalysisResult(BaseModel):
 def load_model_if_needed():
     """按需加载模型 - 使用全局单例，返回加载器实例"""
     try:
-        from models.model_loader import get_model_loader
+        from backend.models.model_loader import get_model_loader
         loader = get_model_loader()
         logger.info(f"[DEBUG] loader.is_loaded before: {loader.is_loaded}")
 
@@ -165,7 +267,7 @@ def load_model_if_needed():
         return loader
 
     except Exception as e:
-        logger.error(f"❌ 模型加载失败: {e}")
+        logger.error(f" 模型加载失败: {e}")
         import traceback
         logger.error(f"完整堆栈:\n{traceback.format_exc()}")
         return None
@@ -245,43 +347,74 @@ async def startup_event():
     # 创建必要的目录
     settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
-    try:
-        logger.info("[startup_event] 开始初始化模型加载器...")
-        from models.model_loader import get_model_loader
-        loader = get_model_loader()
-        logger.info(f"[startup_event] get_model_loader() returned: {loader}")
-        logger.info(f"[startup_event] loader.is_loaded before load(): {loader.is_loaded}")
-        
-        model = loader.load()
-        logger.info(f"[startup_event] loader.load() completed")
-        logger.info(f"[startup_event] loader.is_loaded after load(): {loader.is_loaded}")
-        logger.info(f"[startup_event] loader.model exists: {loader.model is not None}")
+        # 检查是否自动加载模型（为 True 时启动时加载，False 时按需加载）
+    if settings.AUTO_LOAD_MODEL:
+        # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
+        try:
+            logger.info("[startup_event] 开始初始化模型加载器...")
+            from backend.models.model_loader import get_model_loader
+            loader = get_model_loader()
+            logger.info(f"[startup_event] get_model_loader() returned: {loader}")
+            logger.info(f"[startup_event] loader.is_loaded before load(): {loader.is_loaded}")
 
-        # 验证模型是否真的加载成功
-        if not loader.is_loaded:
-            logger.error(f"[startup_event] loader.is_loaded=False，但 load() 没有抛出异常")
-            raise RuntimeError("模型加载器报告 is_loaded=False，但未抛出异常")
+            model = loader.load()
+            logger.info(f"[startup_event] loader.load() completed")
+            logger.info(f"[startup_event] loader.is_loaded after load(): {loader.is_loaded}")
+            logger.info(f"[startup_event] loader.model exists: {loader.model is not None}")
 
-        logger.info("✓ 全局模型加载器已初始化")
-        logger.info(f"  - 模型: {loader.model_config['name']}")
-        logger.info(f"  - 参数: {loader.model_config['params']}")
-        logger.info(f"  - 量化: {loader.model_config['quantization']}")
-        logger.info(f"  - 状态: 已加载")
-        
-        # 验证全局变量
-        from models.model_loader import _global_model_loader
-        logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
-        logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
+            # 验证模型是否真的加载成功
+            if not loader.is_loaded:
+                logger.error(f"[startup_event] loader.is_loaded=False，但 load() 没有抛出异常")
+                raise RuntimeError("模型加载器报告 is_loaded=False，但未抛出异常")
 
-    except ImportError as e:
-        logger.warning(f"NPU 模型加载器不可用: {e}")
-        logger.warning("NPU 功能将被禁用，但其他 API 仍可正常工作")
-    except Exception as e:
-        logger.error(f"❌ 模型加载失败: {e}")
-        logger.error(f"错误类型: {type(e).__name__}")
-        import traceback
-        logger.error(f"完整堆栈:\n{traceback.format_exc()}")
+            logger.info("✓ 全局模型加载器已初始化")
+            logger.info(f"  - 模型: {loader.model_config['name']}")
+            logger.info(f"  - 参数: {loader.model_config['params']}")
+            logger.info(f"  - 量化: {loader.model_config['quantization']}")
+            logger.info(f"  - 状态: 已加载")
+
+            # 验证全局变量
+            from backend.models.model_loader import _global_model_loader
+            logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
+            logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
+
+        except ImportError as e:
+            logger.warning(f"NPU 模型加载器不可用: {e}")
+            logger.warning("NPU 功能将被禁用，但其他 API 仍可正常工作")
+        except Exception as e:
+            logger.error(f" 模型加载失败: {e}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            import traceback
+            logger.error(f"完整堆栈:\n{traceback.format_exc()}")
+
+            # 特殊处理NPU设备创建错误
+            error_msg = str(e)
+            if "14001" in error_msg or "Failed to create device" in error_msg:
+                logger.error("")
+                logger.error("=" * 60)
+                logger.error("CRITICAL: NPU设备创建失败（错误代码14001）")
+                logger.error("=" * 60)
+                logger.error("")
+                logger.error("可能原因:")
+                logger.error("  1. NPU驱动未正确安装")
+                logger.error("  2. 另一个进程已占用NPU资源")
+                logger.error("  3. DLL版本不匹配")
+                logger.error("  4. 系统权限不足")
+                logger.error("")
+                logger.error("建议操作:")
+                logger.error("  1. 运行 fix_npu_device.bat 修复NPU占用")
+                logger.error("  2. 重启AIPC以完全释放NPU资源")
+                logger.error("  3. 检查Windows事件查看器 -> Windows日志 -> 应用")
+                logger.error("  4. 确认NPU驱动在设备管理器中正常运行")
+                logger.error("")
+                logger.error("临时方案:")
+                logger.error("  - 系统将忽略NPU错误继续启动")
+                logger.error("  - API仍可使用，但NPU推理功能不可用")
+                logger.error("=" * 60)
+                logger.error("")
+    else:
+        logger.info("[startup_event] AUTO_LOAD_MODEL=False，跳过启动时自动加载模型")
+        logger.info("[startup_event] 模型将在首次使用时按需加载")
         # 不再吞掉异常，让问题暴露出来
 
 
@@ -289,7 +422,7 @@ async def startup_event():
 async def root():
     """根路径"""
     try:
-        from models.model_loader import _global_model_loader
+        from backend.models.model_loader import _global_model_loader
         model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
     except:
         model_loaded = False
@@ -308,15 +441,15 @@ async def root():
 async def health_check():
     """健康检查"""
     logger.info("[/api/health] 开始健康检查")
-    
+
     try:
         # 导入全局模型加载器
-        from models.model_loader import _global_model_loader
-        
+        from backend.models.model_loader import _global_model_loader
+
         # 如果全局加载器不存在，创建它
         if _global_model_loader is None:
             logger.info("[/api/health] 全局模型加载器为空，正在初始化...")
-            from models.model_loader import get_model_loader
+            from backend.models.model_loader import get_model_loader
             _global_model_loader = get_model_loader()
             logger.info(f"[/api/health] 创建了加载器: {_global_model_loader}")
         
@@ -471,7 +604,7 @@ async def analyze_data(request: QueryRequest):
             performance={
                 "total_time_ms": total_time,
                 "inference_time_ms": inference_time,
-                "device": settings.QNN_DEVICE
+                "meets_target": float(inference_time < 2000)
             }
         )
 

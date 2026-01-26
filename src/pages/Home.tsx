@@ -296,28 +296,25 @@ const Home: React.FC = () => {
     }
   }, []);
 
-  // 检查答疑服务是否可用
+  // 检查本地NPU分析服务是否可用
   useEffect(() => {
     const checkChatService = async () => {
       try {
-        // 尝试连接GenieAPIService (端口8910)
-        const response = await fetch('http://localhost:8910/v1/chat/completions', {
-          method: 'POST',
+        // 尝试连接本地NPU分析API (端口8000)
+        const response = await fetch('http://localhost:8000/api/health', {
+          method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: 'Qwen2.0-7B-SSD',
-            messages: [{ role: 'system', content: 'test' }],
-            max_tokens: 1,
-            temperature: 0.1,
-          }),
         });
-        // 即使返回错误状态码（如400），也说明服务在运行
-        // 只有网络错误或连接拒绝才表示服务不可用
-        setIsChatServiceAvailable(true);
+        if (response.ok) {
+          const data = await response.json();
+          setIsChatServiceAvailable(data.model_loaded || false);
+        } else {
+          setIsChatServiceAvailable(false);
+        }
       } catch (error) {
-        console.error('答疑服务不可用:', error);
+        console.error('NPU分析服务不可用:', error);
         setIsChatServiceAvailable(false);
       }
     };

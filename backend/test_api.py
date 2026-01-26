@@ -12,7 +12,7 @@ BASE_URL = "http://localhost:8000"
 
 def print_test_result(name: str, success: bool, details: str = ""):
     """打印测试结果"""
-    status = "✅ PASS" if success else "❌ FAIL"
+    status = "PASS" if success else " FAIL"
     print(f"{status} {name}")
     if details and not success:
         print(f"  详情: {details}")
@@ -356,8 +356,8 @@ def run_all_tests():
     passed = sum(1 for _, success, _ in results if success)
     total = len(results)
     
-    print(f"✅ 通过: {passed}/{total}")
-    print(f"❌ 失败: {total - passed}/{total}")
+    print(f"通过: {passed}/{total}")
+    print(f" 失败: {total - passed}/{total}")
     
     # 打印失败详情
     failures = [(name, details) for name, success, details in results if not success]

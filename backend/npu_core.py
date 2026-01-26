@@ -35,10 +35,18 @@ class NPUInferenceCore:
         self.model: Optional[GenieContext] = None
         self.is_loaded = False
 
-        # 设置PATH环境变量
-        if self.qai_libs_path not in os.getenv('PATH', ''):
-            os.environ['PATH'] = self.qai_libs_path + ";" + os.getenv('PATH', '')
+        # QAIRT 库路径（包含 QnnSystem.dll 等核心库）
+        qairt_libs_path = r"C:\\Qualcomm\\AIStack\\QAIRT\\2.38.0.250901\\lib\\arm64x-windows-msvc"
+
+        # 设置PATH环境变量（添加两个库路径）
+        path = os.getenv('PATH', '')
+        if self.qai_libs_path not in path:
+            path = self.qai_libs_path + ";" + path
             logger.info(f"[OK] 已添加 QAI库路径到PATH")
+        if qairt_libs_path not in path:
+            path = qairt_libs_path + ";" + path
+            logger.info(f"[OK] 已添加 QAIRT库路径到PATH")
+        os.environ['PATH'] = path
 
     def load_model(self):
         """加载模型到NPU"""
@@ -49,8 +57,22 @@ class NPUInferenceCore:
             if not os.path.exists(self.model_config_path):
                 raise FileNotFoundError(f"模型配置文件不存在: {self.model_config_path}")
 
+            # 验证 backend 配置
+            logger.info(f"[INFO] 验证 NPU backend 配置...")
+            import json
+            with open(self.model_config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            backend_type = config.get('dialog', {}).get('engine', {}).get('backend', {}).get('type', 'UNKNOWN')
+            logger.info(f"[INFO] Backend Type: {backend_type}")
+            if backend_type != 'QnnHtp':
+                logger.warning(f"[WARNING] Backend 类型不是 QnnHtp，当前为: {backend_type}")
+            else:
+                logger.info(f"[OK] 确认使用 QnnHtp backend (NPU)")
+
             # 创建 GenieContext（只传入config路径）
+            logger.info(f"[DEBUG] 正在创建 GenieContext，config_path={self.model_config_path}")
             self.model = GenieContext(self.model_config_path)
+            logger.info(f"[OK] GenieContext 创建成功")
 
             # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
             try:

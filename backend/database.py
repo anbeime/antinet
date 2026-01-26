@@ -387,10 +387,10 @@ class DatabaseManager:
                         {
                             'id': 'workflow',
                             'title': '工作流程',
-                            'icon': '📋',
+                            'icon': '[LIST]',
                             'items': [
-                                {'id': 'work1', 'title': '设计卡片创建流程', 'icon': '✍️', 'description': '定义从想法到卡片的标准化流程', 'status': 'completed'},
-                                {'id': 'work2', 'title': '建立定期回顾机制', 'icon': '🔄', 'description': '设置定期回顾和更新卡片的机制', 'status': 'missing'}
+                                {'id': 'work1', 'title': '设计卡片创建流程', 'icon': '[WRITE]', 'description': '定义从想法到卡片的标准化流程', 'status': 'completed'},
+                                {'id': 'work2', 'title': '建立定期回顾机制', 'icon': '[REFRESH]', 'description': '设置定期回顾和更新卡片的机制', 'status': 'missing'}
                             ]
                         }
                     ])

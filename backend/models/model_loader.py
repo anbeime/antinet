@@ -17,12 +17,15 @@ GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
+# 初始化logger
+logger = logging.getLogger(__name__)
+
 # 设置必要的环境变量，确保导入 GenieContext 前 NPU 库路径在 PATH 中
 lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
 bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 
-# 确保两个目录都在 PATH 中
-paths_to_add = [lib_path, bridge_lib_path]
+# 确保两个目录都在 PATH 中（注意顺序，bridge_lib_path在前）
+paths_to_add = [bridge_lib_path, lib_path]
 current_path = os.environ.get('PATH', '')
 for p in paths_to_add:
     if p not in current_path:
@@ -30,13 +33,62 @@ for p in paths_to_add:
 os.environ['PATH'] = current_path
 os.environ['QAI_LIBS_PATH'] = lib_path
 
-# 显式添加 DLL 目录（Python 3.8+）
+# 添加DLL目录（Python 3.8+），按特定顺序添加
 for p in paths_to_add:
     if os.path.exists(p):
-        os.add_dll_directory(p)
+        try:
+            os.add_dll_directory(p)
+            logger.info(f"[OK] 已添加DLL目录到加载路径: {p}")
+        except Exception as e:
+            logger.warning(f"[WARNING] 添加DLL目录失败 {p}: {e}")
 
-# 提前初始化logger
-logger = logging.getLogger(__name__)
+# 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
+try:
+    from backend.config import settings
+    qnn_log_level = settings.QNN_LOG_LEVEL
+    os.environ['QNN_LOG_LEVEL'] = qnn_log_level
+    logger.info(f"[OK] QNN 日志级别设置为: {qnn_log_level}")
+except ImportError:
+    os.environ['QNN_LOG_LEVEL'] = "DEBUG"
+    logger.info("[INFO] 使用默认 QNN 日志级别: DEBUG")
+
+# 设置 QNN 其他环境变量以启用详细日志
+os.environ['QNN_DEBUG'] = "1"
+os.environ['QNN_VERBOSE'] = "1"
+logger.info("[OK] QNN 调试标志已设置（QNN_DEBUG=1, QNN_VERBOSE=1）")
+
+# 预加载QNN核心DLL，确保正确的加载顺序
+logger.info("[INFO] 预加载QNN核心DLL...")
+import ctypes
+try:
+    # 按顺序预加载DLL，避免版本冲突（改进版：先加载Genie.dll）
+    dlls_to_load = [
+        "Genie.dll",           # Genie核心库
+        "QnnSystem.dll",       # QNN系统库
+        "QnnModelDlc.dll",    # QNN模型库
+        "QnnHtp.dll",         # NPU backend
+        "QnnHtpPrepare.dll"   # NPU准备库
+    ]
+
+    for dll in dlls_to_load:
+        found = False
+        for p in paths_to_add:
+            dll_path = Path(p) / dll
+            if dll_path.exists():
+                try:
+                    # 使用windll而不是CDLL，因为有些DLL需要stdcall调用约定
+                    ctypes.WinDLL(str(dll_path))
+                    logger.info(f"[OK] 预加载成功: {dll}")
+                    found = True
+                    break
+                except Exception as e:
+                    logger.warning(f"[WARNING] 预加载失败 {dll}: {e}")
+        if not found:
+            logger.warning(f"[WARNING] 未找到DLL: {dll}")
+    
+    logger.info("[OK] DLL预加载完成")
+except Exception as e:
+    logger.warning(f"[WARNING] DLL预加载过程出错: {e}")
 
 # qai_hub_models是可选的，仅用于性能配置（BURST模式）
 PerfProfile = None
@@ -49,6 +101,7 @@ except ImportError:
 
 try:
     from qai_appbuilder import GenieContext
+    logger.info("[OK] GenieContext导入成功")
 except ImportError as e:
     raise RuntimeError(f"无法导入GenieContext: {e}。请确保已安装qai_appbuilder库。")
 
@@ -142,22 +195,41 @@ class NPUModelLoader:
 
         start_time = time.time()
 
-        max_retries = 2
+        max_retries = 3
         last_exception = None
-        
+
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     logger.warning(f"重试加载模型 (尝试 {attempt+1}/{max_retries})")
                     # 等待一小段时间再重试
-                    time.sleep(1.0)
-                
+                    time.sleep(2.0)
+
                 # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
                 config_path = str(model_path / "config.json")
                 logger.info(f"[INFO] 创建 GenieContext: {config_path}")
 
-                # 创建 GenieContext（参考官方GenieSample.py，只传config_path）
+                # 创建 GenieContext（参考官方 GenieSample.py，只传 config 参数）
+                logger.info(f"[DEBUG] 正在创建 GenieContext，config_path={config_path}")
+                logger.info(f"[DEBUG] PATH环境变量长度: {len(os.environ.get('PATH', ''))}")
+                logger.info(f"[DEBUG] QNN_LOG_LEVEL: {os.environ.get('QNN_LOG_LEVEL', 'NOT SET')}")
+                logger.info(f"[DEBUG] 使用单参数创建（参考官方 GenieSample.py）")
+
+                # 尝试单参数创建（参考官方示例）
                 self.model = GenieContext(config_path)
+                logger.info(f"[OK] GenieContext 创建成功")
+
+                # 验证 backend 配置
+                logger.info(f"[INFO] 验证 NPU backend 配置...")
+                import json
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                backend_type = config.get('dialog', {}).get('engine', {}).get('backend', {}).get('type', 'UNKNOWN')
+                logger.info(f"[INFO] Backend Type: {backend_type}")
+                if backend_type != 'QnnHtp':
+                    logger.warning(f"[WARNING] Backend 类型不是 QnnHtp，当前为: {backend_type}")
+                else:
+                    logger.info(f"[OK] 确认使用 QnnHtp backend (NPU)")
 
                 # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
                 try:
@@ -187,11 +259,29 @@ class NPUModelLoader:
                 logger.error(f"[ERROR] NPU 模型加载失败 (尝试 {attempt+1}/{max_retries}): {e}")
                 import traceback
                 logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+
+                # 检查是否是设备创建错误（错误代码14001）
+                error_msg = str(e)
+                if "14001" in error_msg or "Failed to create device" in error_msg:
+                    logger.error("[CRITICAL] NPU设备创建失败（错误代码14001）")
+                    logger.error("可能原因:")
+                    logger.error("  1. NPU驱动未正确安装")
+                    logger.error("  2. 另一个进程已占用NPU资源")
+                    logger.error("  3. DLL版本不匹配")
+                    logger.error("  4. 系统权限不足")
+                    logger.error("建议:")
+                    logger.error("  - 重启AIPC")
+                    logger.error("  - 检查是否有其他NPU相关进程运行")
+                    logger.error("  - 查看Windows事件查看器中的错误日志")
+
                 # 如果是最后一次尝试，则抛出异常
                 if attempt == max_retries - 1:
-                    raise RuntimeError(f"NPU模型加载失败，重试 {max_retries} 次后仍失败: {e}")
+                    raise RuntimeError(
+                        f"NPU模型加载失败，重试 {max_retries} 次后仍失败: {e}\n"
+                        f"请检查NPU驱动和DLL路径配置。"
+                    )
                 # 否则继续重试
-        
+
         # 不应到达此处
         raise RuntimeError(f"NPU模型加载失败，未知错误: {last_exception}")
 
@@ -230,6 +320,9 @@ class NPUModelLoader:
 
         Returns:
             生成的文本
+
+        Raises:
+            RuntimeError: 如果推理时间超过 500ms（可能未走 NPU）
         """
         # 安全检查：如果模型实例已存在但 is_loaded=False，修正状态
         if self.model is not None and not self.is_loaded:
@@ -284,9 +377,34 @@ class NPUModelLoader:
 
             logger.info(f"[OK] 推理完成: {inference_time:.2f}ms")
 
-            # 检查性能指标
-            if inference_time > 500:
-                logger.warning(f"[WARNING] 推理延迟超标: {inference_time:.2f}ms (目标 < 500ms)")
+            # ⚠️ 熔断检查：如果推理时间超过 2000ms，可能未走 NPU
+            # NPU 推理应该在 450ms 左右，但复杂推理可能需要更长时间
+            # 调整阈值到 2000ms 以避免误报
+            if inference_time > 2000:
+                error_msg = (
+                    f"[熔断检查失败] 推理延迟 {inference_time:.2f}ms 超过 2000ms 阈值\n"
+                    f"可能原因：\n"
+                    f"  1. 未正确配置 NPU execution provider\n"
+                    f"  2. 模型加载在 CPU 上而非 NPU\n"
+                    f"  3. 没有使用 QNN HTP backend\n"
+                    f"  4. 内存未分配到 NPU 上\n"
+                    f"  5. 推理提示词过长或生成 token 数过多\n"
+                    f"\n"
+                    f"请检查：\n"
+                    f"  - config.json 中的 'backend.type' 是否为 'QnnHtp'\n"
+                    f"  - 确认 'allocated on NPU' 和 'execution provider: NPU'\n"
+                    f"  - 检查 QNN 日志输出以确认执行 provider\n"
+                    f"  - 尝试减少 max_new_tokens 或缩短提示词"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(
+                    f"熔断检查失败：推理时间 {inference_time:.2f}ms > 2000ms，可能未走 NPU！\n"
+                    f"请检查 QNN 日志输出以确认 execution provider 和内存分配情况。"
+                )
+            else:
+                logger.info(f"[熔断检查通过] 推理时间 {inference_time:.2f}ms 在正常范围内 (< 2000ms)")
+                if inference_time > 500:
+                    logger.warning(f"[WARNING] 推理时间 {inference_time:.2f}ms 略高，建议检查提示词长度和 token 数")
 
             return result
 

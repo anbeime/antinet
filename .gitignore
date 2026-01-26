@@ -1,80 +1,108 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# AI 助手配置（不推送）
-.claude/
-.cursor/
-.windsurf/
-.codebuddy/
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# 参考资料和测试文档（不推送）
-资料参考/
-测试文档/
-*.pdf
-*.docx
-*.pptx
-
-# Python
-backend/venv/
-backend/__pycache__/
+# 测试文件和垃圾文件
 *.pyc
+__pycache__/
 *.pyo
 *.pyd
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-
-# 模型文件（太大，不推送）
-*.bin
-*.onnx
-*.pt
-*.pth
-*.safetensors
-backend/models/pytorch/
-backend/models/onnx/
-backend/models/qnn/*.bin
-
-# 数据库
-*.db
-*.sqlite
-*.sqlite3
-backend/data/
-!backend/data/demo/
-
-# 环境变量
+.Python
+env/
+venv/
+venv_arm64/
 .env
-.env.local
-.env.*.local
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# 临时文件
+# 测试脚本和临时文件
+quick_test.py
+test_*.py
+diagnose_*.py
+fix_*.py
+verify_*.py
+check_*.py
+run_*.bat
+*.bat
+*.cmd
+
+# 文档垃圾文件（已删除的总结文档）
+*_SUMMARY_*.md
+*_PLAN.md
+*_COMPLETED.md
+*_REFACTORING_SUMMARY.md
+*_INTEGRATION.md
+*_GUIDE.md
+*_README.md
+*_CONTENT.md
+*_OUTLINE.md
+
+# 临时和备份文件
 *.tmp
 *.temp
-.cache/
-tmpclaude-*
-nul
+*.bak
+*.backup
+*~
+.DS_Store
+Thumbs.db
 
-# 本地笔记（不需要推送）
-rooroo-prompt-clean.md
+# 日志文件
+*.log
+backend*.log
+frontend*.log
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 演示和输出文件
+test_output.pptx
+test_cards_export.pptx
+test_report.pdf
+*.pptx
+*.pdf
+
+# 屏幕截图
+Screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# 模型文件（太大，不提交）
+backend/models/custom/
+*.bin
+*.onnx
+*.qnn
+*.dlc
+
+# 上传数据（本地数据不上传）
+backend/data/uploads/
+
+# 临时生成的文件
+tokenizer_output.txt
+diagnose_output.txt
+simple_output.txt
+quick_output.txt
+test_genie_output*.txt
+
+# 其他临时文件
+REPAIR_SUMMARY.md
+PROJECT_COMPLETION_REPORT.md
+FINAL_*.md
+CRISIS_*.md
+DEPLOYMENT_*.md
+QUICK_START.md
+README.md
+node_modules

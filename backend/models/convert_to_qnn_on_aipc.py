@@ -36,31 +36,31 @@ def check_qai_appbuilder():
     """检查QAI AppBuilder是否可用"""
     try:
         from qai_appbuilder import GenieContext
-        print("✅ QAI AppBuilder 导入成功")
+        print("QAI AppBuilder 导入成功")
         return True
     except ImportError as e:
-        print(f"❌ QAI AppBuilder 导入失败: {e}")
+        print(f" QAI AppBuilder 导入失败: {e}")
         print("请运行: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl")
         return False
 
 def extract_model_zip(model_zip_path, target_dir):
     """解压模型zip文件"""
     if not os.path.exists(model_zip_path):
-        print(f"❌ 模型ZIP文件不存在: {model_zip_path}")
+        print(f" 模型ZIP文件不存在: {model_zip_path}")
         return False
     
     if os.path.exists(target_dir) and len(os.listdir(target_dir)) > 0:
-        print(f"✅ 模型目录已存在并包含文件: {target_dir}")
+        print(f"模型目录已存在并包含文件: {target_dir}")
         return True
     
     print(f"正在解压模型: {model_zip_path} -> {target_dir}")
     try:
         with zipfile.ZipFile(model_zip_path, 'r') as zip_ref:
             zip_ref.extractall(target_dir)
-        print(f"✅ 解压成功")
+        print(f"解压成功")
         return True
     except Exception as e:
-        print(f"❌ 解压失败: {e}")
+        print(f" 解压失败: {e}")
         return False
 
 def verify_model_files(model_dir):
@@ -83,10 +83,10 @@ def verify_model_files(model_dir):
             missing_files.append(file)
     
     if missing_files:
-        print(f"❌ 模型文件缺失: {missing_files}")
+        print(f" 模型文件缺失: {missing_files}")
         return False
     
-    print(f"✅ 所有必需模型文件存在")
+    print(f"所有必需模型文件存在")
     
     # 检查文件大小
     for file in required_files:
@@ -105,7 +105,7 @@ def test_genie_context(model_dir):
         
         # 创建GenieContext但不执行推理（加载测试）
         context = GenieContext(config_path)
-        print(f"✅ GenieContext 创建成功")
+        print(f"GenieContext 创建成功")
         
         # 检查属性
         if hasattr(context, 'GetStats'):
@@ -117,7 +117,7 @@ def test_genie_context(model_dir):
         
         return True
     except Exception as e:
-        print(f"❌ GenieContext 测试失败: {e}")
+        print(f" GenieContext 测试失败: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -154,22 +154,22 @@ def main():
             if not extract_model_zip(paths["zip"], paths["dir"]):
                 print(f"⚠️  跳过 {model_name}，解压失败")
         else:
-            print(f"✅ 模型目录已存在")
+            print(f"模型目录已存在")
     
     # 4. 验证推荐模型（Qwen2.0-7B-SSD）
     print(f"\n[验证推荐模型: Qwen2.0-7B-SSD]")
     model_dir = models["qwen2-7b-ssd"]["dir"]
     if not verify_model_files(model_dir):
-        print("❌ 模型验证失败")
+        print(" 模型验证失败")
         sys.exit(1)
     
     # 5. 测试GenieContext
     if not test_genie_context(model_dir):
-        print("❌ GenieContext 测试失败")
+        print(" GenieContext 测试失败")
         sys.exit(1)
     
     print("\n" + "=" * 60)
-    print("✅ 模型验证成功！")
+    print("模型验证成功！")
     print("   模型已准备好用于NPU推理")
     print("=" * 60)
     print("\n下一步:")
