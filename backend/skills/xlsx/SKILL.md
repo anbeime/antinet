@@ -10,12 +10,12 @@ This skill provides comprehensive Excel file operations for the Antinet intellig
 
 ## Features
 
-- ✅ Create and edit Excel files with formulas
-- ✅ Format cells (colors, fonts, alignment)
-- ✅ Generate multi-sheet workbooks
-- ✅ Export four-color cards to Excel
-- ✅ Create data visualization charts
-- ✅ Formula recalculation support
+- Create and edit Excel files with formulas
+- Format cells (colors, fonts, alignment)
+- Generate multi-sheet workbooks
+- Export four-color cards to Excel
+- Create data visualization charts
+- Formula recalculation support
 
 ## Integration with Antinet
 

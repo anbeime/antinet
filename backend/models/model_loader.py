@@ -377,7 +377,7 @@ class NPUModelLoader:
 
             logger.info(f"[OK] 推理完成: {inference_time:.2f}ms")
 
-            # ⚠️ 熔断检查：如果推理时间超过 2000ms，可能未走 NPU
+            #  熔断检查：如果推理时间超过 2000ms，可能未走 NPU
             # NPU 推理应该在 450ms 左右，但复杂推理可能需要更长时间
             # 调整阈值到 2000ms 以避免误报
             if inference_time > 2000:

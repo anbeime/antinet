@@ -371,7 +371,7 @@ class DatabaseManager:
                             'title': '系统哲学',
                             'icon': '📚',
                             'items': [
-                                {'id': 'phil1', 'title': '理解Zettelkasten核心思想', 'icon': '💡', 'description': '掌握卢曼卡片系统的核心理念和方法论', 'status': 'completed', 'details': '已完成学习'},
+                                {'id': 'phil1', 'title': '理解Zettelkasten核心思想', 'icon': '', 'description': '掌握卢曼卡片系统的核心理念和方法论', 'status': 'completed', 'details': '已完成学习'},
                                 {'id': 'phil2', 'title': '建立知识连接网络', 'icon': '🔗', 'description': '理解卡片间如何形成有机的知识网络', 'status': 'partial', 'details': '部分完成'}
                             ]
                         },

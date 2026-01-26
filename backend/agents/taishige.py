@@ -23,7 +23,7 @@ try:
     VECTOR_RETRIEVAL_AVAILABLE = True
 except ImportError:
     VECTOR_RETRIEVAL_AVAILABLE = False
-    print("⚠️  向量检索模块未安装，将使用基础检索功能")
+    print("  向量检索模块未安装，将使用基础检索功能")
 
 
 class TaishigeAgent:
@@ -39,7 +39,7 @@ class TaishigeAgent:
             print("向量检索模块已初始化")
         else:
             self.vector_retrieval = None
-            print("⚠️  向量检索模块未初始化，使用基础检索")
+            print("  向量检索模块未初始化，使用基础检索")
         
         # 知识图谱引导应用数据库
         self.knowledge_graph_db = {

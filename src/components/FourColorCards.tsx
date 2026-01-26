@@ -63,8 +63,8 @@ const colorMap: Record<'blue' | 'green' | 'yellow' | 'red', ColorStyle> = {
 
 const categoryIcons: Record<'事实' | '解释' | '风险' | '行动', string> = {
   '事实': '📊',
-  '解释': '💡',
-  '风险': '⚠️',
+  '解释': '',
+  '风险': '',
   '行动': '🎯',
 };
 

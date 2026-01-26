@@ -152,7 +152,7 @@ def main():
         print(f"\n[{model_name}]")
         if not os.path.exists(paths["dir"]) or len(os.listdir(paths["dir"])) == 0:
             if not extract_model_zip(paths["zip"], paths["dir"]):
-                print(f"⚠️  跳过 {model_name}，解压失败")
+                print(f"  跳过 {model_name}，解压失败")
         else:
             print(f"模型目录已存在")
     

@@ -1,0 +1,25 @@
+================================================================================
+NPU设备创建诊断脚本
+================================================================================
+
+[1] 检查Python版本...
+    Python版本: 3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:31:18) [MSC v.1943 64 bit (ARM64)]
+    平台: win32
+    架构: 3.12-arm64
+
+[2] 检查模型路径...
+    模型路径: C:\model\Qwen2.0-7B-SSD-8380-2.34
+    路径存在: True
+    Config.json存在: True
+
+[3] 检查DLL路径...
+    QAI库路径: C:\ai-engine-direct-helper\samples\qai_libs
+    QAI库存在: True
+    QAIRT库路径: C:\Qualcomm\AIStack\QAIRT\2.38.0.250901\lib\arm64x-windows-msvc
+    QAIRT库存在: True
+
+[4] 设置环境变量...
+Traceback (most recent call last):
+  File "c:\test\antinet\diagnose_npu_device.py", line 54, in <module>
+    print("    \u2713 环境变量已设置")
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2713' in position 4: illegal multibyte sequence

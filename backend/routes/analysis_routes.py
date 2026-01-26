@@ -44,10 +44,7 @@ class QuickAnalysisRequest(BaseModel):
 async def upload_and_analyze(
     file: UploadFile = File(...),
     query: str = "请分析这份数据",
-    include_charts: bool = True,
-    db_manager: DatabaseManager = None,
-    orchestrator: OrchestratorAgent = None,
-    memory: MemoryAgent = None
+    include_charts: bool = True
 ):
     """
     上传数据文件并进行智能分析
@@ -81,11 +78,11 @@ async def upload_and_analyze(
         output_filename = f"analysis_{timestamp}.xlsx"
         output_path = EXPORT_DIR / output_filename
         
-        # 创建分析导出器
+        # 创建分析导出器（使用全局实例或创建新实例）
         exporter = DataAnalysisExporter(
-            db_manager=db_manager,
-            orchestrator=orchestrator,
-            memory=memory
+            db_manager=None,  # 将在内部创建
+            orchestrator=None,
+            memory=None
         )
         
         # 执行分析和导出
@@ -122,10 +119,7 @@ async def upload_and_analyze(
 
 @router.post("/analyze-existing")
 async def analyze_existing(
-    request: AnalysisRequest,
-    db_manager: DatabaseManager = None,
-    orchestrator: OrchestratorAgent = None,
-    memory: MemoryAgent = None
+    request: AnalysisRequest
 ):
     """
     分析已存在的数据源
@@ -163,11 +157,11 @@ async def analyze_existing(
         
         output_path = EXPORT_DIR / output_filename
         
-        # 创建分析导出器
+        # 创建分析导出器（使用全局实例或创建新实例）
         exporter = DataAnalysisExporter(
-            db_manager=db_manager,
-            orchestrator=orchestrator,
-            memory=memory
+            db_manager=None,
+            orchestrator=None,
+            memory=None
         )
         
         # 执行分析和导出
@@ -199,10 +193,7 @@ async def analyze_existing(
 @router.post("/batch-analyze")
 async def batch_analyze(
     files: List[UploadFile] = File(...),
-    query: str = "请分析这些数据",
-    db_manager: DatabaseManager = None,
-    orchestrator: OrchestratorAgent = None,
-    memory: MemoryAgent = None
+    query: str = "请分析这些数据"
 ):
     """
     批量分析多个文件
@@ -253,9 +244,9 @@ async def batch_analyze(
         output_path = EXPORT_DIR / output_filename
         
         exporter = DataAnalysisExporter(
-            db_manager=db_manager,
-            orchestrator=orchestrator,
-            memory=memory
+            db_manager=None,
+            orchestrator=None,
+            memory=None
         )
         
         result = await exporter.analyze_and_export(

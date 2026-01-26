@@ -64,7 +64,7 @@ def test_team_members():
     new_member = {
         "name": "测试用户",
         "role": "测试工程师",
-        "avatar": "🧪",
+        "avatar": "",
         "email": "test@example.com",
         "contribution": 50
     }
@@ -199,7 +199,7 @@ def test_comments():
     # 2. POST 添加新评论
     new_comment = {
         "user_name": "测试用户",
-        "user_avatar": "🧪",
+        "user_avatar": "",
         "content": "这是一个测试评论",
         "target_id": 1,
         "target_type": "space",
@@ -378,5 +378,5 @@ if __name__ == "__main__":
     if success:
         print("\n🎉 所有测试通过！后端API功能正常。")
     else:
-        print("\n⚠️  部分测试失败，请检查后端服务和日志。")
+        print("\n  部分测试失败，请检查后端服务和日志。")
         sys.exit(1)

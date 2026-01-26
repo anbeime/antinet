@@ -160,13 +160,13 @@ const DataAnalysisPanel: React.FC = () => {
       bg: 'bg-green-50 dark:bg-green-950/40',
       border: 'border-green-200 dark:border-green-800',
       text: 'text-green-800 dark:text-green-200',
-      icon: '💡'
+      icon: ''
     },
     yellow: {
       bg: 'bg-yellow-50 dark:bg-yellow-950/40',
       border: 'border-yellow-200 dark:border-yellow-800',
       text: 'text-yellow-800 dark:text-yellow-200',
-      icon: '⚠️'
+      icon: ''
     },
     red: {
       bg: 'bg-red-50 dark:bg-red-950/40',

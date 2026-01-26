@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     # 模型配置（使用 AIPC 预装模型）
     MODEL_NAME: str = "Qwen2.0-7B-SSD"
     MODEL_PATH: Path = Path("C:/model/Qwen2.0-7B-SSD-8380-2.34")
-    AUTO_LOAD_MODEL: bool = False  # 启动时自动加载模型（改为 False，避免卡住）
+    AUTO_LOAD_MODEL: bool = True  # 启动时自动加载模型
 
     # QNN配置
     QNN_BACKEND: str = "HTP"  # HTP (Hexagon Tensor Processor) = NPU

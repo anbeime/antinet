@@ -45,7 +45,7 @@ curl -X POST http://localhost:8000/api/excel/export-cards ^
 curl http://localhost:8000/api/excel/list
 ```
 
-## 📝 常用代码片段
+##  常用代码片段
 
 ### Python 使用
 
@@ -97,7 +97,7 @@ C:\test\antinet\venv_arm64\Scripts\pip.exe install openpyxl
 - 集成报告: `skills\xlsx\INTEGRATION_REPORT.md`
 - API 文档: http://localhost:8000/docs
 
-## ✅ 验证清单
+## 验证清单
 
 - [ ] openpyxl 已安装
 - [ ] 测试脚本运行成功

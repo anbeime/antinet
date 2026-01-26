@@ -1,0 +1,5 @@
+# 最简单的启动方式
+# 直接运行这个命令
+
+cd C:\test\antinet\backend
+..\venv_arm64\Scripts\python.exe main.py

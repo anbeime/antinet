@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "c:\test\antinet\test_genie_create.py", line 26, in <module>
+    print(f"\u2713 Ìí¼ÓDLLÄ¿Â¼: {p}")
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2713' in position 0: illegal multibyte sequence

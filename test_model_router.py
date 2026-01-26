@@ -129,7 +129,7 @@ print()
 if model_correct == total and complexity_correct == total:
     print("✓ 所有测试通过！智能路由器工作正常")
 else:
-    print("⚠️  部分测试失败，需要调整路由逻辑")
+    print("  部分测试失败，需要调整路由逻辑")
 
 print()
 print("=" * 60)

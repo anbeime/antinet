@@ -9,8 +9,14 @@ Antinet智能知识管家 - 后端API服务
 import os
 import sys
 
-# 添加项目根目录到 Python 路径，以支持绝对导入
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 添加 backend 目录到 Python 路径，以支持正确的模块导入
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(backend_dir)
+
+# 确保 backend 目录在 Python 路径中
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+# 同时添加项目根目录
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -29,7 +35,7 @@ os.environ['QAI_LIBS_PATH'] = lib_path
 
 # 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
 try:
-    from backend.config import settings
+    from config import settings
     qnn_log_level = settings.QNN_LOG_LEVEL
     os.environ['QNN_LOG_LEVEL'] = qnn_log_level
     print(f"[SETUP] QNN 日志级别设置为: {qnn_log_level}")
@@ -57,29 +63,22 @@ from pathlib import Path
 import json
 import time
 
-from backend.config import settings
+from config import settings
 # 可选导入 NPU 路由（如果依赖库可用）
 try:
-    from backend.routes.npu_routes import router as npu_router
+    from routes.npu_routes import router as npu_router
 except Exception as e:
     print(f"[WARNING] 无法导入 NPU 路由: {e}")
     npu_router = None
-from backend.routes import data_routes  # 导入数据管理模块
+from routes import data_routes  # 导入数据管理模块
 # 可选导入聊天机器人路由（如果依赖库可用）
 try:
-    from backend.routes.chat_routes import router as chat_router
+    from routes.chat_routes import router as chat_router
 except Exception as e:
     print(f"[WARNING] 无法导入聊天机器人路由: {e}")
     chat_router = None
 
-# 可选导入 CodeBuddy 聊天路由（如果 SDK 可用）
-try:
-    from backend.routes.codebuddy_chat_routes import router as codebuddy_chat_router
-    print("[INFO] CodeBuddy 聊天路由导入成功")
-except Exception as e:
-    print(f"[WARNING] 无法导入 CodeBuddy 聊天路由: {e}")
-    codebuddy_chat_router = None
-from backend.database import DatabaseManager
+from database import DatabaseManager
 
 # 配置日志
 logging.basicConfig(
@@ -104,13 +103,14 @@ db_manager = DatabaseManager(settings.DB_PATH)
 data_routes.set_db_manager(db_manager)
 logger.info("[Database] 数据库初始化完成，已加载默认数据")
 
-# 配置CORS
+# 配置CORS - 允许所有源（开发环境）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],  # 允许所有源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # 注册路由
@@ -119,13 +119,10 @@ if npu_router is not None:
 app.include_router(data_routes.router)  # 数据管理路由
 if chat_router is not None:
     app.include_router(chat_router)  # 聊天机器人路由
-if codebuddy_chat_router is not None:
-    app.include_router(codebuddy_chat_router)  # CodeBuddy 增强聊天路由
-    logger.info("✓ CodeBuddy 聊天路由已注册")
 
 # 注册知识管理路由
 try:
-    from backend.routes.knowledge_routes import router as knowledge_router
+    from routes.knowledge_routes import router as knowledge_router
     app.include_router(knowledge_router)  # 知识管理路由
     logger.info("✓ 知识管理路由已注册")
 except Exception as e:
@@ -133,7 +130,7 @@ except Exception as e:
 
 # 注册 8-Agent 系统路由
 try:
-    from backend.routes.agent_routes import router as agent_router
+    from routes.agent_routes import router as agent_router
     app.include_router(agent_router)  # 8-Agent 系统路由
     logger.info("✓ 8-Agent 系统路由已注册")
 except Exception as e:
@@ -141,7 +138,7 @@ except Exception as e:
 
 # 注册技能系统路由
 try:
-    from backend.routes.skill_routes import router as skill_router
+    from routes.skill_routes import router as skill_router
     app.include_router(skill_router)  # 技能系统路由
     logger.info("✓ 技能系统路由已注册")
 except Exception as e:
@@ -149,7 +146,7 @@ except Exception as e:
 
 # 注册 Excel 导出路由
 try:
-    from backend.routes.excel_routes import router as excel_router
+    from routes.excel_routes import router as excel_router
     app.include_router(excel_router)  # Excel 导出路由
     logger.info("✓ Excel 导出路由已注册")
 except Exception as e:
@@ -157,7 +154,7 @@ except Exception as e:
 
 # 注册完整分析路由（数据 + 8-Agent + Excel）
 try:
-    from backend.routes.analysis_routes import router as analysis_router
+    from routes.analysis_routes import router as analysis_router
     app.include_router(analysis_router)  # 完整分析路由
     logger.info("✓ 完整分析路由已注册")
 except Exception as e:
@@ -165,7 +162,7 @@ except Exception as e:
 
 # 注册 PDF 处理路由
 try:
-    from backend.routes.pdf_routes import router as pdf_router
+    from routes.pdf_routes import router as pdf_router
     app.include_router(pdf_router)  # PDF 处理路由
     logger.info("✓ PDF 处理路由已注册")
 except Exception as e:
@@ -173,7 +170,7 @@ except Exception as e:
 
 # 注册 PPT 处理路由
 try:
-    from backend.routes.ppt_routes import router as ppt_router
+    from routes.ppt_routes import router as ppt_router
     app.include_router(ppt_router)  # PPT 处理路由
     logger.info("✓ PPT 处理路由已注册")
 except Exception as e:
@@ -185,12 +182,12 @@ async def initialize_agent_system():
     """初始化 8-Agent 系统"""
     try:
         logger.info("[AgentSystem] 正在初始化 8-Agent 系统...")
-        from backend.routes.agent_routes import initialize_agents
+        from routes.agent_routes import initialize_agents
         initialize_agents()
 
         # 初始化技能系统
         logger.info("[SkillSystem] 正在初始化技能系统...")
-        from backend.services.skill_system import get_skill_registry
+        from services.skill_system import get_skill_registry
         skill_registry = get_skill_registry()
         logger.info(f"✓ 技能系统初始化完成，已注册 {len(skill_registry.skills)} 个技能")
 
@@ -230,7 +227,7 @@ class AnalysisResult(BaseModel):
 def load_model_if_needed():
     """按需加载模型 - 使用全局单例，返回加载器实例"""
     try:
-        from backend.models.model_loader import get_model_loader
+        from models.model_loader import get_model_loader
         loader = get_model_loader()
         logger.info(f"[DEBUG] loader.is_loaded before: {loader.is_loaded}")
 
@@ -352,7 +349,7 @@ async def startup_event():
         # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
         try:
             logger.info("[startup_event] 开始初始化模型加载器...")
-            from backend.models.model_loader import get_model_loader
+            from models.model_loader import get_model_loader
             loader = get_model_loader()
             logger.info(f"[startup_event] get_model_loader() returned: {loader}")
             logger.info(f"[startup_event] loader.is_loaded before load(): {loader.is_loaded}")
@@ -374,7 +371,7 @@ async def startup_event():
             logger.info(f"  - 状态: 已加载")
 
             # 验证全局变量
-            from backend.models.model_loader import _global_model_loader
+            from models.model_loader import _global_model_loader
             logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
             logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
 
@@ -422,7 +419,7 @@ async def startup_event():
 async def root():
     """根路径"""
     try:
-        from backend.models.model_loader import _global_model_loader
+        from models.model_loader import _global_model_loader
         model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
     except:
         model_loaded = False
@@ -444,12 +441,12 @@ async def health_check():
 
     try:
         # 导入全局模型加载器
-        from backend.models.model_loader import _global_model_loader
+        from models.model_loader import _global_model_loader
 
         # 如果全局加载器不存在，创建它
         if _global_model_loader is None:
             logger.info("[/api/health] 全局模型加载器为空，正在初始化...")
-            from backend.models.model_loader import get_model_loader
+            from models.model_loader import get_model_loader
             _global_model_loader = get_model_loader()
             logger.info(f"[/api/health] 创建了加载器: {_global_model_loader}")
         

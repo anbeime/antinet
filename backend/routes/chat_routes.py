@@ -471,7 +471,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
 
         # 绿色卡片：解释
         if green_cards:
-            response_parts.append("\n💡 **原因解释：**\n")
+            response_parts.append("\n **原因解释：**\n")
             for card in green_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
@@ -480,7 +480,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
 
         # 黄色卡片：风险
         if yellow_cards:
-            response_parts.append("\n⚠️ **相关风险：**\n")
+            response_parts.append("\n **相关风险：**\n")
             for card in yellow_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
@@ -499,7 +499,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
                 response_parts.append(f"- {title} (优先级: {priority})\n  {action}\n")
 
         # 总结
-        response_parts.append(f"\n📝 **来源说明：**\n基于知识库中找到的 {len(relevant_cards)} 张相关卡片生成。")
+        response_parts.append(f"\n **来源说明：**\n基于知识库中找到的 {len(relevant_cards)} 张相关卡片生成。")
 
         return "\n".join(response_parts)
 

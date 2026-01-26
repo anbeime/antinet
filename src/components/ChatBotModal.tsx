@@ -24,7 +24,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n💡 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 基于四色卡片知识库提供答案\n3. 支持自然语言查询\n\n有什么可以帮您的？',
+      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 基于四色卡片知识库提供答案\n3. 支持自然语言查询\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -188,7 +188,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         }
 
         if (codebuddyResponse.error) {
-          responseContent += `\n\n⚠️ 注意: ${codebuddyResponse.error}`;
+          responseContent += `\n\n 注意: ${codebuddyResponse.error}`;
         }
       }
 
@@ -223,7 +223,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `⚠️ 后端服务未连接\n\n当前使用模拟模式演示功能。\n\n要启用完整知识库功能，请:\n1. 打开命令行\n2. 运行: start_backend.bat\n3. 等待30-60秒服务启动\n4. 刷新页面`,
+        content: ` 后端服务未连接\n\n当前使用模拟模式演示功能。\n\n要启用完整知识库功能，请:\n1. 打开命令行\n2. 运行: start_backend.bat\n3. 等待30-60秒服务启动\n4. 刷新页面`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -273,8 +273,8 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               onMouseDown={handleMouseDown}
             >
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                  <Bot className="w-6 h-6 text-white" />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center shadow-lg">
+                  <span className="text-2xl">🤖</span>
                 </div>
                 <div>
                   <h2 className="text-lg font-bold">Antinet 知识库助手</h2>
@@ -307,9 +307,9 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                   >
                     <div className="flex items-center space-x-2 mb-2">
                       {message.role === 'assistant' ? (
-                        <Bot className="w-4 h-4" />
+                        <span className="text-lg">🤖</span>
                       ) : (
-                        <User className="w-4 h-4" />
+                        <span className="text-lg">👤</span>
                       )}
                       <span className="font-medium">
                         {message.role === 'assistant' ? '知识库助手' : '您'}
@@ -348,7 +348,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                 >
                   <div className="max-w-[80%] rounded-2xl rounded-bl-none bg-gray-100 dark:bg-gray-700 p-3">
                     <div className="flex items-center space-x-2">
-                      <Bot className="w-4 h-4" />
+                      <span className="text-lg">🤖</span>
                       <span className="font-medium">知识库助手</span>
                     </div>
                     <div className="flex space-x-1 mt-2">
@@ -394,7 +394,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
                     <div className="text-xs text-gray-500 dark:text-gray-400">
                       {sdkAvailable
                         ? '✨ 使用 CodeBuddy SDK 增强 AI 对话能力'
-                        : '⚠️ CodeBuddy SDK 未安装，增强功能不可用'}
+                        : ' CodeBuddy SDK 未安装，增强功能不可用'}
                     </div>
                   </div>
                   {useCodeBuddy && (
