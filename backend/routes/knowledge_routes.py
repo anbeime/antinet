@@ -178,7 +178,7 @@ async def create_card(card: KnowledgeCard):
     Returns:
         创建的卡片
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     try:
@@ -219,7 +219,7 @@ async def delete_card(card_id: int):
     Returns:
         删除结果
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM knowledge_cards WHERE id = ?", (card_id,))
@@ -238,7 +238,7 @@ async def get_stats():
     Returns:
         统计信息
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     # 总卡片数
@@ -304,7 +304,7 @@ async def get_sources():
     Returns:
         来源列表
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM knowledge_sources ORDER BY last_imported DESC")

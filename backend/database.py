@@ -125,6 +125,20 @@ class DatabaseManager:
                 )
             """)
 
+            # 8. 知识库卡片表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS knowledge_cards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    card_type TEXT CHECK(card_type IN ('blue', 'green', 'yellow', 'red')),
+                    category TEXT CHECK(category IN ('事实', '解释', '风险', '行动')),
+                    similarity REAL DEFAULT 0.0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.commit()
 
         # 插入默认数据（只插入一次）
