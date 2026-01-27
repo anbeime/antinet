@@ -3,15 +3,26 @@
 提供知识库的 CRUD 接口
 """
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
-import sqlite3
-from pathlib import Path
 import logging
+
+from config import settings
+from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["知识管理"])
+
+
+# 创建数据库管理器实例
+db_manager = DatabaseManager(settings.DB_PATH)
+
+
+class SearchRequest(BaseModel):
+    """知识库搜索请求"""
+    keyword: str = Field(..., description="搜索关键词")
+    limit: int = Field(10, description="返回数量限制")
 
 
 @router.get("/graph")
@@ -36,7 +47,7 @@ async def get_knowledge_graph(
         registry = get_skill_registry()
         
         # 获取所有卡片
-        conn = get_db_connection()
+        conn = db_manager.get_connection()
         cursor = conn.cursor()
         
         query = "SELECT * FROM knowledge_cards WHERE 1=1"
@@ -88,16 +99,6 @@ class KnowledgeSource(BaseModel):
     total_cards: int = 0
 
 
-DB_PATH = "C:/test/antinet/data/antinet.db"
-
-
-def get_db_connection():
-    """获取数据库连接"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 @router.get("/cards")
 async def get_cards(
     card_type: Optional[str] = None,
@@ -117,7 +118,7 @@ async def get_cards(
     Returns:
         卡片列表
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     query = "SELECT * FROM knowledge_cards WHERE 1=1"
@@ -152,7 +153,7 @@ async def get_card(card_id: int):
     Returns:
         卡片详情
     """
-    conn = get_db_connection()
+    conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
@@ -262,31 +263,37 @@ async def get_stats():
 
 
 @router.post("/search")
-async def search_cards(keyword: str, limit: int = 10):
+async def search_cards(request: SearchRequest):
     """
     搜索知识卡片
 
     Args:
-        keyword: 搜索关键词
-        limit: 返回数量限制
+        request: 搜索请求（包含关键词和限制）
 
     Returns:
         匹配的卡片列表
     """
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
 
-    cursor.execute('''
-        SELECT * FROM knowledge_cards
-        WHERE title LIKE ? OR content LIKE ?
-        ORDER BY created_at DESC
-        LIMIT ?
-    ''', (f'%{keyword}%', f'%{keyword}%', limit))
+        keyword = request.keyword
+        limit = request.limit
 
-    cards = [dict(row) for row in cursor.fetchall()]
-    conn.close()
+        cursor.execute('''
+            SELECT * FROM knowledge_cards
+            WHERE title LIKE ? OR content LIKE ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (f'%{keyword}%', f'%{keyword}%', limit))
 
-    return cards
+        cards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return cards
+    except Exception as e:
+        logger.error(f"搜索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
 
 @router.get("/sources")
