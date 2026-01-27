@@ -1,40 +1,33 @@
 @echo off
-chcp 65001 >nul
-echo ============================================================
-echo NPU 后端启动和测试脚本
-echo ============================================================
-echo.
+echo ====================================
+echo 启动 Antinet 后端并测试
+echo ====================================
 
-REM 检查是否在虚拟环境中
-python -c "import sys; exit(0 if 'venv_arm64' in sys.executable else 1)" >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] 请先激活 ARM64 虚拟环境：
-    echo   venv_arm64\Scripts\activate.bat
-    pause
-    exit /b 1
+REM 检查并关闭占用8000端口的进程
+echo.
+echo [1/4] 检查端口8000占用情况...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
+    echo 发现占用端口8000的进程: %%a
+    taskkill /F /PID %%a
 )
 
-echo [1/4] 验证配置...
-python verify_npu_inference.py
-if errorlevel 1 (
-    echo [ERROR] 配置验证失败
-    pause
-    exit /b 1
-)
+REM 启动后端（新窗口）
 echo.
-
 echo [2/4] 启动后端服务...
-echo [INFO] 后端将在按需加载模式下启动
-echo [INFO] 访问 http://localhost:8000/api/health 检查服务状态
-echo [INFO] 按 Ctrl+C 停止服务
-echo.
-echo ============================================================
-echo 正在启动后端...
-echo ============================================================
-echo.
+start "Antinet Backend" cmd /k "c:\test\antinet\venv_arm64\Scripts\activate.bat && cd /d c:\test\antinet\backend && python main.py"
 
-python -m backend.main
+REM 等待服务启动
+echo.
+echo [3/4] 等待后端服务启动...
+timeout /t 5 /nobreak
+
+REM 测试API
+echo.
+echo [4/4] 测试API端点...
+c:\test\antinet\venv_arm64\Scripts\python.exe c:\test\antinet\backend\test_api_endpoints.py
 
 echo.
-echo [后端已停止]
+echo ====================================
+echo 完成！
+echo ====================================
 pause

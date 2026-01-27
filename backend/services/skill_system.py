@@ -100,6 +100,38 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册知识图谱可视化技能: {e}")
         
+        # 图表推荐技能
+        try:
+            from skills.chart_recommendation_skill import ChartRecommendationSkill
+            self.register(ChartRecommendationSkill())
+            logger.info("[SkillRegistry] 图表推荐技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册图表推荐技能: {e}")
+        
+        # Markdown 格式化技能
+        try:
+            from skills.markdown_formatter_skill import MarkdownFormatterSkill
+            self.register(MarkdownFormatterSkill())
+            logger.info("[SkillRegistry] Markdown 格式化技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册 Markdown 格式化技能: {e}")
+        
+        # 视图管理技能
+        try:
+            from skills.view_manager_skill import ViewManagerSkill
+            self.register(ViewManagerSkill())
+            logger.info("[SkillRegistry] 视图管理技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册视图管理技能: {e}")
+        
+        # 卡片过滤技能
+        try:
+            from skills.card_filter_skill import CardFilterSkill
+            self.register(CardFilterSkill())
+            logger.info("[SkillRegistry] 卡片过滤技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册卡片过滤技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())

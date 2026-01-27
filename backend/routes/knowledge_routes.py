@@ -69,9 +69,6 @@ async def get_knowledge_graph(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-router = APIRouter(prefix="/api/knowledge", tags=["知识管理"])
-
-
 class KnowledgeCard(BaseModel):
     """知识卡片模型"""
     id: Optional[int] = None
