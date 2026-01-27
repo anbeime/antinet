@@ -124,6 +124,8 @@ if chat_router is not None:
 try:
     from routes.knowledge_routes import router as knowledge_router
     app.include_router(knowledge_router)  # 知识管理路由
+    # 设置knowledge_routes的数据库管理器
+    knowledge_router.db_manager = db_manager
     logger.info("✓ 知识管理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入知识管理路由: {e}")
