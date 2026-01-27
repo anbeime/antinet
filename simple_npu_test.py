@@ -1,138 +1,82 @@
-#!/usr/bin/env python3
-import os
+"""
+简化版 NPU 推理测试
+直接测试模型推理延迟
+"""
 import sys
+import time
+import os
+import traceback
+
+# 添加路径
+sys.path.insert(0, 'c:/test/antinet/backend')
+sys.path.insert(0, 'c:/test/antinet')
+os.chdir('c:/test/antinet/backend')
 
 # 设置环境变量
-os.environ['QAIRT_ROOT'] = r'C:\Qualcomm\AIStack\QAIRT\2.38.0.250901'
-os.environ['QNN_SDK_ROOT'] = r'C:\Qualcomm\AIStack\QNN-SDK\2.38'
-os.environ['PATH'] = r'C:\Qualcomm\AIStack\QAIRT\2.38.0.250901\lib\arm64x-windows-msvc;' + os.environ.get('PATH', '')
+os.environ['PATH'] = 'C:/ai-engine-direct-helper/samples/qai_libs;C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc;' + os.environ.get('PATH', '')
 
-print("=" * 80)
-print("简单 NPU 测试")
-print("=" * 80)
-print()
+# 导入 NPUModelLoader
+from models.model_loader import NPUModelLoader
 
-# 1. 测试导入
-print("[1] 测试导入...")
-try:
-    import qai_appbuilder
-    print(f"  ✓ qai_appbuilder 导入成功")
-    print(f"    位置: {qai_appbuilder.__file__}")
+def test_npu_inference():
+    print("=== NPU 推理性能测试 ===")
     
-    # 尝试查看版本
-    try:
-        version = qai_appbuilder.__version__
-        print(f"    版本: {version}")
-    except:
-        print(f"    版本: 未知")
+    # 使用 NPUModelLoader 加载模型
+    print("1. 加载 NPU 模型...")
+    start_time = time.time()
+    loader = NPUModelLoader(model_key="Qwen2.0-7B-SSD")
+    model = loader.load()
+    load_time = time.time() - start_time
+    print(f"   模型加载时间: {load_time:.2f}秒")
+    
+    # 测试短文本推理
+    print("\n2. 测试短文本推理延迟...")
+    short_input = "分析销售数据趋势"
+    latencies = []
+    
+    for i in range(3):
+        start = time.time()
+        try:
+            result = loader.infer(short_input, max_new_tokens=64, temperature=0.7)
+            latency = (time.time() - start) * 1000
+            latencies.append(latency)
+            print(f"   测试 {i+1}: {latency:.2f}ms")
+        except Exception as e:
+            print(f"   测试 {i+1} 失败: {e}")
+    
+    if latencies:
+        avg_latency = sum(latencies) / len(latencies)
+        print(f"   平均延迟: {avg_latency:.2f}ms")
         
-    # 检查是否有 GenieContext
-    from qai_appbuilder import GenieContext
-    print(f"  ✓ GenieContext 导入成功")
-    
-except Exception as e:
-    print(f"  ✗ 导入失败: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-
-print()
-
-# 2. 测试创建 GenieContext
-print("[2] 测试创建 GenieContext...")
-try:
-    # 使用 Llama3.2-3B 模型
-    config_path = r"C:\model\llama3.2-3b-8380-qnn2.37\config.json"
-    print(f"  使用配置文件: {config_path}")
-    
-    print("  正在创建 GenieContext...")
-    model = GenieContext(config_path, False)  # debug=False
-    print(f"  ✓ GenieContext 创建成功")
-    
-    # 检查模型方法
-    print("  检查模型方法:")
-    print(f"    Query: {'✓' if hasattr(model, 'Query') else '✗'}")
-    print(f"    SetParams: {'✓' if hasattr(model, 'SetParams') else '✗'}")
-    
-    # 测试 SetParams
-    if hasattr(model, 'SetParams'):
-        try:
-            print("  测试 SetParams...")
-            result = model.SetParams("50", "0.7", "40", "0.95")
-            print(f"  ✓ SetParams 成功: {result}")
-        except Exception as e:
-            print(f"  ✗ SetParams 失败: {e}")
-    
-except Exception as e:
-    print(f"  ✗ 创建失败: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-
-print()
-
-# 3. 简单查询测试（如果上述都成功）
-print("[3] 简单查询测试...")
-try:
-    # 准备回调函数
-    received_text = []
-    
-    def test_callback(text):
-        received_text.append(text)
-        print(f"    回调收到: {repr(text[:50])}...")
-        return True
-    
-    # 准备提示
-    prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n"
-    print(f"  提示长度: {len(prompt)}")
-    
-    # 执行查询（带超时处理）
-    print("  执行 Query（5秒超时）...")
-    
-    import threading
-    import time
-    
-    query_completed = False
-    query_error = None
-    
-    def run_query():
-        nonlocal query_completed, query_error
-        try:
-            model.Query(prompt, test_callback)
-            query_completed = True
-        except Exception as e:
-            query_error = e
-    
-    # 启动查询线程
-    query_thread = threading.Thread(target=run_query, daemon=True)
-    query_thread.start()
-    
-    # 等待最多5秒
-    for i in range(50):  # 50 * 0.1 = 5秒
-        if query_completed or query_error:
-            break
-        time.sleep(0.1)
-    
-    if query_error:
-        print(f"  ✗ Query 失败: {query_error}")
-    elif query_completed:
-        print(f"  ✓ Query 完成")
-        if received_text:
-            full_result = ''.join(received_text)
-            print(f"  结果长度: {len(full_result)}")
-            print(f"  结果预览: {full_result[:100]}...")
+        if avg_latency < 500:
+            print("   ✅ 性能达标 (< 500ms)")
         else:
-            print(f"   没有收到回调数据")
-    else:
-        print(f"   Query 超时（5秒）")
-        print(f"    可能正常（模型推理需要时间），也可能卡住了")
-        
-except Exception as e:
-    print(f"  ✗ 查询测试失败: {e}")
-    import traceback
-    traceback.print_exc()
+            print("   ❌ 性能超标 (> 500ms)")
+    
+    # 测试长文本推理
+    print("\n3. 测试长文本推理延迟...")
+    long_input = "请详细分析这份包含多个季度销售数据的复杂报表，识别其中的趋势、异常点和关键业务洞察，并提供具体的行动建议。数据包括：Q1销售额100万，Q2销售额120万，Q3销售额95万，Q4销售额150万，同时需要考虑季节性因素、市场竞争情况和客户反馈等多个维度的信息。"
+    latencies_long = []
+    
+    for i in range(2):
+        start = time.time()
+        try:
+            result = loader.infer(long_input, max_new_tokens=128, temperature=0.7)
+            latency = (time.time() - start) * 1000
+            latencies_long.append(latency)
+            print(f"   测试 {i+1}: {latency:.2f}ms")
+        except Exception as e:
+            print(f"   测试 {i+1} 失败: {e}")
+    
+    if latencies_long:
+        avg_latency_long = sum(latencies_long) / len(latencies_long)
+        print(f"   平均延迟: {avg_latency_long:.2f}ms")
+    
+    print("\n=== 测试完成 ===")
 
-print()
-print("=" * 80)
-print("测试完成")
-print("=" * 80)
+if __name__ == "__main__":
+    try:
+        test_npu_inference()
+    except Exception as e:
+        print("❌ 测试执行出错:")
+        traceback.print_exc()

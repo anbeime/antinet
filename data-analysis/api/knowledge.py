@@ -1,4 +1,4 @@
-"""
+﻿"""
 知识图谱API路由
 """
 from fastapi import APIRouter, HTTPException
@@ -9,14 +9,12 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
 class Node(BaseModel):
     """图谱节点"""
     id: str
     label: str
     type: str  # blue/green/yellow/red
     layer: str  # fact/analysis/creative/risk
-
 
 class Edge(BaseModel):
     """图谱边"""
@@ -25,12 +23,10 @@ class Edge(BaseModel):
     label: str
     relation_type: str
 
-
 class KnowledgeGraphResponse(BaseModel):
     """知识图谱响应"""
     nodes: List[Node]
     edges: List[Edge]
-
 
 @router.get("/graph")
 async def get_knowledge_graph(
@@ -82,7 +78,6 @@ async def get_knowledge_graph(
         logger.error(f"获取知识图谱失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/search")
 async def search_knowledge(
     query: str,
@@ -121,7 +116,6 @@ async def search_knowledge(
     except Exception as e:
         logger.error(f"语义检索失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/activities")
 async def get_activities(limit: int = 20):

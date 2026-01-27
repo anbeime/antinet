@@ -14,6 +14,64 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/knowledge", tags=["知识管理"])
 
 
+@router.get("/graph")
+async def get_knowledge_graph(
+    card_type: Optional[str] = None,
+    limit: int = 100
+):
+    """
+    获取知识图谱数据
+    
+    参数：
+        card_type: 卡片类型过滤（可选）
+        limit: 节点数量限制
+    
+    返回：
+        知识图谱数据（节点+边）
+    """
+    try:
+        from services.skill_system import get_skill_registry
+        
+        # 获取技能注册表
+        registry = get_skill_registry()
+        
+        # 获取所有卡片
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM knowledge_cards WHERE 1=1"
+        params = []
+        
+        if card_type:
+            query += " AND type = ?"
+            params.append(card_type)
+        
+        query += " LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # 转换为字典列表
+        cards = [dict(row) for row in rows]
+        
+        # 调用知识图谱可视化技能
+        result = await registry.execute_skill(
+            "knowledge_graph_visualization",
+            cards=cards
+        )
+        
+        return result.get("result", {})
+        
+    except Exception as e:
+        logger.error(f"获取知识图谱失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+router = APIRouter(prefix="/api/knowledge", tags=["知识管理"])
+
+
 class KnowledgeCard(BaseModel):
     """知识卡片模型"""
     id: Optional[int] = None

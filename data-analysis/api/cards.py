@@ -1,4 +1,4 @@
-"""
+﻿"""
 卡片API路由
 """
 from fastapi import APIRouter, HTTPException
@@ -8,7 +8,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
 
 class Card(BaseModel):
     """卡片模型"""
@@ -21,12 +20,10 @@ class Card(BaseModel):
     tags: List[str] = []
     references: List[str] = []
 
-
 class CardListResponse(BaseModel):
     """卡片列表响应"""
     cards: List[Card]
     total: int
-
 
 @router.get("", response_model=CardListResponse)
 async def get_cards(
@@ -75,7 +72,6 @@ async def get_cards(
         logger.error(f"获取卡片列表失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("")
 async def create_card(card: Card):
     """
@@ -101,7 +97,6 @@ async def create_card(card: Card):
     except Exception as e:
         logger.error(f"创建卡片失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/{card_id}")
 async def get_card(card_id: str):
@@ -130,7 +125,6 @@ async def get_card(card_id: str):
     except Exception as e:
         logger.error(f"获取卡片详情失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.delete("/{card_id}")
 async def delete_card(card_id: str):

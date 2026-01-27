@@ -1,14 +1,21 @@
-"""
+﻿"""
 报告生成API路由
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import logging
+import sys
+import os
+import time
+
+# 添加backend目录到Python路径
+backend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'backend')
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
 
 class GenerateRequest(BaseModel):
     """生成请求"""
@@ -16,172 +23,232 @@ class GenerateRequest(BaseModel):
     data_source: Optional[str] = None
     analysis_type: Optional[str] = None
 
-
 class GenerateResponse(BaseModel):
     """生成响应"""
     cards: dict
     report: dict
     execution_time: float
 
-
 @router.post("/cards")
 async def generate_cards(request: GenerateRequest):
     """
     生成四色卡片（使用NPU推理）
-    
+
+    从backend导入NPU推理功能，生成真实的四色卡片
+
     参数：
         request: 生成请求
-    
+
     返回：
         四色卡片
     """
     try:
-        import time
         start_time = time.time()
-        
-        # TODO: 调用锦衣卫总指挥使，启动8-Agent协作流程
-        # cards = await orchestrator.generate_cards(request.query)
-        
-        # 模拟数据
-        cards = {
-            "blue": {
-                "card_type": "blue",
-                "title": "12月销售数据统计",
-                "content": {
-                    "dimensions": ["时间"],
-                    "metrics": {
-                        "sales": {"value": 1200000, "unit": "元"},
-                        "growth_rate": {"value": "-15%", "comparison": "环比"}
-                    }
-                },
-                "confidence": 0.98
-            },
-            "green": {
-                "card_type": "green",
-                "title": "销售下滑原因分析",
-                "content": {
-                    "logic_chain": [
-                        {"step": 1, "description": "竞品于12月中旬推出满减促销活动"},
-                        {"step": 2, "description": "核心客户群体被分流"},
-                        {"step": 3, "description": "销量环比下降15%"}
-                    ],
-                    "primary_reason": "竞品促销活动导致客户分流"
-                },
-                "confidence": 0.85
-            },
-            "yellow": {
-                "card_type": "yellow",
-                "title": "库存积压预警",
-                "content": {
-                    "risk_type": "库存积压",
-                    "risk_level": "一级",
-                    "details": {
-                        "current_stock": 5000,
-                        "expected_demand": 2000,
-                        "excess_ratio": "150%"
-                    }
-                },
-                "confidence": 0.90
-            },
-            "red": {
-                "card_type": "red",
-                "title": "库存清理行动建议",
-                "content": {
-                    "actions": [
-                        {
-                            "step": 1,
-                            "action": "推出限时折扣清理库存",
-                            "priority": "立即执行",
-                            "expected_effect": "库存周转率提升30%"
-                        }
-                    ],
-                    "overall_priority": "高"
-                },
-                "confidence": 0.80
-            }
-        }
-        
+
+        # 从backend导入模型加载器和推理函数
+        try:
+            from models.model_loader import get_model_loader, load_model_if_needed
+            from main import real_inference
+        except ImportError as e:
+            logger.error(f"无法导入backend的NPU推理模块: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"NPU推理模块不可用: {str(e)}"
+            )
+
+        # 加载模型
+        loader = load_model_if_needed()
+
+        if loader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="NPU模型未加载，无法生成卡片"
+            )
+
+        # 执行NPU推理
+        raw_result = real_inference(request.query, loader)
+        inference_time = raw_result.get("inference_time_ms", 0)
+
+        # 构建四色卡片
+        cards = {}
+
+        # 蓝色卡片 - 事实
+        if raw_result.get("facts"):
+            facts = raw_result["facts"]
+            if facts:
+                cards["blue"] = {
+                    "card_type": "blue",
+                    "title": "数据事实",
+                    "content": {
+                        "facts": facts
+                    },
+                    "confidence": 0.95
+                }
+
+        # 绿色卡片 - 解释
+        if raw_result.get("explanations"):
+            explanations = raw_result["explanations"]
+            if explanations:
+                cards["green"] = {
+                    "card_type": "green",
+                    "title": "原因解释",
+                    "content": {
+                        "explanations": explanations
+                    },
+                    "confidence": 0.90
+                }
+
+        # 黄色卡片 - 风险
+        if raw_result.get("risks"):
+            risks = raw_result["risks"]
+            if risks:
+                cards["yellow"] = {
+                    "card_type": "yellow",
+                    "title": "风险预警",
+                    "content": {
+                        "risks": risks
+                    },
+                    "confidence": 0.88
+                }
+
+        # 红色卡片 - 行动
+        if raw_result.get("actions"):
+            actions = raw_result["actions"]
+            if actions:
+                cards["red"] = {
+                    "card_type": "red",
+                    "title": "行动建议",
+                    "content": {
+                        "actions": actions
+                    },
+                    "confidence": 0.85
+                }
+
+        # 如果没有生成任何卡片，返回错误
+        if not cards:
+            logger.error("NPU推理未能生成有效的四色卡片")
+            raise HTTPException(
+                status_code=500,
+                detail="NPU推理未能生成有效的四色卡片，请检查查询内容"
+            )
+
         execution_time = time.time() - start_time
-        
+
+        logger.info(f"成功生成四色卡片，耗时: {execution_time:.2f}s，NPU推理: {inference_time:.2f}ms")
+
         return {
             "cards": cards,
-            "execution_time": execution_time
+            "execution_time": execution_time,
+            "inference_time_ms": inference_time,
+            "npu_used": True
         }
-    
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"生成卡片失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/report")
 async def generate_report(request: GenerateRequest):
     """
     生成完整报告
-    
+
+    使用NPU推理生成完整的分析报告
+
     参数：
         request: 生成请求
-    
+
     返回：
         完整报告
     """
     try:
-        import time
         start_time = time.time()
-        
-        # TODO: 调用锦衣卫总指挥使，整合所有模块结果生成报告
-        # report = await orchestrator.generate_report(request.query)
-        
-        # 模拟数据
+
+        # 从backend导入NPU推理功能
+        try:
+            from models.model_loader import get_model_loader, load_model_if_needed
+            from main import real_inference
+        except ImportError as e:
+            logger.error(f"无法导入backend的NPU推理模块: {e}")
+            raise HTTPException(
+                status_code=503,
+                detail=f"NPU推理模块不可用: {str(e)}"
+            )
+
+        # 加载模型
+        loader = load_model_if_needed()
+
+        if loader is None:
+            raise HTTPException(
+                status_code=503,
+                detail="NPU模型未加载，无法生成报告"
+            )
+
+        # 执行NPU推理
+        raw_result = real_inference(request.query, loader)
+        inference_time = raw_result.get("inference_time_ms", 0)
+
+        # 构建完整报告
         report = {
             "summary": {
-                "title": "12月销售趋势分析报告",
-                "description": "基于2024年12月销售数据分析，发现销量环比下降15%，主要原因为竞品促销活动导致客户分流。",
-                "generated_at": "2025-01-21T14:30:00Z"
+                "title": "智能分析报告",
+                "description": f"基于NPU推理对以下查询生成的分析结果：{request.query[:100]}{'...' if len(request.query) > 100 else ''}",
+                "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "inference_time_ms": inference_time
             },
-            "facts": [
-                {
-                    "title": "销量数据",
-                    "description": "12月总销量120万元，环比下降15%",
-                    "data": [
-                        {"name": "12月1日", "value": 50000},
-                        {"name": "12月15日", "value": 45000},
-                        {"name": "12月31日", "value": 42500}
-                    ]
-                }
-            ],
-            "explanations": [
-                {
-                    "title": "下滑原因",
-                    "description": "竞品于12月中旬推出满减促销活动，导致核心客户分流"
-                }
-            ],
-            "risks": [
-                {
-                    "title": "库存积压",
-                    "level": "一级",
-                    "description": "当前库存5000件，预期需求2000件，积压150%"
-                }
-            ],
-            "actions": [
-                {
-                    "title": "限时折扣",
-                    "priority": "立即执行",
-                    "description": "推出限时折扣清理库存，预计周转率提升30%"
-                }
-            ]
+            "facts": [],
+            "explanations": [],
+            "risks": [],
+            "actions": []
         }
-        
+
+        # 填充事实
+        for fact in raw_result.get("facts", []):
+            report["facts"].append({
+                "title": "事实",
+                "description": fact
+            })
+
+        # 填充解释
+        for explanation in raw_result.get("explanations", []):
+            report["explanations"].append({
+                "title": "解释",
+                "description": explanation
+            })
+
+        # 填充风险
+        for risk in raw_result.get("risks", []):
+            report["risks"].append({
+                "title": "风险",
+                "description": risk,
+                "level": "高"
+            })
+
+        # 填充行动建议
+        for action in raw_result.get("actions", []):
+            report["actions"].append({
+                "title": "行动建议",
+                "description": action,
+                "priority": "立即执行"
+            })
+
         execution_time = time.time() - start_time
-        
+
+        logger.info(f"成功生成完整报告，耗时: {execution_time:.2f}s")
+
         return {
             "report": report,
-            "execution_time": execution_time
+            "execution_time": execution_time,
+            "inference_time_ms": inference_time,
+            "npu_used": True
         }
-    
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"生成报告失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.post("/batch")
 async def batch_generate(requests: list):

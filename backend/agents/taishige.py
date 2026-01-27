@@ -67,10 +67,10 @@ class TaishigeAgent:
     def store_knowledge(self, all_results: dict) -> dict:
         """
         存储Agent成果至知识库
-        
+
         参数：
             all_results: dict
-        
+
         返回：
             store_status: dict
         """
@@ -82,6 +82,183 @@ class TaishigeAgent:
         }
         knowledge_base.append(knowledge_item)
         return {"store_status": "success", "knowledge_id": knowledge_item["knowledge_id"]}
+
+    # ========== 卡片管理方法 ==========
+
+    def get_cards(self, card_type: Optional[str] = None, limit: int = 50, offset: int = 0) -> tuple[list, int]:
+        """
+        获取卡片列表
+
+        从知识库中提取卡片数据
+
+        参数：
+            card_type: 卡片类型过滤（blue/green/yellow/red）
+            limit: 返回数量限制
+            offset: 偏移量
+
+        返回：
+            (cards_list, total_count)
+        """
+        all_cards = []
+
+        # 从知识库中提取卡片
+        for knowledge_item in knowledge_base:
+            content = knowledge_item.get('content', {})
+            if isinstance(content, dict):
+                # 检查是否包含cards字段
+                if 'cards' in content:
+                    cards = content['cards']
+                    for card in cards:
+                        # 添加元数据
+                        card_with_meta = {
+                            'id': f"{knowledge_item['knowledge_id']}_{card.get('id', 'unknown')}",
+                            'knowledge_id': knowledge_item['knowledge_id'],
+                            'type': card.get('type', 'blue'),
+                            'title': card.get('title', '无标题'),
+                            'content': card,
+                            'confidence': card.get('confidence', 0.8),
+                            'timestamp': knowledge_item.get('create_time', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())),
+                            'tags': card.get('tags', []),
+                            'references': card.get('references', [])
+                        }
+                        all_cards.append(card_with_meta)
+                else:
+                    # 如果内容本身就是一个卡片
+                    if 'type' in content and 'title' in content:
+                        card_with_meta = {
+                            'id': knowledge_item['knowledge_id'],
+                            'knowledge_id': knowledge_item['knowledge_id'],
+                            'type': content.get('type', 'blue'),
+                            'title': content.get('title', '无标题'),
+                            'content': content,
+                            'confidence': content.get('confidence', 0.8),
+                            'timestamp': knowledge_item.get('create_time', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())),
+                            'tags': content.get('tags', []),
+                            'references': content.get('references', [])
+                        }
+                        all_cards.append(card_with_meta)
+
+        # 应用类型过滤
+        if card_type:
+            all_cards = [card for card in all_cards if card['type'] == card_type]
+
+        total = len(all_cards)
+
+        # 应用分页
+        cards = all_cards[offset:offset + limit]
+
+        return cards, total
+
+    def get_card(self, card_id: str) -> Optional[dict]:
+        """
+        获取单个卡片详情
+
+        参数：
+            card_id: 卡片ID
+
+        返回：
+            卡片详情字典，如果未找到返回None
+        """
+        for knowledge_item in knowledge_base:
+            content = knowledge_item.get('content', {})
+            if isinstance(content, dict):
+                # 检查cards字段
+                if 'cards' in content:
+                    for card in content['cards']:
+                        full_id = f"{knowledge_item['knowledge_id']}_{card.get('id', 'unknown')}"
+                        if full_id == card_id or card.get('id') == card_id:
+                            return {
+                                'id': full_id,
+                                'knowledge_id': knowledge_item['knowledge_id'],
+                                'type': card.get('type', 'blue'),
+                                'title': card.get('title', '无标题'),
+                                'content': card,
+                                'confidence': card.get('confidence', 0.8),
+                                'timestamp': knowledge_item.get('create_time', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())),
+                                'tags': card.get('tags', []),
+                                'references': card.get('references', [])
+                            }
+                else:
+                    # 检查内容本身是否是卡片
+                    if content.get('type') and content.get('title'):
+                        if knowledge_item['knowledge_id'] == card_id:
+                            return {
+                                'id': knowledge_item['knowledge_id'],
+                                'knowledge_id': knowledge_item['knowledge_id'],
+                                'type': content.get('type', 'blue'),
+                                'title': content.get('title', '无标题'),
+                                'content': content,
+                                'confidence': content.get('confidence', 0.8),
+                                'timestamp': knowledge_item.get('create_time', time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())),
+                                'tags': content.get('tags', []),
+                                'references': content.get('references', [])
+                            }
+
+        return None
+
+    def create_card(self, card_data: dict) -> dict:
+        """
+        创建新卡片
+
+        参数：
+            card_data: 卡片数据
+
+        返回：
+            创建结果，包含card_id和status
+        """
+        card_id = card_data.get('id', f"card_{int(time.time() * 1000)}")
+
+        # 构建知识项
+        knowledge_item = {
+            'knowledge_id': f"C{card_id}",
+            'content': {
+                'cards': [card_data]
+            },
+            'create_time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            'tags': card_data.get('tags', [])
+        }
+
+        knowledge_base.append(knowledge_item)
+
+        return {
+            'card_id': card_id,
+            'knowledge_id': knowledge_item['knowledge_id'],
+            'status': 'created'
+        }
+
+    def delete_card(self, card_id: str) -> bool:
+        """
+        删除卡片
+
+        参数：
+            card_id: 卡片ID
+
+        返回：
+            是否成功删除
+        """
+        global knowledge_base
+
+        for idx, knowledge_item in enumerate(knowledge_base):
+            content = knowledge_item.get('content', {})
+            if isinstance(content, dict):
+                # 检查cards字段
+                if 'cards' in content:
+                    for card_idx, card in enumerate(content['cards']):
+                        full_id = f"{knowledge_item['knowledge_id']}_{card.get('id', 'unknown')}"
+                        if full_id == card_id or card.get('id') == card_id:
+                            # 从列表中删除卡片
+                            content['cards'].pop(card_idx)
+                            # 如果列表为空，删除整个知识项
+                            if not content['cards']:
+                                knowledge_base.pop(idx)
+                            return True
+                else:
+                    # 检查内容本身是否是卡片
+                    if knowledge_item['knowledge_id'] == card_id:
+                        knowledge_base.pop(idx)
+                        return True
+
+        return False
     
     def retrieve_cases(self, keywords: list, top_k: int = 5) -> list:
         """

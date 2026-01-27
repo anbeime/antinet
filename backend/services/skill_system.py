@@ -92,6 +92,14 @@ class SkillRegistry:
         self.register(KnowledgeRetrievalSkill())
         self.register(MemoryAssociationSkill())
         
+        # 知识图谱可视化技能
+        try:
+            from skills.knowledge_graph_skill import KnowledgeGraphVisualizationSkill
+            self.register(KnowledgeGraphVisualizationSkill())
+            logger.info("[SkillRegistry] 知识图谱可视化技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册知识图谱可视化技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())
