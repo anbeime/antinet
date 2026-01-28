@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-# backend/routes/chat_routes.py - 知识库聊天路由
+# backend/routes/chat_routes.py - 知识库聊天路由（修复版 - 从数据库读取）
 """
-提供知识库查询和对话机器人功能（简化版，不依赖向量检索）
+提供知识库查询和对话机器人功能（从数据库读取知识卡片）
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
+from database import DatabaseManager
+from config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["聊天机器人"])
 
-# 数据库管理器（将在main.py中设置）
-db_manager = None
+# 创建数据库管理器实例
+db_manager = DatabaseManager(settings.DB_PATH)
 
 
 class ChatMessage(BaseModel):
@@ -58,57 +60,65 @@ class CardSearchResponse(BaseModel):
     total: int = 0
 
 
-def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+def _search_cards_from_database(query: str, limit: int = 10, card_type: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    使用关键词搜索数据库中的知识卡片
+    从数据库搜索知识卡片
 
     参数：
         query: 查询关键词
         limit: 返回数量限制
+        card_type: 卡片类型过滤（可选）
 
     返回：
         匹配的卡片列表
     """
-    global db_manager
-    if db_manager is None:
-        logger.error("数据库管理器未初始化")
-        return []
-
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-
-        # 使用 SQL LIKE 进行模糊匹配
+        
         query_lower = query.lower()
-        cursor.execute("""
-            SELECT id, title, content, category, card_type, similarity, created_at
+        
+        # 构建SQL查询
+        sql = """
+            SELECT id, card_type, title, content, category, created_at
             FROM knowledge_cards
-            WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
-            ORDER BY id DESC
-            LIMIT ?
-        """, (f"%{query_lower}%", f"%{query_lower}%", limit))
-
+            WHERE (LOWER(title) LIKE ? OR LOWER(content) LIKE ? OR LOWER(category) LIKE ?)
+        """
+        params = [f'%{query_lower}%', f'%{query_lower}%', f'%{query_lower}%']
+        
+        # 如果指定了卡片类型，添加过滤条件
+        if card_type:
+            sql += " AND card_type = ?"
+            params.append(card_type)
+        
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        
+        cursor.execute(sql, params)
         rows = cursor.fetchall()
+        
+        # 转换为字典列表
         cards = []
-
         for row in rows:
-            cards.append({
-                "card_id": f"db_{row[0]}",
-                "id": row[0],
-                "card_type": row[4],
-                "title": row[1],
-                "content": {
-                    "description": row[2]
+            card = {
+                'card_id': f"db_{row[0]}",
+                'card_type': row[1] or 'blue',
+                'title': row[2] or '无标题',
+                'content': {
+                    'description': row[3] or '无内容'
                 },
-                "category": row[3],
-                "similarity": 0.8  # 简单相似度评分
-            })
-
+                'category': row[4] or '未分类',
+                'created_at': row[5],
+                'similarity': 0.85  # 简单相似度评分
+            }
+            cards.append(card)
+        
         conn.close()
+        logger.info(f"从数据库搜索到 {len(cards)} 张卡片")
         return cards
-
+        
     except Exception as e:
-        logger.error(f"搜索卡片失败: {e}", exc_info=True)
+        logger.error(f"数据库搜索失败: {e}", exc_info=True)
         return []
 
 
@@ -141,27 +151,26 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
             for card in blue_cards[:3]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
-                desc = content.get("description", "无描述") if isinstance(content, dict) else "无描述"
+                desc = content.get("description", "无描述") if isinstance(content, dict) else str(content)
                 response_parts.append(f"- {title}\n  {desc}\n")
 
         # 绿色卡片：解释
         if green_cards:
-            response_parts.append("\n **原因解释：**\n")
+            response_parts.append("\n💡 **原因解释：**\n")
             for card in green_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
-                explanation = content.get("explanation", "无解释") if isinstance(content, dict) else "无解释"
+                explanation = content.get("description", "无解释") if isinstance(content, dict) else str(content)
                 response_parts.append(f"- {title}\n  {explanation}\n")
 
         # 黄色卡片：风险
         if yellow_cards:
-            response_parts.append("\n **相关风险：**\n")
+            response_parts.append("\n⚠️ **相关风险：**\n")
             for card in yellow_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
-                level = content.get("risk_level", "未知") if isinstance(content, dict) else "未知"
-                desc = content.get("description", "无描述") if isinstance(content, dict) else "无描述"
-                response_parts.append(f"- {title} (等级: {level})\n  {desc}\n")
+                desc = content.get("description", "无描述") if isinstance(content, dict) else str(content)
+                response_parts.append(f"- {title}\n  {desc}\n")
 
         # 红色卡片：行动建议
         if red_cards:
@@ -169,12 +178,11 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
             for card in red_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
-                priority = content.get("priority", "未知") if isinstance(content, dict) else "未知"
-                action = content.get("action", "无行动") if isinstance(content, dict) else "无行动"
-                response_parts.append(f"- {title} (优先级: {priority})\n  {action}\n")
+                action = content.get("description", "无行动") if isinstance(content, dict) else str(content)
+                response_parts.append(f"- {title}\n  {action}\n")
 
         # 总结
-        response_parts.append(f"\n **来源说明：**\n基于知识库中找到的 {len(relevant_cards)} 张相关卡片生成。")
+        response_parts.append(f"\n📚 **来源说明：**\n基于知识库中找到的 {len(relevant_cards)} 张相关卡片生成（从数据库读取）。")
 
         return "\n".join(response_parts)
 
@@ -222,21 +230,6 @@ def _generate_suggested_questions(query: str, relevant_cards: List[Dict]) -> Lis
             "数据如何保证安全性？",
             "支持哪些数据格式？",
             "如何进行数据分析？"
-        ],
-        "启动": [
-            "如何一键启动系统？",
-            "启动失败如何排查？",
-            "需要哪些环境依赖？"
-        ],
-        "性能": [
-            "如何优化系统性能？",
-            "推理延迟多少算正常？",
-            "性能瓶颈在哪里？"
-        ],
-        "API": [
-            "系统提供哪些API接口？",
-            "如何调用API进行开发？",
-            "API文档在哪里查看？"
         ]
     }
     
@@ -244,23 +237,19 @@ def _generate_suggested_questions(query: str, relevant_cards: List[Dict]) -> Lis
     card_type_questions = {
         "blue": [
             "还有哪些相关的事实信息？",
-            "这个功能的具体参数是什么？",
-            "有没有更详细的说明文档？"
+            "这个功能的具体参数是什么？"
         ],
         "green": [
             "为什么要这样设计？",
-            "有没有其他实现方式？",
-            "这种方法的优缺点是什么？"
+            "有没有其他实现方式？"
         ],
         "yellow": [
             "如何避免这些风险？",
-            "遇到问题如何排查？",
-            "有哪些注意事项？"
+            "遇到问题如何排查？"
         ],
         "red": [
             "具体操作步骤是什么？",
-            "有没有快捷方式？",
-            "完成后如何验证？"
+            "有没有快捷方式？"
         ]
     }
     
@@ -300,15 +289,15 @@ def _generate_suggested_questions(query: str, relevant_cards: List[Dict]) -> Lis
 @router.post("/query", response_model=ChatResponse)
 async def chat_query(request: ChatRequest):
     """
-    知识库查询接口
+    知识库查询接口（从数据库读取）
 
     接收用户查询，返回基于知识库的回复
     """
     logger.info(f"[ChatRoutes] 收到查询: {request.query}")
 
     try:
-        # 使用关键词搜索预设的知识卡片
-        cards = _search_cards_by_keyword(request.query, limit=10)
+        # 从数据库搜索知识卡片
+        cards = _search_cards_from_database(request.query, limit=10)
 
         # 生成回复
         response = _generate_response(request.query, cards)
@@ -324,7 +313,7 @@ async def chat_query(request: ChatRequest):
                     card_id=card["card_id"],
                     card_type=card["card_type"],
                     title=card["title"],
-                    similarity=card.get("similarity", 0.8)
+                    similarity=card.get("similarity", 0.85)
                 )
                 for card in cards[:5]
             ],
@@ -343,19 +332,19 @@ async def chat_query(request: ChatRequest):
 @router.post("/search", response_model=CardSearchResponse)
 async def search_cards(request: CardSearchRequest):
     """
-    卡片搜索接口
+    卡片搜索接口（从数据库读取）
 
     搜索知识库中的卡片
     """
     logger.info(f"[ChatRoutes] 搜索卡片: {request.query} (类型: {request.card_type})")
 
     try:
-        # 使用关键词搜索
-        cards = _search_cards_by_keyword(request.query, limit=request.limit)
-
-        # 如果指定了卡片类型，进行过滤
-        if request.card_type:
-            cards = [c for c in cards if c.get("card_type") == request.card_type]
+        # 从数据库搜索
+        cards = _search_cards_from_database(
+            request.query, 
+            limit=request.limit,
+            card_type=request.card_type
+        )
 
         result = CardSearchResponse(
             cards=cards,
@@ -377,60 +366,57 @@ async def list_cards(
     offset: int = 0
 ):
     """
-    列出知识卡片
+    列出知识卡片（从数据库读取）
 
     参数：
         card_type: 卡片类型过滤（可选）
         limit: 返回数量限制（默认50）
         offset: 偏移量（默认0）
     """
-    global db_manager
     logger.info(f"[ChatRoutes] 列出卡片 (类型: {card_type}, 限制: {limit})")
 
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-
-        # 构建查询
+        
+        # 构建SQL查询
+        sql = "SELECT id, card_type, title, content, category, created_at FROM knowledge_cards WHERE 1=1"
+        params = []
+        
         if card_type:
-            cursor.execute("""
-                SELECT id, title, content, category, card_type, similarity, created_at
-                FROM knowledge_cards
-                WHERE card_type = ?
-                ORDER BY id DESC
-                LIMIT ? OFFSET ?
-            """, (card_type, limit, offset))
-        else:
-            cursor.execute("""
-                SELECT id, title, content, category, card_type, similarity, created_at
-                FROM knowledge_cards
-                ORDER BY id DESC
-                LIMIT ? OFFSET ?
-            """, (limit, offset))
-
+            sql += " AND card_type = ?"
+            params.append(card_type)
+        
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        
+        cursor.execute(sql, params)
         rows = cursor.fetchall()
-        cards = []
-
-        for row in rows:
-            cards.append({
-                "card_id": f"db_{row[0]}",
-                "id": row[0],
-                "card_type": row[4],
-                "title": row[1],
-                "content": {
-                    "description": row[2]
-                },
-                "category": row[3],
-                "similarity": row[5]
-            })
-
+        
         # 获取总数
+        count_sql = "SELECT COUNT(*) FROM knowledge_cards WHERE 1=1"
+        count_params = []
         if card_type:
-            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE card_type = ?", (card_type,))
-        else:
-            cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
+            count_sql += " AND card_type = ?"
+            count_params.append(card_type)
+        cursor.execute(count_sql, count_params)
         total = cursor.fetchone()[0]
-
+        
+        # 转换为字典列表
+        cards = []
+        for row in rows:
+            card = {
+                'card_id': f"db_{row[0]}",
+                'card_type': row[1] or 'blue',
+                'title': row[2] or '无标题',
+                'content': {
+                    'description': row[3] or '无内容'
+                },
+                'category': row[4] or '未分类',
+                'created_at': row[5]
+            }
+            cards.append(card)
+        
         conn.close()
 
         return {
@@ -446,15 +432,14 @@ async def list_cards(
 @router.get("/card/{card_id}")
 async def get_card(card_id: str):
     """
-    获取单个卡片详情
+    获取单个卡片详情（从数据库读取）
 
     参数：
-        card_id: 卡片ID（格式：db_<id>）
+        card_id: 卡片ID（格式：db_数字）
 
     返回：
         卡片详情
     """
-    global db_manager
     logger.info(f"[ChatRoutes] 获取卡片: {card_id}")
 
     try:
@@ -463,39 +448,36 @@ async def get_card(card_id: str):
             db_id = int(card_id.replace("db_", ""))
         else:
             db_id = int(card_id)
-
+        
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT id, title, content, category, card_type, similarity, created_at
-            FROM knowledge_cards
-            WHERE id = ?
-        """, (db_id,))
-
+        
+        cursor.execute(
+            "SELECT id, card_type, title, content, category, created_at FROM knowledge_cards WHERE id = ?",
+            (db_id,)
+        )
         row = cursor.fetchone()
         conn.close()
-
+        
         if not row:
             raise HTTPException(
                 status_code=404,
                 detail=f"卡片不存在: {card_id}"
             )
-
-        return {
-            "card_id": f"db_{row[0]}",
-            "id": row[0],
-            "card_type": row[4],
-            "title": row[1],
-            "content": {
-                "description": row[2]
+        
+        card = {
+            'card_id': f"db_{row[0]}",
+            'card_type': row[1] or 'blue',
+            'title': row[2] or '无标题',
+            'content': {
+                'description': row[3] or '无内容'
             },
-            "category": row[3],
-            "similarity": row[5]
+            'category': row[4] or '未分类',
+            'created_at': row[5]
         }
+        
+        return card
 
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"无效的卡片ID格式: {card_id}")
     except HTTPException:
         raise
     except Exception as e:
@@ -512,11 +494,18 @@ async def health_check():
         服务状态
     """
     try:
-        # 简化版本，总是返回健康状态
+        # 检查数据库连接
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
+        card_count = cursor.fetchone()[0]
+        conn.close()
+        
         return {
             "status": "healthy",
             "database_initialized": True,
-            "search_type": "keyword_match"  # 使用关键词匹配而非向量检索
+            "card_count": card_count,
+            "search_type": "database_search"  # 使用数据库搜索
         }
     except Exception as e:
         logger.error(f"[ChatRoutes] 健康检查失败: {e}", exc_info=True)

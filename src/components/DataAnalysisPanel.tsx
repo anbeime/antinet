@@ -93,7 +93,10 @@ const DataAnalysisPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      // 调用8-Agent后端API
+      // 调用8-Agent后端API（增加60秒超时）
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+      
       const response = await fetch(`${API_BASE_URL}/api/generate/cards`, {
         method: 'POST',
         headers: {
@@ -103,8 +106,11 @@ const DataAnalysisPanel: React.FC = () => {
           query: query,
           data_source: null,  // 可选：数据源路径
           analysis_type: null  // 可选：分析类型
-        })
+        }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (response.status === 503) {
         // 模型未加载
@@ -140,9 +146,25 @@ const DataAnalysisPanel: React.FC = () => {
 
     } catch (error) {
       console.error('分析失败:', error);
-      toast('✗ 分析失败,请检查后端服务', {
-        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
-      });
+      
+      // 区分不同类型的错误
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          toast('⏱️ 分析超时（60秒），NPU推理时间过长。建议：1) 缩短查询内容 2) 检查NPU状态', {
+            className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
+            duration: 8000
+          });
+        } else {
+          toast(`✗ 分析失败: ${error.message}`, {
+            className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100',
+            duration: 5000
+          });
+        }
+      } else {
+        toast('✗ 分析失败,请检查后端服务', {
+          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+        });
+      }
     } finally {
       setLoading(false);
     }

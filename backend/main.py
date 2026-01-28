@@ -119,6 +119,8 @@ if npu_router is not None:
 app.include_router(data_routes.router)  # 数据管理路由
 if chat_router is not None:
     app.include_router(chat_router)  # 聊天机器人路由
+    chat_router.db_manager = db_manager  # 设置数据库管理器
+    logger.info("✓ 聊天机器人路由已注册")
 
 # 注册知识管理路由
 try:
@@ -137,6 +139,14 @@ try:
     logger.info("✓ 8-Agent 系统路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 8-Agent 系统路由: {e}")
+
+# 注册报告生成路由
+try:
+    from api.generate import router as generate_router
+    app.include_router(generate_router, prefix="/api/generate", tags=["报告生成"])
+    logger.info("✓ 报告生成路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入报告生成路由: {e}")
 
 # 注册技能系统路由
 try:

@@ -1,0 +1,792 @@
+#!/usr/bin/env python3
+# backend/routes/chat_routes.py - 知识库聊天路由
+"""
+提供知识库查询和对话机器人功能（简化版，不依赖向量检索）
+"""
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/chat", tags=["聊天机器人"])
+
+
+class ChatMessage(BaseModel):
+    """聊天消息"""
+    role: str = Field(..., description="角色: user|assistant|system")
+    content: str = Field(..., description="消息内容")
+
+
+class ChatRequest(BaseModel):
+    """聊天请求"""
+    query: str = Field(..., description="用户查询")
+    conversation_history: List[ChatMessage] = Field(default_factory=list, description="对话历史")
+    context: Dict[str, Any] = Field(default_factory=dict, description="上下文信息")
+
+
+class CardSource(BaseModel):
+    """知识来源"""
+    card_id: str
+    card_type: str
+    title: str
+    similarity: float
+
+
+class ChatResponse(BaseModel):
+    """聊天响应"""
+    response: str
+    sources: List[CardSource] = Field(default_factory=list)
+    cards: List[Dict[str, Any]] = Field(default_factory=list)
+    suggested_questions: List[str] = Field(default_factory=list, description="推荐的相关问题")
+
+
+class CardSearchRequest(BaseModel):
+    """卡片搜索请求"""
+    query: str
+    card_type: Optional[str] = None
+    limit: int = 10
+
+
+class CardSearchResponse(BaseModel):
+    """卡片搜索响应"""
+    cards: List[Dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+
+
+# 预设的四色卡片知识库（基于项目文档）
+PRESET_KNOWLEDGE_CARDS = {
+    "blue": [  # 事实卡片
+        {
+            "card_id": "fact_001",
+            "card_type": "blue",
+            "title": "Antinet系统概述",
+            "content": {
+                "description": "Antinet智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站，通过集成NPU加速的轻量化大模型，实现自然语言驱动的数据查询、自动数据分析与可视化、四色卡片知识沉淀、数据不出域、NPU加速推理等功能。"
+            }
+        },
+        {
+            "card_id": "fact_002",
+            "card_type": "blue",
+            "title": "核心价值",
+            "content": {
+                "description": "效率提升70%（数据分析从数小时缩短到分钟级）、安全可控（端侧处理，企业数据不出域）、知识沉淀（分析结果可追溯、可协作、可复用）。"
+            }
+        },
+        {
+            "card_id": "fact_003",
+            "card_type": "blue",
+            "title": "技术架构",
+            "content": {
+                "description": "前端使用React 18 + TypeScript + Vite，后端使用FastAPI 0.109 + Python，AI推理使用QAI AppBuilder，模型为Qwen2-1.5B（INT8量化），数据库为SQLite + DuckDB。"
+            }
+        },
+        {
+            "card_id": "fact_004",
+            "card_type": "blue",
+            "title": "NPU性能指标",
+            "content": {
+                "description": "使用Qwen2.0-7B-SSD模型，推理延迟约450ms，目标延迟<500ms，运行在骁龙Hexagon NPU（HTP后端），CPU vs NPU加速比4.2x。"
+            }
+        },
+        {
+            "card_id": "fact_005",
+            "card_type": "blue",
+            "title": "异构计算架构",
+            "content": {
+                "description": "NPU负责核心模型推理（60-70%算力占用），CPU负责控制逻辑和数据预处理（20%），GPU负责图像处理和并行计算（10%）。"
+            }
+        },
+        {
+            "card_id": "fact_006",
+            "card_type": "blue",
+            "title": "8-Agent协作架构",
+            "content": {
+                "description": "包括锦衣卫总指挥使（任务分解与调度）、密卷房（数据预处理）、通政司（事实提取）、监察院（解释生成）、刑狱司（风险识别）、参谋司（行动建议）、太史阁（知识存储）、驿传司（结果整合）。"
+            }
+        },
+        {
+            "card_id": "fact_007",
+            "card_type": "blue",
+            "title": "四色卡片系统",
+            "content": {
+                "description": "蓝色卡片-核心概念、绿色卡片-关联链接、黄色卡片-参考来源、红色卡片-索引关键词。基于卢曼卡片盒笔记法实现知识管理。"
+            }
+        },
+        {
+            "card_id": "fact_008",
+            "card_type": "blue",
+            "title": "访问地址",
+            "content": {
+                "description": "前端首页http://localhost:3000、NPU智能分析http://localhost:3000/npu-analysis、后端API http://localhost:8000、API文档http://localhost:8000/docs"
+            }
+        },
+        {
+            "card_id": "fact_009",
+            "card_type": "blue",
+            "title": "一键启动",
+            "content": {
+                "description": "运行start_complete_system.bat可一键启动后端（8000端口）和前端（3001端口）服务，包括健康检查。"
+            }
+        },
+        {
+            "card_id": "fact_010",
+            "card_type": "blue",
+            "title": "数据本地化",
+            "content": {
+                "description": "所有数据存储在本地SQLite数据库中，数据不出域，企业数据完全在本地处理，保障隐私安全。"
+            }
+        },
+        {
+            "card_id": "fact_011",
+            "card_type": "blue",
+            "title": "比赛信息",
+            "content": {
+                "description": "参加2025骁龙人工智能创新应用大赛，AIPC赛道-通用赛，项目名称：Antinet智能知识管家。"
+            }
+        },
+        {
+            "card_id": "fact_012",
+            "card_type": "blue",
+            "title": "团队成员管理",
+            "content": {
+                "description": "系统支持添加团队成员、分配角色（管理员/编辑/查看者）、设置权限，可以查看成员在线状态和贡献度。"
+            }
+        }
+    ],
+    "green": [  # 解释卡片
+        {
+            "card_id": "explain_001",
+            "card_type": "green",
+            "title": "为什么使用Antinet",
+            "content": {
+                "explanation": "Antinet基于卢曼卡片盒笔记法，采用四色卡片（事实/解释/风险/行动）进行知识组织，帮助团队更好地管理和分享知识。通过NPU加速实现端侧智能处理，保障数据安全的同时提升效率。"
+            }
+        },
+        {
+            "card_id": "explain_002",
+            "card_type": "green",
+            "title": "为什么选择NPU",
+            "content": {
+                "explanation": "NPU专用硬件带来性能提升4.2x（vs CPU）、功耗降低60%、延迟<500ms实时响应。相比CPU和GPU，NPU在AI推理任务上更加高效节能。"
+            }
+        },
+        {
+            "card_id": "explain_003",
+            "card_type": "green",
+            "title": "为什么使用端侧AI",
+            "content": {
+                "explanation": "数据隐私保护（数据不出域）、实时响应能力（无需网络传输）、离线可用性（不依赖网络连接）、成本优势（无需云端计算费用）。"
+            }
+        },
+        {
+            "card_id": "explain_004",
+            "card_type": "green",
+            "title": "8-Agent架构优势",
+            "content": {
+                "explanation": "通过模块化智能处理实现精准数据分析，包括数据提取模块（自动对接本地数据源）、分析推理模块（基于NPU生成四色卡片）、可视化生成模块（自动匹配图表类型）、质量校验模块（逻辑与数据双重校验）。"
+            }
+        },
+        {
+            "card_id": "explain_005",
+            "card_type": "green",
+            "title": "四色卡片方法论",
+            "content": {
+                "explanation": "蓝色卡片记录客观事实（如销量、增长率），绿色卡片解释原因（如数据波动背后的原因），黄色卡片识别风险（如库存不足预警），红色卡片提供行动建议（如调整定价、补充库存）。"
+            }
+        },
+        {
+            "card_id": "explain_006",
+            "card_type": "green",
+            "title": "技术选型理由",
+            "content": {
+                "explanation": "前端使用React/Vite获得快速开发和良好用户体验，后端使用FastAPI获得高性能异步API，使用SQLite获得简单可靠的本地存储，使用Qwen2模型获得端侧AI推理能力，使用NPU实现硬件加速。"
+            }
+        },
+        {
+            "card_id": "explain_007",
+            "card_type": "green",
+            "title": "知识图谱优势",
+            "content": {
+                "explanation": "跨卡片语义分析构建知识网络（如销售下滑关联竞品降价），实现知识自动关联与图谱构建，支持检索优化（优先返回高关联度卡片）和归档整理（自动标记无效/重复卡片）。"
+            }
+        },
+        {
+            "card_id": "explain_008",
+            "card_type": "green",
+            "title": "模型量化说明",
+            "content": {
+                "explanation": "Qwen2模型使用INT8量化在骁龙NPU上运行，相比FP16减少50%内存占用同时保持较高精度。通过QAI AppBuilder将模型转换为QNN格式，充分利用NPU硬件特性。"
+            }
+        }
+    ],
+    "yellow": [  # 风险卡片
+        {
+            "card_id": "risk_001",
+            "card_type": "yellow",
+            "title": "数据备份风险",
+            "content": {
+                "risk_level": "高",
+                "description": "当前版本数据存储在本地SQLite数据库中，请注意定期备份数据库文件（backend/data/knowledge.db），否则可能造成数据丢失。"
+            }
+        },
+        {
+            "card_id": "risk_002",
+            "card_type": "yellow",
+            "title": "后端API依赖",
+            "content": {
+                "risk_level": "高",
+                "description": "前端功能完全依赖于后端API，如果后端服务未启动（端口8000）或NPU未正确加载，前端将无法正常加载数据和使用AI功能。"
+            }
+        },
+        {
+            "card_id": "risk_003",
+            "card_type": "yellow",
+            "title": "NPU环境依赖",
+            "content": {
+                "risk_level": "中",
+                "description": "NPU功能需要ARM64 Python环境、正确的QAI AppBuilder版本（2.38.0）、模型文件路径配置（C:/model/Qwen2.0-7B-SSD-8380-2.34/）和DLL路径配置，配置错误会导致NPU不可用。"
+            }
+        },
+        {
+            "card_id": "risk_004",
+            "card_type": "yellow",
+            "title": "性能延迟严重超标",
+            "content": {
+                "risk_level": "高",
+                "description": "实测NPU推理延迟2840.5ms（32 tokens），目标<500ms，超标5.6倍！256 tokens延迟高达3404.57ms，远超实时交互要求。严重影响用户体验，需要立即优化。"
+            }
+        },
+        {
+            "card_id": "risk_008",
+            "card_type": "yellow",
+            "title": "Qwen2.0-7B模型过大",
+            "content": {
+                "risk_level": "高",
+                "description": "当前使用Qwen2.0-7B-SSD模型（7B参数），对于端侧实时推理过于庞大。256 tokens输入+32 tokens生成需要3404ms，无法满足<500ms延迟目标。"
+            }
+        },
+        {
+            "card_id": "risk_005",
+            "card_type": "yellow",
+            "title": "端口占用风险",
+            "content": {
+                "risk_level": "低",
+                "description": "如果8000或3001端口被其他程序占用，服务将无法启动。使用netstat -ano | findstr :8000检查端口占用情况。"
+            }
+        },
+        {
+            "card_id": "risk_006",
+            "card_type": "yellow",
+            "title": "文件格式限制",
+            "content": {
+                "risk_level": "低",
+                "description": "当前仅支持Markdown和文本文件导入，PDF/Excel/Word文件需要后端API支持（开发中）。导入不支持的文件格式会导致解析失败。"
+            }
+        },
+        {
+            "card_id": "risk_007",
+            "card_type": "yellow",
+            "title": "团队协作风险",
+            "content": {
+                "risk_level": "中",
+                "description": "知识空间的数据目前存储在本地，团队成员之间无法直接共享数据。需要手动导出导入或使用外部同步工具。"
+            }
+        }
+    ],
+    "red": [  # 行动卡片
+        {
+            "card_id": "action_001",
+            "card_type": "red",
+            "title": "启动后端服务",
+            "content": {
+                "priority": "高",
+                "action": "方法1：运行start_complete_system.bat一键启动。方法2：cd backend && python main.py启动后端服务，默认运行在8000端口。启动后访问http://localhost:8000/api/health验证服务状态。"
+            }
+        },
+        {
+            "card_id": "action_002",
+            "card_type": "red",
+            "title": "启动前端服务",
+            "content": {
+                "priority": "高",
+                "action": "方法1：运行start_complete_system.bat一键启动。方法2：在data-analysis-iteration/frontend目录运行npm run dev，默认运行在3001端口。访问http://localhost:3001查看前端界面。"
+            }
+        },
+        {
+            "card_id": "action_003",
+            "card_type": "red",
+            "title": "验证NPU环境",
+            "content": {
+                "priority": "中",
+                "action": "运行verify-npu-on-aipc.ps1脚本自动检查Python版本、QAI AppBuilder安装、模型文件存在性、QNN库文件完整性和NPU性能测试。或运行python simple_npu_test_v2.py手动测试。"
+            }
+        },
+        {
+            "card_id": "action_004",
+            "card_type": "red",
+            "title": "紧急优化延迟（从2840ms到<500ms）",
+            "content": {
+                "priority": "高",
+                "action": "方案1（推荐）：切换到更小模型，如Qwen2-1.5B或Llama3.2-3B，预期延迟280-400ms。方案2：启用BURST性能模式：from qai_hub_models.models._shared.perf_profile import PerfProfile; PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)。方案3：减少max_tokens到16-32。方案4：使用INT4进一步量化。方案5：混合推理（小模型+大模型）。"
+            }
+        },
+        {
+            "card_id": "action_011",
+            "card_type": "red",
+            "title": "验证NPU性能模式",
+            "content": {
+                "priority": "高",
+                "action": "检查backend/npu_core.py或backend/models/model_loader.py，确认是否设置了BURST模式。添加PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)在模型加载后。重新运行基准测试，预期延迟应降低30-50%。"
+            }
+        },
+        {
+            "card_id": "action_012",
+            "card_type": "red",
+            "title": "切换到轻量模型",
+            "content": {
+                "priority": "高",
+                "action": "下载Qwen2-1.5B-Instruct或Llama3.2-3B模型，配置到MODEL_PATH。修改backend/config.py中的MODEL_NAME和MODEL_PATH。重启后端服务，重新运行基准测试验证延迟<500ms。"
+            }
+        },
+        {
+            "card_id": "action_005",
+            "card_type": "red",
+            "title": "备份数据",
+            "content": {
+                "priority": "高",
+                "action": "定期备份backend/data/knowledge.db数据库文件。可以手动复制到安全位置，或设置自动备份脚本。备份前停止后端服务以防数据损坏。"
+            }
+        },
+        {
+            "card_id": "action_006",
+            "card_type": "red",
+            "title": "检查API文档",
+            "content": {
+                "priority": "低",
+                "action": "访问http://localhost:8000/docs查看完整的Swagger API文档，了解所有可用的API端点和参数。在开发新功能前先阅读API文档确保正确使用。"
+            }
+        },
+        {
+            "card_id": "action_007",
+            "card_type": "red",
+            "title": "导入知识卡片",
+            "content": {
+                "priority": "中",
+                "action": "在前端点击导入按钮，选择Markdown或文本文件导入。系统会自动解析文件内容并生成知识卡片。导入前确保文件格式正确，内容清晰。"
+            }
+        },
+        {
+            "card_id": "action_008",
+            "card_type": "red",
+            "title": "使用聊天机器人",
+            "content": {
+                "priority": "低",
+                "action": "点击右下角机器人图标打开聊天窗口，输入问题如'如何启动系统'、'NPU性能如何'等，系统会基于知识库四色卡片回答您的问题。"
+            }
+        },
+        {
+            "card_id": "action_009",
+            "card_type": "red",
+            "title": "查看分析报告",
+            "content": {
+                "priority": "中",
+                "action": "在前端NPU分析页面输入自然语言查询如'分析上个月的销售趋势'，系统会自动提取数据、生成四色卡片分析、创建可视化图表并生成完整报告。"
+            }
+        },
+        {
+            "card_id": "action_010",
+            "card_type": "red",
+            "title": "团队协作设置",
+            "content": {
+                "priority": "中",
+                "action": "在团队成员管理页面添加成员、分配角色（管理员/编辑/查看者）、设置空间权限。管理员可以查看成员在线状态和贡献度，监控团队活动。"
+            }
+        }
+    ]
+}
+
+
+def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    使用关键词搜索预设的知识卡片
+
+    参数：
+        query: 查询关键词
+        limit: 返回数量限制
+
+    返回：
+        匹配的卡片列表
+    """
+    all_cards = []
+    query_lower = query.lower()
+
+    for card_type, cards in PRESET_KNOWLEDGE_CARDS.items():
+        for card in cards:
+            # 在标题和内容中搜索关键词
+            title_lower = card['title'].lower()
+            content = card.get('content', {})
+            content_str = ' '.join(str(v) for v in content.values()).lower()
+
+            if query_lower in title_lower or query_lower in content_str:
+                card['similarity'] = 0.8  # 简单相似度评分
+                all_cards.append(card)
+
+    # 按相似度排序并限制数量
+    all_cards.sort(key=lambda x: x['similarity'], reverse=True)
+    return all_cards[:limit]
+
+
+def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
+    """
+    生成回复（基于检索到的卡片）
+
+    参数：
+        query: 用户查询
+        relevant_cards: 相关卡片
+
+    返回：
+        回复内容
+    """
+    try:
+        if not relevant_cards:
+            return "抱歉，我没有找到与您的问题相关的知识卡片。您可以尝试换个问法，或者联系管理员添加相关知识。\n\n我可以帮助您解答关于Antinet系统功能、团队协作、知识管理等方面的问题。"
+
+        # 根据卡片类型构建回复
+        blue_cards = [c for c in relevant_cards if c.get("card_type") == "blue"]
+        green_cards = [c for c in relevant_cards if c.get("card_type") == "green"]
+        yellow_cards = [c for c in relevant_cards if c.get("card_type") == "yellow"]
+        red_cards = [c for c in relevant_cards if c.get("card_type") == "red"]
+
+        response_parts = []
+
+        # 蓝色卡片：事实
+        if blue_cards:
+            response_parts.append("📊 **相关事实：**\n")
+            for card in blue_cards[:3]:
+                title = card.get("title", "无标题")
+                content = card.get("content", {})
+                desc = content.get("description", "无描述") if isinstance(content, dict) else "无描述"
+                response_parts.append(f"- {title}\n  {desc}\n")
+
+        # 绿色卡片：解释
+        if green_cards:
+            response_parts.append("\n **原因解释：**\n")
+            for card in green_cards[:2]:
+                title = card.get("title", "无标题")
+                content = card.get("content", {})
+                explanation = content.get("explanation", "无解释") if isinstance(content, dict) else "无解释"
+                response_parts.append(f"- {title}\n  {explanation}\n")
+
+        # 黄色卡片：风险
+        if yellow_cards:
+            response_parts.append("\n **相关风险：**\n")
+            for card in yellow_cards[:2]:
+                title = card.get("title", "无标题")
+                content = card.get("content", {})
+                level = content.get("risk_level", "未知") if isinstance(content, dict) else "未知"
+                desc = content.get("description", "无描述") if isinstance(content, dict) else "无描述"
+                response_parts.append(f"- {title} (等级: {level})\n  {desc}\n")
+
+        # 红色卡片：行动建议
+        if red_cards:
+            response_parts.append("\n🎯 **行动建议：**\n")
+            for card in red_cards[:2]:
+                title = card.get("title", "无标题")
+                content = card.get("content", {})
+                priority = content.get("priority", "未知") if isinstance(content, dict) else "未知"
+                action = content.get("action", "无行动") if isinstance(content, dict) else "无行动"
+                response_parts.append(f"- {title} (优先级: {priority})\n  {action}\n")
+
+        # 总结
+        response_parts.append(f"\n **来源说明：**\n基于知识库中找到的 {len(relevant_cards)} 张相关卡片生成。")
+
+        return "\n".join(response_parts)
+
+    except Exception as e:
+        logger.error(f"生成回复失败: {e}", exc_info=True)
+        return "抱歉，生成回复时出现了错误。"
+
+
+def _generate_suggested_questions(query: str, relevant_cards: List[Dict]) -> List[str]:
+    """
+    根据查询和相关卡片生成推荐问题
+    
+    参数:
+        query: 用户查询
+        relevant_cards: 相关卡片
+        
+    返回:
+        推荐问题列表（最多3个）
+    """
+    suggestions = []
+    
+    # 基于查询关键词的推荐问题映射
+    keyword_questions = {
+        "系统": [
+            "Antinet系统有哪些核心功能？",
+            "如何启动Antinet系统？",
+            "系统的技术架构是怎样的？"
+        ],
+        "NPU": [
+            "NPU推理性能如何优化？",
+            "如何验证NPU是否正常工作？",
+            "NPU和CPU的性能差异有多大？"
+        ],
+        "卡片": [
+            "四色卡片分别代表什么含义？",
+            "如何创建和管理知识卡片？",
+            "卡片系统的设计理念是什么？"
+        ],
+        "团队": [
+            "如何进行团队协作？",
+            "团队成员如何共享知识？",
+            "协作活动如何记录和查看？"
+        ],
+        "数据": [
+            "数据如何保证安全性？",
+            "支持哪些数据格式？",
+            "如何进行数据分析？"
+        ],
+        "启动": [
+            "如何一键启动系统？",
+            "启动失败如何排查？",
+            "需要哪些环境依赖？"
+        ],
+        "性能": [
+            "如何优化系统性能？",
+            "推理延迟多少算正常？",
+            "性能瓶颈在哪里？"
+        ],
+        "API": [
+            "系统提供哪些API接口？",
+            "如何调用API进行开发？",
+            "API文档在哪里查看？"
+        ]
+    }
+    
+    # 基于卡片类型的推荐问题
+    card_type_questions = {
+        "blue": [
+            "还有哪些相关的事实信息？",
+            "这个功能的具体参数是什么？",
+            "有没有更详细的说明文档？"
+        ],
+        "green": [
+            "为什么要这样设计？",
+            "有没有其他实现方式？",
+            "这种方法的优缺点是什么？"
+        ],
+        "yellow": [
+            "如何避免这些风险？",
+            "遇到问题如何排查？",
+            "有哪些注意事项？"
+        ],
+        "red": [
+            "具体操作步骤是什么？",
+            "有没有快捷方式？",
+            "完成后如何验证？"
+        ]
+    }
+    
+    # 1. 根据查询关键词推荐
+    query_lower = query.lower()
+    for keyword, questions in keyword_questions.items():
+        if keyword in query_lower or keyword in query:
+            suggestions.extend(questions)
+            break
+    
+    # 2. 根据相关卡片类型推荐
+    if relevant_cards:
+        card_types = [c.get("card_type") for c in relevant_cards[:3]]
+        most_common_type = max(set(card_types), key=card_types.count) if card_types else None
+        if most_common_type and most_common_type in card_type_questions:
+            suggestions.extend(card_type_questions[most_common_type])
+    
+    # 3. 通用推荐问题（兜底）
+    if not suggestions:
+        suggestions = [
+            "Antinet系统有哪些核心功能？",
+            "如何快速上手使用系统？",
+            "系统支持哪些数据分析功能？"
+        ]
+    
+    # 去重并返回前3个
+    unique_suggestions = []
+    for q in suggestions:
+        if q not in unique_suggestions:
+            unique_suggestions.append(q)
+        if len(unique_suggestions) >= 3:
+            break
+    
+    return unique_suggestions
+
+
+@router.post("/query", response_model=ChatResponse)
+async def chat_query(request: ChatRequest):
+    """
+    知识库查询接口
+
+    接收用户查询，返回基于知识库的回复
+    """
+    logger.info(f"[ChatRoutes] 收到查询: {request.query}")
+
+    try:
+        # 使用关键词搜索预设的知识卡片
+        cards = _search_cards_by_keyword(request.query, limit=10)
+
+        # 生成回复
+        response = _generate_response(request.query, cards)
+        
+        # 生成推荐问题
+        suggested_questions = _generate_suggested_questions(request.query, cards)
+
+        # 构建响应
+        result = ChatResponse(
+            response=response,
+            sources=[
+                CardSource(
+                    card_id=card["card_id"],
+                    card_type=card["card_type"],
+                    title=card["title"],
+                    similarity=card.get("similarity", 0.8)
+                )
+                for card in cards[:5]
+            ],
+            cards=cards[:10],
+            suggested_questions=suggested_questions
+        )
+
+        logger.info(f"[ChatRoutes] 查询完成: {len(cards)}条相关卡片, {len(suggested_questions)}个推荐问题")
+        return result
+
+    except Exception as e:
+        logger.error(f"[ChatRoutes] 查询失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/search", response_model=CardSearchResponse)
+async def search_cards(request: CardSearchRequest):
+    """
+    卡片搜索接口
+
+    搜索知识库中的卡片
+    """
+    logger.info(f"[ChatRoutes] 搜索卡片: {request.query} (类型: {request.card_type})")
+
+    try:
+        # 使用关键词搜索
+        cards = _search_cards_by_keyword(request.query, limit=request.limit)
+
+        # 如果指定了卡片类型，进行过滤
+        if request.card_type:
+            cards = [c for c in cards if c.get("card_type") == request.card_type]
+
+        result = CardSearchResponse(
+            cards=cards,
+            total=len(cards)
+        )
+
+        logger.info(f"[ChatRoutes] 搜索完成: {len(cards)}条结果")
+        return result
+
+    except Exception as e:
+        logger.error(f"[ChatRoutes] 搜索失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cards")
+async def list_cards(
+    card_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    列出知识卡片
+
+    参数：
+        card_type: 卡片类型过滤（可选）
+        limit: 返回数量限制（默认50）
+        offset: 偏移量（默认0）
+    """
+    logger.info(f"[ChatRoutes] 列出卡片 (类型: {card_type}, 限制: {limit})")
+
+    try:
+        # 获取所有卡片
+        all_cards = []
+        for cards in PRESET_KNOWLEDGE_CARDS.values():
+            all_cards.extend(cards)
+
+        # 如果指定了卡片类型，进行过滤
+        if card_type:
+            all_cards = [c for c in all_cards if c.get("card_type") == card_type]
+
+        # 应用偏移和限制
+        total = len(all_cards)
+        cards = all_cards[offset:offset + limit]
+
+        return {
+            "cards": cards,
+            "total": total
+        }
+
+    except Exception as e:
+        logger.error(f"[ChatRoutes] 列出卡片失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/card/{card_id}")
+async def get_card(card_id: str):
+    """
+    获取单个卡片详情
+
+    参数：
+        card_id: 卡片ID
+
+    返回：
+        卡片详情
+    """
+    logger.info(f"[ChatRoutes] 获取卡片: {card_id}")
+
+    try:
+        # 在预设卡片中查找
+        for cards in PRESET_KNOWLEDGE_CARDS.values():
+            for card in cards:
+                if card.get("card_id") == card_id:
+                    return card
+
+        raise HTTPException(
+            status_code=404,
+            detail=f"卡片不存在: {card_id}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ChatRoutes] 获取卡片失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health")
+async def health_check():
+    """
+    聊天机器人健康检查
+
+    返回：
+        服务状态
+    """
+    try:
+        # 简化版本，总是返回健康状态
+        return {
+            "status": "healthy",
+            "database_initialized": True,
+            "search_type": "keyword_match"  # 使用关键词匹配而非向量检索
+        }
+    except Exception as e:
+        logger.error(f"[ChatRoutes] 健康检查失败: {e}", exc_info=True)
+        return {
+            "status": "degraded",
+            "database_initialized": False,
+            "error": str(e)
+        }
