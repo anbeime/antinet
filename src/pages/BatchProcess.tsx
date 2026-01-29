@@ -17,6 +17,16 @@ const BatchProcess: React.FC = () => {
   const { theme } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, []);
 
   // 从后端加载分析任务列表
   useEffect(() => {
@@ -24,19 +34,19 @@ const BatchProcess: React.FC = () => {
       try {
         const response = await fetch('http://localhost:8000/api/analysis/list-analyses');
         if (response.ok) {
-          const analyses = await response.json();
+          const data = await response.json();
+          // API返回格式: { status, count, files: [...] }
+          const analyses = data.files || [];
+          
           // 转换为任务格式
-          const tasksFromAPI = analyses.map((analysis: any) => ({
-            id: String(analysis.id || Math.random()),
-            name: analysis.filename || '未命名任务',
-            type: 'pdf' as const,
-            status: analysis.status === 'completed' ? 'completed' as const : 
-                   analysis.status === 'processing' ? 'processing' as const : 
-                   analysis.status === 'failed' ? 'failed' as const : 'waiting' as const,
-            progress: analysis.status === 'completed' ? 100 : 
-                     analysis.status === 'processing' ? 50 : 0,
-            startTime: analysis.created_at,
-            endTime: analysis.updated_at
+          const tasksFromAPI = analyses.map((file: any) => ({
+            id: file.filename || String(Math.random()),
+            name: file.filename || '未命名任务',
+            type: 'excel' as const, // 从文件名推断类型
+            status: 'completed' as const, // 列表中的都是已完成的
+            progress: 100,
+            startTime: file.created_at,
+            endTime: file.created_at
           }));
           setTasks(tasksFromAPI);
         }
@@ -72,16 +82,22 @@ const BatchProcess: React.FC = () => {
   const startProcessing = () => {
     setIsProcessing(true);
     // Simulate processing
-    const interval = setInterval(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    intervalRef.current = setInterval(() => {
       setTasks(prev => {
         const waitingTask = prev.find(t => t.status === 'waiting');
         if (!waitingTask) {
-          clearInterval(interval);
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
           setIsProcessing(false);
           return prev;
         }
-        
-        return prev.map(t => 
+
+        return prev.map(t =>
           t.id === waitingTask.id ? { ...t, status: 'processing', progress: 0, startTime: new Date().toLocaleTimeString() } : t
         );
       });

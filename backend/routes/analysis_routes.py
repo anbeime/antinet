@@ -42,7 +42,10 @@ def get_analysis_components():
         try:
             _db_manager = DatabaseManager(settings.DB_PATH)
             _memory = MemoryAgent()
-            _orchestrator = OrchestratorAgent(memory=_memory)
+            _orchestrator = OrchestratorAgent(
+                genie_api_base_url="http://localhost:8000",
+                model_path=str(settings.MODEL_PATH)
+            )
             logger.info("分析组件初始化成功")
         except Exception as e:
             logger.warning(f"分析组件初始化失败: {e}")
