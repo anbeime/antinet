@@ -12,10 +12,14 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import shutil
+import logging
 
 from skills.xlsx.data_analysis_integration import DataAnalysisExporter
 from agents import OrchestratorAgent, MemoryAgent
 from database import DatabaseManager
+from config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/analysis", tags=["智能分析"])
 
@@ -24,6 +28,27 @@ DATA_DIR = Path("./data/uploads")
 EXPORT_DIR = Path("./data/exports")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+# 全局实例（延迟初始化）
+_db_manager = None
+_orchestrator = None
+_memory = None
+
+def get_analysis_components():
+    """获取或创建分析组件"""
+    global _db_manager, _orchestrator, _memory
+    
+    if _db_manager is None:
+        try:
+            _db_manager = DatabaseManager(settings.DB_PATH)
+            _memory = MemoryAgent()
+            _orchestrator = OrchestratorAgent(memory=_memory)
+            logger.info("分析组件初始化成功")
+        except Exception as e:
+            logger.warning(f"分析组件初始化失败: {e}")
+            # 返回 None，让 DataAnalysisExporter 内部处理
+    
+    return _db_manager, _orchestrator, _memory
 
 
 class AnalysisRequest(BaseModel):
@@ -78,11 +103,13 @@ async def upload_and_analyze(
         output_filename = f"analysis_{timestamp}.xlsx"
         output_path = EXPORT_DIR / output_filename
         
-        # 创建分析导出器（使用全局实例或创建新实例）
+        # 创建分析导出器
+        db_manager, orchestrator, memory = get_analysis_components()
+        
         exporter = DataAnalysisExporter(
-            db_manager=None,  # 将在内部创建
-            orchestrator=None,
-            memory=None
+            db_manager=db_manager,
+            orchestrator=orchestrator,
+            memory=memory
         )
         
         # 执行分析和导出
@@ -157,11 +184,13 @@ async def analyze_existing(
         
         output_path = EXPORT_DIR / output_filename
         
-        # 创建分析导出器（使用全局实例或创建新实例）
+        # 创建分析导出器
+        db_manager, orchestrator, memory = get_analysis_components()
+        
         exporter = DataAnalysisExporter(
-            db_manager=None,
-            orchestrator=None,
-            memory=None
+            db_manager=db_manager,
+            orchestrator=orchestrator,
+            memory=memory
         )
         
         # 执行分析和导出

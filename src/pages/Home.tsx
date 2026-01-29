@@ -7,7 +7,6 @@ import {
   Search,
   ChevronRight,
   PlusCircle,
-  Calendar,
   Lightbulb,
   Briefcase,
   Upload,
@@ -28,7 +27,6 @@ import { useTheme } from '@/hooks/useTheme';
 import CreateCardModal from '@/components/CreateCardModal';
 import CardDetailModal from '@/components/CardDetailModal';
 import ImportModal from '@/components/ImportModal';
-import GTDSystem from '@/components/GTDSystem';
 import DataAnalysisPanel from '@/components/DataAnalysisPanel';
 import PPTAnalysis from '@/pages/PPTAnalysis';
 import ExcelAnalysis from '@/pages/ExcelAnalysis';
@@ -37,7 +35,6 @@ import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
 import PDFAnalysis from '@/pages/PDFAnalysisEnhanced';
 import BatchProcess from '@/pages/BatchProcess';
-import NPUDashboard from '@/pages/NPUDashboard';
 import ChatBotModal from '@/components/ChatBotModal';
 
 // 定义卡片类型
@@ -110,7 +107,7 @@ const cardTypeMap = {
 
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'gtd' | 'data-analysis' | 'ppt-analysis' | 'excel-analysis' | 'data-management' | 'agent-system' | 'skill-center' | 'pdf-analysis' | 'batch-process' | 'npu-dashboard'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'data-analysis' | 'ppt-analysis' | 'excel-analysis' | 'data-management' | 'agent-system' | 'skill-center' | 'pdf-analysis' | 'batch-process'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -194,16 +191,12 @@ const Home: React.FC = () => {
      });
   };
   
-  // 定义GTD类别类型
-  type GTDCategory = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
-
   // 处理导入卡片
   const handleImportCards = (importedCards: Array<{
     title: string;
     content: string;
     color: CardColor;
     address: string;
-    gtdCategory: GTDCategory;
   }>) => {
     // 创建知识卡片
     const newCards: KnowledgeCard[] = importedCards.map(card => ({
@@ -250,8 +243,8 @@ const Home: React.FC = () => {
     // 保存到localStorage
     localStorage.setItem('antinet_cards', JSON.stringify(updatedCards));
     
-    // 切换到GTD系统视图，让用户可以在相应类别下看到导入的记录
-    setActiveTab('gtd');
+    // 切换到卡片视图
+    setActiveTab('cards');
   };
 
   // 打开创建卡片模态框
@@ -446,14 +439,7 @@ const Home: React.FC = () => {
               <Briefcase size={18} />
               <span>知识卡片</span>
             </button>
-            <button
-              onClick={() => setActiveTab('gtd')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'gtd' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Calendar size={18} />
-              <span>GTD系统</span>
-            </button>
-            <button
+<button
               onClick={() => setActiveTab('data-analysis')}
               className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
             >
@@ -508,13 +494,6 @@ const Home: React.FC = () => {
             >
               <Upload size={18} />
               <span>批量处理</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('npu-dashboard')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'npu-dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Cpu size={18} />
-              <span>NPU监控</span>
             </button>
             </div>
             
@@ -960,11 +939,6 @@ const Home: React.FC = () => {
           </motion.div>
         )}
 
-        {/* GTD系统视图 */}
-        {activeTab === 'gtd' && (
-          <GTDSystem />
-        )}
-
         {/* 数据分析视图 */}
         {activeTab === 'data-analysis' && (
           <DataAnalysisPanel />
@@ -1003,11 +977,6 @@ const Home: React.FC = () => {
         {/* 批量处理视图 */}
         {activeTab === 'batch-process' && (
           <BatchProcess />
-        )}
-
-        {/* NPU监控视图 */}
-        {activeTab === 'npu-dashboard' && (
-          <NPUDashboard />
         )}
        </main>
 

@@ -40,7 +40,7 @@ class KnowledgeImporter:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS knowledge_cards (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT NOT NULL,
+                card_type TEXT NOT NULL,
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
                 source TEXT,
@@ -85,10 +85,10 @@ class KnowledgeImporter:
         for card in cards:
             try:
                 cursor.execute('''
-                    INSERT INTO knowledge_cards (type, title, content, source, url, category)
+                    INSERT INTO knowledge_cards (card_type, title, content, source, url, category)
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (
-                    card.get('type', 'blue'),
+                    card.get('card_type', 'blue'),
                     card.get('title', ''),
                     card.get('content', ''),
                     card.get('source', ''),

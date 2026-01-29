@@ -46,7 +46,7 @@ def test_database():
         total = cursor.fetchone()[0]
         print(f"总卡片数: {total}")
         
-        cursor.execute("SELECT type, COUNT(*) as count FROM knowledge_cards GROUP BY type")
+        cursor.execute("SELECT card_type, COUNT(*) as count FROM knowledge_cards GROUP BY card_type")
         by_type = {row[0]: row[1] for row in cursor.fetchall()}
         print(f"按类型分组: {by_type}")
         

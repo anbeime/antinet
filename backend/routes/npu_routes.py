@@ -130,7 +130,7 @@ async def analyze_data(request: AnalyzeRequest):
         if inference_time > 500:
             logger.warning(f"  NPU推理延迟超标: {inference_time:.2f}ms (目标 < 500ms)")
         else:
-            logger.info(f"✓ NPU推理延迟: {inference_time:.2f}ms")
+            logger.info(f"NPU推理延迟: {inference_time:.2f}ms")
 
         return AnalyzeResponse(
             success=True,
@@ -219,7 +219,7 @@ async def performance_benchmark():
             cpu_vs_npu_speedup=cpu_vs_npu_speedup,
             memory_usage_mb=1800.0,  # 典型值
             test_count=len(latencies),
-            status="✓ 通过" if avg_latency < 500 else "  超标"
+            status="通过" if avg_latency < 500 else "超标"
         )
 
     except Exception as e:
@@ -254,7 +254,7 @@ async def model_status():
             "params": stats['params'],
             "device": stats['device'],
             "runtime": stats['runtime'],
-            "message": "✓ 模型已加载" if stats['is_loaded'] else "模型未加载"
+            "message": "模型已加载" if stats['is_loaded'] else "模型未加载"
         }
 
     except Exception as e:

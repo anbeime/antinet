@@ -380,7 +380,7 @@ async def list_cards(
         cursor = conn.cursor()
         
         # 构建SQL查询
-        sql = "SELECT id, card_type, title, content, category, created_at FROM knowledge_cards WHERE 1=1"
+        sql = "SELECT id, type, title, content, category, created_at FROM knowledge_cards WHERE 1=1"
         params = []
         
         if card_type:
@@ -453,7 +453,7 @@ async def get_card(card_id: str):
         cursor = conn.cursor()
         
         cursor.execute(
-            "SELECT id, card_type, title, content, category, created_at FROM knowledge_cards WHERE id = ?",
+            "SELECT id, type, title, content, category, created_at FROM knowledge_cards WHERE id = ?",
             (db_id,)
         )
         row = cursor.fetchone()

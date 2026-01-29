@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Database, Upload, FolderOpen, Search, Trash2, Edit, Plus, HardDrive, Clock, Shield, BarChart3, FileText, Presentation, FileSpreadsheet, Image, Loader } from 'lucide-react';
+import { Database, Upload, FolderOpen, Search, Trash2, Edit, Plus, HardDrive, Clock, Shield, BarChart3, FileText, Presentation, FileSpreadsheet, Image, Loader, CheckCircle, Download } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface DataFile {
@@ -17,6 +17,16 @@ const DataManagement: React.FC = () => {
   const [files, setFiles] = useState<DataFile[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+
+  const handleBatchOperation = () => {
+    // 批量操作功能占位
+    alert('批量操作功能开发中');
+  };
+
+  const handleRefresh = () => {
+    // 刷新数据
+    window.location.reload();
+  };
 
   useEffect(() => {
     // 从后端 API 加载活动数据
@@ -45,7 +55,7 @@ const DataManagement: React.FC = () => {
         setFiles([]);
       }
     };
-    
+
     loadActivities();
   }, []);
 
@@ -208,8 +218,18 @@ const DataManagement: React.FC = () => {
                   </select>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <button className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm">批量操作</button>
-                  <button className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm">刷新</button>
+                  <button
+                    onClick={handleBatchOperation}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm"
+                  >
+                    批量操作
+                  </button>
+                  <button
+                    onClick={handleRefresh}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm"
+                  >
+                    刷新
+                  </button>
                 </div>
               </div>
             </div>

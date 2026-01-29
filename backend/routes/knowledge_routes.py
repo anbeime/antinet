@@ -54,7 +54,7 @@ async def get_knowledge_graph(
         params = []
         
         if card_type:
-            query += " AND type = ?"
+            query += " AND card_type = ?"
             params.append(card_type)
         
         query += " LIMIT ?"
@@ -83,7 +83,7 @@ async def get_knowledge_graph(
 class KnowledgeCard(BaseModel):
     """知识卡片模型"""
     id: Optional[int] = None
-    card_type: str  # 修正：使用 card_type 与数据库一致
+    type: str  # 使用 type 与数据库一致
     title: str
     content: str
     source: Optional[str] = None
@@ -178,15 +178,19 @@ async def create_card(card: KnowledgeCard):
     Returns:
         创建的卡片
     """
+    logger.info(f"[CREATE_CARD] 收到创建卡片请求: {card.dict()}")
+    
     conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     try:
+        logger.info(f"[CREATE_CARD] 准备插入数据库，type={card.type}")
+        
         cursor.execute('''
-            INSERT INTO knowledge_cards (card_type, title, content, source, url, category)
+            INSERT INTO knowledge_cards (type, title, content, source, url, category)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            card.card_type,  # 修正：使用 card_type
+            card.type,
             card.title,
             card.content,
             card.source,
@@ -195,15 +199,19 @@ async def create_card(card: KnowledgeCard):
         ))
 
         conn.commit()
+        
+        logger.info(f"[CREATE_CARD] 插入成功，lastrowid={cursor.lastrowid}")
 
         # 获取新插入的卡片
         cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (cursor.lastrowid,))
         new_card = dict(cursor.fetchone())
 
         conn.close()
+        logger.info(f"[CREATE_CARD] 返回新卡片: {new_card}")
         return new_card
 
     except Exception as e:
+        logger.error(f"[CREATE_CARD] 创建失败: {e}", exc_info=True)
         conn.close()
         raise HTTPException(status_code=400, detail=f"创建失败: {str(e)}")
 
@@ -246,8 +254,8 @@ async def get_stats():
         cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
         total_cards = cursor.fetchone()[0]
 
-        # 按类型分组 - 使用 card_type 字段
-        cursor.execute("SELECT card_type, COUNT(*) as count FROM knowledge_cards WHERE card_type IS NOT NULL GROUP BY card_type")
+        # 按类型分组 - 使用 type 字段（数据库字段名）
+        cursor.execute("SELECT type, COUNT(*) as count FROM knowledge_cards WHERE type IS NOT NULL GROUP BY type")
         cards_by_type = {row[0]: row[1] for row in cursor.fetchall() if row[0] is not None}
 
         # 按分类分组

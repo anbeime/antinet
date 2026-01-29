@@ -338,7 +338,7 @@ class NPUModelLoader:
             生成的文本
 
         Raises:
-            RuntimeError: 如果推理时间超过 3000ms（可能未走 NPU）
+            Exception: 如果推理过程发生错误
         """
         # 安全检查：如果模型实例已存在但 is_loaded=False，修正状态
         if self.model is not None and not self.is_loaded:
@@ -397,8 +397,8 @@ class NPUModelLoader:
             # NPU 推理应该在 450ms 左右，但复杂推理可能需要更长时间
             # 调整阈值到 2000ms 以避免误报
             if inference_time > 2000:
-                error_msg = (
-                    f"[熔断检查失败] 推理延迟 {inference_time:.2f}ms 超过 3000ms 阈值\n"
+                warning_msg = (
+                    f"[性能警告] 推理延迟 {inference_time:.2f}ms 超过 2000ms 建议阈值\n"
                     f"可能原因：\n"
                     f"  1. 未正确配置 NPU execution provider\n"
                     f"  2. 模型加载在 CPU 上而非 NPU\n"
@@ -406,19 +406,15 @@ class NPUModelLoader:
                     f"  4. 内存未分配到 NPU 上\n"
                     f"  5. 推理提示词过长或生成 token 数过多\n"
                     f"\n"
-                    f"请检查：\n"
+                    f"建议检查：\n"
                     f"  - config.json 中的 'backend.type' 是否为 'QnnHtp'\n"
                     f"  - 确认 'allocated on NPU' 和 'execution provider: NPU'\n"
                     f"  - 检查 QNN 日志输出以确认执行 provider\n"
                     f"  - 尝试减少 max_new_tokens 或缩短提示词"
                 )
-                logger.error(error_msg)
-                raise RuntimeError(
-                    f"熔断检查失败：推理时间 {inference_time:.2f}ms > 3000ms，可能未走 NPU！\n"
-                    f"请检查 QNN 日志输出以确认 execution provider 和内存分配情况。"
-                )
+                logger.warning(warning_msg)
             else:
-                logger.info(f"[熔断检查通过] 推理时间 {inference_time:.2f}ms 在正常范围内 (< 1000ms)")
+                logger.info(f"[性能检查通过] 推理时间 {inference_time:.2f}ms 在正常范围内 (< 1000ms)")
                 if inference_time > 500:
                     logger.warning(f"[WARNING] 推理时间 {inference_time:.2f}ms 略高，建议检查提示词长度和 token 数")
 

@@ -166,7 +166,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
 
         # 红色卡片：行动建议
         if red_cards:
-            response_parts.append("\n🎯 **行动建议：**\n")
+            response_parts.append("\n**行动建议：**\n")
             for card in red_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})
@@ -435,7 +435,7 @@ async def list_cards(
 
         # 获取总数
         if card_type:
-            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE card_type = ?", (card_type,))
+            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE type = ?", (card_type,))
         else:
             cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
         total = cursor.fetchone()[0]

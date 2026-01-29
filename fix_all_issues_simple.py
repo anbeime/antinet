@@ -37,7 +37,7 @@ try:
         cursor.execute("""
             CREATE TABLE knowledge_cards (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT NOT NULL,
+                card_type TEXT NOT NULL,
                 title TEXT NOT NULL,
                 content TEXT NOT NULL,
                 source TEXT,
@@ -52,8 +52,8 @@ try:
         
         # Create indexes
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_knowledge_cards_type 
-            ON knowledge_cards(type)
+            CREATE INDEX IF NOT EXISTS idx_knowledge_cards_card_type 
+            ON knowledge_cards(card_type)
         """)
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_knowledge_cards_category 
@@ -62,7 +62,7 @@ try:
         
         # Insert sample data
         cursor.execute("""
-            INSERT INTO knowledge_cards (type, title, content, category)
+            INSERT INTO knowledge_cards (card_type, title, content, category)
             VALUES 
                 ('blue', 'Sample Fact Card', 'This is a sample fact card', 'Sample'),
                 ('green', 'Sample Explanation Card', 'This is a sample explanation card', 'Sample'),

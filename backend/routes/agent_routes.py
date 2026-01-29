@@ -56,7 +56,7 @@ def initialize_agents():
         
         # 初始化太史阁（记忆管理）
         _memory = MemoryAgent(db_path=str(settings.DATA_DIR / "memory.db"))
-        logger.info("[AgentSystem] ✓ 太史阁（记忆）初始化完成")
+        logger.info("[AgentSystem] 太史阁（记忆）初始化完成")
         
         # 初始化锦衣卫总指挥使（任务调度）
         # 使用当前后端 API 作为 Genie 服务
@@ -64,7 +64,7 @@ def initialize_agents():
             genie_api_base_url="http://127.0.0.1:8000",
             model_path=settings.MODEL_PATH
         )
-        logger.info("[AgentSystem] ✓ 锦衣卫总指挥使初始化完成")
+        logger.info("[AgentSystem] 锦衣卫总指挥使初始化完成")
         
         # 更新状态
         _agents_initialized = True
