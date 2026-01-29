@@ -1081,10 +1081,10 @@ const Home: React.FC = () => {
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => setShowChatModal(true)}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg flex items-center justify-center text-white z-50"
+          className="fixed bottom-6 right-6 w-16 h-16 bg-white/80 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center text-white z-50 overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors"
           title="AI助手"
         >
-          <MessageCircle size={28} />
+          <img src="/src/pages/logo.png" alt="AI助手" className="w-14 h-14 object-contain" />
         </motion.button>
 
       </div>
