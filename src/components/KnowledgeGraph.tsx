@@ -158,10 +158,10 @@ const KnowledgeGraph: React.FC = () => {
           top: 50,
           formatter: (name: string) => {
             const labels: Record<string, string> = {
-              blue: '🔵 事实',
-              green: '🟢 解释',
-              yellow: '🟡 风险',
-              red: '🔴 行动'
+              blue: '[蓝] 事实',
+              green: '[绿] 解释',
+              yellow: '[黄] 风险',
+              red: '[红] 行动'
             };
             return labels[name] || name;
           }

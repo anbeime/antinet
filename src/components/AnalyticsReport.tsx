@@ -199,7 +199,7 @@ const AnalyticsReport: React.FC = () => {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
         <div className="text-center text-gray-500 dark:text-gray-400">
-          <div className="text-4xl mb-4">📊</div>
+          <div className="text-4xl mb-4">[无数据]</div>
           <h3 className="text-lg font-semibold mb-2">暂无分析数据</h3>
           <p className="text-sm mb-4">请先导入文件并生成知识卡片</p>
           <a 

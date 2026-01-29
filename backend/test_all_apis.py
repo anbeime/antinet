@@ -164,7 +164,7 @@ def main():
     if failed == 0:
         print("✓ 所有 API 测试通过！后端功能正常")
     else:
-        print(f"⚠ {failed} 个 API 测试失败，请检查后端服务")
+        print(f"[!] {failed} 个 API 测试失败，请检查后端服务")
     
     print("=" * 70)
     

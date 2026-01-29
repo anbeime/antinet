@@ -23,7 +23,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n💡 使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
+      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n[提示] 使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -161,7 +161,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     return (
       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
         <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-          📚 知识来源 ({sources.length} 张卡片)
+          [知识] 知识来源 ({sources.length} 张卡片)
         </div>
         <div className="space-y-2">
           {sources.map((source, index) => (
@@ -334,7 +334,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
           
           {/* 提示信息 */}
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            💡 提示：基于本地知识库回答，支持四色卡片查询
+            [提示] 基于本地知识库回答，支持四色卡片查询
           </div>
         </div>
       </motion.div>

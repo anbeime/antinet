@@ -62,10 +62,10 @@ const colorMap: Record<'blue' | 'green' | 'yellow' | 'red', ColorStyle> = {
 };
 
 const categoryIcons: Record<'事实' | '解释' | '风险' | '行动', string> = {
-  '事实': '📊',
-  '解释': '',
-  '风险': '',
-  '行动': '🎯',
+  '事实': '[实]',
+  '解释': '[解]',
+  '风险': '[险]',
+  '行动': '[动]',
 };
 
 // 后端API返回的卡片格式转换为组件需要的格式

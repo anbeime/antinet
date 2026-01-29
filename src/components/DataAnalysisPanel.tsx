@@ -67,7 +67,7 @@ const DataAnalysisPanel: React.FC = () => {
       const data = await response.json();
       setHealthStatus(data);
 
-      toast(data.model_loaded ? '✓ 后端服务正常,NPU模型已加载' : '⚠ 后端服务运行中,但模型未加载', {
+      toast(data.model_loaded ? '[OK] 后端服务正常,NPU模型已加载' : '[!] 后端服务运行中,但模型未加载', {
         className: data.model_loaded
           ? 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
           : 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
@@ -150,7 +150,7 @@ const DataAnalysisPanel: React.FC = () => {
       // 区分不同类型的错误
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          toast('⏱️ 分析超时（60秒），NPU推理时间过长。建议：1) 缩短查询内容 2) 检查NPU状态', {
+          toast('[超时] 分析超时（60秒），NPU推理时间过长。建议：1) 缩短查询内容 2) 检查NPU状态', {
             className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
             duration: 8000
           });
@@ -176,7 +176,7 @@ const DataAnalysisPanel: React.FC = () => {
       bg: 'bg-blue-50 dark:bg-blue-950/40',
       border: 'border-blue-200 dark:border-blue-800',
       text: 'text-blue-800 dark:text-blue-200',
-      icon: '📊'
+      icon: '[数]'
     },
     green: {
       bg: 'bg-green-50 dark:bg-green-950/40',
@@ -194,7 +194,7 @@ const DataAnalysisPanel: React.FC = () => {
       bg: 'bg-red-50 dark:bg-red-950/40',
       border: 'border-red-200 dark:border-red-800',
       text: 'text-red-800 dark:text-red-200',
-      icon: '🎯'
+      icon: '[动]'
     }
   };
 

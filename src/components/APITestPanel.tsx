@@ -202,7 +202,7 @@ const APITestPanel: React.FC = () => {
       {results.length > 0 && errorCount > 0 && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
           <h3 className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-            ⚠️ 发现问题
+            [!] 发现问题
           </h3>
           <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
             <li>• 检查后端服务是否正常运行 (http://localhost:8000)</li>

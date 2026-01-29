@@ -17,7 +17,7 @@ def test_dependency(package_name, import_name=None):
         print(f"✗ {package_name:20s} 不可用 ({str(e)[:50]}...)")
         return False
     except Exception as e:
-        print(f"⚠ {package_name:20s} 导入异常 ({str(e)[:50]}...)")
+        print(f"[!] {package_name:20s} 导入异常 ({str(e)[:50]}...)")
         return False
 
 def main():
@@ -131,9 +131,9 @@ def main():
     
     # 不兼容警告
     if not special_results.get('weasyprint', False):
-        print("⚠ weasyprint 在 Windows ARM 上不兼容，建议使用前端方案替代")
+        print("[!] weasyprint 在 Windows ARM 上不兼容，建议使用前端方案替代")
     if not special_results.get('ocrmypdf', False):
-        print("⚠ ocrmypdf 需要 tesseract-ocr 系统依赖，需手动安装")
+        print("[!] ocrmypdf 需要 tesseract-ocr 系统依赖，需手动安装")
 
 if __name__ == '__main__':
     main()

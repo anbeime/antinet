@@ -31,10 +31,10 @@ class MarkdownFormatterSkill:
         
         # Callout 图标
         self.callout_icons = {
-            "note": "📘",
-            "tip": "💡",
-            "warning": "⚠️",
-            "danger": "🔴"
+            "note": "[注]",
+            "tip": "[提示]",
+            "warning": "[警告]",
+            "danger": "[危险]"
         }
     
     async def execute(self, cards: List[Dict] = None, format_type: str = "callouts", **kwargs) -> Dict[str, Any]:
@@ -180,9 +180,9 @@ class MarkdownFormatterSkill:
             else:
                 content_str = str(content)[:50]
             
-            # 类型图标
-            type_icons = {"blue": "🔵", "green": "🟢", "yellow": "🟡", "red": "🔴"}
-            type_icon = type_icons.get(card_type, "⚪")
+            # 类型标识
+            type_icons = {"blue": "[蓝]", "green": "[绿]", "yellow": "[黄]", "red": "[红]"}
+            type_icon = type_icons.get(card_type, "[无]")
             
             markdown_lines.append(f"| {type_icon} {card_type} | {title} | {content_str}... | {tags} | {confidence} |")
         
@@ -200,9 +200,9 @@ class MarkdownFormatterSkill:
             title = card.get("title", "未命名")
             content = card.get("content", {})
             
-            # 类型图标
-            type_icons = {"blue": "🔵", "green": "🟢", "yellow": "🟡", "red": "🔴"}
-            type_icon = type_icons.get(card_type, "⚪")
+            # 类型标识
+            type_icons = {"blue": "[蓝]", "green": "[绿]", "yellow": "[黄]", "red": "[红]"}
+            type_icon = type_icons.get(card_type, "[无]")
             
             markdown_lines.append(f"{i}. {type_icon} **{title}**")
             
@@ -217,7 +217,7 @@ class MarkdownFormatterSkill:
             # 标签
             if card.get("tags"):
                 tags_str = ", ".join(f"`{tag}`" for tag in card["tags"])
-                markdown_lines.append(f"   🏷️ {tags_str}")
+                markdown_lines.append(f"   [标签] {tags_str}")
             
             markdown_lines.append("")
         

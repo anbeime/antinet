@@ -55,10 +55,35 @@ class DataAnalysisExporter:
         
         # 初始化各个专业 Agent
         self.preprocessor = PreprocessorAgent()
-        self.fact_generator = FactGeneratorAgent()
-        self.interpreter = InterpreterAgent()
-        self.risk_detector = RiskDetectorAgent()
-        self.action_advisor = ActionAdvisorAgent()
+        
+        # 需要 API 配置的 Agent，使用 try-except 处理
+        try:
+            from config import settings
+            api_base = "http://localhost:8000"
+            model_path = str(settings.MODEL_PATH) if hasattr(settings, 'MODEL_PATH') else ""
+            
+            self.fact_generator = FactGeneratorAgent(
+                genie_api_base_url=api_base,
+                model_path=model_path
+            )
+            self.interpreter = InterpreterAgent(
+                genie_api_base_url=api_base,
+                model_path=model_path
+            )
+            self.risk_detector = RiskDetectorAgent(
+                genie_api_base_url=api_base,
+                model_path=model_path
+            )
+            self.action_advisor = ActionAdvisorAgent(
+                genie_api_base_url=api_base,
+                model_path=model_path
+            )
+        except Exception as e:
+            logger.warning(f"Agent 初始化失败，使用简化版本: {e}")
+            self.fact_generator = None
+            self.interpreter = None
+            self.risk_detector = None
+            self.action_advisor = None
         
         logger.info("[DataAnalysisExporter] 初始化完成")
     
@@ -192,11 +217,18 @@ class DataAnalysisExporter:
         }
         
         # 使用 Agent 进行智能预处理
-        preprocessed = self.preprocessor.process({
-            "data": data.to_dict('records'),
-            "query": query,
-            "stats": stats
-        })
+        try:
+            preprocessed = await self.preprocessor.preprocess_data(
+                data_source="memory",  # 从内存数据处理
+                data_type="dataframe"
+            )
+        except Exception as e:
+            logger.warning(f"预处理失败，使用原始数据: {e}")
+            preprocessed = {
+                "data": data.to_dict('records'),
+                "query": query,
+                "stats": stats
+            }
         
         return {
             "original_data": data,

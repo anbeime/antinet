@@ -81,7 +81,7 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
         # 使用 SQL LIKE 进行模糊匹配
         query_lower = query.lower()
         cursor.execute("""
-            SELECT id, title, content, category, type, created_at
+            SELECT id, type, title, content, source, category, created_at
             FROM knowledge_cards
             WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
             ORDER BY id DESC
@@ -95,12 +95,13 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[4] if row[4] else "blue",
-                "title": row[1],
+                "card_type": row[1] if row[1] else "blue",  # 修正：type 在第2列
+                "title": row[2],
                 "content": {
-                    "description": row[2]
+                    "description": row[3]
                 },
-                "category": row[3],
+                "source": row[4],
+                "category": row[5],  # 修正：category 在第6列
                 "similarity": 0.8  # 简单相似度评分
             })
 
@@ -309,9 +310,16 @@ async def chat_query(request: ChatRequest):
     try:
         # 使用关键词搜索预设的知识卡片
         cards = _search_cards_by_keyword(request.query, limit=10)
+        print(f"[DEBUG] 搜索到 {len(cards)} 张卡片")
+        
+        if cards:
+            print(f"[DEBUG] 第一张卡片: {cards[0]}")
+        else:
+            print(f"[DEBUG] 没有找到卡片，查询词: {request.query}")
 
         # 生成回复
         response = _generate_response(request.query, cards)
+        print(f"[DEBUG] 生成回复长度: {len(response)}")
         
         # 生成推荐问题
         suggested_questions = _generate_suggested_questions(request.query, cards)
@@ -394,15 +402,15 @@ async def list_cards(
         # 构建查询
         if card_type:
             cursor.execute("""
-                SELECT id, title, content, category, card_type, similarity, created_at
+                SELECT id, type, title, content, source, category, created_at
                 FROM knowledge_cards
-                WHERE card_type = ?
+                WHERE type = ?
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
             """, (card_type, limit, offset))
         else:
             cursor.execute("""
-                SELECT id, title, content, category, card_type, similarity, created_at
+                SELECT id, type, title, content, source, category, created_at
                 FROM knowledge_cards
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
@@ -415,13 +423,14 @@ async def list_cards(
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[4] if row[4] else "blue",
-                "title": row[1],
+                "card_type": row[1] if row[1] else "blue",  # 修正：type 在第2列
+                "title": row[2],
                 "content": {
-                    "description": row[2]
+                    "description": row[3]
                 },
-                "category": row[3],
-                "similarity": row[5]
+                "source": row[4],
+                "category": row[5],  # 修正：category 在第6列
+                "similarity": 0.8
             })
 
         # 获取总数
@@ -468,7 +477,7 @@ async def get_card(card_id: str):
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT id, title, content, category, card_type, similarity, created_at
+            SELECT id, type, title, content, source, category, created_at
             FROM knowledge_cards
             WHERE id = ?
         """, (db_id,))
@@ -485,13 +494,14 @@ async def get_card(card_id: str):
         return {
             "card_id": f"db_{row[0]}",
             "id": row[0],
-            "card_type": row[4],
-            "title": row[1],
+            "card_type": row[1] if row[1] else "blue",  # 修正：type 在第2列
+            "title": row[2],
             "content": {
-                "description": row[2]
+                "description": row[3]
             },
-            "category": row[3],
-            "similarity": row[5]
+            "source": row[4],
+            "category": row[5],  # 修正：category 在第6列
+            "similarity": 0.8
         }
 
     except ValueError:

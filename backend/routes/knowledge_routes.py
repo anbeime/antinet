@@ -83,7 +83,7 @@ async def get_knowledge_graph(
 class KnowledgeCard(BaseModel):
     """知识卡片模型"""
     id: Optional[int] = None
-    type: str
+    card_type: str  # 修正：使用 card_type 与数据库一致
     title: str
     content: str
     source: Optional[str] = None
@@ -183,10 +183,10 @@ async def create_card(card: KnowledgeCard):
 
     try:
         cursor.execute('''
-            INSERT INTO knowledge_cards (type, title, content, source, url, category)
+            INSERT INTO knowledge_cards (card_type, title, content, source, url, category)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
-            card.type,
+            card.card_type,  # 修正：使用 card_type
             card.title,
             card.content,
             card.source,

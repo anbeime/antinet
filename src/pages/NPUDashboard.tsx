@@ -78,7 +78,7 @@ export default function NPUDashboard() {
             <div className="text-gray-600 text-sm mb-1">内存占用</div>
             <div className="text-3xl font-bold">{benchmarkData.memory_usage_mb}MB</div>
             <div className={`text-sm mt-1 ${benchmarkData.memory_usage_mb < 2000 ? 'text-green-600' : 'text-yellow-600'}`}>
-              {benchmarkData.memory_usage_mb < 2000 ? '✓ 正常' : '⚠ 偏高'}
+              {benchmarkData.memory_usage_mb < 2000 ? '[OK] 正常' : '[!] 偏高'}
             </div>
           </div>
 

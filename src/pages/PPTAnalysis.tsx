@@ -43,10 +43,10 @@ const PPTAnalysis: React.FC = () => {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
 
   const templates = [
-    { id: 'business', name: '商务简约', thumbnail: '📊', style: 'modern', colors: ['#2563eb', '#dc2626', '#16a34a'] },
-    { id: 'creative', name: '创意多彩', thumbnail: '🎨', style: 'creative', colors: ['#7c3aed', '#db2777', '#ea580c'] },
-    { id: 'academic', name: '学术严谨', thumbnail: '🎓', style: 'classic', colors: ['#374151', '#059669', '#0284c7'] },
-    { id: 'tech', name: '科技未来', thumbnail: '🚀', style: 'tech', colors: ['#0891b2', '#4338ca', '#be123c'] }
+    { id: 'business', name: '商务简约', thumbnail: '[商]', style: 'modern', colors: ['#2563eb', '#dc2626', '#16a34a'] },
+    { id: 'creative', name: '创意多彩', thumbnail: '[创]', style: 'creative', colors: ['#7c3aed', '#db2777', '#ea580c'] },
+    { id: 'academic', name: '学术严谨', thumbnail: '[学]', style: 'classic', colors: ['#374151', '#059669', '#0284c7'] },
+    { id: 'tech', name: '科技未来', thumbnail: '[科]', style: 'tech', colors: ['#0891b2', '#4338ca', '#be123c'] }
   ];
   const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
 

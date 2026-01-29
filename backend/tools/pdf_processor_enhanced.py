@@ -81,15 +81,15 @@ class EnhancedPDFProcessor:
                     font_name = Path(font_path).stem
                     pdfmetrics.registerFont(TTFont(font_name, font_path))
                     self.chinese_font = font_name
-                    print(f"✓ 已注册中文字体: {font_name}")
+                    print(f"[OK] 已注册中文字体: {font_name}")
                     return
             
             # 如果没有找到中文字体，使用默认字体
             self.chinese_font = "Helvetica"
-            print("⚠ 未找到中文字体，使用默认字体")
+            print("[!] 未找到中文字体，使用默认字体")
         except Exception as e:
             self.chinese_font = "Helvetica"
-            print(f"⚠ 字体注册失败: {e}")
+            print(f"[!] 字体注册失败: {e}")
     
     # ========== 1. PDF 合并/拆分 ==========
     

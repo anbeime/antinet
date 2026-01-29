@@ -306,7 +306,7 @@ const TeamKnowledgeManagement: React.FC = () => {
       cardId: '1', // 假设我们正在评论第一个卡片
       userId: '1', // 假设当前用户是第一个用户
       userName: '张明',
-      userAvatar: '👨‍💼',
+      userAvatar: 'U',
       content: newComment,
       createdAt: new Date().toISOString(),
       replies: []

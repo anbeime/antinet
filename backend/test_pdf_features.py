@@ -90,7 +90,7 @@ def test_pdf_capabilities():
         else:
             print("  ✗ 原有处理器不可用")
     except Exception as e:
-        print(f"  ⚠ 原有处理器测试失败: {e}")
+        print(f"  [!] 原有处理器测试失败: {e}")
     
     print()
     print("=" * 60)

@@ -104,8 +104,8 @@ const NPUPerformanceDashboard: React.FC = () => {
           peakPerformance: peakPerformance
         });
 
-        const latencyStatus = meetsTarget ? '✓ 达标' : '⚠ 超标';
-        toast(`✓ 基准测试完成! 平均延迟: ${overallAvgLatency.toFixed(1)}ms (${latencyStatus})`, {
+        const latencyStatus = meetsTarget ? '[OK] 达标' : '[!] 超标';
+        toast(`[OK] 基准测试完成! 平均延迟: ${overallAvgLatency.toFixed(1)}ms (${latencyStatus})`, {
           className: meetsTarget ? 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100' : 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
         });
       }

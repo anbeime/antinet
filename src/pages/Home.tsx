@@ -361,17 +361,17 @@ const Home: React.FC = () => {
         
         // 设置功能亮点
         setFeatureHighlights([
-          { icon: '🚀', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms' },
-          { icon: '🎨', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理' },
-          { icon: '🤖', title: '8-Agent智能体', description: '8个智能Agent协同分析' },
-          { icon: '📊', title: '智能报告生成', description: '一键生成PPT/Excel报告' },
+          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms' },
+          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理' },
+          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析' },
+          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/Excel报告' },
         ]);
         
         // 设置应用场景
         setApplicationScenarios([
-          { icon: '💼', title: '企业知识管理', description: '构建企业知识库，支持团队协作' },
-          { icon: '📈', title: '数据分析报告', description: '智能分析数据，生成可视化报告' },
-          { icon: '🔒', title: '端侧隐私保护', description: '数据完全本地处理，不出域' },
+          { icon: 'Co', title: '企业知识管理', description: '构建企业知识库，支持团队协作' },
+          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告' },
+          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域' },
         ]);
         
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
@@ -524,7 +524,7 @@ const Home: React.FC = () => {
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
               aria-label="切换主题"
             >
-              {theme === 'light' ? '🌙' : '☀️'}
+              {theme === 'light' ? '[暗]' : '[亮]'}
             </button>
             <div className="relative">
               <motion.button
