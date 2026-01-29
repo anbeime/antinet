@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Brain, Eye, Shield, Target, MessageSquare, Settings, BarChart3, Crown, Zap, Network } from 'lucide-react';
+import { Users, Brain, Eye, Shield, Target, MessageSquare, Settings, BarChart3, Crown, Zap, Network, ArrowRight, CheckCircle, History, Database } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Agent {
@@ -17,6 +17,32 @@ interface Agent {
 const AgentSystem: React.FC = () => {
   const { theme } = useTheme();
   const [selectedAgent, setSelectedAgent] = useState<string>('taishige');
+  const [agentStatus, setAgentStatus] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 从后端加载Agent状态
+  useEffect(() => {
+    const loadAgentStatus = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('http://localhost:8000/api/agent/status');
+        if (response.ok) {
+          const status = await response.json();
+          setAgentStatus(status);
+          console.log('Agent状态:', status);
+        }
+      } catch (error) {
+        console.error('加载Agent状态失败:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadAgentStatus();
+    // 每30秒刷新一次状态
+    const interval = setInterval(loadAgentStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const agents: Agent[] = [
     {
@@ -168,18 +194,34 @@ const AgentSystem: React.FC = () => {
                 系统状态
               </h3>
               <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">活跃Agent</span>
-                  <span className="font-bold text-green-600">{agents.filter(a => a.status === 'active').length}/8</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">NPU加速</span>
-                  <span className="font-bold text-blue-600">已启用</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">协作效率</span>
-                  <span className="font-bold text-amber-600">94%</span>
-                </div>
+                {isLoading ? (
+                  <div className="text-center text-gray-500 py-4">加载中...</div>
+                ) : agentStatus ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">系统状态</span>
+                      <span className={`font-bold ${agentStatus.status === 'running' ? 'text-green-600' : 'text-amber-600'}`}>
+                        {agentStatus.status === 'running' ? '运行中' : agentStatus.status || '未知'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">活跃Agent</span>
+                      <span className="font-bold text-green-600">{agents.filter(a => a.status === 'active').length}/8</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">NPU加速</span>
+                      <span className="font-bold text-blue-600">
+                        {agentStatus.npu_enabled !== undefined ? (agentStatus.npu_enabled ? '已启用' : '已禁用') : '已启用'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">任务队列</span>
+                      <span className="font-bold text-purple-600">{agentStatus.queue_size || 0}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center text-red-500 py-4">无法加载状态</div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -296,15 +338,5 @@ const AgentSystem: React.FC = () => {
     </div>
   );
 };
-
-// Missing imports
-import History from 'lucide-react/dist/esm/icons/history';
-import Database from 'lucide-react/dist/esm/icons/database';
-import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right';
-import Loader from 'lucide-react/dist/esm/icons/loader';
-import FileText from 'lucide-react/dist/esm/icons/file-text';
-import Presentation from 'lucide-react/dist/esm/icons/presentation';
-import FileSpreadsheet from 'lucide-react/dist/esm/icons/file-spreadsheet';
-import Image from 'lucide-react/dist/esm/icons/image';
 
 export default AgentSystem;

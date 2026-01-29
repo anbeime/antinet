@@ -119,7 +119,10 @@ if npu_router is not None:
 app.include_router(data_routes.router)  # 数据管理路由
 if chat_router is not None:
     app.include_router(chat_router)  # 聊天机器人路由
-    chat_router.db_manager = db_manager  # 设置数据库管理器
+    # 设置chat_routes模块的数据库管理器
+    import routes.chat_routes as chat_routes_module
+    chat_routes_module.db_manager = db_manager
+    chat_router.db_manager = db_manager  # 同时设置router属性
     logger.info("✓ 聊天机器人路由已注册")
 
 # 注册知识管理路由
@@ -187,6 +190,14 @@ try:
     logger.info("✓ PPT 处理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
+
+# 注册 GTD 任务管理路由
+try:
+    from routes.gtd_routes import router as gtd_router
+    app.include_router(gtd_router)  # GTD 任务管理路由
+    logger.info("✓ GTD 任务管理路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 GTD 任务管理路由: {e}")
 
 # 初始化 8-Agent 系统
 @app.on_event("startup")

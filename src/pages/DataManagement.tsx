@@ -19,15 +19,34 @@ const DataManagement: React.FC = () => {
   const [filterType, setFilterType] = useState('all');
 
   useEffect(() => {
-    // Mock data
-    setFiles([
-      { id: '1', name: '项目报告.pdf', type: 'pdf', size: '2.5MB', modified: '2024-01-15 14:30', status: 'processed' },
-      { id: '2', name: '产品介绍.pptx', type: 'ppt', size: '5.2MB', modified: '2024-01-14 09:15', status: 'processed' },
-      { id: '3', name: '销售数据.xlsx', type: 'excel', size: '1.8MB', modified: '2024-01-15 11:20', status: 'processed' },
-      { id: '4', name: '架构图.png', type: 'image', size: '856KB', modified: '2024-01-13 16:45', status: 'processed' },
-      { id: '5', name: '会议纪要.docx', type: 'text', size: '324KB', modified: '2024-01-15 10:00', status: 'processing' },
-      { id: '6', name: '用户手册.pdf', type: 'pdf', size: '3.1MB', modified: '2024-01-12 13:25', status: 'failed' }
-    ]);
+    // 从后端 API 加载活动数据
+    const loadActivities = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/data/activities?limit=20');
+        if (response.ok) {
+          const activities = await response.json();
+          // 转换活动数据为文件格式（临时方案）
+          const filesFromActivities = activities.map((activity: any, index: number) => ({
+            id: String(activity.id),
+            name: activity.content || '未命名文件',
+            type: 'text' as const,
+            size: '0KB',
+            modified: activity.timestamp || new Date().toISOString(),
+            status: 'processed' as const
+          }));
+          setFiles(filesFromActivities);
+        } else {
+          console.error('加载活动数据失败');
+          // 降级到空数组
+          setFiles([]);
+        }
+      } catch (error) {
+        console.error('加载活动数据异常:', error);
+        setFiles([]);
+      }
+    };
+    
+    loadActivities();
   }, []);
 
   const getFileIcon = (type: string) => {

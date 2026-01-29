@@ -18,18 +18,36 @@ const BatchProcess: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const mockTasks: Task[] = [
-    { id: '1', name: '季度报告_第1章.pdf', type: 'pdf', status: 'completed', progress: 100, startTime: '10:30:15', endTime: '10:32:45' },
-    { id: '2', name: '季度报告_第2章.pdf', type: 'pdf', status: 'completed', progress: 100, startTime: '10:32:50', endTime: '10:35:20' },
-    { id: '3', name: '销售数据_Q1.xlsx', type: 'excel', status: 'processing', progress: 65, startTime: '10:35:25' },
-    { id: '4', name: '产品介绍.pptx', type: 'ppt', status: 'waiting', progress: 0 },
-    { id: '5', name: '用户调研.pdf', type: 'pdf', status: 'waiting', progress: 0 },
-    { id: '6', name: '财务分析.xlsx', type: 'excel', status: 'failed', progress: 0, startTime: '10:30:00', endTime: '10:31:30' }
-  ];
-
-  useState(() => {
-    setTasks(mockTasks);
-  });
+  // 从后端加载分析任务列表
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/analysis/list-analyses');
+        if (response.ok) {
+          const analyses = await response.json();
+          // 转换为任务格式
+          const tasksFromAPI = analyses.map((analysis: any) => ({
+            id: String(analysis.id || Math.random()),
+            name: analysis.filename || '未命名任务',
+            type: 'pdf' as const,
+            status: analysis.status === 'completed' ? 'completed' as const : 
+                   analysis.status === 'processing' ? 'processing' as const : 
+                   analysis.status === 'failed' ? 'failed' as const : 'waiting' as const,
+            progress: analysis.status === 'completed' ? 100 : 
+                     analysis.status === 'processing' ? 50 : 0,
+            startTime: analysis.created_at,
+            endTime: analysis.updated_at
+          }));
+          setTasks(tasksFromAPI);
+        }
+      } catch (error) {
+        console.error('加载任务列表失败:', error);
+        setTasks([]);
+      }
+    };
+    
+    loadTasks();
+  }, []);
 
   const getStatusIcon = (status: string) => {
     const icons = {

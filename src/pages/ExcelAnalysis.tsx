@@ -33,44 +33,46 @@ const ExcelAnalysis: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeSheet, setActiveSheet] = useState('Sheet1');
 
-  const mockData: DataRow[] = [
-    { id: 1, name: '张三', age: 28, department: '技术部', salary: 12000, join_date: '2022-01-15', performance: 85 },
-    { id: 2, name: '李四', age: 32, department: '销售部', salary: 15000, join_date: '2021-06-20', performance: 92 },
-    { id: 3, name: '王五', age: 26, department: '技术部', salary: 10000, join_date: '2023-03-10', performance: 78 },
-    { id: 4, name: '赵六', age: 35, department: '市场部', salary: 13000, join_date: '2020-11-05', performance: 88 },
-    { id: 5, name: '钱七', age: 29, department: '人事部', salary: 11000, join_date: '2022-08-12', performance: 90 }
-  ];
-
-  const mockColumns: Column[] = [
-    { key: 'id', name: 'ID', type: 'number', sample: 1 },
-    { key: 'name', name: '姓名', type: 'string', sample: '张三' },
-    { key: 'age', name: '年龄', type: 'number', sample: 28 },
-    { key: 'department', name: '部门', type: 'string', sample: '技术部' },
-    { key: 'salary', name: '薪资', type: 'number', sample: 12000 },
-    { key: 'join_date', name: '入职日期', type: 'date', sample: '2022-01-15' },
-    { key: 'performance', name: '绩效评分', type: 'number', sample: 85 }
-  ];
-
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && (file.type.includes('spreadsheet') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
       setUploadedFile(file);
       setIsAnalyzing(true);
       
-      setTimeout(() => {
-        setData(mockData);
-        setColumns(mockColumns);
-        setStats({
-          totalRows: 5,
-          totalColumns: 7,
-          numericColumns: 4,
-          textColumns: 2,
-          dateColumns: 1,
-          missingValues: 0,
-          duplicates: 0
+      try {
+        // 上传并分析文件
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const response = await fetch('http://localhost:8000/api/analysis/upload-and-analyze', {
+          method: 'POST',
+          body: formData
         });
+        
+        if (response.ok) {
+          const result = await response.json();
+          // 处理返回的分析结果
+          if (result.data && result.columns) {
+            setData(result.data);
+            setColumns(result.columns);
+            setStats(result.stats || {
+              totalRows: result.data.length,
+              totalColumns: result.columns.length,
+              numericColumns: 0,
+              textColumns: 0,
+              dateColumns: 0,
+              missingValues: 0,
+              duplicates: 0
+            });
+          }
+        } else {
+          console.error('文件分析失败');
+        }
+      } catch (error) {
+        console.error('文件上传异常:', error);
+      } finally {
         setIsAnalyzing(false);
-      }, 1500);
+      }
     }
   };
 

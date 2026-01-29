@@ -10,6 +10,7 @@
     "build": "rm -rf dist && pnpm build:client && cp package.json dist && touch dist/build.flag"
   },
   "dependencies": {
+    "@react-pdf/renderer": "^4.3.2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.9.2",
     "lucide-react": "^0.383.0",
@@ -22,11 +23,14 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@esbuild/win32-arm64": "^0.27.2",
+    "@rollup/rollup-win32-arm64-msvc": "^4.57.0",
     "@types/node": "^25.0.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.21",
+    "esbuild-wasm": "^0.27.2",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.7.2",

@@ -81,7 +81,7 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
         # 使用 SQL LIKE 进行模糊匹配
         query_lower = query.lower()
         cursor.execute("""
-            SELECT id, title, content, category, card_type, similarity, created_at
+            SELECT id, title, content, category, type, created_at
             FROM knowledge_cards
             WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
             ORDER BY id DESC
@@ -95,7 +95,7 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[4],
+                "card_type": row[4] if row[4] else "blue",
                 "title": row[1],
                 "content": {
                     "description": row[2]
@@ -415,7 +415,7 @@ async def list_cards(
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[4],
+                "card_type": row[4] if row[4] else "blue",
                 "title": row[1],
                 "content": {
                     "description": row[2]

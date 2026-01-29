@@ -1,0 +1,21 @@
+# PDF 处理相关依赖（ARM Windows 兼容版本）
+# ========================================
+# 只包含纯 Python 包，不需要 C++ 编译或外部二进制文件
+
+# 基础 PDF 处理（✅ ARM 完全兼容）
+pypdf>=3.17.0          # PDF 合并、拆分、基础操作
+pdfplumber>=0.10.0     # PDF 文本和表格提取（保留布局）
+reportlab>=4.0.0       # PDF 创建和生成
+Pillow>=10.0.0         # 图像处理支持
+
+# 注意：以下包在 ARM Windows 上不兼容，已移除
+# PyMuPDF>=1.23.0      # ❌ 需要预编译二进制文件（ARM 不可用）
+# pikepdf>=8.10.0      # ❌ 需要 C++ 编译器
+# pdf2image>=1.16.0    # ❌ 依赖 poppler 外部工具
+# img2pdf>=0.5.0       # ❌ 依赖 pikepdf
+
+# 替代方案：
+# - PDF 压缩：使用 pypdf 基础功能
+# - 图像转 PDF：使用 reportlab
+# - PDF 高级编辑：使用 pypdf + pdfplumber 组合
+# - PDF 转图像：前端使用 PDF.js 或在线服务

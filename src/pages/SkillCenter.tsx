@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Zap, BrainCircuit, FileText, Presentation, BarChart3, Database, Image, Code, Settings, Crown, Shield, Eye, MessageSquare, Users, Target, CheckCircle } from 'lucide-react';
+import { Zap, BrainCircuit, FileText, Presentation, BarChart3, Database, Image, Code, Settings, Crown, Shield, Eye, MessageSquare, Users, Target, CheckCircle, Star } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Skill {
@@ -19,6 +19,30 @@ const SkillCenter: React.FC = () => {
   const { theme } = useTheme();
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedAgent, setSelectedAgent] = useState('all');
+  const [apiSkills, setApiSkills] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 从后端加载技能列表
+  useEffect(() => {
+    const loadSkills = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('http://localhost:8000/api/skills/available');
+        if (response.ok) {
+          const data = await response.json();
+          setApiSkills(data.skills || []);
+          console.log('从API加载技能:', data.skills?.length || 0);
+        }
+      } catch (error) {
+        console.error('加载技能列表失败:', error);
+        // 失败时使用本地静态数据
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadSkills();
+  }, []);
 
   const categories = [
     { id: 'all', name: '全部技能', icon: Zap },
@@ -243,8 +267,5 @@ const SkillCenter: React.FC = () => {
     </div>
   );
 };
-
-// Missing imports
-import Star from 'lucide-react/dist/esm/icons/star';
 
 export default SkillCenter;

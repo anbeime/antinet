@@ -196,15 +196,23 @@ async def add_knowledge_space(space: KnowledgeSpace):
 
 
 # ========== 协作活动API ==========
-@router.get("/activities", response_model=List[Activity])
+@router.get("/activities")
 async def get_activities(limit: int = 20):
     """获取最近的协作活动"""
     try:
         db = get_db_manager()
         activities = db.get_recent_activities(limit)
-        return activities
+        # 转换为字典列表，确保可以序列化
+        result = []
+        for activity in activities:
+            if isinstance(activity, dict):
+                result.append(activity)
+            else:
+                # 如果是 Row 对象，转换为字典
+                result.append(dict(activity))
+        return result
     except Exception as e:
-        logger.error(f"获取协作活动失败: {e}")
+        logger.error(f"获取协作活动失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

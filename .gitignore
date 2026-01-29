@@ -38,6 +38,7 @@ dist-ssr
 
 # Python
 backend/venv/
+venv_arm64/
 backend/__pycache__/
 *.pyc
 *.pyo
@@ -78,3 +79,7 @@ nul
 
 # 本地笔记（不需要推送）
 rooroo-prompt-clean.md
+
+# 备份目录（临时文件，不推送）
+backup_20260129/
+backup_*/

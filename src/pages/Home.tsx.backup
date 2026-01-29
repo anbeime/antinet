@@ -1,44 +1,48 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
+  Users,
   Network,
   Database,
   Search,
   ChevronRight,
   PlusCircle,
+  BarChart3,
   Calendar,
   Lightbulb,
   Briefcase,
   Upload,
   X,
+  CheckCircle2,
+  Users as UsersIcon,
   TrendingUp,
   AlertCircle,
   Presentation,
   Table,
   FolderOpen,
   Cpu,
-  Sparkles,
-  FileText,
-  MessageCircle
+  Sparkles
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
+import TeamCollaboration from '@/components/TeamCollaboration';
+import AnalyticsReport from '@/components/AnalyticsReport';
 import CreateCardModal from '@/components/CreateCardModal';
 import CardDetailModal from '@/components/CardDetailModal';
 import ImportModal from '@/components/ImportModal';
 import GTDSystem from '@/components/GTDSystem';
+import LuhmannSystemChecklist from '@/components/LuhmannSystemChecklist';
+import TeamKnowledgeManagement from '@/components/TeamKnowledgeManagement';
+import AttachSprite from '@/components/AttachSprite';
+import ChatBotModal from '@/components/ChatBotModal';
 import DataAnalysisPanel from '@/components/DataAnalysisPanel';
 import PPTAnalysis from '@/pages/PPTAnalysis';
 import ExcelAnalysis from '@/pages/ExcelAnalysis';
 import DataManagement from '@/pages/DataManagement';
 import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
-import PDFAnalysis from '@/pages/PDFAnalysisEnhanced';
-import BatchProcess from '@/pages/BatchProcess';
-import NPUDashboard from '@/pages/NPUDashboard';
-import ChatBotModal from '@/components/ChatBotModal';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -110,7 +114,7 @@ const cardTypeMap = {
 
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'gtd' | 'data-analysis' | 'ppt-analysis' | 'excel-analysis' | 'data-management' | 'agent-system' | 'skill-center' | 'pdf-analysis' | 'batch-process' | 'npu-dashboard'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'gtd' | 'data-analysis' | 'ppt-analysis' | 'excel-analysis' | 'data-management' | 'agent-system' | 'skill-center'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -120,6 +124,7 @@ const Home: React.FC = () => {
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
+  const [isChatServiceAvailable, setIsChatServiceAvailable] = useState<boolean>(false);
   
   // Mock数据状态管理
   const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
@@ -143,7 +148,7 @@ const Home: React.FC = () => {
   // 过滤卡片
   const filteredCards = cards.filter(card => {
     // 颜色过滤
-    const colorMatch = !selectedCardColor || card.type === selectedCardColor;
+    const colorMatch = !selectedCardColor || card.color === selectedCardColor;
     
      // 搜索过滤
     const searchMatch = !searchQuery || 
@@ -210,7 +215,7 @@ const Home: React.FC = () => {
       id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: card.title,
       content: card.content,
-      type: card.type,
+      color: card.color,
       address: card.address,
       createdAt: new Date().toISOString(),
       relatedCards: []
@@ -287,49 +292,46 @@ const Home: React.FC = () => {
     localStorage.setItem('antinet_cards', JSON.stringify(updatedCards));
   };
 
-  // 从后端API加载卡片
+  // 从localStorage加载卡片
   React.useEffect(() => {
-    const loadCardsFromAPI = async () => {
+    const savedCards = localStorage.getItem('antinet_cards');
+    if (savedCards) {
       try {
-        const response = await fetch('http://localhost:8000/api/knowledge/cards');
-        if (response.ok) {
-          const apiCards = await response.json();
-          // 转换后端数据格式到前端格式
-          const formattedCards = apiCards.map((card: any) => ({
-            id: String(card.id),
-            title: card.title,
-            content: card.content,
-            type: card.card_type || (card.category === '事实' ? 'blue' : card.category === '解释' ? 'green' : card.category === '风险' ? 'yellow' : 'red'),
-            category: card.category,
-            tags: card.tags ? card.tags.split(',') : [],
-            createdAt: card.created_at,
-            updatedAt: card.updated_at,
-            source: card.source,
-            url: card.url,
-            relatedCards: [],
-            relatedCardIds: []
-          }));
-          setCards(formattedCards);
-          console.log('从API加载卡片:', formattedCards.length);
-        }
+        setCards(JSON.parse(savedCards));
       } catch (error) {
-        console.error('从API加载卡片失败:', error);
-        // 降级到localStorage
-        const savedCards = localStorage.getItem('antinet_cards');
-        if (savedCards) {
-          try {
-            setCards(JSON.parse(savedCards));
-          } catch (e) {
-            console.error('Failed to load cards from localStorage:', e);
-          }
-        }
+        console.error('Failed to load cards from localStorage:', error);
       }
-    };
-    
-    loadCardsFromAPI();
+    }
   }, []);
 
+  // 检查本地NPU分析服务是否可用
+  useEffect(() => {
+    const checkChatService = async () => {
+      try {
+        // 尝试连接本地NPU分析API (端口8000)
+        const response = await fetch('http://localhost:8000/api/health', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setIsChatServiceAvailable(data.model_loaded || false);
+        } else {
+          setIsChatServiceAvailable(false);
+        }
+      } catch (error) {
+        console.error('NPU分析服务不可用:', error);
+        setIsChatServiceAvailable(false);
+      }
+    };
 
+    checkChatService();
+    // 每30秒检查一次
+    const interval = setInterval(checkChatService, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // 加载仪表板数据
   useEffect(() => {
@@ -340,41 +342,16 @@ const Home: React.FC = () => {
       setStatsError(null);
       
       try {
-        // 从知识卡片API获取真实数据
-        const response = await fetch('http://localhost:8000/api/knowledge/cards');
-        const cards = await response.json();
+        // TODO: 替换为真实的API端点
+        // const response = await fetch('/api/dashboard/stats');
+        // const data = await response.json();
         
-        // 统计卡片类型
-        const typeCount = {
-          blue: cards.filter((c: any) => c.card_type === 'blue' || c.category === '事实').length,
-          green: cards.filter((c: any) => c.card_type === 'green' || c.category === '解释').length,
-          yellow: cards.filter((c: any) => c.card_type === 'yellow' || c.category === '风险').length,
-          red: cards.filter((c: any) => c.card_type === 'red' || c.category === '行动').length,
-        };
+        // 临时使用空数组，等待后端API实现
+        setKnowledgeStats([]);
+        setFeatureHighlights([]);
+        setApplicationScenarios([]);
         
-        setKnowledgeStats([
-          { label: '事实卡片', count: typeCount.blue, color: 'blue' },
-          { label: '解释卡片', count: typeCount.green, color: 'green' },
-          { label: '风险卡片', count: typeCount.yellow, color: 'yellow' },
-          { label: '行动卡片', count: typeCount.red, color: 'red' },
-        ]);
-        
-        // 设置功能亮点
-        setFeatureHighlights([
-          { icon: '🚀', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms' },
-          { icon: '🎨', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理' },
-          { icon: '🤖', title: '8-Agent智能体', description: '8个智能Agent协同分析' },
-          { icon: '📊', title: '智能报告生成', description: '一键生成PPT/Excel报告' },
-        ]);
-        
-        // 设置应用场景
-        setApplicationScenarios([
-          { icon: '💼', title: '企业知识管理', description: '构建企业知识库，支持团队协作' },
-          { icon: '📈', title: '数据分析报告', description: '智能分析数据，生成可视化报告' },
-          { icon: '🔒', title: '端侧隐私保护', description: '数据完全本地处理，不出域' },
-        ]);
-        
-        console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
+        console.log('仪表板数据加载完成（待接入真实API）');
       } catch (error) {
         console.error('加载仪表板数据失败:', error);
         setStatsError('加载统计数据失败');
@@ -432,90 +409,97 @@ const Home: React.FC = () => {
           </div>
           
           <div className="hidden md:flex items-center space-x-6">
-            <button
+            <button 
               onClick={() => setActiveTab('dashboard')}
               className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
             >
               <Database size={18} />
               <span>概览</span>
             </button>
-            <button
+            <button 
               onClick={() => setActiveTab('cards')}
               className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'cards' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
             >
               <Briefcase size={18} />
               <span>知识卡片</span>
             </button>
-            <button
+            <button 
+              onClick={() => setActiveTab('team')}
+              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'team' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+            >
+              <Users size={18} />
+              <span>团队协作</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('team-knowledge')}
+              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'team-knowledge' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+            >
+              <UsersIcon size={18} />
+              <span>团队知识管理</span>
+            </button>
+               <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+            >
+              <BarChart3 size={18} />
+              <span>分析报告</span>
+            </button>
+            <button 
               onClick={() => setActiveTab('gtd')}
               className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'gtd' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
             >
               <Calendar size={18} />
-              <span>GTD系统</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('data-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <TrendingUp size={18} />
-              <span>数据分析</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ppt-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'ppt-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Presentation size={18} />
-              <span>PPT生成</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('excel-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'excel-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Table size={18} />
-              <span>Excel导出</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('data-management')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <FolderOpen size={18} />
-              <span>数据管理</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('agent-system')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'agent-system' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Cpu size={18} />
-              <span>Agent系统</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('skill-center')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'skill-center' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Sparkles size={18} />
-              <span>技能中心</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('pdf-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'pdf-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <FileText size={18} />
-              <span>PDF分析</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('batch-process')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'batch-process' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Upload size={18} />
-              <span>批量处理</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('npu-dashboard')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'npu-dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Cpu size={18} />
-              <span>NPU监控</span>
-            </button>
+               <span>GTD系统</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('checklist')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'checklist' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <CheckCircle2 size={18} />
+                <span>功能检查</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('data-analysis')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <TrendingUp size={18} />
+                <span>数据分析</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('ppt-analysis')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'ppt-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <Presentation size={18} />
+                <span>PPT生成</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('excel-analysis')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'excel-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <Table size={18} />
+                <span>Excel导出</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('data-management')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <FolderOpen size={18} />
+                <span>数据管理</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('agent-system')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'agent-system' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <Cpu size={18} />
+                <span>Agent系统</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('skill-center')}
+                className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'skill-center' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              >
+                <Sparkles size={18} />
+                <span>技能中心</span>
+              </button>
             </div>
             
             <div className="flex items-center space-x-4">
@@ -593,7 +577,7 @@ const Home: React.FC = () => {
                           {type.icon}
                         </div>
                       </div>
-                      <p className="text-2xl font-bold">{cards.filter(c => c.type === color).length}</p>
+                      <p className="text-2xl font-bold">{cards.filter(c => c.color === color).length}</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">{type.description}</p>
                     </div>
                   ))}
@@ -620,7 +604,7 @@ const Home: React.FC = () => {
                       whileHover={{ x: 5 }}
                       className="flex items-start p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                     >
-                      <div className={`${cardTypeMap[card.type].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
+                      <div className={`${cardTypeMap[card.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
                           <h3 className="font-medium">{card.title}</h3>
@@ -628,9 +612,9 @@ const Home: React.FC = () => {
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
                         <div className="mt-2 flex items-center">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.type].bgColor} ${cardTypeMap[card.type].textColor} flex items-center`}>
-                            {cardTypeMap[card.type].icon}
-                            <span className="ml-1">{cardTypeMap[card.type].name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.color].bgColor} ${cardTypeMap[card.color].textColor} flex items-center`}>
+                            {cardTypeMap[card.color].icon}
+                            <span className="ml-1">{cardTypeMap[card.color].name}</span>
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400 ml-3">地址: {card.address}</span>
                         </div>
@@ -707,38 +691,38 @@ const Home: React.FC = () => {
                    </div>
                  ) : (
                    <>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: '蓝色卡片', value: cards.filter(c => c.type === 'blue' || c.category === '事实').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.type === 'green' || c.category === '解释').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.type === 'yellow' || c.category === '风险').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.type === 'red' || c.category === '行动').length, color: '#ef4444' },
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            paddingAngle={5}
-                            dataKey="value"
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                            labelLine={false}
-                          >
-                            {[
-                              { name: '蓝色卡片', value: cards.filter(c => c.type === 'blue' || c.category === '事实').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.type === 'green' || c.category === '解释').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.type === 'yellow' || c.category === '风险').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.type === 'red' || c.category === '行动').length, color: '#ef4444' },
-                            ].map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
+                     <div className="h-64">
+                       <ResponsiveContainer width="100%" height="100%">
+                         <PieChart>
+                           <Pie
+                             data={[
+                               { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                               { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                               { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                               { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
+                             ]}
+                             cx="50%"
+                             cy="50%"
+                             innerRadius={60}
+                             outerRadius={80}
+                             fill="#8884d8"
+                             paddingAngle={5}
+                             dataKey="value"
+                             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                             labelLine={false}
+                           >
+                             {[
+                               { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                               { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                               { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                               { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
+                             ].map((entry, index) => (
+                               <Cell key={`cell-${index}`} fill={entry.color} />
+                             ))}
+                           </Pie>
+                         </PieChart>
+                       </ResponsiveContainer>
+                     </div>
                      <div className="grid grid-cols-2 gap-2 mt-4">
                        {[
                          { name: '蓝色卡片', color: '#3b82f6' },
@@ -895,17 +879,17 @@ const Home: React.FC = () => {
                   <motion.div
                     key={card.id}
                     whileHover={{ y: -5, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
-                    className={`border rounded-xl overflow-hidden transition-all ${cardTypeMap[card.type].borderColor}`}
+                    className={`border rounded-xl overflow-hidden transition-all ${cardTypeMap[card.color].borderColor}`}
                   >
-                    <div className={`${cardTypeMap[card.type].bgColor} p-4 border-b ${cardTypeMap[card.type].borderColor}`}>
+                    <div className={`${cardTypeMap[card.color].bgColor} p-4 border-b ${cardTypeMap[card.color].borderColor}`}>
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className={`${cardTypeMap[card.type].color} p-2 rounded-full mr-3`}>
-                            {cardTypeMap[card.type].icon}
+                          <div className={`${cardTypeMap[card.color].color} p-2 rounded-full mr-3`}>
+                            {cardTypeMap[card.color].icon}
                           </div>
                           <h3 className="font-semibold">{card.title}</h3>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${cardTypeMap[card.type].color} text-white`}>{card.address}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${cardTypeMap[card.color].color} text-white`}>{card.address}</span>
                       </div>
                     </div>
                     <div className="p-4 bg-white dark:bg-gray-800">
@@ -960,55 +944,60 @@ const Home: React.FC = () => {
           </motion.div>
         )}
 
-        {/* GTD系统视图 */}
-        {activeTab === 'gtd' && (
-          <GTDSystem />
+        {/* 团队协作视图 */}
+        {activeTab === 'team' && (
+          <TeamCollaboration />
         )}
 
-        {/* 数据分析视图 */}
-        {activeTab === 'data-analysis' && (
-          <DataAnalysisPanel />
+        {/* 团队知识管理视图 */}
+        {activeTab === 'team-knowledge' && (
+          <TeamKnowledgeManagement />
         )}
 
-        {/* PPT生成视图 */}
-        {activeTab === 'ppt-analysis' && (
-          <PPTAnalysis />
+        {/* 分析报告视图 */}
+        {activeTab === 'analytics' && (
+          <AnalyticsReport />
         )}
 
-        {/* Excel导出视图 */}
-        {activeTab === 'excel-analysis' && (
-          <ExcelAnalysis />
-        )}
+         {/* GTD系统视图 */}
+         {activeTab === 'gtd' && (
+           <GTDSystem />
+         )}
+         
+         {/* 功能检查清单视图 */}
+         {activeTab === 'checklist' && (
+           <LuhmannSystemChecklist />
+         )}
 
-        {/* 数据管理视图 */}
-        {activeTab === 'data-management' && (
-          <DataManagement />
-        )}
+         {/* 数据分析视图 */}
+         {activeTab === 'data-analysis' && (
+           <DataAnalysisPanel />
+         )}
 
-        {/* Agent系统视图 */}
-        {activeTab === 'agent-system' && (
-          <AgentSystem />
-        )}
+         {/* PPT生成视图 */}
+         {activeTab === 'ppt-analysis' && (
+           <PPTAnalysis />
+         )}
 
-        {/* 技能中心视图 */}
-        {activeTab === 'skill-center' && (
-          <SkillCenter />
-        )}
+         {/* Excel导出视图 */}
+         {activeTab === 'excel-analysis' && (
+           <ExcelAnalysis />
+         )}
 
-        {/* PDF分析视图 */}
-        {activeTab === 'pdf-analysis' && (
-          <PDFAnalysis />
-        )}
+         {/* 数据管理视图 */}
+         {activeTab === 'data-management' && (
+           <DataManagement />
+         )}
 
-        {/* 批量处理视图 */}
-        {activeTab === 'batch-process' && (
-          <BatchProcess />
-        )}
+         {/* Agent系统视图 */}
+         {activeTab === 'agent-system' && (
+           <AgentSystem />
+         )}
 
-        {/* NPU监控视图 */}
-        {activeTab === 'npu-dashboard' && (
-          <NPUDashboard />
-        )}
+         {/* 技能中心视图 */}
+         {activeTab === 'skill-center' && (
+           <SkillCenter />
+         )}
        </main>
 
       {/* 页脚 */}
@@ -1067,26 +1056,14 @@ const Home: React.FC = () => {
           onClose={() => setShowImportModal(false)}
           onImport={handleImportCards}
         />
-
+        
         {/* 聊天机器人模态框 */}
         <ChatBotModal
           isOpen={showChatModal}
           onClose={() => setShowChatModal(false)}
         />
-
-        {/* 聊天机器人浮动按钮 */}
-        <motion.button
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={() => setShowChatModal(true)}
-          className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg flex items-center justify-center text-white z-50"
-          title="AI助手"
-        >
-          <MessageCircle size={28} />
-        </motion.button>
-
+        
+        <AttachSprite onClick={() => setShowChatModal(true)} serviceAvailable={isChatServiceAvailable} />
       </div>
   );
 };

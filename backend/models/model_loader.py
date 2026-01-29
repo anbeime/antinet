@@ -1,6 +1,11 @@
 """
 NPU 模型加载器
 使用AIPC预装的GenieContext进行NPU推理
+
+硬件平台: 骁龙® X Elite (X1E-84-100)
+软件工具: QAI AppBuilder v2.31.0 + QNN SDK v2.38
+Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用Hexagon NPU
+模型: Qwen2.0-7B-SSD (INT8量化QNN格式)
 """
 import os
 import sys

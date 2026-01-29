@@ -238,28 +238,32 @@ async def get_stats():
     Returns:
         统计信息
     """
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
 
-    # 总卡片数
-    cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
-    total_cards = cursor.fetchone()[0]
+        # 总卡片数
+        cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
+        total_cards = cursor.fetchone()[0]
 
-    # 按类型分组
-    cursor.execute("SELECT type, COUNT(*) as count FROM knowledge_cards GROUP BY type")
-    cards_by_type = {row[0]: row[1] for row in cursor.fetchall()}
+        # 按类型分组 - 使用 card_type 字段
+        cursor.execute("SELECT card_type, COUNT(*) as count FROM knowledge_cards WHERE card_type IS NOT NULL GROUP BY card_type")
+        cards_by_type = {row[0]: row[1] for row in cursor.fetchall() if row[0] is not None}
 
-    # 按分类分组
-    cursor.execute("SELECT category, COUNT(*) as count FROM knowledge_cards GROUP BY category")
-    cards_by_category = {row[0]: row[1] for row in cursor.fetchall()}
+        # 按分类分组
+        cursor.execute("SELECT category, COUNT(*) as count FROM knowledge_cards WHERE category IS NOT NULL GROUP BY category")
+        cards_by_category = {row[0]: row[1] for row in cursor.fetchall() if row[0] is not None}
 
-    conn.close()
+        conn.close()
 
-    return {
-        "total_cards": total_cards,
-        "cards_by_type": cards_by_type,
-        "cards_by_category": cards_by_category
-    }
+        return {
+            "total_cards": total_cards,
+            "cards_by_type": cards_by_type,
+            "cards_by_category": cards_by_category
+        }
+    except Exception as e:
+        logger.error(f"获取统计信息失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/search")

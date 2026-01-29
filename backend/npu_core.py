@@ -1,6 +1,12 @@
 """
 NPU推理核心模块
 使用 GenieContext 处理大模型（7B+）
+
+硬件平台: 骁龙® X Elite (X1E-84-100)
+软件工具: QAI AppBuilder v2.31.0 + QNN SDK v2.38
+Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用Hexagon NPU
+模型: Qwen2.0-7B-SSD (INT8量化QNN格式)
+性能模式: BURST高性能模式
 """
 import time
 import logging
@@ -74,13 +80,21 @@ class NPUInferenceCore:
             self.model = GenieContext(self.model_config_path)
             logger.info(f"[OK] GenieContext 创建成功")
 
-            # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
+            # 启用BURST性能模式以优化延迟
             try:
                 if PerfProfile is not None:
+                    # 方法1: 使用 qai_hub_models 设置 BURST 模式
                     PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
-                    logger.info("[OK] 已启用BURST性能模式")
+                    logger.info("[OK] 已启用BURST性能模式 (via qai_hub_models)")
                 else:
-                    logger.info("[INFO] 使用默认性能配置（qai_hub_models未安装）")
+                    # 方法2: 使用环境变量设置 BURST 模式
+                    import os
+                    perf_mode = os.environ.get('QNN_PERFORMANCE_MODE', '').upper()
+                    if perf_mode != 'BURST':
+                        os.environ['QNN_PERFORMANCE_MODE'] = 'BURST'
+                        logger.info("[OK] 已设置 QNN_PERFORMANCE_MODE=BURST (via env var)")
+                    else:
+                        logger.info("[OK] QNN_PERFORMANCE_MODE=BURST 已设置")
             except Exception as e:
                 logger.warning(f"[WARNING] 启用BURST模式失败: {e}")
 
