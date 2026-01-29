@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Layers, FileText, CheckCircle, Clock, Zap, Download, Settings, Play, Pause, RotateCcw } from 'lucide-react';
+import { Layers, FileText, CheckCircle, Clock, Zap, Download, Settings, Play, Pause, RotateCcw, Loader, AlertTriangle } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Task {

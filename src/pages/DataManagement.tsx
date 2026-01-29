@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Database, Upload, FolderOpen, Search, Trash2, Edit, Plus, HardDrive, Clock, Shield, BarChart3 } from 'lucide-react';
+import { Database, Upload, FolderOpen, Search, Trash2, Edit, Plus, HardDrive, Clock, Shield, BarChart3, FileText, Presentation, FileSpreadsheet, Image, Loader } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface DataFile {
