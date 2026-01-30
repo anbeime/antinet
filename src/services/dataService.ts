@@ -210,45 +210,4 @@ export const checklistService = {
   },
 };
 
-// ========== GTD任务API ==========
-export interface GtdTask {
-  id?: number;
-  title: string;
-  description?: string;
-  priority: 'low' | 'medium' | 'high';
-  dueDate?: string;
-  category: 'inbox' | 'today' | 'later' | 'archive' | 'projects';
-  created_at?: string;
-  updated_at?: string;
-}
 
-export const gtdTaskService = {
-  // 获取所有GTD任务（可选分类筛选）
-  getAll: async (category?: string): Promise<GtdTask[]> => {
-    const url = category ? `/gtd-tasks?category=${category}` : '/gtd-tasks';
-    return apiCall<GtdTask[]>(url);
-  },
-
-  // 添加GTD任务
-  add: async (task: Omit<GtdTask, 'id'>): Promise<GtdTask> => {
-    return apiCall<GtdTask>('/gtd-tasks', {
-      method: 'POST',
-      body: JSON.stringify(task),
-    });
-  },
-
-  // 更新GTD任务
-  update: async (id: number, task: Partial<GtdTask>): Promise<void> => {
-    return apiCall<void>(`/gtd-tasks/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(task),
-    });
-  },
-
-  // 删除GTD任务
-  delete: async (id: number): Promise<void> => {
-    return apiCall<void>(`/gtd-tasks/${id}`, {
-      method: 'DELETE',
-    });
-  },
-};

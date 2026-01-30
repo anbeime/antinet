@@ -66,8 +66,6 @@ export const API_ENDPOINTS = {
   DATA_COMMENTS: '/api/data/comments/{target_id}',
   DATA_ANALYTICS: '/api/data/analytics/{category}',
   DATA_CHECKLIST: '/api/data/checklist',
-  DATA_GTD_TASKS: '/api/data/gtd-tasks',
-  DATA_GTD_TASK_BY_ID: '/api/data/gtd-tasks/{task_id}',
 
   // 文档处理
   PDF_EXTRACT: '/api/pdf/extract',

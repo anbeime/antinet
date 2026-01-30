@@ -24,28 +24,23 @@ type CardColor = 'blue' | 'green' | 'yellow' | 'red';
 const cardTypeMap = {
   blue: { 
     name: '核心概念', 
-    icon: <Brain size={18} />,
-    gtdCategory: 'projects' // 对应专题研究
+    icon: <Brain size={18} />
   },
   green: { 
     name: '关联链接', 
-    icon: <Network size={18} />,
-    gtdCategory: 'today'
+    icon: <Network size={18} />
   },
   yellow: { 
     name: '参考来源', 
-    icon: <Database size={18} />,
-    gtdCategory: 'inbox'
+    icon: <Database size={18} />
   },
   red: { 
     name: '索引关键词', 
-    icon: <Search size={18} />,
-    gtdCategory: 'archive'
+    icon: <Search size={18} />
   }
 };
 
-// 定义GTD类别类型
-type GTDCategory = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
+
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -54,9 +49,7 @@ interface ImportModalProps {
     title: string;
     content: string;
     color: CardColor;
-    address: string;
-    gtdCategory: GTDCategory; // 新增GTD类别字段
-  }>) => void;
+    address: string;  }>) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({ 
@@ -73,9 +66,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     content: string;
     color: CardColor;
     confidence: number;
-    address: string;
-    gtdCategory: GTDCategory; // 新增GTD类别字段
-  }>>([]);
+    address: string;  }>>([]);
   const [showResults, setShowResults] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -85,9 +76,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     content: string;
     color: CardColor;
     confidence: number;
-    address: string;
-    gtdCategory: GTDCategory;
-  }> => {
+    address: string;  }> => {
     // 分割文本为段落
     const paragraphs = content.split('\n\n')
       .filter(para => para.trim().length > 0)
@@ -253,8 +242,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
       title: result.title,
       content: result.content,
       color: result.color,
-      address: result.address,
-      gtdCategory: result.gtdCategory // 传递GTD类别
+      address: result.address
     })));
     
     onClose();

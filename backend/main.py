@@ -191,13 +191,7 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
 
-# 注册 GTD 任务管理路由
-try:
-    from routes.gtd_routes import router as gtd_router
-    app.include_router(gtd_router)  # GTD 任务管理路由
-    logger.info("✓ GTD 任务管理路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 GTD 任务管理路由: {e}")
+
 
 # 初始化 8-Agent 系统
 @app.on_event("startup")

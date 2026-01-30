@@ -30,7 +30,6 @@ const APITestPanel: React.FC = () => {
     { name: 'NPU状态', endpoint: API_ENDPOINTS.NPU_STATUS, method: 'GET' },
     { name: '聊天卡片', endpoint: API_ENDPOINTS.CHAT_CARDS, method: 'GET' },
     { name: '团队成员', endpoint: API_ENDPOINTS.DATA_TEAM_MEMBERS, method: 'GET' },
-    { name: 'GTD任务', endpoint: API_ENDPOINTS.DATA_GTD_TASKS, method: 'GET' },
     { name: '检查清单', endpoint: API_ENDPOINTS.DATA_CHECKLIST, method: 'GET' },
     { name: '分析历史', endpoint: API_ENDPOINTS.ANALYSIS_LIST, method: 'GET' },
   ];
