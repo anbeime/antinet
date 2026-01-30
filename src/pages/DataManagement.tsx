@@ -1,309 +1,455 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Database, Upload, FolderOpen, Search, Trash2, Edit, Plus, HardDrive, Clock, Shield, BarChart3, FileText, Presentation, FileSpreadsheet, Image, Loader, CheckCircle, Download } from 'lucide-react';
+import { Database, Upload, FolderOpen, Search, Trash2, Edit, HardDrive, Clock, FileText, Presentation, FileSpreadsheet, Image, Loader, CheckCircle, Download } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { toast } from 'sonner';
 
-interface DataFile {
+interface KnowledgeCard {
   id: string;
-  name: string;
-  type: 'pdf' | 'ppt' | 'excel' | 'image' | 'text';
-  size: string;
-  modified: string;
-  status: 'processed' | 'processing' | 'failed';
+  type: string;
+  category: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  source?: string;
+  tags?: string;
+  url?: string;
 }
+
+const API_BASE = 'http://localhost:8000';
 
 const DataManagement: React.FC = () => {
   const { theme } = useTheme();
-  const [files, setFiles] = useState<DataFile[]>([]);
+  const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleBatchOperation = () => {
-    // 批量操作功能占位
-    alert('批量操作功能开发中');
-  };
-
-  const handleRefresh = () => {
-    // 刷新数据
-    window.location.reload();
-  };
-
+  // 从后端加载知识卡片
   useEffect(() => {
-    // 从后端 API 加载活动数据
-    const loadActivities = async () => {
-      try {
-        const response = await fetch('http://localhost:8000/api/data/activities?limit=20');
-        if (response.ok) {
-          const activities = await response.json();
-          // 转换活动数据为文件格式（临时方案）
-          const filesFromActivities = activities.map((activity: any, index: number) => ({
-            id: String(activity.id),
-            name: activity.content || '未命名文件',
-            type: 'text' as const,
-            size: '0KB',
-            modified: activity.timestamp || new Date().toISOString(),
-            status: 'processed' as const
-          }));
-          setFiles(filesFromActivities);
-        } else {
-          console.error('加载活动数据失败');
-          // 降级到空数组
-          setFiles([]);
-        }
-      } catch (error) {
-        console.error('加载活动数据异常:', error);
-        setFiles([]);
-      }
-    };
-
-    loadActivities();
+    loadKnowledgeCards();
   }, []);
 
-  const getFileIcon = (type: string) => {
-    const icons = {
-      pdf: <div className="w-8 h-8 rounded bg-red-100 dark:bg-red-900/30 flex items-center justify-center"><FileText className="w-5 h-5 text-red-500" /></div>,
-      ppt: <div className="w-8 h-8 rounded bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><Presentation className="w-5 h-5 text-blue-500" /></div>,
-      excel: <div className="w-8 h-8 rounded bg-green-100 dark:bg-green-900/30 flex items-center justify-center"><FileSpreadsheet className="w-5 h-5 text-green-500" /></div>,
-      image: <div className="w-8 h-8 rounded bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center"><Image className="w-5 h-5 text-purple-500" /></div>,
-      text: <div className="w-8 h-8 rounded bg-gray-100 dark:bg-gray-700 flex items-center justify-center"><FileText className="w-5 h-5 text-gray-500" /></div>
-    };
-    return icons[type as keyof typeof icons] || icons.text;
+  const loadKnowledgeCards = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/knowledge/cards`);
+      if (response.ok) {
+        const data = await response.json();
+        setCards(data);
+        console.log('已加载卡片:', data.length);
+      } else {
+        console.error('加载卡片失败');
+        toast.error('加载知识卡片失败');
+      }
+    } catch (error) {
+      console.error('加载卡片异常:', error);
+      toast.error('加载知识卡片失败');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const getStatusBadge = (status: string) => {
-    const badges = {
-      processed: <span className="px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full">已处理</span>,
-      processing: <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded-full flex items-center"><Loader className="w-3 h-3 mr-1 animate-spin"/>处理中</span>,
-      failed: <span className="px-2 py-1 text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded-full">失败</span>
-    };
-    return badges[status as keyof typeof badges] || badges.processed;
+  // 删除卡片
+  const handleDeleteCard = async (cardId: string) => {
+    if (!confirm('确定要删除这张卡片吗？')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/api/knowledge/cards/${cardId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        toast.success('卡片已删除');
+        loadKnowledgeCards();
+      } else {
+        toast.error('删除失败');
+      }
+    } catch (error) {
+      console.error('删除卡片失败:', error);
+      toast.error('删除卡片失败');
+    }
   };
 
-  const filteredFiles = files.filter(file => {
-    const matchesSearch = file.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterType === 'all' || file.type === filterType;
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedCards.size === 0) {
+      toast.warning('请先选择要删除的卡片');
+      return;
+    }
+
+    if (!confirm(`确定要删除选中的 ${selectedCards.size} 张卡片吗？`)) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        Array.from(selectedCards).map(cardId =>
+          fetch(`${API_BASE}/api/knowledge/cards/${cardId}`, { method: 'DELETE' })
+        )
+      );
+      toast.success(`已删除 ${selectedCards.size} 张卡片`);
+      setSelectedCards(new Set());
+      loadKnowledgeCards();
+    } catch (error) {
+      console.error('批量删除失败:', error);
+      toast.error('批量删除失败');
+    }
+  };
+
+  // 编辑卡片
+  const handleEditCard = (card: KnowledgeCard) => {
+    toast.info('编辑功能开发中');
+  };
+
+  // 导出卡片
+  const handleExportCards = async () => {
+    if (selectedCards.size === 0) {
+      toast.warning('请先选择要导出的卡片');
+      return;
+    }
+
+    try {
+      const exportData = cards
+        .filter(c => selectedCards.has(c.id))
+        .map(card => ({
+          id: card.id,
+          title: card.title,
+          content: card.content,
+          type: card.type,
+          category: card.category,
+          created_at: card.created_at
+        }));
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `knowledge_cards_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('卡片导出成功');
+    } catch (error) {
+      console.error('导出失败:', error);
+      toast.error('导出卡片失败');
+    }
+  };
+
+  // 过滤卡片
+  const filteredCards = cards.filter(card => {
+    const matchesSearch = !searchTerm || 
+      card.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      card.content.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = filterType === 'all' || card.category === filterType;
     return matchesSearch && matchesFilter;
   });
 
-  const storageStats = {
-    total: '15.2GB',
-    used: '8.7GB',
-    available: '6.5GB',
-    usagePercent: 57
+  // 切换卡片选择
+  const toggleCardSelection = (cardId: string) => {
+    const newSelection = new Set(selectedCards);
+    if (newSelection.has(cardId)) {
+      newSelection.delete(cardId);
+    } else {
+      newSelection.add(cardId);
+    }
+    setSelectedCards(newSelection);
+  };
+
+  // 全选/取消全选
+  const toggleSelectAll = () => {
+    if (selectedCards.size === filteredCards.length) {
+      setSelectedCards(new Set());
+    } else {
+      setSelectedCards(new Set(filteredCards.map(c => c.id)));
+    }
+  };
+
+  // 获取卡片类型统计
+  const cardStats = {
+    total: cards.length,
+    fact: cards.filter(c => c.category === '事实').length,
+    interpret: cards.filter(c => c.category === '解释').length,
+    risk: cards.filter(c => c.category === '风险').length,
+    action: cards.filter(c => c.category === '行动').length
+  };
+
+  // 获取卡片类型图标
+  const getCardIcon = (category: string) => {
+    const iconMap: Record<string, any> = {
+      '事实': <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center"><FileText className="w-4 h-4 text-blue-500" /></div>,
+      '解释': <div className="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center"><FileText className="w-4 h-4 text-green-500" /></div>,
+      '风险': <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center"><FileText className="w-4 h-4 text-yellow-500" /></div>,
+      '行动': <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center"><FileText className="w-4 h-4 text-red-500" /></div>
+    };
+    return iconMap[category] || iconMap['事实'];
+  };
+
+  // 获取卡片类型颜色
+  const getCardColor = (category: string) => {
+    const colorMap: Record<string, string> = {
+      '事实': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+      '解释': 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
+      '风险': 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800',
+      '行动': 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+    };
+    return colorMap[category] || colorMap['事实'];
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <Database className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                数据管理中心
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                统一管理所有上传的数据文件，支持NPU加速处理
-              </p>
-            </div>
-          </div>
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Panel */}
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-3 space-y-6"
-          >
-            {/* Upload */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Upload className="w-5 h-5 mr-2 text-indigo-500" />
-                上传数据
-              </h3>
-              <button className="w-full bg-indigo-500 text-white py-2 px-4 rounded-lg hover:bg-indigo-600 transition-colors flex items-center justify-center space-x-2">
-                <Plus className="w-4 h-4" />
-                <span>选择文件</span>
-              </button>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">支持 PDF、PPT、Excel、图片等格式</p>
-            </div>
-
-            {/* Storage Info */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <HardDrive className="w-5 h-5 mr-2 text-indigo-500" />
-                存储状态
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">已使用</span>
-                  <span className="font-medium">{storageStats.used} / {storageStats.total}</span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                  <motion.div 
-                    className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2.5 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${storageStats.usagePercent}%` }}
-                    transition={{ duration: 1 }}
-                  />
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  可用空间: {storageStats.available}
-                </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                <Database className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  数据管理
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400 mt-1">
+                  管理知识卡片和数据文件
+                </p>
               </div>
             </div>
 
-            {/* Quick Actions */}
+            <button
+              onClick={loadKnowledgeCards}
+              className="flex items-center space-x-1 text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+            >
+              <Clock className="w-4 h-4" />
+              刷新
+            </button>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Column - Filters */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="space-y-6"
+          >
+            {/* Search */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Shield className="w-5 h-5 mr-2 text-indigo-500" />
-                数据保护
+                <Search className="w-5 h-5 mr-2 text-indigo-500" />
+                搜索卡片
               </h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center">
-                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                  <span>端侧处理，数据不出域</span>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="搜索标题或内容..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            {/* Type Filter */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-4">类型筛选</h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => setFilterType('all')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    filterType === 'all' 
+                      ? 'bg-indigo-600 text-white' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  全部 ({cards.length})
+                </button>
+                <button
+                  onClick={() => setFilterType('事实')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    filterType === '事实' 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  事实 ({cardStats.fact})
+                </button>
+                <button
+                  onClick={() => setFilterType('解释')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    filterType === '解释' 
+                      ? 'bg-green-500 text-white' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  解释 ({cardStats.interpret})
+                </button>
+                <button
+                  onClick={() => setFilterType('风险')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    filterType === '风险' 
+                      ? 'bg-yellow-500 text-white' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  风险 ({cardStats.risk})
+                </button>
+                <button
+                  onClick={() => setFilterType('行动')}
+                  className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                    filterType === '行动' 
+                      ? 'bg-red-500 text-white' 
+                      : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300'
+                  }`}
+                >
+                  行动 ({cardStats.action})
+                </button>
+              </div>
+            </div>
+
+            {/* Storage Stats */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <HardDrive className="w-5 h-5 mr-2 text-indigo-500" />
+                存储统计
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-400">总卡片</span>
+                  <span className="font-bold text-xl text-indigo-600">{cards.length}</span>
                 </div>
-                <div className="flex items-center">
-                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                  <span>NPU加密加速</span>
-                </div>
-                <div className="flex items-center">
-                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                  <span>本地存储加密</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600 dark:text-gray-400">已选</span>
+                  <span className="font-bold text-xl text-indigo-600">{selectedCards.size}</span>
                 </div>
               </div>
             </div>
           </motion.div>
 
-          {/* Main Content */}
-          <motion.div 
+          {/* Right Column - Card List */}
+          <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-9 space-y-6"
+            className="lg:col-span-3 space-y-6"
           >
-            {/* Filters */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div className="flex items-center space-x-4">
-                  <div className="relative">
-                    <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="搜索文件..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 pr-4 py-2 w-64 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <select 
-                    value={filterType}
-                    onChange={(e) => setFilterType(e.target.value)}
-                    className="px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="all">所有类型</option>
-                    <option value="pdf">PDF</option>
-                    <option value="ppt">PPT</option>
-                    <option value="excel">Excel</option>
-                    <option value="image">图片</option>
-                    <option value="text">文档</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleBatchOperation}
-                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors text-sm"
-                  >
-                    批量操作
-                  </button>
-                  <button
-                    onClick={handleRefresh}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors text-sm"
-                  >
-                    刷新
-                  </button>
-                </div>
+            {/* Actions Bar */}
+            <div className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={toggleSelectAll}
+                  className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {selectedCards.size === filteredCards.length ? '取消全选' : '全选'}
+                </button>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  已选 {selectedCards.size} / {filteredCards.length}
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleBatchDelete}
+                  disabled={selectedCards.size === 0}
+                  className="flex items-center space-x-1 text-sm bg-red-500 text-white px-3 py-2 rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  批量删除
+                </button>
+                <button
+                  onClick={handleExportCards}
+                  disabled={selectedCards.size === 0}
+                  className="flex items-center space-x-1 text-sm bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Download className="w-4 h-4" />
+                  导出JSON
+                </button>
               </div>
             </div>
 
-            {/* Files List */}
+            {/* Card Grid */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold flex items-center">
-                  <FolderOpen className="w-5 h-5 mr-2 text-indigo-500" />
-                  文件库 ({filteredFiles.length})
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 className="text-lg font-semibold">
+                  知识卡片 ({filteredCards.length})
                 </h3>
+                {isLoading && <Loader className="w-5 h-5 animate-spin text-indigo-500" />}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                  <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-                    <tr>
-                      <th scope="col" className="px-6 py-3">文件名</th>
-                      <th scope="col" className="px-6 py-3">大小</th>
-                      <th scope="col" className="px-6 py-3">修改时间</th>
-                      <th scope="col" className="px-6 py-3">状态</th>
-                      <th scope="col" className="px-6 py-3">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredFiles.map(file => (
-                      <tr key={file.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">
-                          <div className="flex items-center space-x-3">
-                            {getFileIcon(file.type)}
-                            <span>{file.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">{file.size}</td>
-                        <td className="px-6 py-4">{file.modified}</td>
-                        <td className="px-6 py-4">{getStatusBadge(file.status)}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center space-x-2">
-                            <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><Edit className="w-4 h-4" /></button>
-                            <button className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><Download className="w-4 h-4" /></button>
-                            <button className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"><Trash2 className="w-4 h-4 text-red-500" /></button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            {/* Processing Queue */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold flex items-center">
-                  <Clock className="w-5 h-5 mr-2 text-indigo-500" />
-                  NPU处理队列
-                </h3>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <Loader className="w-5 h-5 text-yellow-500 animate-spin" />
-                      <span className="font-medium">会议纪要.docx</span>
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">分析中... 65%</div>
+              <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+                {filteredCards.length === 0 ? (
+                  <div className="text-center py-16">
+                    <FolderOpen className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+                    <p className="text-gray-500 dark:text-gray-400">暂无卡片数据</p>
                   </div>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      <span className="font-medium">项目报告.pdf</span>
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">已完成</div>
+                ) : (
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {filteredCards.map(card => (
+                      <motion.div
+                        key={card.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        whileHover={{ scale: 1.01 }}
+                        onClick={() => toggleCardSelection(card.id)}
+                        className={`p-4 cursor-pointer transition-all ${
+                          selectedCards.has(card.id)
+                            ? 'bg-indigo-50 dark:bg-indigo-900/30'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <div className="flex items-start space-x-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedCards.has(card.id)}
+                            onChange={() => toggleCardSelection(card.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start space-x-3 mb-2">
+                              {getCardIcon(card.category)}
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-gray-900 dark:text-white">{card.title}</h4>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                                  {card.content}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 mt-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditCard(card);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-indigo-500 transition-colors"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCard(card.id);
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </motion.div>

@@ -216,12 +216,29 @@ class DataAnalysisExporter:
             "numeric_summary": data.describe().to_dict() if len(data.select_dtypes(include='number').columns) > 0 else {}
         }
         
-        # 使用 Agent 进行智能预处理
+        # 简化预处理：直接使用 pandas 处理，不调用 Agent
+        # （Agent 预处理需要文件路径，不适合内存数据）
         try:
-            preprocessed = await self.preprocessor.preprocess_data(
-                data_source="memory",  # 从内存数据处理
-                data_type="dataframe"
-            )
+            # 基本数据清洗
+            cleaned_data = data.copy()
+            
+            # 处理缺失值
+            for col in cleaned_data.columns:
+                if cleaned_data[col].dtype in ['int64', 'float64']:
+                    cleaned_data[col].fillna(cleaned_data[col].mean(), inplace=True)
+                else:
+                    cleaned_data[col].fillna('', inplace=True)
+            
+            # 删除重复行
+            cleaned_data.drop_duplicates(inplace=True)
+            
+            preprocessed = {
+                "data": cleaned_data.to_dict('records'),
+                "query": query,
+                "stats": stats,
+                "cleaned_rows": len(cleaned_data)
+            }
+            logger.info(f"[DataAnalysisExporter] 数据清洗完成: {len(cleaned_data)} 行")
         except Exception as e:
             logger.warning(f"预处理失败，使用原始数据: {e}")
             preprocessed = {
