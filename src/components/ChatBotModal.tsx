@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Bot, User, FileText, Info, AlertTriangle, CheckCircle } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { X, Send, Bot, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink } from '@react-pdf/renderer';
 
 // 定义卡片类型
 interface KnowledgeCard {
@@ -217,7 +217,7 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
       document={<PDFDocument cards={cards} title={title} author={author} />}
       fileName={fileName}
     >
-      {({ blob, url, loading, error }) => {
+      {({ loading, error }) => {
         if (loading) {
           return (
             <button

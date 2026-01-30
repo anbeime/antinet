@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Upload, Download, Settings, BarChart3, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { FileText, Upload, Download, Settings, BarChart3, CheckCircle, Loader } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface ProcessingStatus {
@@ -20,7 +20,7 @@ interface AnalysisResult {
 }
 
 const PDFAnalysis: React.FC = () => {
-  const { theme } = useTheme();
+  useTheme();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);

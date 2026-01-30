@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Bookmark, Edit2, Trash2, Clock, Lightbulb, Plus, Search } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Bookmark, Edit2, Trash2, Clock, Lightbulb, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 // 定义卡片类型
@@ -212,8 +212,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <Bookmark size={18} />
             </button>
             <button 
-              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
               aria-label="编辑"
+              onClick={() => {
+                toast('编辑功能开发中，敬请期待！', {
+                  icon: <Edit2 size={16} />,
+                  className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
+                });
+              }}
             >
               <Edit2 size={18} />
             </button>

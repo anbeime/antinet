@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Presentation, Upload, Download, FileText, Loader, AlertCircle, CheckCircle } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
+import { Presentation, Download, FileText, Loader, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface KnowledgeCard {
@@ -17,8 +16,6 @@ interface KnowledgeCard {
 const API_BASE = 'http://localhost:8000';
 
 const PPTAnalysis: React.FC = () => {
-  const { theme } = useTheme();
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [pptAvailable, setPptAvailable] = useState<boolean | null>(null);
@@ -61,13 +58,7 @@ const PPTAnalysis: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    setUploadedFile(file);
-    toast.success(`文件已选择: ${file.name}`);
-  };
 
   // 导出卡片到PPT
   const exportCardsToPPT = async () => {
@@ -190,7 +181,7 @@ const PPTAnalysis: React.FC = () => {
                    pptAvailable ? 'PPT功能可用' : 'PPT功能不可用'}
                 </span>
                 {pptAvailable === true && <CheckCircle className="w-5 h-5 text-green-500" />}
-                {pptAvailable === false && <AlertCircle className="w-5 h-5 text-red-500" />}
+
               </div>
             </div>
 

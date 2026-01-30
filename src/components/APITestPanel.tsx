@@ -2,7 +2,7 @@
 // 用于测试所有后端API的连通性
 
 import React, { useState } from 'react';
-import { API_ENDPOINTS, apiRequest } from '@/config/api';
+import { API_ENDPOINTS } from '@/config/api';
 
 interface TestResult {
   endpoint: string;
@@ -19,7 +19,7 @@ const APITestPanel: React.FC = () => {
   const [testing, setTesting] = useState(false);
 
   const testEndpoints = [
-    { name: '系统健康', endpoint: API_ENDPOINTS.HEALTH, method: 'GET' },
+    { name: '系统健康', endpoint: API_ENDPOINTS.CHAT_HEALTH, method: 'GET' },
     { name: '知识卡片列表', endpoint: API_ENDPOINTS.KNOWLEDGE_CARDS, method: 'GET' },
     { name: '知识统计', endpoint: API_ENDPOINTS.KNOWLEDGE_STATS, method: 'GET' },
     { name: 'Agent状态', endpoint: API_ENDPOINTS.AGENT_STATUS, method: 'GET' },
@@ -31,7 +31,7 @@ const APITestPanel: React.FC = () => {
     { name: '聊天卡片', endpoint: API_ENDPOINTS.CHAT_CARDS, method: 'GET' },
     { name: '团队成员', endpoint: API_ENDPOINTS.DATA_TEAM_MEMBERS, method: 'GET' },
     { name: '检查清单', endpoint: API_ENDPOINTS.DATA_CHECKLIST, method: 'GET' },
-    { name: '分析历史', endpoint: API_ENDPOINTS.ANALYSIS_LIST, method: 'GET' },
+    { name: '分析历史', endpoint: API_ENDPOINTS.ANALYSIS_LIST_ANALYSES, method: 'GET' },
   ];
 
   const testSingleEndpoint = async (

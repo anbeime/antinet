@@ -94,9 +94,7 @@ const NPUPerformanceDashboard: React.FC = () => {
           data.tests.reduce((sum, t) => sum + t.avg_latency_ms, 0) / data.tests.length;
         const avgThroughput = data.tests.reduce((sum, t) => sum + t.throughput_qps, 0) / data.tests.length;
         const peakPerformance = Math.max(...data.tests.map(t => t.throughput_qps));
-        const performanceMode = data.performance_mode || 'default';
         const meetsTarget = data.meets_target !== undefined ? data.meets_target : overallAvgLatency < 500;
-        const targetLatency = data.target_latency_ms || 500;
 
         setRealtimeMetrics({
           currentLatency: overallAvgLatency,

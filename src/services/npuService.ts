@@ -64,6 +64,14 @@ export interface KnowledgeNode {
   connections: string[];
 }
 
+export interface BenchmarkResponse {
+  avg_latency_ms: number;
+  cpu_vs_npu_speedup: number;
+  memory_usage_mb: number;
+  throughput_qps: number;
+  meets_target: boolean;
+}
+
 export const npuService = {
   /**
    * 数据分析 - 生成四色卡片（8-Agent 协作）
@@ -283,6 +291,24 @@ export const npuService = {
       return await response.json();
     } catch (error) {
       console.error('健康检查失败:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 运行NPU性能基准测试
+   */
+  async benchmark(): Promise<BenchmarkResponse> {
+    try {
+      const response = await fetch(`${API_BASE}/npu/benchmark`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('基准测试失败:', error);
       throw error;
     }
   },

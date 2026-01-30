@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Brain, Eye, Shield, Target, MessageSquare, Settings, BarChart3, Crown, Zap, Network, ArrowRight, CheckCircle, History, Database, Loader, AlertTriangle } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
-import { toast } from 'sonner';
+import { Users, Brain, Eye, Shield, Target, MessageSquare, BarChart3, Crown, Zap, Network, ArrowRight, CheckCircle, History, Database } from 'lucide-react';
 
 interface Agent {
   id: string;
@@ -10,60 +8,39 @@ interface Agent {
   role: string;
   description: string;
   capabilities: string[];
-  status: 'active' | 'standby' | 'offline';
+  icon: React.ComponentType<{className?: string}>;
+  color: string;
+  status: 'active' | 'standby';
 }
-
-interface AgentStatus {
-  system_initialized: boolean;
-  agents: Record<string, string>;
-  agent_count: number;
-  active_tasks: number;
-  timestamp: string;
-}
-
-const API_BASE = 'http://localhost:8000';
 
 const AgentSystem: React.FC = () => {
-  const { theme } = useTheme();
   const [selectedAgent, setSelectedAgent] = useState<string>('taishige');
-  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [agentStatus, setAgentStatus] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // 从后端加载Agent状态
   useEffect(() => {
-    loadAgentStatus();
-
-    // 每30秒刷新一次状态
-    intervalRef.current = setInterval(loadAgentStatus, 30000);
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+    const loadAgentStatus = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('http://localhost:8001/api/agent/status');
+        if (response.ok) {
+          const status = await response.json();
+          setAgentStatus(status);
+          console.log('Agent状态:', status);
+        }
+      } catch (error) {
+        console.error('加载Agent状态失败:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
-  }, []);
 
-  const loadAgentStatus = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`${API_BASE}/api/agent/status`);
-      if (response.ok) {
-        const status: AgentStatus = await response.json();
-        setAgentStatus(status);
-        console.log('Agent状态:', status);
-      } else {
-        console.error('加载Agent状态失败');
-        toast.error('无法连接到Agent系统');
-      }
-    } catch (error) {
-      console.error('加载Agent状态异常:', error);
-      toast.error('连接Agent系统失败');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    loadAgentStatus();
+    // 每30秒刷新一次状态
+    const interval = setInterval(loadAgentStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const agents: Agent[] = [
     {
@@ -74,7 +51,7 @@ const AgentSystem: React.FC = () => {
       capabilities: ['操作日志记录', '决策轨迹追踪', '经验知识沉淀', '历史数据分析', '模式识别'],
       icon: History,
       color: 'from-blue-500 to-blue-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'jinjiyu',
@@ -84,7 +61,7 @@ const AgentSystem: React.FC = () => {
       capabilities: ['安全监控', '威胁检测', '风险评估', '情报收集', '异常预警'],
       icon: Shield,
       color: 'from-red-500 to-red-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'tongzhengsi',
@@ -94,7 +71,7 @@ const AgentSystem: React.FC = () => {
       capabilities: ['信息路由', '通讯协调', '文档流转', '会议管理', '知识分发'],
       icon: MessageSquare,
       color: 'from-green-500 to-green-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'jianchayuan',
@@ -104,7 +81,7 @@ const AgentSystem: React.FC = () => {
       capabilities: ['流程监督', '合规审计', '绩效评估', '质量控制', '改进建议'],
       icon: Eye,
       color: 'from-purple-500 to-purple-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'mi-juanfang',
@@ -114,17 +91,17 @@ const AgentSystem: React.FC = () => {
       capabilities: ['文档解析', '知识提取', '索引构建', '语义检索', '知识图谱维护'],
       icon: Database,
       color: 'from-indigo-500 to-indigo-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'chengxiang-fu',
       name: '丞相府',
-      role: '战略决策与调度中心',
-      description: '负责制定整体战略，协调各部门工作，进行资源调度和任务分配。',
-      capabilities: ['战略规划', '资源调度', '任务分配', '进度跟踪', '决策支持'],
+      role: '战略规划与决策支持官',
+      description: '基于全局数据进行战略分析，提供决策支持，协调各Agent的工作方向。',
+      capabilities: ['战略分析', '决策建模', '资源配置', '趋势预测', '多目标优化'],
       icon: Crown,
       color: 'from-yellow-500 to-yellow-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'junyiyuan',
@@ -134,7 +111,7 @@ const AgentSystem: React.FC = () => {
       capabilities: ['任务执行', '结果生成', '质量控制', '进度报告', '异常处理'],
       icon: Target,
       color: 'from-orange-500 to-orange-600',
-      status: 'standby'
+      status: 'active'
     },
     {
       id: 'zhichachao',
@@ -144,309 +121,215 @@ const AgentSystem: React.FC = () => {
       capabilities: ['任务协调', '流程优化', '沟通管理', '冲突解决', '效率提升'],
       icon: Users,
       color: 'from-teal-500 to-teal-600',
-      status: 'standby'
+      status: 'active'
     }
   ];
 
-  // 执行Agent分析
-  const handleAgentExecute = async (agentId: string) => {
-    const agent = agents.find(a => a.id === agentId);
-    if (!agent) return;
-
-    try {
-      setIsLoading(true);
-      toast.info(`正在调用 ${agent.name} 进行分析...`);
-
-      const response = await fetch(`${API_BASE}/api/agent/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `请${agent.name}分析当前系统状态并提供建议`,
-          priority: 'high'
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(`${agent.name}分析完成`);
-        console.log('Agent分析结果:', result);
-      } else {
-        toast.error('Agent分析失败');
-      }
-    } catch (error) {
-      console.error('Agent执行失败:', error);
-      toast.error('Agent执行失败');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 获取Agent状态显示
-  const getAgentStatusDisplay = (agentId: string): string => {
-    if (!agentStatus) return 'offline';
-    const status = agentStatus.agents[agentId] || 'offline';
-    return status;
-  };
-
-  const getStatusColor = (status: string): string => {
-    const colors: Record<string, string> = {
-      active: 'bg-green-500',
-      standby: 'bg-yellow-500',
-      offline: 'bg-gray-400',
-      executing: 'bg-blue-500'
-    };
-    return colors[status] || 'bg-gray-400';
-  };
-
-  const getStatusText = (status: string): string => {
-    const texts: Record<string, string> = {
-      active: '运行中',
-      standby: '待命',
-      offline: '离线',
-      executing: '执行中'
-    };
-    return texts[status] || 'offline';
-  };
-
-  // 性能数据
-  const performanceData = {
-    taskQueue: 12,
-    avgResponseTime: '340ms',
-    successRate: '98.5%',
-    npuUsage: '67%',
-    throughput: '15.3 req/s'
-  };
+  const selectedAgentData = agents.find(a => a.id === selectedAgent)!;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <motion.div
+        <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-8"
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  8-Agent智能体系统
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  协同Agent完成复杂数据分析任务
-                </p>
-              </div>
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
+              <Users className="w-6 h-6 text-white" />
             </div>
-            <button
-              onClick={loadAgentStatus}
-              className="flex items-center space-x-1 text-sm text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              <Zap className="w-4 h-4" />
-              刷新状态
-            </button>
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                8-Agent 智能协作系统
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                基于古代朝廷组织架构的现代AI智能体协作体系
+              </p>
+            </div>
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Panel - Agent List */}
-          <motion.div
+          <motion.div 
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-2 space-y-4"
+            className="lg:col-span-4 space-y-4"
           >
-            <div className="space-y-4">
-              {agents.map((agent, index) => (
-                <motion.div
-                  key={agent.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  onClick={() => setSelectedAgent(agent.id)}
-                  className={`p-6 rounded-xl border-2 transition-all cursor-pointer ${
-                    selectedAgent === agent.id
-                      ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 shadow-lg'
-                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-indigo-300 hover:shadow-md'
-                  }`}
-                >
-                  {/* Agent Header */}
-                  <div className="flex items-center justify-between mb-3">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Network className="w-5 h-5 mr-2 text-amber-500" />
+                Agent 团队
+              </h3>
+              <div className="space-y-3">
+                {agents.map(agent => (
+                  <button
+                    key={agent.id}
+                    onClick={() => setSelectedAgent(agent.id)}
+                    className={`w-full p-4 rounded-lg border-2 transition-all text-left ${selectedAgent === agent.id ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
+                  >
                     <div className="flex items-center space-x-3">
-                      <div className={`w-10 h-10 rounded-lg ${getStatusColor(getAgentStatusDisplay(agent.id))} flex items-center justify-center`}>
+                      <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${agent.color} flex items-center justify-center flex-shrink-0`}>
                         <agent.icon className="w-5 h-5 text-white" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-gray-900 dark:text-white">{agent.name}</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{agent.role}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 dark:text-white truncate">{agent.name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{agent.role}</p>
                       </div>
+                      <div className={`w-2.5 h-2.5 rounded-full ${agent.status === 'active' ? 'bg-green-500' : 'bg-gray-400'}`} />
                     </div>
-                    <div className={`px-2 py-1 text-xs rounded-full ${getStatusColor(getAgentStatusDisplay(agent.id))} text-white`}>
-                      {getStatusText(getAgentStatusDisplay(agent.id))}
-                    </div>
-                  </div>
-
-                  {/* Description */}
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                    {agent.description}
-                  </p>
-
-                  {/* Capabilities */}
-                  <div className="flex flex-wrap gap-2">
-                    {agent.capabilities.map((capability, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full"
-                      >
-                        {capability}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Action Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAgentExecute(agent.id);
-                    }}
-                    disabled={isLoading}
-                    className="w-full mt-3 flex items-center justify-center space-x-2 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    <span>{isLoading ? '执行中...' : '执行分析'}</span>
                   </button>
-                </motion.div>
-              ))}
+                ))}
+              </div>
+            </div>
+
+            {/* System Status */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <Zap className="w-5 h-5 mr-2 text-amber-500" />
+                系统状态
+              </h3>
+              <div className="space-y-3">
+                {isLoading ? (
+                  <div className="text-center text-gray-500 py-4">加载中...</div>
+                ) : agentStatus ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">系统状态</span>
+                      <span className={`font-bold ${agentStatus.status === 'running' ? 'text-green-600' : 'text-amber-600'}`}>
+                        {agentStatus.status === 'running' ? '运行中' : agentStatus.status || '未知'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">活跃Agent</span>
+                      <span className="font-bold text-green-600">{agents.filter(a => a.status === 'active').length}/8</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">NPU加速</span>
+                      <span className="font-bold text-blue-600">
+                        {agentStatus.npu_enabled !== undefined ? (agentStatus.npu_enabled ? '已启用' : '已禁用') : '已启用'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">任务队列</span>
+                      <span className="font-bold text-purple-600">{agentStatus.queue_size || 0}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center text-red-500 py-4">无法加载状态</div>
+                )}
+              </div>
             </div>
           </motion.div>
 
-          {/* Right Panel - System Status & Performance */}
-          <motion.div
+          {/* Right Panel - Agent Details */}
+          <motion.div 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="lg:col-span-1 space-y-6"
+            className="lg:col-span-8"
           >
-            {/* System Overview */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <BarChart3 className="w-5 h-5 mr-2 text-indigo-500" />
-                系统概览
-              </h3>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader className="w-8 h-8 animate-spin text-indigo-500" />
-                </div>
-              ) : agentStatus ? (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 dark:text-gray-400">系统状态</span>
-                    <span className={`px-3 py-1 text-sm rounded-full ${agentStatus.system_initialized ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                      {agentStatus.system_initialized ? '已初始化' : '未初始化'}
-                    </span>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {/* Agent Header */}
+              <div className={`p-8 bg-gradient-to-br ${selectedAgentData.color} text-white`}>
+                <div className="flex items-center space-x-6">
+                  <div className="w-20 h-20 rounded-xl bg-white/20 flex items-center justify-center">
+                    <selectedAgentData.icon className="w-10 h-10" />
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 dark:text-gray-400">Agent数量</span>
-                    <span className="font-bold text-indigo-600">{agentStatus.agent_count}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 dark:text-gray-400">活跃任务</span>
-                    <span className="font-bold text-indigo-600">{agentStatus.active_tasks}</span>
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 pt-2">
-                    最后更新: {new Date(agentStatus.timestamp).toLocaleString('zh-CN')}
+                  <div>
+                    <h2 className="text-3xl font-bold">{selectedAgentData.name}</h2>
+                    <p className="text-xl opacity-90">{selectedAgentData.role}</p>
+                    <div className="flex items-center space-x-2 mt-2">
+                      <div className={`w-3 h-3 rounded-full ${selectedAgentData.status === 'active' ? 'bg-green-400' : 'bg-gray-400'}`} />
+                      <span className="text-sm opacity-90">{selectedAgentData.status === 'active' ? '运行中' : '待机'}</span>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  无法获取系统状态
-                </div>
-              )}
-            </div>
+              </div>
 
-            {/* Performance Metrics */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Zap className="w-5 h-5 mr-2 text-indigo-500" />
-                性能指标
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-gray-400">任务队列</span>
-                  <span className="font-bold text-indigo-600">{performanceData.taskQueue}</span>
+              {/* Agent Details */}
+              <div className="p-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  {/* Description */}
+                  <div className="md:col-span-2">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center">
+                      <Brain className="w-5 h-5 mr-2 text-amber-500" />
+                      职能描述
+                    </h3>
+                    <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
+                      {selectedAgentData.description}
+                    </p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold flex items-center">
+                      <Target className="w-5 h-5 mr-2 text-amber-500" />
+                      核心能力
+                    </h3>
+                    <div className="space-y-2">
+                      {selectedAgentData.capabilities.map((capability, index) => (
+                        <div key={index} className="flex items-center text-sm">
+                          <CheckCircle className="w-4 h-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span className="text-gray-700 dark:text-gray-300">{capability}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-gray-400">平均响应</span>
-                  <span className="font-bold text-green-600">{performanceData.avgResponseTime}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-gray-400">成功率</span>
-                  <span className="font-bold text-green-600">{performanceData.successRate}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-gray-400">NPU使用率</span>
-                  <span className="font-bold text-indigo-600">{performanceData.npuUsage}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 dark:text-gray-400">吞吐量</span>
-                  <span className="font-bold text-indigo-600">{performanceData.throughput}</span>
+
+                {/* Collaboration Flow */}
+                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center">
+                    <Network className="w-5 h-5 mr-2 text-amber-500" />
+                    协作流程
+                  </h3>
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-6">
+                    <div className="flex items-center justify-between text-sm">
+                      {agents.slice(0, 4).map((agent, index) => (
+                        <React.Fragment key={agent.id}>
+                          <div className="text-center">
+                            <div className={`w-12 h-12 rounded-lg bg-gradient-to-br ${agent.color} flex items-center justify-center mx-auto mb-2`}>
+                              <agent.icon className="w-6 h-6 text-white" />
+                            </div>
+                            <p className="font-medium text-gray-900 dark:text-white">{agent.name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{agent.role}</p>
+                          </div>
+                          {index < 3 && <ArrowRight className="w-6 h-6 text-gray-400" />}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Selected Agent Detail */}
-            {selectedAgent && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                  <Settings className="w-5 h-5 mr-2 text-indigo-500" />
-                  Agent详情
-                </h3>
-                {(() => {
-                  const agent = agents.find(a => a.id === selectedAgent);
-                  if (!agent) return null;
-                  return (
-                    <div className="space-y-4">
-                      <div>
-                        <h4 className="font-semibold text-gray-900 dark:text-white mb-2">{agent.name}</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">{agent.description}</p>
-                      </div>
-
-                      <div>
-                        <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">职责范围</h5>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                          {agent.description}
-                        </p>
-                      </div>
-
-                      <div>
-                        <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">核心能力</h5>
-                        <div className="space-y-1">
-                          {agent.capabilities.map((capability, idx) => (
-                            <div key={idx} className="flex items-center space-x-2 text-xs">
-                              <CheckCircle className="w-3 h-3 text-green-500 flex-shrink-0" />
-                              <span className="text-gray-600 dark:text-gray-400">{capability}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => handleAgentExecute(agent.id)}
-                        disabled={isLoading}
-                        className="w-full mt-4 flex items-center justify-center space-x-2 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <ArrowRight className="w-4 h-4" />
-                        <span>{isLoading ? '执行中...' : '启动Agent'}</span>
-                      </button>
-                    </div>
-                  );
-                })()}
-              </motion.div>
-            )}
+            {/* Agent Performance */}
+            <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <BarChart3 className="w-5 h-5 mr-2 text-amber-500" />
+                性能表现
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">98.5%</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">任务完成率</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">1.2s</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">平均响应</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="text-2xl font-bold text-purple-600">156</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">今日处理</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600">NPU</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">加速模式</div>
+                </div>
+              </div>
+            </div>
           </motion.div>
         </div>
       </div>

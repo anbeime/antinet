@@ -68,4 +68,5 @@ const TAB_CONFIG = [
   }
 ];
 
-export { TabType, TAB_CONFIG };
+export type { TabType };
+export { TAB_CONFIG };

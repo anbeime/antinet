@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Target, FileText, Lightbulb, AlertTriangle, Compass, BookOpen, Send, Loader } from 'lucide-react';
-import { toast } from 'sonner';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -28,7 +27,7 @@ interface TaskHistory {
 const AgentSystemPanel: React.FC = () => {
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [history, setHistory] = useState<TaskHistory[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
 
   useEffect(() => {
     fetchAgentStatus();

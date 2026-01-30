@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Layers, FileText, CheckCircle, Clock, Zap, Download, Settings, Play, Pause, RotateCcw, Loader, AlertTriangle, BarChart3, Gauge } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
+import { Layers, CheckCircle, Clock, Zap, Download, Settings, Play, Pause, RotateCcw, Loader, AlertTriangle, BarChart3, Gauge } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -14,7 +13,6 @@ interface Task {
 }
 
 const BatchProcess: React.FC = () => {
-  const { theme } = useTheme();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);

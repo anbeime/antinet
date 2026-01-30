@@ -199,7 +199,7 @@ const DataAnalysisPanel: React.FC = () => {
   };
 
   // 示例查询 - TODO: 从API加载示例查询或用户自定义
-  const [exampleQueries, setExampleQueries] = useState<string[]>([]);
+  const [exampleQueries] = useState<string[]>([]);
 
   return (
     <div className="space-y-6">

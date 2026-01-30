@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Filter, Download, Calculator, TrendingUp, AlertTriangle } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Column {
@@ -25,13 +25,13 @@ interface AnalysisStats {
 }
 
 const ExcelAnalysis: React.FC = () => {
-  const { theme } = useTheme();
+  useTheme();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [data, setData] = useState<DataRow[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeSheet, setActiveSheet] = useState('Sheet1');
+
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

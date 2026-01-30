@@ -210,4 +210,80 @@ export const checklistService = {
   },
 };
 
+// GTD 任务服务
+export interface GtdTask {
+  id?: number;
+  title: string;
+  description?: string;
+  category: 'inbox' | 'today' | 'later' | 'archive' | 'projects';
+  priority: 'low' | 'medium' | 'high';
+  due_date?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const gtdTaskService = {
+  // 获取所有任务
+  getAll: async (): Promise<GtdTask[]> => {
+    return apiCall<GtdTask[]>('/gtd/tasks');
+  },
+
+  // 按类别获取任务
+  getByCategory: async (category: string): Promise<GtdTask[]> => {
+    return apiCall<GtdTask[]>(`/gtd/tasks/category/${category}`);
+  },
+
+  // 获取单个任务
+  getById: async (id: number): Promise<GtdTask> => {
+    return apiCall<GtdTask>(`/gtd/tasks/${id}`);
+  },
+
+  // 创建任务
+  add: async (task: Omit<GtdTask, 'id' | 'created_at' | 'updated_at'>): Promise<GtdTask> => {
+    return apiCall<GtdTask>('/gtd/tasks', {
+      method: 'POST',
+      body: JSON.stringify(task),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  },
+
+  // 更新任务
+  update: async (id: number, task: Partial<GtdTask>): Promise<GtdTask> => {
+    return apiCall<GtdTask>(`/gtd/tasks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(task),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  },
+
+  // 删除任务
+  delete: async (id: number): Promise<{success: boolean; message: string}> => {
+    return apiCall<{success: boolean; message: string}>(`/gtd/tasks/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // 获取统计信息
+  getStats: async (): Promise<{
+    total: number;
+    by_category: Record<string, number>;
+    by_priority: Record<string, number>;
+  }> => {
+    return apiCall('/gtd/stats');
+  },
+
+  // 健康检查
+  health: async (): Promise<{
+    status: string;
+    database: string;
+    tasks_count: number;
+  }> => {
+    return apiCall('/gtd/health');
+  },
+};
+
 

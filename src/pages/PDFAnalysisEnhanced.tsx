@@ -3,11 +3,8 @@ import { motion } from 'framer-motion';
 import {
   FileText,
   Upload,
-  Download,
-  Settings,
   BarChart3,
   CheckCircle,
-  AlertCircle,
   Loader,
   FileDown,
   Layers,
@@ -45,7 +42,7 @@ interface KnowledgeCard {
 }
 
 const PDFAnalysisEnhanced: React.FC = () => {
-  const { theme } = useTheme();
+  useTheme();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);

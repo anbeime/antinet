@@ -1,7 +1,7 @@
 // src/components/FileAnalysisPanel.tsx - 文件分析面板
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Upload, FileText, Download, Loader, CheckCircle, XCircle } from 'lucide-react';
+import { Upload, FileText, Download, Loader, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const API_BASE_URL = 'http://localhost:8000';

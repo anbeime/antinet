@@ -10,7 +10,7 @@ from datetime import datetime
 import sqlite3
 from pathlib import Path
 
-router = APIRouter(prefix="/api/gtd", tags=["GTD任务管理"])
+router = APIRouter(prefix="/api/data/gtd", tags=["GTD任务管理"])
 
 # 数据库路径
 DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"

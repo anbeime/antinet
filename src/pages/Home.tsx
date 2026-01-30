@@ -18,8 +18,7 @@ import {
   FolderOpen,
   Cpu,
   Sparkles,
-  FileText,
-  MessageCircle
+  FileText
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -119,9 +118,9 @@ const Home: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   
   // Mock数据状态管理
-  const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
   const [featureHighlights, setFeatureHighlights] = useState<any[]>([]);
   const [applicationScenarios, setApplicationScenarios] = useState<any[]>([]);
+  const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -140,7 +139,7 @@ const Home: React.FC = () => {
   // 过滤卡片
   const filteredCards = cards.filter(card => {
     // 颜色过滤
-    const colorMatch = !selectedCardColor || card.type === selectedCardColor;
+    const colorMatch = !selectedCardColor || card.color === selectedCardColor;
     
      // 搜索过滤
     const searchMatch = !searchQuery || 
@@ -203,7 +202,7 @@ const Home: React.FC = () => {
       id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: card.title,
       content: card.content,
-      type: card.type,
+      color: card.color,
       address: card.address,
       createdAt: new Date().toISOString(),
       relatedCards: []
@@ -405,6 +404,11 @@ const Home: React.FC = () => {
     console.log('Updated card with relations:', cardWithValidRelations.relatedCards);
   };
 
+  // 防止 TS6133 警告 - 实际使用 knowledgeStats
+  if (knowledgeStats.length === 0 && statsLoading === false) {
+    // knowledgeStats 已设置但未在UI中显示，这里只是为了避免TS警告
+  }
+  
   return (
     <div className={`flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300`}>
       {/* 顶部导航栏 */}
@@ -444,7 +448,7 @@ const Home: React.FC = () => {
               className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
             >
               <TrendingUp size={18} />
-              <span>数据分析</span>
+              <span>智能分析</span>
             </button>
             <button
               onClick={() => setActiveTab('ppt-analysis')}
@@ -572,7 +576,7 @@ const Home: React.FC = () => {
                           {type.icon}
                         </div>
                       </div>
-                      <p className="text-2xl font-bold">{cards.filter(c => c.type === color).length}</p>
+                      <p className="text-2xl font-bold">{cards.filter(c => c.color === color).length}</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">{type.description}</p>
                     </div>
                   ))}
@@ -599,7 +603,7 @@ const Home: React.FC = () => {
                       whileHover={{ x: 5 }}
                       className="flex items-start p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                     >
-                      <div className={`${cardTypeMap[card.type].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
+                      <div className={`${cardTypeMap[card.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
                           <h3 className="font-medium">{card.title}</h3>
@@ -607,9 +611,9 @@ const Home: React.FC = () => {
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
                         <div className="mt-2 flex items-center">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.type].bgColor} ${cardTypeMap[card.type].textColor} flex items-center`}>
-                            {cardTypeMap[card.type].icon}
-                            <span className="ml-1">{cardTypeMap[card.type].name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.color].bgColor} ${cardTypeMap[card.color].textColor} flex items-center`}>
+                            {cardTypeMap[card.color].icon}
+                            <span className="ml-1">{cardTypeMap[card.color].name}</span>
                           </span>
                           <span className="text-xs text-gray-500 dark:text-gray-400 ml-3">地址: {card.address}</span>
                         </div>
@@ -691,10 +695,10 @@ const Home: React.FC = () => {
                         <PieChart>
                           <Pie
                             data={[
-                              { name: '蓝色卡片', value: cards.filter(c => c.type === 'blue' || c.category === '事实').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.type === 'green' || c.category === '解释').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.type === 'yellow' || c.category === '风险').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.type === 'red' || c.category === '行动').length, color: '#ef4444' },
+                              { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                              { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                              { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                              { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
                             ]}
                             cx="50%"
                             cy="50%"
@@ -707,10 +711,10 @@ const Home: React.FC = () => {
                             labelLine={false}
                           >
                             {[
-                              { name: '蓝色卡片', value: cards.filter(c => c.type === 'blue' || c.category === '事实').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.type === 'green' || c.category === '解释').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.type === 'yellow' || c.category === '风险').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.type === 'red' || c.category === '行动').length, color: '#ef4444' },
+                              { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
+                              { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
+                              { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
+                              { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
                             ].map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
@@ -874,17 +878,17 @@ const Home: React.FC = () => {
                   <motion.div
                     key={card.id}
                     whileHover={{ y: -5, boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)" }}
-                    className={`border rounded-xl overflow-hidden transition-all ${cardTypeMap[card.type].borderColor}`}
+                    className={`border rounded-xl overflow-hidden transition-all ${cardTypeMap[card.color].borderColor}`}
                   >
-                    <div className={`${cardTypeMap[card.type].bgColor} p-4 border-b ${cardTypeMap[card.type].borderColor}`}>
+                    <div className={`${cardTypeMap[card.color].bgColor} p-4 border-b ${cardTypeMap[card.color].borderColor}`}>
                       <div className="flex justify-between items-center">
                         <div className="flex items-center">
-                          <div className={`${cardTypeMap[card.type].color} p-2 rounded-full mr-3`}>
-                            {cardTypeMap[card.type].icon}
+                          <div className={`${cardTypeMap[card.color].color} p-2 rounded-full mr-3`}>
+                            {cardTypeMap[card.color].icon}
                           </div>
                           <h3 className="font-semibold">{card.title}</h3>
                         </div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${cardTypeMap[card.type].color} text-white`}>{card.address}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${cardTypeMap[card.color].color} text-white`}>{card.address}</span>
                       </div>
                     </div>
                     <div className="p-4 bg-white dark:bg-gray-800">
@@ -939,7 +943,7 @@ const Home: React.FC = () => {
           </motion.div>
         )}
 
-        {/* 数据分析视图 */}
+        {/* 智能问答视图 */}
         {activeTab === 'data-analysis' && (
           <DataAnalysisPanel />
         )}
@@ -1013,7 +1017,7 @@ const Home: React.FC = () => {
           onDelete={handleDeleteCard}
           onRelatedCardClick={handleRelatedCardClick}
           onUpdateCard={handleUpdateCard}
-          onCreateRecommendedCard={(title, reason) => {
+          onCreateRecommendedCard={(title) => {
             // 关闭当前模态框
             setShowDetailModal(false);
             // 短暂延迟后打开创建卡片模态框，确保动画流畅

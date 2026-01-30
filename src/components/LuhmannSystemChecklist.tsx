@@ -9,7 +9,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { checklistService, CheckItem as CheckItemType, Section as SectionType } from '@/services/dataService';
+import { checklistService, Section as SectionType } from '@/services/dataService';
 
 
 

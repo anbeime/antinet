@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Database, Upload, FolderOpen, Search, Trash2, Edit, HardDrive, Clock, FileText, Presentation, FileSpreadsheet, Image, Loader, CheckCircle, Download } from 'lucide-react';
-import { useTheme } from '@/hooks/useTheme';
+import { Database, FolderOpen, Search, Trash2, Edit, HardDrive, Clock, FileText, Loader, Download, ListTodo } from 'lucide-react';
 import { toast } from 'sonner';
+import GTDSystem from '@/components/GTDSystem';
 
 interface KnowledgeCard {
   id: string;
@@ -17,10 +17,10 @@ interface KnowledgeCard {
   url?: string;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:8001';
 
 const DataManagement: React.FC = () => {
-  const { theme } = useTheme();
+  const [activeSubTab, setActiveSubTab] = useState<'cards' | 'tasks'>('cards');
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -102,7 +102,7 @@ const DataManagement: React.FC = () => {
   };
 
   // 编辑卡片
-  const handleEditCard = (card: KnowledgeCard) => {
+  const handleEditCard = (_card: KnowledgeCard) => {
     toast.info('编辑功能开发中');
   };
 
@@ -190,16 +190,7 @@ const DataManagement: React.FC = () => {
     return iconMap[category] || iconMap['事实'];
   };
 
-  // 获取卡片类型颜色
-  const getCardColor = (category: string) => {
-    const colorMap: Record<string, string> = {
-      '事实': 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-      '解释': 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
-      '风险': 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800',
-      '行动': 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-    };
-    return colorMap[category] || colorMap['事实'];
-  };
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
@@ -217,10 +208,10 @@ const DataManagement: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  数据管理
+                  卡片管理
                 </h1>
                 <p className="text-gray-600 dark:text-gray-400 mt-1">
-                  管理知识卡片和数据文件
+                  管理知识卡片和任务
                 </p>
               </div>
             </div>
@@ -235,6 +226,36 @@ const DataManagement: React.FC = () => {
           </div>
         </motion.div>
 
+        {/* Sub Tab Navigation */}
+        <div className="mb-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-2">
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setActiveSubTab('cards')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                activeSubTab === 'cards'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <FolderOpen size={18} />
+              <span>知识卡片</span>
+            </button>
+            <button
+              onClick={() => setActiveSubTab('tasks')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                activeSubTab === 'tasks'
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <ListTodo size={18} />
+              <span>任务管理</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Content Area */}
+        {activeSubTab === 'cards' ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Left Column - Filters */}
           <motion.div
@@ -454,6 +475,10 @@ const DataManagement: React.FC = () => {
             </div>
           </motion.div>
         </div>
+        ) : (
+          /* GTD Task Management */
+          <GTDSystem />
+        )}
       </div>
     </div>
   );

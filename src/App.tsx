@@ -12,6 +12,7 @@ import SkillCenter from "@/pages/SkillCenter";
 import { useState } from "react";
 import { AuthContext } from '@/contexts/authContext';
 
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -20,21 +21,21 @@ export default function App() {
   };
 
   return (
-    <AuthContext.Provider
-      value={{ isAuthenticated, setIsAuthenticated, logout }}
-    >
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/npu-analysis" element={<NPUAnalysis />} />
-        <Route path="/npu-dashboard" element={<NPUDashboard />} />
-        <Route path="/pdf-analysis" element={<PDFAnalysis />} />
-        <Route path="/ppt-analysis" element={<PPTAnalysis />} />
-        <Route path="/excel-analysis" element={<ExcelAnalysis />} />
-        <Route path="/data-management" element={<DataManagement />} />
-        <Route path="/batch-process" element={<BatchProcess />} />
-        <Route path="/agent-system" element={<AgentSystem />} />
-        <Route path="/skill-center" element={<SkillCenter />} />
-      </Routes>
-    </AuthContext.Provider>
+      <AuthContext.Provider
+        value={{ isAuthenticated, setIsAuthenticated, logout }}
+      >
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/npu-analysis" element={<NPUAnalysis />} />
+          <Route path="/npu-dashboard" element={<NPUDashboard />} />
+          <Route path="/pdf-analysis" element={<PDFAnalysis />} />
+          <Route path="/ppt-analysis" element={<PPTAnalysis />} />
+          <Route path="/excel-analysis" element={<ExcelAnalysis />} />
+          <Route path="/data-management" element={<DataManagement />} />
+          <Route path="/batch-process" element={<BatchProcess />} />
+          <Route path="/agent-system" element={<AgentSystem />} />
+          <Route path="/skill-center" element={<SkillCenter />} />
+        </Routes>
+      </AuthContext.Provider>
   );
 }

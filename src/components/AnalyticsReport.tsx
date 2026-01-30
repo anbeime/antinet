@@ -87,10 +87,7 @@ const AnalyticsReport: React.FC = () => {
           analyticsService.get('network')
         ]);
 
-        // 找出最高贡献者
-        const topContributor = members.reduce((max, member) =>
-          (member.contribution || 0) > (max.contribution || 0) ? member : max
-        , members[0]);
+
 
         // 设置知识增长数据
         if (analyticsGrowth?.data && Array.isArray(analyticsGrowth.data)) {

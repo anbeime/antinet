@@ -26,7 +26,7 @@ const GTDSystem: React.FC = () => {
     title: string;
     description: string;
     priority: 'low' | 'medium' | 'high';
-    dueDate?: string;
+    due_date?: string;
   }>({
     title: '',
     description: '',
@@ -82,7 +82,8 @@ const GTDSystem: React.FC = () => {
   }, []);
 
   // 格式化日期
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '无截止日期';
     const date = new Date(dateString);
     return new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric',
@@ -138,7 +139,7 @@ const GTDSystem: React.FC = () => {
         description: newTask.description,
         priority: newTask.priority as 'low' | 'medium' | 'high',
         category: activeCategory,
-        dueDate: newTask.dueDate
+        due_date: newTask.due_date
       });
 
       setTasks(prev => ({
@@ -296,10 +297,10 @@ const GTDSystem: React.FC = () => {
                 <p className="text-gray-600 dark:text-gray-300 mb-3 text-sm">{task.description}</p>
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500 dark:text-gray-400">{task.created_at ? formatDate(task.created_at) : ''}</span>
-                  {task.dueDate && (
+                  {task.due_date && (
                     <span className="text-xs bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded-full flex items-center">
                       <Calendar size={12} className="mr-1" />
-                      {formatDate(task.dueDate)}
+                      {formatDate(task.due_date)}
                     </span>
                   )}
                 </div>
