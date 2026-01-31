@@ -64,8 +64,8 @@ export const API_ENDPOINTS = {
   'DATA_CHECKLIST': '/api/data/checklist',
   'DATA_COMMENTS': '/api/data/comments',
   'DATA_COMMENTS_TARGET_ID': '/api/data/comments/{target_id}',
-  'DATA_GTD_TASKS': '/api/data/gtd-tasks',
-  'DATA_GTD_TASKS_TASK_ID': '/api/data/gtd-tasks/{task_id}',
+  'DATA_GTD_TASKS': '/api/data/gtd/tasks',
+  'DATA_GTD_TASKS_TASK_ID': '/api/data/gtd/tasks/{task_id}',
   'DATA_TEAM_MEMBERS': '/api/data/team-members',
   'DATA_TEAM_MEMBERS_MEMBER_ID': '/api/data/team-members/{member_id}',
 

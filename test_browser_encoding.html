@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>编码测试页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .test-item { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>编码测试</h1>
+  
+  <div class="test-item">
+    <h2>1. 简体中文测试</h2>
+    <p>这是简体中文测试文本。</p>
+    <p>Antinet智能知识管家 - 基于卢曼卡片盒方法的AI驱动企业知识管理系统</p>
+  </div>
+
+  <div class="test-item">
+    <h2>2. 标题测试（应该显示为蓝色卡片、绿色卡片等）</h2>
+    <p>蓝色卡片、绿色卡片、黄色卡片、红色卡片</p>
+  </div>
+
+  <div class="test-item">
+    <h2>3. 功能测试</h2>
+    <p>NPU加速推理、四色卡片系统、8-Agent智能体、智能报告生成</p>
+  </div>
+
+  <div class="test-item">
+    <h2>4. 导航链接测试</h2>
+    <p>如果你看到以上内容都是中文且没有乱码，说明编码正常。</p>
+    <a href="http://localhost:3000">点击访问主页面</a>
+  </div>
+
+  <script>
+    // 检测浏览器编码
+    document.addEventListener('DOMContentLoaded', function() {
+      const encoding = document.characterSet || document.charset;
+      console.log('浏览器编码:', encoding);
+      
+      const div = document.createElement('div');
+      div.className = 'test-item';
+      div.innerHTML = `<h2>5. 浏览器编码检测</h2><p>当前编码: <strong>${encoding}</strong></p>`;
+      document.body.appendChild(div);
+    });
+  </script>
+</body>
+</html>

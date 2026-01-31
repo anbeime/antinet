@@ -843,7 +843,7 @@ Python的基础语法包括：
             "result": {
                 "store_result": store_result,
                 "related_cases": related_cases,
-                "knowledge_graph": {"nodes": keywords, "edges": ["资源不足→进度滞后"]}
+                "knowledge_graph": {"nodes": keywords, "edges": ["资源不足->进度滞后"]}
             }
         }
         

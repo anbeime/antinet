@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .success {
+            background: #4caf50;
+            color: white;
+        }
+        .error {
+            background: #f44336;
+            color: white;
+        }
+        .pending {
+            background: #ff9800;
+            color: white;
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #666;
+            margin-top: 20px;
+        }
+        .log {
+            background: #f8f8f8;
+            border-left: 3px solid #2196f3;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Antinet 前端白屏问题诊断</h1>
+
+    <div class="test-section">
+        <h2>服务器状态检查</h2>
+        <p>前端服务器: <span id="server-status" class="status pending">检查中...</span></p>
+        <p>前端地址: <a href="http://localhost:3000" target="_blank">http://localhost:3000</a></p>
+    </div>
+
+    <div class="test-section">
+        <h2>关键资源加载检查</h2>
+        <div id="resource-tests"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>测试日志</h2>
+        <div id="log-output"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>手动测试步骤</h2>
+        <ol>
+            <li>点击上述链接打开前端页面</li>
+            <li>如果页面白屏，按 F12 打开开发者工具</li>
+            <li>查看 Console 标签页，记录所有红色错误信息</li>
+            <li>查看 Network 标签页，找出失败的请求（红色）</li>
+            <li>查看 Elements 标签页，检查 root 元素中是否有内容</li>
+            <li>截图并报告错误信息</li>
+        </ol>
+    </div>
+
+    <script>
+        const logOutput = document.getElementById('log-output');
+        const resourceTests = document.getElementById('resource-tests');
+
+        function log(message, isError = false) {
+            const time = new Date().toLocaleTimeString();
+            const logDiv = document.createElement('div');
+            logDiv.className = 'log';
+            logDiv.textContent = `[${time}] ${message}`;
+            if (isError) {
+                logDiv.style.borderLeftColor = '#f44336';
+                logDiv.style.background = '#ffebee';
+            } else {
+                logDiv.style.borderLeftColor = '#4caf50';
+            }
+            logOutput.appendChild(logDiv);
+            console.log(message);
+        }
+
+        function testResource(url, name) {
+            return fetch(url)
+                .then(response => {
+                    const status = response.ok ? 'success' : 'error';
+                    const text = response.ok ? '成功' : `失败 (${response.status})`;
+                    log(`[${name}] ${text}`, !response.ok);
+
+                    const testDiv = document.createElement('div');
+                    testDiv.style.margin = '10px 0';
+                    testDiv.innerHTML = `
+                        <strong>${name}:</strong>
+                        <span class="status ${status}">${text}</span>
+                    `;
+                    resourceTests.appendChild(testDiv);
+
+                    return response.ok;
+                })
+                .catch(error => {
+                    log(`[${name}] 错误: ${error.message}`, true);
+                    const testDiv = document.createElement('div');
+                    testDiv.style.margin = '10px 0';
+                    testDiv.innerHTML = `
+                        <strong>${name}:</strong>
+                        <span class="status error">错误: ${error.message}</span>
+                    `;
+                    resourceTests.appendChild(testDiv);
+                    return false;
+                });
+        }
+
+        // 检查服务器状态
+        fetch('http://localhost:3000')
+            .then(response => {
+                const statusSpan = document.getElementById('server-status');
+                if (response.ok) {
+                    statusSpan.className = 'status success';
+                    statusSpan.textContent = '运行正常';
+                    log('前端服务器连接成功');
+                    runTests();
+                } else {
+                    statusSpan.className = 'status error';
+                    statusSpan.textContent = '异常';
+                    log(`前端服务器返回状态: ${response.status}`, true);
+                }
+            })
+            .catch(error => {
+                const statusSpan = document.getElementById('server-status');
+                statusSpan.className = 'status error';
+                statusSpan.textContent = '无法连接';
+                log(`无法连接到前端服务器: ${error.message}`, true);
+            });
+
+        function runTests() {
+            log('开始检查关键资源...');
+            const resources = [
+                { url: '/index.html', name: 'index.html' },
+                { url: '/src/main.tsx', name: 'main.tsx (入口)' },
+                { url: '/src/App.tsx', name: 'App.tsx' },
+                { url: '/src/pages/Home.tsx', name: 'Home.tsx' },
+                { url: '/src/contexts/authContext.ts', name: 'authContext.ts' },
+                { url: '/src/hooks/useTheme.ts', name: 'useTheme.ts' },
+                { url: '/src/index.css', name: 'index.css' },
+            ];
+
+            Promise.all(resources.map(r => testResource(r.url, r.name)))
+                .then(results => {
+                    const successCount = results.filter(r => r).length;
+                    log(`资源检查完成: ${successCount}/${results.length} 成功`);
+                })
+                .catch(error => {
+                    log(`资源检查失败: ${error.message}`, true);
+                });
+        }
+
+        log('页面加载完成，开始诊断...');
+    </script>
+</body>
+</html>

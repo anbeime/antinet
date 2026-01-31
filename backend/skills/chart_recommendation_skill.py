@@ -116,23 +116,23 @@ class ChartRecommendationSkill:
     
     def _apply_decision_tree(self, features: Dict) -> tuple:
         """应用决策树推荐图表类型"""
-        # 时间序列数据 → 折线图
+        # 时间序列数据 -> 折线图
         if features.get("has_time_series"):
             return "line", "数据包含时间序列，适合折线图展示趋势"
         
-        # 比例数据 + 少量类别 → 饼图
+        # 比例数据 + 少量类别 -> 饼图
         if features.get("has_proportions") and features.get("row_count", 0) <= 7:
             return "pie", "数据表示比例关系且类别较少，适合饼图"
         
-        # 分类 + 数值 → 柱状图
+        # 分类 + 数值 -> 柱状图
         if features.get("has_categories") and features.get("has_numeric"):
             return "bar", "数据包含分类变量和数值变量，适合柱状图"
         
-        # 多个数值列 → 散点图
+        # 多个数值列 -> 散点图
         if len(features.get("numeric_columns", [])) >= 2:
             return "scatter", "数据包含多个数值变量，适合散点图分析相关性"
         
-        # 默认 → 表格
+        # 默认 -> 表格
         return "table", "数据结构复杂，建议使用表格展示"
     
     def _generate_chart_config(self, chart_type: str, data: List[Dict], features: Dict) -> Dict:

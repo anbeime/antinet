@@ -23,10 +23,10 @@ class MarkdownFormatterSkill:
         
         # 卡片类型到 Callout 类型的映射
         self.card_to_callout = {
-            "blue": "note",      # 蓝色（事实）→ note
-            "green": "tip",      # 绿色（解释）→ tip
-            "yellow": "warning", # 黄色（风险）→ warning
-            "red": "danger"      # 红色（行动）→ danger
+            "blue": "note",      # 蓝色（事实）-> note
+            "green": "tip",      # 绿色（解释）-> tip
+            "yellow": "warning", # 黄色（风险）-> warning
+            "red": "danger"      # 红色（行动）-> danger
         }
         
         # Callout 图标

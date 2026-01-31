@@ -165,7 +165,7 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
 
         # 黄色卡片：风险
         if yellow_cards:
-            response_parts.append("\n⚠️ **相关风险：**\n")
+            response_parts.append("\n[WARN]️ **相关风险：**\n")
             for card in yellow_cards[:2]:
                 title = card.get("title", "无标题")
                 content = card.get("content", {})

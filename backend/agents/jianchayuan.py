@@ -45,7 +45,7 @@ class JianchayuanAgent:
     
     def build_logic_chain(self, cause_analysis: dict) -> list:
         """
-        构建逻辑链路（原因→结果）
+        构建逻辑链路（原因->结果）
         
         参数：
             cause_analysis: dict

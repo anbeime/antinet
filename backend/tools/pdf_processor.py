@@ -498,4 +498,4 @@ if __name__ == "__main__":
     
     if PDF_AVAILABLE:
         processor = PDFProcessor()
-        print("✓ PDF 处理器初始化成功")
+        print("[OK] PDF 处理器初始化成功")

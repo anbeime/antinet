@@ -496,7 +496,7 @@ if __name__ == "__main__":
         capabilities = processor.get_capabilities()
         print("\n可用功能:")
         for feature, available in capabilities.items():
-            status = "✓" if available else "✗"
+            status = "[OK]" if available else "[FAIL]"
             print(f"  {status} {feature}")
         
         print("\n注意: ARM Windows 平台使用替代方案:")

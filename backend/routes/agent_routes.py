@@ -455,13 +455,13 @@ async def get_system_stats():
         
         # 统计各类型卡片数量
         cursor = db.conn.execute("""
-            SELECT card_type, COUNT(*) as count
+            SELECT type, COUNT(*) as count
             FROM knowledge_cards
-            GROUP BY card_type
+            GROUP BY type
         """)
         rows = cursor.fetchall()
-        
-        card_stats = {row['card_type']: row['count'] for row in rows}
+
+        card_stats = {row['type']: row['count'] for row in rows}
         
         return {
             "total_cards": sum(card_stats.values()),

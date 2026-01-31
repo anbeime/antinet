@@ -1,213 +1,181 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-测试所有修复是否生效
+快速测试脚本 - 验证数据库查询和API端点修复
 """
+import sqlite3
 import requests
-import json
-import time
-from typing import Dict, Any
+import sys
+from pathlib import Path
+import io
 
-BASE_URL = "http://localhost:8000"
+# 设置标准输出编码
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-def test_api(name: str, method: str, endpoint: str, data: Dict[str, Any] = None) -> bool:
-    """测试单个 API 端点"""
-    url = f"{BASE_URL}{endpoint}"
-    
+def test_database_query():
+    """测试数据库查询是否正常"""
+    print("=" * 60)
+    print("测试 1: 数据库查询")
+    print("=" * 60)
+
+    db_path = Path("data/antinet.db")
+    if not db_path.exists():
+        print("❌ 数据库文件不存在")
+        return False
+
     try:
-        if method == "GET":
-            response = requests.get(url, params=data, timeout=10)
-        elif method == "POST":
-            response = requests.post(url, json=data, timeout=10)
-        else:
-            print(f"  ✗ {name}: 不支持的方法 {method}")
-            return False
-        
-        if response.status_code == 200:
-            print(f"  ✓ {name}: 成功 (200)")
-            return True
-        elif response.status_code == 404:
-            print(f"  ✗ {name}: 端点不存在 (404)")
-            return False
-        elif response.status_code == 422:
-            print(f"  ✗ {name}: 参数错误 (422)")
-            print(f"    详情: {response.json()}")
-            return False
-        elif response.status_code == 500:
-            print(f"  ✗ {name}: 服务器错误 (500)")
-            print(f"    详情: {response.json()}")
-            return False
-        else:
-            print(f"  ? {name}: 状态码 {response.status_code}")
-            return False
-            
-    except requests.exceptions.ConnectionError:
-        print(f"  ✗ {name}: 无法连接到服务器")
-        return False
-    except requests.exceptions.Timeout:
-        print(f"  ✗ {name}: 请求超时")
-        return False
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # 测试查询 type 列
+        cursor.execute("SELECT type, COUNT(*) as count FROM knowledge_cards GROUP BY type")
+        rows = cursor.fetchall()
+
+        print(f"✓ 数据库查询成功")
+        print(f"卡片类型统计:")
+        for row in rows:
+            print(f"  - {row[0]}: {row[1]} 张")
+
+        conn.close()
+        return True
+
     except Exception as e:
-        print(f"  ✗ {name}: {e}")
+        print(f"❌ 数据库查询失败: {e}")
         return False
 
 
-def main():
+def test_backend_health():
+    """测试后端健康状态"""
+    print("\n" + "=" * 60)
+    print("测试 2: 后端健康检查")
     print("=" * 60)
-    print("AntiNet 修复验证测试")
-    print("=" * 60)
-    print()
-    
-    # 检查服务器是否运行
-    print("[0] 检查服务器状态...")
+
     try:
-        response = requests.get(f"{BASE_URL}/", timeout=5)
+        response = requests.get("http://localhost:8000/docs", timeout=2)
         if response.status_code == 200:
-            print("  ✓ 服务器运行正常")
+            print("✓ 后端服务运行正常")
+            return True
         else:
-            print("  ✗ 服务器响应异常")
-            return
-    except:
-        print("  ✗ 服务器未运行，请先启动: python backend/main.py")
-        return
-    
-    print()
-    
-    # 测试结果统计
-    results = {
-        "total": 0,
-        "passed": 0,
-        "failed": 0
-    }
-    
-    # ==================== 1. 测试知识库 API ====================
-    print("[1] 测试知识库 API...")
-    
-    tests = [
-        ("获取知识卡片列表", "GET", "/api/knowledge/cards", None),
-        ("获取知识卡片（带过滤）", "GET", "/api/knowledge/cards", {"card_type": "blue", "limit": 10}),
-        ("搜索知识库", "POST", "/api/knowledge/search", {"query": "测试", "limit": 5}),
-        ("获取知识图谱", "GET", "/api/knowledge/graph", {"limit": 50}),
-    ]
-    
-    for name, method, endpoint, data in tests:
-        results["total"] += 1
-        if test_api(name, method, endpoint, data):
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-    
-    print()
-    
-    # ==================== 2. 测试技能系统 API ====================
-    print("[2] 测试技能系统 API...")
-    
-    tests = [
-        ("列出所有技能", "GET", "/api/skills/list", None),
-        ("获取技能分类", "GET", "/api/skills/categories", None),
-        ("获取技能统计", "GET", "/api/skills/stats", None),
-    ]
-    
-    for name, method, endpoint, data in tests:
-        results["total"] += 1
-        if test_api(name, method, endpoint, data):
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-    
-    print()
-    
-    # ==================== 3. 测试 Agent 系统 API ====================
-    print("[3] 测试 Agent 系统 API...")
-    
-    tests = [
-        ("获取 Agent 状态", "GET", "/api/agents/status", None),
-        ("列出所有 Agent", "GET", "/api/agents/list", None),
-    ]
-    
-    for name, method, endpoint, data in tests:
-        results["total"] += 1
-        if test_api(name, method, endpoint, data):
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-    
-    print()
-    
-    # ==================== 4. 测试 NPU 性能 ====================
-    print("[4] 测试 NPU 性能...")
-    
-    # 注意：性能测试可能需要较长时间
-    print("  → 运行性能基准测试（可能需要 30-60 秒）...")
-    
+            print(f"❌ 后端响应异常: {response.status_code}")
+            return False
+
+    except Exception as e:
+        print(f"❌ 后端连接失败: {e}")
+        return False
+
+
+def test_gtd_endpoint():
+    """测试 GTD API 端点"""
+    print("\n" + "=" * 60)
+    print("测试 3: GTD API 端点")
+    print("=" * 60)
+
+    # 测试旧端点（应该 404）
     try:
-        start_time = time.time()
-        response = requests.get(f"{BASE_URL}/api/npu/benchmark", timeout=120)
-        elapsed = time.time() - start_time
-        
-        results["total"] += 1
-        
+        response = requests.get("http://localhost:8000/api/data/gtd-tasks", timeout=2)
+        if response.status_code == 404:
+            print("✓ 旧端点 /api/data/gtd-tasks 正确返回 404")
+        else:
+            print(f"⚠  旧端点状态码: {response.status_code}")
+    except Exception as e:
+        print(f"⚠  旧端点测试失败: {e}")
+
+    # 测试新端点（应该 200 或 405）
+    try:
+        response = requests.get("http://localhost:8000/api/data/gtd/tasks", timeout=2)
+        if response.status_code in [200, 405]:
+            print(f"✓ 新端点 /api/data/gtd/tasks 正常 (状态码: {response.status_code})")
+            return True
+        else:
+            print(f"❌ 新端点异常: {response.status_code} - {response.text}")
+            return False
+
+    except Exception as e:
+        print(f"❌ 新端点连接失败: {e}")
+        return False
+
+
+def test_knowledge_cards():
+    """测试知识卡片 API"""
+    print("\n" + "=" * 60)
+    print("测试 4: 知识卡片 API")
+    print("=" * 60)
+
+    try:
+        response = requests.get("http://localhost:8000/api/knowledge/cards", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            avg_latency = data.get("overall_avg_latency_ms", 0)
-            meets_target = data.get("meets_target", False)
-            
-            print(f"  ✓ 性能基准测试完成")
-            print(f"    - 平均延迟: {avg_latency:.2f}ms")
-            print(f"    - 目标: <500ms")
-            print(f"    - 达标: {'是' if meets_target else '否'}")
-            print(f"    - 测试耗时: {elapsed:.1f}s")
-            
-            results["passed"] += 1
-            
-            if not meets_target:
-                print()
-                print("  ⚠️  NPU 性能未达标，可能原因:")
-                print("    1. 未正确使用 NPU execution provider")
-                print("    2. 模型未正确量化")
-                print("    3. BURST 模式未启用")
-                print("    4. 提示词过长或生成 token 数过多")
-        elif response.status_code == 500:
-            print(f"  ✗ 性能基准测试失败 (500)")
-            error = response.json()
-            print(f"    详情: {error.get('detail', 'Unknown error')}")
-            results["failed"] += 1
+            print(f"✓ 获取卡片成功，共 {len(data.get('cards', []))} 张")
+            return True
         else:
-            print(f"  ? 性能基准测试返回状态码 {response.status_code}")
-            results["failed"] += 1
-            
-    except requests.exceptions.Timeout:
-        print(f"  ✗ 性能基准测试超时（>120s）")
-        results["total"] += 1
-        results["failed"] += 1
+            print(f"❌ 获取卡片失败: {response.status_code}")
+            return False
+
     except Exception as e:
-        print(f"  ✗ 性能基准测试异常: {e}")
-        results["total"] += 1
-        results["failed"] += 1
-    
-    print()
-    
-    # ==================== 总结 ====================
+        print(f"❌ 卡片 API 连接失败: {e}")
+        return False
+
+
+def test_chat_query():
+    """测试聊天查询 API"""
+    print("\n" + "=" * 60)
+    print("测试 5: 聊天查询 API")
     print("=" * 60)
-    print("测试结果汇总")
-    print("=" * 60)
-    print(f"总测试数: {results['total']}")
-    print(f"通过: {results['passed']} ✓")
-    print(f"失败: {results['failed']} ✗")
-    print(f"通过率: {results['passed']/results['total']*100:.1f}%")
-    print()
-    
-    if results["failed"] == 0:
-        print("🎉 所有测试通过！")
-    else:
-        print("⚠️  部分测试失败，请检查上述错误信息")
-        print()
-        print("常见问题排查:")
-        print("  1. 数据库表缺失 → 运行 python fix_all_issues.py")
-        print("  2. 路由 404 → 检查 backend/main.py 是否正确注册路由")
-        print("  3. 参数错误 422 → 检查 Pydantic 模型定义")
-        print("  4. NPU 性能问题 → 检查 QNN 日志和配置")
-    print()
+
+    try:
+        response = requests.post(
+            "http://localhost:8000/api/chat/query",
+            json={"query": "测试"},
+            timeout=10
+        )
+        if response.status_code == 200:
+            print("✓ 聊天查询成功")
+            return True
+        else:
+            print(f"❌ 聊天查询失败: {response.status_code}")
+            return False
+
+    except Exception as e:
+        print(f"❌ 聊天 API 连接失败: {e}")
+        return False
 
 
 if __name__ == "__main__":
-    main()
+    print("\n" + "=" * 60)
+    print("Antinet 修复验证测试")
+    print("=" * 60)
+
+    results = []
+
+    # 依次执行测试
+    results.append(("数据库查询", test_database_query()))
+    results.append(("后端健康", test_backend_health()))
+    results.append(("GTD 端点", test_gtd_endpoint()))
+    results.append(("知识卡片", test_knowledge_cards()))
+    results.append(("聊天查询", test_chat_query()))
+
+    # 汇总结果
+    print("\n" + "=" * 60)
+    print("测试结果汇总")
+    print("=" * 60)
+
+    passed = 0
+    failed = 0
+
+    for name, result in results:
+        status = "✓ 通过" if result else "❌ 失败"
+        print(f"{name:12s} {status}")
+        if result:
+            passed += 1
+        else:
+            failed += 1
+
+    print("-" * 60)
+    print(f"总计: {passed} 通过, {failed} 失败")
+
+    if failed == 0:
+        print("\n🎉 所有测试通过！")
+        sys.exit(0)
+    else:
+        print(f"\n⚠️  有 {failed} 个测试失败")
+        sys.exit(1)

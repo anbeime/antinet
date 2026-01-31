@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查 localStorage</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .storage-item { margin: 10px 0; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; }
+    .key { font-weight: bold; color: blue; }
+    .value { color: #333; }
+    button { padding: 10px 20px; margin: 10px; font-size: 16px; background: #007bff; color: white; border: none; cursor: pointer; }
+    button:hover { background: #0056b3; }
+    .clear-btn { background: #dc3545; }
+    .clear-btn:hover { background: #a71d2a; }
+  </style>
+</head>
+<body>
+  <h1>localStorage 检查工具</h1>
+
+  <div>
+    <button onclick="showStorage()">显示所有 localStorage</button>
+    <button onclick="clearAntinetStorage()" class="clear-btn">清除 Antinet 数据</button>
+    <button onclick="goToMain()">访问主页</button>
+  </div>
+
+  <div id="storage-list"></div>
+
+  <script>
+    function showStorage() {
+      const listDiv = document.getElementById('storage-list');
+      listDiv.innerHTML = '<h2>localStorage 内容：</h2>';
+
+      let count = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        const value = localStorage.getItem(key);
+
+        count++;
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'storage-item';
+        itemDiv.innerHTML = `<span class="key">${key}:</span><br><span class="value">${value}</span>`;
+        listDiv.appendChild(itemDiv);
+
+        // 特别检查 antinet_activeTab
+        if (key === 'antinet_activeTab') {
+          itemDiv.style.background = '#fff3cd';
+          itemDiv.style.border = '2px solid orange';
+          itemDiv.innerHTML += `<br><strong style="color: red;">⚠️ 检测到 activeTab: ${value}</strong>`;
+
+          // 检查是否是无效值
+          const validTabs = ['dashboard', 'cards', 'data-analysis', 'ppt-analysis', 'excel-analysis', 'data-management', 'agent-system', 'skill-center', 'pdf-analysis', 'batch-process'];
+          if (!validTabs.includes(value)) {
+            itemDiv.innerHTML += `<br><strong style="color: red;">❌ 无效的 activeTab 值！可能导致白屏。</strong>`;
+          } else {
+            itemDiv.innerHTML += `<br><strong style="color: green;">✅ activeTab 值有效</strong>`;
+          }
+        }
+      }
+
+      if (count === 0) {
+        listDiv.innerHTML += '<p>localStorage 为空</p>';
+      }
+    }
+
+    function clearAntinetStorage() {
+      if (confirm('确定要清除所有 Antinet 相关的 localStorage 数据吗？')) {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key.startsWith('antinet_')) {
+            keysToRemove.push(key);
+          }
+        }
+
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        alert(`已清除 ${keysToRemove.length} 个项`);
+        showStorage();
+      }
+    }
+
+    function goToMain() {
+      window.location.href = 'http://localhost:3000';
+    }
+
+    // 页面加载时自动显示
+    showStorage();
+  </script>
+</body>
+</html>

@@ -43,9 +43,9 @@ class LocalTTSGenerator:
         
         try:
             self.tts = TTS(model_name=full_model_name)
-            print("[LocalTTS] ✓ 模型加载完成")
+            print("[LocalTTS] [OK] 模型加载完成")
         except Exception as e:
-            print(f"[LocalTTS] ✗ 模型加载失败: {e}")
+            print(f"[LocalTTS] [FAIL] 模型加载失败: {e}")
             raise
     
     def generate_voiceover(
@@ -77,10 +77,10 @@ class LocalTTSGenerator:
                 file_path=output_path,
                 speaker=speaker
             )
-            print(f"[LocalTTS] ✓ 配音已保存: {output_path}")
+            print(f"[LocalTTS] [OK] 配音已保存: {output_path}")
             return output_path
         except Exception as e:
-            print(f"[LocalTTS] ✗ 配音生成失败: {e}")
+            print(f"[LocalTTS] [FAIL] 配音生成失败: {e}")
             raise
     
     def batch_generate(
@@ -116,10 +116,10 @@ class LocalTTSGenerator:
                 audio_files.append(str(output_path))
                 print(f"[LocalTTS] 进度: {idx}/{total}")
             except Exception as e:
-                print(f"[LocalTTS] ✗ 第 {idx} 个配音失败: {e}")
+                print(f"[LocalTTS] [FAIL] 第 {idx} 个配音失败: {e}")
                 continue
         
-        print(f"[LocalTTS] ✓ 批量生成完成，成功 {len(audio_files)}/{total}")
+        print(f"[LocalTTS] [OK] 批量生成完成，成功 {len(audio_files)}/{total}")
         return audio_files
     
     def get_available_models(self) -> List[str]:
@@ -145,9 +145,9 @@ class FallbackTTSGenerator:
                     self.engine.setProperty('voice', v.id)
                     break
             
-            print("[FallbackTTS] ✓ 备用TTS初始化完成（pyttsx3）")
+            print("[FallbackTTS] [OK] 备用TTS初始化完成（pyttsx3）")
         except Exception as e:
-            print(f"[FallbackTTS] ✗ 初始化失败: {e}")
+            print(f"[FallbackTTS] [FAIL] 初始化失败: {e}")
             raise
     
     def generate_voiceover(self, text: str, output_path: str) -> str:
@@ -160,10 +160,10 @@ class FallbackTTSGenerator:
         try:
             self.engine.save_to_file(text, output_path)
             self.engine.runAndWait()
-            print(f"[FallbackTTS] ✓ 配音已保存: {output_path}")
+            print(f"[FallbackTTS] [OK] 配音已保存: {output_path}")
             return output_path
         except Exception as e:
-            print(f"[FallbackTTS] ✗ 配音生成失败: {e}")
+            print(f"[FallbackTTS] [FAIL] 配音生成失败: {e}")
             raise
 
 
@@ -188,7 +188,7 @@ def get_tts_generator(prefer_quality: bool = True):
         import pyttsx3
         return FallbackTTSGenerator()
     except ImportError:
-        print("[TTS] ✗ 没有可用的TTS引擎")
+        print("[TTS] [FAIL] 没有可用的TTS引擎")
         print("[TTS] 请安装: pip install TTS 或 pip install pyttsx3")
         raise
 
@@ -220,21 +220,21 @@ if __name__ == "__main__":
         generator.generate_voiceover(test_texts[0], output_file)
         
         if Path(output_file).exists():
-            print(f"[测试1] ✓ 成功！文件大小: {Path(output_file).stat().st_size} bytes")
+            print(f"[测试1] [OK] 成功！文件大小: {Path(output_file).stat().st_size} bytes")
         
         # 测试批量配音
         print("\n[测试2] 批量配音生成...")
         output_dir = "test_voiceovers"
         audio_files = generator.batch_generate(test_texts, output_dir)
         
-        print(f"[测试2] ✓ 成功！生成了 {len(audio_files)} 个文件")
+        print(f"[测试2] [OK] 成功！生成了 {len(audio_files)} 个文件")
         
         print("\n" + "=" * 60)
-        print("✓ 所有测试通过！本地TTS配音功能正常")
+        print("[OK] 所有测试通过！本地TTS配音功能正常")
         print("=" * 60)
         
     except Exception as e:
-        print(f"\n✗ 测试失败: {e}")
+        print(f"\n[FAIL] 测试失败: {e}")
         print("\n请安装依赖:")
         print("  pip install TTS")
         print("或:")

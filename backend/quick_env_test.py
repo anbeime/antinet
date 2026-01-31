@@ -25,7 +25,7 @@ print(f"   路径: {sys.executable}")
 print(f"\n2. 虚拟环境检查:")
 venv_path = sys.executable
 is_venv = "venv_arm64" in venv_path
-print(f"   是否使用虚拟环境: {'✓ 是' if is_venv else '✗ 否'}")
+print(f"   是否使用虚拟环境: {'[OK] 是' if is_venv else '[FAIL] 否'}")
 print(f"   虚拟环境路径: {venv_path}")
 
 # 3. 依赖检查
@@ -42,9 +42,9 @@ missing_deps = []
 for dep, name in dependencies.items():
     try:
         __import__(dep)
-        print(f"   ✓ {name}")
+        print(f"   [OK] {name}")
     except ImportError:
-        print(f"   ✗ {name} - 未安装")
+        print(f"   [FAIL] {name} - 未安装")
         missing_deps.append(dep)
 
 # 4. NPU 库检查
@@ -53,33 +53,33 @@ npu_lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
 bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 
 print(f"   QAI 库路径: {npu_lib_path}")
-print(f"   状态: {'✓ 存在' if os.path.exists(npu_lib_path) else '✗ 不存在'}")
+print(f"   状态: {'[OK] 存在' if os.path.exists(npu_lib_path) else '[FAIL] 不存在'}")
 print(f"   Bridge 库路径: {bridge_lib_path}")
-print(f"   状态: {'✓ 存在' if os.path.exists(bridge_lib_path) else '✗ 不存在'}")
+print(f"   状态: {'[OK] 存在' if os.path.exists(bridge_lib_path) else '[FAIL] 不存在'}")
 
 # 5. QAI AppBuilder 检查
 print(f"\n5. QAI AppBuilder 检查:")
 try:
     import qai_appbuilder
-    print(f"   ✓ QAI AppBuilder 已安装")
+    print(f"   [OK] QAI AppBuilder 已安装")
 except ImportError:
-    print(f"   ✗ QAI AppBuilder 未安装")
+    print(f"   [FAIL] QAI AppBuilder 未安装")
     missing_deps.append("qai_appbuilder")
 
 # 6. 数据库检查
 print(f"\n6. 数据库检查:")
 db_path = os.path.join(project_root, "antinet.db")
 print(f"   数据库路径: {db_path}")
-print(f"   状态: {'✓ 存在' if os.path.exists(db_path) else '✗ 不存在'}")
+print(f"   状态: {'[OK] 存在' if os.path.exists(db_path) else '[FAIL] 不存在'}")
 
 # 7. 配置检查
 print(f"\n7. 配置检查:")
 try:
     from config import settings
-    print(f"   ✓ 配置文件加载成功")
+    print(f"   [OK] 配置文件加载成功")
     print(f"   数据库URL: {settings.DATABASE_URL[:50]}...")
 except Exception as e:
-    print(f"   ✗ 配置文件加载失败: {e}")
+    print(f"   [FAIL] 配置文件加载失败: {e}")
 
 # 总结
 print("\n" + "=" * 60)
@@ -87,23 +87,23 @@ print("测试总结")
 print("=" * 60)
 
 if missing_deps:
-    print(f"\n✗ 缺少 {len(missing_deps)} 个依赖包:")
+    print(f"\n[FAIL] 缺少 {len(missing_deps)} 个依赖包:")
     for dep in missing_deps:
         print(f"   - {dep}")
     print(f"\n请运行: pip install {' '.join(missing_deps)}")
 else:
-    print(f"\n✓ 所有核心依赖已安装")
+    print(f"\n[OK] 所有核心依赖已安装")
 
 print(f"\n建议操作:")
 if is_venv:
-    print(f"  ✓ 虚拟环境正确激活")
+    print(f"  [OK] 虚拟环境正确激活")
 else:
-    print(f"  ✗ 请使用 ARM64 虚拟环境: c:\\test\\antinet\\venv_arm64\\Scripts\\activate")
+    print(f"  [FAIL] 请使用 ARM64 虚拟环境: c:\\test\\antinet\\venv_arm64\\Scripts\\activate")
 
 if not missing_deps and is_venv:
-    print(f"  ✓ 环境准备就绪,可以启动后端")
+    print(f"  [OK] 环境准备就绪,可以启动后端")
     print(f"  启动命令: python backend/main.py")
 else:
-    print(f"  ✗ 环境未完全准备,请先解决上述问题")
+    print(f"  [FAIL] 环境未完全准备,请先解决上述问题")
 
 print("\n" + "=" * 60)

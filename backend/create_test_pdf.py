@@ -34,7 +34,7 @@ def create_test_pdf():
     c.drawString(120, 590, "- 四色卡片知识管理")
     
     c.save()
-    print("✓ 测试 PDF 已创建: test_document.pdf")
+    print("[OK] 测试 PDF 已创建: test_document.pdf")
 
 if __name__ == "__main__":
     create_test_pdf()

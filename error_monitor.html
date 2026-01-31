@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时错误捕获</title>
+    <style>
+        body {
+            font-family: 'Consolas', monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .error-box {
+            background: #3c1f1f;
+            border-left: 4px solid #f44336;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .warning-box {
+            background: #3d3416;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .info-box {
+            background: #1f3c3c;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success-box {
+            background: #1f3c1f;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        pre {
+            background: #252526;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .timestamp {
+            color: #858585;
+            font-size: 12px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        #iframe-container {
+            margin-top: 20px;
+            border: 2px solid #444;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Antinet 前端实时错误监控</h1>
+    
+    <div class="info-box">
+        <strong>监控说明：</strong>
+        <ul>
+            <li>此页面会在iframe中加载前端应用</li>
+            <li>捕获所有JavaScript错误和警告</li>
+            <li>显示网络请求失败</li>
+            <li>监控React渲染错误</li>
+        </ul>
+    </div>
+
+    <div>
+        <button onclick="loadApp()">加载前端应用</button>
+        <button onclick="clearLogs()">清除日志</button>
+        <button onclick="testAPI()">测试API</button>
+    </div>
+
+    <h2>📋 错误日志</h2>
+    <div id="logs"></div>
+
+    <h2>🖥️ 前端应用预览</h2>
+    <div id="iframe-container">
+        <p style="padding: 20px; color: #888;">点击"加载前端应用"按钮开始...</p>
+    </div>
+
+    <script>
+        const logsDiv = document.getElementById('logs');
+        let errorCount = 0;
+        let warningCount = 0;
+
+        function addLog(type, message, details = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.createElement('div');
+            logDiv.className = type + '-box';
+            
+            let icon = '📝';
+            if (type === 'error') {
+                icon = '❌';
+                errorCount++;
+            } else if (type === 'warning') {
+                icon = '⚠️';
+                warningCount++;
+            } else if (type === 'success') {
+                icon = '✅';
+            }
+            
+            logDiv.innerHTML = `
+                <div>
+                    <strong>${icon} ${type.toUpperCase()}</strong>
+                    <span class="timestamp">${timestamp}</span>
+                </div>
+                <div style="margin-top: 5px;">${message}</div>
+                ${details ? `<pre>${details}</pre>` : ''}
+            `;
+            
+            logsDiv.insertBefore(logDiv, logsDiv.firstChild);
+            
+            // 更新标题显示错误数
+            document.title = `错误:${errorCount} 警告:${warningCount} - 实时监控`;
+        }
+
+        function clearLogs() {
+            logsDiv.innerHTML = '';
+            errorCount = 0;
+            warningCount = 0;
+            document.title = '实时错误捕获';
+            addLog('info', '日志已清除');
+        }
+
+        async function testAPI() {
+            addLog('info', '开始测试API...');
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/knowledge/cards');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                addLog('success', `API测试成功，获取到 ${data.length} 条数据`, 
+                    `第一条数据:\n${JSON.stringify(data[0], null, 2)}`);
+                
+                // 检查数据格式
+                const firstCard = data[0];
+                const issues = [];
+                if (!firstCard.card_type) issues.push('缺少 card_type 字段');
+                if (!firstCard.title) issues.push('缺少 title 字段');
+                if (!firstCard.content) issues.push('缺少 content 字段');
+                
+                if (issues.length > 0) {
+                    addLog('warning', '数据格式问题', issues.join('\n'));
+                } else {
+                    addLog('success', '数据格式正确');
+                }
+                
+            } catch (error) {
+                addLog('error', 'API测试失败', error.message);
+            }
+        }
+
+        function loadApp() {
+            const container = document.getElementById('iframe-container');
+            container.innerHTML = '<iframe src="http://localhost:3000"></iframe>';
+            addLog('info', '正在加载前端应用...');
+            
+            // 监听iframe加载
+            const iframe = container.querySelector('iframe');
+            iframe.onload = () => {
+                addLog('success', '前端应用加载完成');
+                
+                // 尝试访问iframe内容（可能因跨域限制失败）
+                try {
+                    const iframeWindow = iframe.contentWindow;
+                    
+                    // 捕获iframe中的错误
+                    iframeWindow.addEventListener('error', (event) => {
+                        addLog('error', 'iframe错误', 
+                            `文件: ${event.filename}\n行号: ${event.lineno}\n消息: ${event.message}`);
+                    });
+                    
+                    // 捕获未处理的Promise拒绝
+                    iframeWindow.addEventListener('unhandledrejection', (event) => {
+                        addLog('error', 'Promise拒绝', event.reason);
+                    });
+                    
+                    addLog('success', '已启用iframe错误监控');
+                } catch (e) {
+                    addLog('warning', '无法监控iframe内部（跨域限制）', 
+                        '请打开浏览器控制台查看详细错误');
+                }
+            };
+            
+            iframe.onerror = () => {
+                addLog('error', '前端应用加载失败', '请确保前端服务运行在 http://localhost:3000');
+            };
+        }
+
+        // 全局错误捕获
+        window.addEventListener('error', (event) => {
+            addLog('error', '全局错误', 
+                `文件: ${event.filename}\n行号: ${event.lineno}\n消息: ${event.message}`);
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            addLog('error', 'Promise拒绝', event.reason);
+        });
+
+        // 初始化
+        addLog('info', '错误监控已启动');
+        addLog('info', '前端地址: http://localhost:3000');
+        addLog('info', '后端地址: http://localhost:8000');
+    </script>
+</body>
+</html>

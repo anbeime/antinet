@@ -52,12 +52,12 @@ def test_team_members():
         response = requests.get(f"{BASE_URL}/api/data/team-members")
         if response.status_code == 200:
             members = response.json()
-            results.append(f"✓ GET 成功，找到 {len(members)} 个成员")
+            results.append(f"[OK] GET 成功，找到 {len(members)} 个成员")
         else:
-            results.append(f"✗ GET 失败: {response.status_code}")
+            results.append(f"[FAIL] GET 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET 异常: {e}")
+        results.append(f"[FAIL] GET 异常: {e}")
         return False, "; ".join(results)
     
     # 2. POST 添加新成员
@@ -73,12 +73,12 @@ def test_team_members():
         if response.status_code == 200:
             member = response.json()
             member_id = member.get('id')
-            results.append(f"✓ POST 成功，ID: {member_id}")
+            results.append(f"[OK] POST 成功，ID: {member_id}")
         else:
-            results.append(f"✗ POST 失败: {response.status_code}")
+            results.append(f"[FAIL] POST 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ POST 异常: {e}")
+        results.append(f"[FAIL] POST 异常: {e}")
         return False, "; ".join(results)
     
     # 3. PUT 更新成员信息
@@ -87,22 +87,22 @@ def test_team_members():
         try:
             response = requests.put(f"{BASE_URL}/api/data/team-members/{member_id}", json=update_data)
             if response.status_code == 200:
-                results.append(f"✓ PUT 成功")
+                results.append(f"[OK] PUT 成功")
             else:
-                results.append(f"✗ PUT 失败: {response.status_code}")
+                results.append(f"[FAIL] PUT 失败: {response.status_code}")
         except Exception as e:
-            results.append(f"✗ PUT 异常: {e}")
+            results.append(f"[FAIL] PUT 异常: {e}")
     
     # 4. DELETE 删除成员
     if member_id:
         try:
             response = requests.delete(f"{BASE_URL}/api/data/team-members/{member_id}")
             if response.status_code == 200:
-                results.append(f"✓ DELETE 成功")
+                results.append(f"[OK] DELETE 成功")
             else:
-                results.append(f"✗ DELETE 失败: {response.status_code}")
+                results.append(f"[FAIL] DELETE 失败: {response.status_code}")
         except Exception as e:
-            results.append(f"✗ DELETE 异常: {e}")
+            results.append(f"[FAIL] DELETE 异常: {e}")
     
     return True, "; ".join(results)
 
@@ -115,12 +115,12 @@ def test_knowledge_spaces():
         response = requests.get(f"{BASE_URL}/api/data/knowledge-spaces")
         if response.status_code == 200:
             spaces = response.json()
-            results.append(f"✓ GET 成功，找到 {len(spaces)} 个空间")
+            results.append(f"[OK] GET 成功，找到 {len(spaces)} 个空间")
         else:
-            results.append(f"✗ GET 失败: {response.status_code}")
+            results.append(f"[FAIL] GET 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET 异常: {e}")
+        results.append(f"[FAIL] GET 异常: {e}")
         return False, "; ".join(results)
     
     # 2. POST 添加新空间
@@ -136,11 +136,11 @@ def test_knowledge_spaces():
         if response.status_code == 200:
             space = response.json()
             space_id = space.get('id')
-            results.append(f"✓ POST 成功，ID: {space_id}")
+            results.append(f"[OK] POST 成功，ID: {space_id}")
         else:
-            results.append(f"✗ POST 失败: {response.status_code}")
+            results.append(f"[FAIL] POST 失败: {response.status_code}")
     except Exception as e:
-        results.append(f"✗ POST 异常: {e}")
+        results.append(f"[FAIL] POST 异常: {e}")
     
     return True, "; ".join(results)
 
@@ -153,12 +153,12 @@ def test_activities():
         response = requests.get(f"{BASE_URL}/api/data/activities?limit=5")
         if response.status_code == 200:
             activities = response.json()
-            results.append(f"✓ GET 成功，找到 {len(activities)} 个活动")
+            results.append(f"[OK] GET 成功，找到 {len(activities)} 个活动")
         else:
-            results.append(f"✗ GET 失败: {response.status_code}")
+            results.append(f"[FAIL] GET 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET 异常: {e}")
+        results.append(f"[FAIL] GET 异常: {e}")
         return False, "; ".join(results)
     
     # 2. POST 添加新活动
@@ -171,11 +171,11 @@ def test_activities():
     try:
         response = requests.post(f"{BASE_URL}/api/data/activities", json=new_activity)
         if response.status_code == 200:
-            results.append(f"✓ POST 成功")
+            results.append(f"[OK] POST 成功")
         else:
-            results.append(f"✗ POST 失败: {response.status_code}")
+            results.append(f"[FAIL] POST 失败: {response.status_code}")
     except Exception as e:
-        results.append(f"✗ POST 异常: {e}")
+        results.append(f"[FAIL] POST 异常: {e}")
     
     return True, "; ".join(results)
 
@@ -188,12 +188,12 @@ def test_comments():
         response = requests.get(f"{BASE_URL}/api/data/comments/1?target_type=space")
         if response.status_code == 200:
             comments = response.json()
-            results.append(f"✓ GET 成功，找到 {len(comments)} 个评论")
+            results.append(f"[OK] GET 成功，找到 {len(comments)} 个评论")
         else:
-            results.append(f"✗ GET 失败: {response.status_code}")
+            results.append(f"[FAIL] GET 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET 异常: {e}")
+        results.append(f"[FAIL] GET 异常: {e}")
         return False, "; ".join(results)
     
     # 2. POST 添加新评论
@@ -208,11 +208,11 @@ def test_comments():
     try:
         response = requests.post(f"{BASE_URL}/api/data/comments", json=new_comment)
         if response.status_code == 200:
-            results.append(f"✓ POST 成功")
+            results.append(f"[OK] POST 成功")
         else:
-            results.append(f"✗ POST 失败: {response.status_code}")
+            results.append(f"[FAIL] POST 失败: {response.status_code}")
     except Exception as e:
-        results.append(f"✗ POST 异常: {e}")
+        results.append(f"[FAIL] POST 异常: {e}")
     
     return True, "; ".join(results)
 
@@ -225,12 +225,12 @@ def test_analytics():
         response = requests.get(f"{BASE_URL}/api/data/analytics/growth")
         if response.status_code == 200:
             data = response.json()
-            results.append(f"✓ GET growth 成功")
+            results.append(f"[OK] GET growth 成功")
         else:
-            results.append(f"✗ GET growth 失败: {response.status_code}")
+            results.append(f"[FAIL] GET growth 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET growth 异常: {e}")
+        results.append(f"[FAIL] GET growth 异常: {e}")
         return False, "; ".join(results)
     
     # 2. GET 分析数据（network类别）
@@ -238,12 +238,12 @@ def test_analytics():
         response = requests.get(f"{BASE_URL}/api/data/analytics/network")
         if response.status_code == 200:
             data = response.json()
-            results.append(f"✓ GET network 成功")
+            results.append(f"[OK] GET network 成功")
         else:
-            results.append(f"✗ GET network 失败: {response.status_code}")
+            results.append(f"[FAIL] GET network 失败: {response.status_code}")
             return False, "; ".join(results)
     except Exception as e:
-        results.append(f"✗ GET network 异常: {e}")
+        results.append(f"[FAIL] GET network 异常: {e}")
         return False, "; ".join(results)
     
     # 3. PUT 更新分析数据（heatmap类别）
@@ -257,11 +257,11 @@ def test_analytics():
     try:
         response = requests.put(f"{BASE_URL}/api/data/analytics/heatmap", json=update_data)
         if response.status_code == 200:
-            results.append(f"✓ PUT heatmap 成功")
+            results.append(f"[OK] PUT heatmap 成功")
         else:
-            results.append(f"✗ PUT heatmap 失败: {response.status_code}")
+            results.append(f"[FAIL] PUT heatmap 失败: {response.status_code}")
     except Exception as e:
-        results.append(f"✗ PUT heatmap 异常: {e}")
+        results.append(f"[FAIL] PUT heatmap 异常: {e}")
     
     return True, "; ".join(results)
 

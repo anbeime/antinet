@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端测试 - Antinet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .test-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
+            margin-bottom: 20px;
+        }
+
+        .test-card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .test-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .test-item:last-child {
+            border-bottom: none;
+        }
+
+        .test-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .status {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status.success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .status.error {
+            background: #f44336;
+            color: white;
+        }
+
+        .status.pending {
+            background: #ff9800;
+            color: white;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: 600;
+            margin: 5px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .button.secondary {
+            background: #764ba2;
+        }
+
+        .button.secondary:hover {
+            box-shadow: 0 6px 20px rgba(118, 75, 162, 0.4);
+        }
+
+        .steps {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .steps h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .steps ol {
+            padding-left: 20px;
+            color: #555;
+            line-height: 1.8;
+        }
+
+        .log-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .log-entry.error {
+            color: #f44336;
+        }
+
+        .log-entry.success {
+            color: #4caf50;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-box h3 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .stat-box p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Antinet 前端测试工具</h1>
+            <p>一键检测前端服务状态和常见问题</p>
+        </div>
+
+        <div class="test-card">
+            <h2>📊 快速检测</h2>
+            <div id="quick-tests">
+                <div class="test-item">
+                    <span class="test-name">服务器连接</span>
+                    <span class="status pending" id="server-status">检查中...</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-name">HTML 加载</span>
+                    <span class="status pending" id="html-status">等待...</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-name">JavaScript 加载</span>
+                    <span class="status pending" id="js-status">等待...</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-name">CSS 加载</span>
+                    <span class="status pending" id="css-status">等待...</span>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <h3 id="success-count">0</h3>
+                    <p>成功测试</p>
+                </div>
+                <div class="stat-box">
+                    <h3 id="error-count">0</h3>
+                    <p>失败测试</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-card">
+            <h2>🔗 访问链接</h2>
+            <div style="text-align: center; margin-top: 20px;">
+                <a href="http://localhost:3000" target="_blank" class="button">
+                    🌐 打开前端页面
+                </a>
+                <a href="http://localhost:3000" target="_blank" class="button secondary" onclick="openNewWindow()">
+                    📱 新窗口打开
+                </a>
+            </div>
+        </div>
+
+        <div class="test-card">
+            <h2>📋 测试日志</h2>
+            <div class="log-container" id="log-output">
+                <div class="log-entry">等待测试...</div>
+            </div>
+        </div>
+
+        <div class="test-card">
+            <h2>📖 使用说明</h2>
+            <div class="steps">
+                <h3>如果遇到白屏问题：</h3>
+                <ol>
+                    <li>点击上方"打开前端页面"按钮</li>
+                    <li>如果页面白屏，按 F12 打开浏览器开发者工具</li>
+                    <li>切换到 Console (控制台) 标签页</li>
+                    <li>查找红色的错误信息</li>
+                    <li>切换到 Network (网络) 标签页</li>
+                    <li>查找失败的请求 (红色标记)</li>
+                    <li>截图并记录错误信息</li>
+                </ol>
+            </div>
+
+            <div class="steps">
+                <h3>常见错误：</h3>
+                <ul>
+                    <li><strong>Failed to fetch</strong> - 检查后端服务是否启动</li>
+                    <li><strong>404 Not Found</strong> - 检查文件路径是否正确</li>
+                    <li><strong>Module not found</strong> - 检查依赖是否安装</li>
+                    <li><strong>Cannot read property</strong> - 检查组件是否正确导入</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const logOutput = document.getElementById('log-output');
+        let successCount = 0;
+        let errorCount = 0;
+
+        function addLog(message, isError = false) {
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry' + (isError ? ' error' : ' success');
+            logEntry.textContent = `[${time}] ${message}`;
+            logOutput.appendChild(logEntry);
+            logOutput.scrollTop = logOutput.scrollHeight;
+            console.log(message);
+        }
+
+        function updateStatus(elementId, status) {
+            const element = document.getElementById(elementId);
+            if (status === 'success') {
+                element.textContent = '✓ 成功';
+                element.className = 'status success';
+                successCount++;
+            } else if (status === 'error') {
+                element.textContent = '✗ 失败';
+                element.className = 'status error';
+                errorCount++;
+            } else if (status === 'pending') {
+                element.textContent = '⏳ 检查中...';
+                element.className = 'status pending';
+            }
+
+            document.getElementById('success-count').textContent = successCount;
+            document.getElementById('error-count').textContent = errorCount;
+        }
+
+        function testResource(url, name, elementId) {
+            updateStatus(elementId, 'pending');
+            addLog(`正在检查 ${name}...`);
+
+            return fetch(url)
+                .then(response => {
+                    if (response.ok) {
+                        updateStatus(elementId, 'success');
+                        addLog(`${name} 加载成功 (${response.status})`);
+                        return true;
+                    } else {
+                        updateStatus(elementId, 'error');
+                        addLog(`${name} 加载失败 (${response.status})`, true);
+                        return false;
+                    }
+                })
+                .catch(error => {
+                    updateStatus(elementId, 'error');
+                    addLog(`${name} 加载错误: ${error.message}`, true);
+                    return false;
+                });
+        }
+
+        function runTests() {
+            addLog('开始前端检测...');
+            addLog('正在连接服务器...');
+
+            // 测试服务器连接
+            testResource('http://localhost:3000', '服务器连接', 'server-status')
+                .then(serverOk => {
+                    if (serverOk) {
+                        // 测试 HTML
+                        testResource('http://localhost:3000/', 'HTML 加载', 'html-status');
+
+                        // 测试 JavaScript
+                        testResource('http://localhost:3000/src/main.tsx', 'JavaScript 加载', 'js-status');
+
+                        // 测试 CSS
+                        testResource('http://localhost:3000/src/index.css', 'CSS 加载', 'css-status');
+
+                        setTimeout(() => {
+                            addLog('=== 检测完成 ===');
+                            if (errorCount === 0) {
+                                addLog('所有测试通过！前端运行正常。');
+                            } else {
+                                addLog(`发现 ${errorCount} 个问题，请查看详细日志。`, true);
+                            }
+                        }, 2000);
+                    } else {
+                        addLog('服务器连接失败，无法继续测试。', true);
+                        updateStatus('html-status', 'error');
+                        updateStatus('js-status', 'error');
+                        updateStatus('css-status', 'error');
+                    }
+                });
+        }
+
+        function openNewWindow() {
+            window.open('http://localhost:3000', '_blank', 'width=1200,height=800');
+        }
+
+        // 页面加载后自动运行测试
+        window.onload = function() {
+            setTimeout(runTests, 500);
+        };
+    </script>
+</body>
+</html>

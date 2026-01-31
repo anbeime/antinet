@@ -123,7 +123,7 @@ if chat_router is not None:
     import routes.chat_routes as chat_routes_module
     chat_routes_module.db_manager = db_manager
     chat_router.db_manager = db_manager  # 同时设置router属性
-    logger.info("✓ 聊天机器人路由已注册")
+    logger.info("[OK] 聊天机器人路由已注册")
 
 # 注册知识管理路由
 try:
@@ -131,7 +131,7 @@ try:
     app.include_router(knowledge_router)  # 知识管理路由
     # 设置knowledge_routes的数据库管理器
     knowledge_router.db_manager = db_manager
-    logger.info("✓ 知识管理路由已注册")
+    logger.info("[OK] 知识管理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入知识管理路由: {e}")
 
@@ -139,7 +139,7 @@ except Exception as e:
 try:
     from routes.agent_routes import router as agent_router
     app.include_router(agent_router, prefix="/api/agent")  # 8-Agent 系统路由
-    logger.info("✓ 8-Agent 系统路由已注册")
+    logger.info("[OK] 8-Agent 系统路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 8-Agent 系统路由: {e}")
 
@@ -147,7 +147,7 @@ except Exception as e:
 try:
     from api.generate import router as generate_router
     app.include_router(generate_router, prefix="/api/generate", tags=["报告生成"])
-    logger.info("✓ 报告生成路由已注册")
+    logger.info("[OK] 报告生成路由已注册")
 except Exception as e:
     logger.warning(f"无法导入报告生成路由: {e}")
 
@@ -155,7 +155,7 @@ except Exception as e:
 try:
     from routes.skill_routes import router as skill_router
     app.include_router(skill_router)  # 技能系统路由
-    logger.info("✓ 技能系统路由已注册")
+    logger.info("[OK] 技能系统路由已注册")
 except Exception as e:
     logger.warning(f"无法导入技能系统路由: {e}")
 
@@ -163,7 +163,7 @@ except Exception as e:
 try:
     from routes.excel_routes import router as excel_router
     app.include_router(excel_router)  # Excel 导出路由
-    logger.info("✓ Excel 导出路由已注册")
+    logger.info("[OK] Excel 导出路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 Excel 导出路由: {e}")
 
@@ -171,7 +171,7 @@ except Exception as e:
 try:
     from routes.analysis_routes import router as analysis_router
     app.include_router(analysis_router)  # 完整分析路由
-    logger.info("✓ 完整分析路由已注册")
+    logger.info("[OK] 完整分析路由已注册")
 except Exception as e:
     logger.warning(f"无法导入完整分析路由: {e}")
 
@@ -179,7 +179,7 @@ except Exception as e:
 try:
     from routes.pdf_routes import router as pdf_router
     app.include_router(pdf_router)  # PDF 处理路由
-    logger.info("✓ PDF 处理路由已注册")
+    logger.info("[OK] PDF 处理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 PDF 处理路由: {e}")
 
@@ -187,7 +187,7 @@ except Exception as e:
 try:
     from routes.ppt_routes import router as ppt_router
     app.include_router(ppt_router)  # PPT 处理路由
-    logger.info("✓ PPT 处理路由已注册")
+    logger.info("[OK] PPT 处理路由已注册")
 
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
@@ -196,7 +196,7 @@ except Exception as e:
 try:
     from routes.gtd_routes import router as gtd_router
     app.include_router(gtd_router)  # GTD 任务管理路由
-    logger.info("✓ GTD 任务管理路由已注册")
+    logger.info("[OK] GTD 任务管理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 GTD 任务管理路由: {e}")
 
@@ -215,9 +215,9 @@ async def initialize_agent_system():
         logger.info("[SkillSystem] 正在初始化技能系统...")
         from services.skill_system import get_skill_registry
         skill_registry = get_skill_registry()
-        logger.info(f"✓ 技能系统初始化完成，已注册 {len(skill_registry.skills)} 个技能")
+        logger.info(f"[OK] 技能系统初始化完成，已注册 {len(skill_registry.skills)} 个技能")
 
-        logger.info("✓ 8-Agent 系统初始化完成")
+        logger.info("[OK] 8-Agent 系统初始化完成")
     except Exception as e:
         logger.warning(f"8-Agent 系统初始化失败: {e}")
         logger.info("系统将继续运行，但 8-Agent 功能可能不可用")
@@ -282,7 +282,7 @@ def load_model_if_needed():
                 else:
                     raise RuntimeError("模型加载器返回但 is_loaded=False 且 model=None")
 
-            logger.info("✓ 模型加载成功")
+            logger.info("[OK] 模型加载成功")
         else:
             logger.info("模型已加载，直接使用")
 
@@ -390,7 +390,7 @@ async def startup_event():
                 logger.error(f"[startup_event] loader.is_loaded=False，但 load() 没有抛出异常")
                 raise RuntimeError("模型加载器报告 is_loaded=False，但未抛出异常")
 
-            logger.info("✓ 全局模型加载器已初始化")
+            logger.info("[OK] 全局模型加载器已初始化")
             logger.info(f"  - 模型: {loader.model_config['name']}")
             logger.info(f"  - 参数: {loader.model_config['params']}")
             logger.info(f"  - 量化: {loader.model_config['quantization']}")
@@ -666,7 +666,7 @@ async def upload_data(file: UploadFile = File(...)):
     with open(upload_path, 'wb') as f:
         f.write(contents)
 
-    logger.info(f"✓ 文件已保存到本地: {upload_path}")
+    logger.info(f"[OK] 文件已保存到本地: {upload_path}")
     logger.info(f"  大小: {len(contents)/(1024**2):.2f}MB")
 
     return {

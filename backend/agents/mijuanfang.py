@@ -114,7 +114,7 @@ class MijuanfangAgent:
         返回：
             response: dict
         """
-        # 解析→清洗→评估
+        # 解析->清洗->评估
         parsed_data = self.parse_material(raw_material)
         cleaned_data = self.clean_data(parsed_data)
         quality_report = self.evaluate_quality(cleaned_data)

@@ -24,9 +24,9 @@ def test_pdf_capabilities():
         from pypdf import PdfReader, PdfWriter
         import pdfplumber
         from reportlab.pdfgen import canvas
-        print("  ✓ pypdf, pdfplumber, reportlab 可用")
+        print("  [OK] pypdf, pdfplumber, reportlab 可用")
     except ImportError as e:
-        print(f"  ✗ 基础库缺失: {e}")
+        print(f"  [FAIL] 基础库缺失: {e}")
         print("  安装命令: pip install pypdf pdfplumber reportlab")
         return False
     
@@ -34,36 +34,36 @@ def test_pdf_capabilities():
     print("[2/7] 测试 PyMuPDF (高级编辑)...")
     try:
         import fitz
-        print("  ✓ PyMuPDF 可用")
+        print("  [OK] PyMuPDF 可用")
     except ImportError:
-        print("  ⚠ PyMuPDF 未安装 (可选)")
+        print("  [WARN] PyMuPDF 未安装 (可选)")
         print("  安装命令: pip install PyMuPDF")
     
     # 测试 pikepdf
     print("[3/7] 测试 pikepdf (压缩)...")
     try:
         import pikepdf
-        print("  ✓ pikepdf 可用")
+        print("  [OK] pikepdf 可用")
     except ImportError:
-        print("  ⚠ pikepdf 未安装 (可选)")
+        print("  [WARN] pikepdf 未安装 (可选)")
         print("  安装命令: pip install pikepdf")
     
     # 测试 pdf2image
     print("[4/7] 测试 pdf2image (PDF转图像)...")
     try:
         from pdf2image import convert_from_path
-        print("  ✓ pdf2image 可用")
+        print("  [OK] pdf2image 可用")
     except ImportError:
-        print("  ⚠ pdf2image 未安装 (可选)")
+        print("  [WARN] pdf2image 未安装 (可选)")
         print("  安装命令: pip install pdf2image")
     
     # 测试 img2pdf
     print("[5/7] 测试 img2pdf (图像转PDF)...")
     try:
         import img2pdf
-        print("  ✓ img2pdf 可用")
+        print("  [OK] img2pdf 可用")
     except ImportError:
-        print("  ⚠ img2pdf 未安装 (可选)")
+        print("  [WARN] img2pdf 未安装 (可选)")
         print("  安装命令: pip install img2pdf")
     
     # 测试增强处理器
@@ -72,13 +72,13 @@ def test_pdf_capabilities():
         from tools.pdf_processor_enhanced import EnhancedPDFProcessor
         processor = EnhancedPDFProcessor()
         capabilities = processor.get_capabilities()
-        print("  ✓ 增强版处理器可用")
+        print("  [OK] 增强版处理器可用")
         print("  可用功能:")
         for feature, available in capabilities.items():
-            status = "✓" if available else "✗"
+            status = "[OK]" if available else "[FAIL]"
             print(f"    {status} {feature}")
     except Exception as e:
-        print(f"  ✗ 增强版处理器加载失败: {e}")
+        print(f"  [FAIL] 增强版处理器加载失败: {e}")
         return False
     
     # 测试原有处理器
@@ -86,9 +86,9 @@ def test_pdf_capabilities():
     try:
         from tools.pdf_processor import PDFProcessor, PDF_AVAILABLE
         if PDF_AVAILABLE:
-            print("  ✓ 原有处理器可用")
+            print("  [OK] 原有处理器可用")
         else:
-            print("  ✗ 原有处理器不可用")
+            print("  [FAIL] 原有处理器不可用")
     except Exception as e:
         print(f"  [!] 原有处理器测试失败: {e}")
     
@@ -109,7 +109,7 @@ def test_pdf_routes():
     
     try:
         from routes.pdf_routes import router
-        print("✓ PDF 路由模块加载成功")
+        print("[OK] PDF 路由模块加载成功")
         print(f"  路由前缀: {router.prefix}")
         print(f"  路由标签: {router.tags}")
         
@@ -120,7 +120,7 @@ def test_pdf_routes():
         
         return True
     except Exception as e:
-        print(f"✗ PDF 路由加载失败: {e}")
+        print(f"[FAIL] PDF 路由加载失败: {e}")
         return False
 
 
@@ -136,8 +136,8 @@ if __name__ == "__main__":
     
     print()
     if capabilities_ok and routes_ok:
-        print("✓ 所有测试通过！PDF 功能已就绪")
+        print("[OK] 所有测试通过！PDF 功能已就绪")
         sys.exit(0)
     else:
-        print("✗ 部分测试失败，请检查上述错误信息")
+        print("[FAIL] 部分测试失败，请检查上述错误信息")
         sys.exit(1)

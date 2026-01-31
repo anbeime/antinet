@@ -64,6 +64,6 @@ if cards:
     print(f"  红色 (行动): {len(red_cards)}")
     
     if not (blue_cards or green_cards or yellow_cards or red_cards):
-        print("\n⚠️ 警告：所有卡片类型过滤后都为空！")
+        print("\n[WARN]️ 警告：所有卡片类型过滤后都为空！")
         print("第一张卡片详情:")
         print(cards[0])

@@ -172,7 +172,7 @@ class ViewManagerSkill:
             icons = {
                 "blue": "📘",
                 "green": "💡",
-                "yellow": "⚠️",
+                "yellow": "[WARN]️",
                 "red": "🔴"
             }
             

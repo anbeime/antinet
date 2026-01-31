@@ -19,7 +19,7 @@ def create_test_images():
         filename = f"test_{name}.png"
         img.save(filename)
         image_files.append(filename)
-        print(f"✓ 创建测试图像: {filename}")
+        print(f"[OK] 创建测试图像: {filename}")
     
     return image_files
 
@@ -44,7 +44,7 @@ def test_images_to_pdf():
     result = processor.images_to_pdf(image_files, "test_images.pdf")
     
     if result["success"]:
-        print(f"✓ 转换成功")
+        print(f"[OK] 转换成功")
         print(f"  输入图像: {result['input_images']} 个")
         print(f"  输出文件: {result['output_path']}")
         
@@ -52,7 +52,7 @@ def test_images_to_pdf():
             size = os.path.getsize(result['output_path'])
             print(f"  文件大小: {size:,} 字节")
     else:
-        print(f"✗ 转换失败: {result['error']}")
+        print(f"[FAIL] 转换失败: {result['error']}")
     
     print()
     
@@ -61,7 +61,7 @@ def test_images_to_pdf():
     for img_file in image_files:
         if os.path.exists(img_file):
             os.remove(img_file)
-            print(f"✓ 删除: {img_file}")
+            print(f"[OK] 删除: {img_file}")
     
     print()
     print("=" * 60)

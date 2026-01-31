@@ -77,7 +77,7 @@ def add_sample_gtd_tasks():
     count = cursor.fetchone()[0]
     
     if count > 0:
-        print(f"⚠ 数据库中已有 {count} 个任务")
+        print(f"[WARN] 数据库中已有 {count} 个任务")
         response = input("是否清空并重新添加示例任务？(y/n): ")
         if response.lower() != 'y':
             print("取消操作")
@@ -87,7 +87,7 @@ def add_sample_gtd_tasks():
         # 清空现有任务
         cursor.execute("DELETE FROM gtd_tasks")
         conn.commit()
-        print("✓ 已清空现有任务")
+        print("[OK] 已清空现有任务")
         print()
     
     # 添加示例任务
@@ -101,13 +101,13 @@ def add_sample_gtd_tasks():
             task["category"],
             task["priority"]
         ))
-        print(f"[{i}/{len(sample_tasks)}] ✓ 添加任务: {task['title']}")
+        print(f"[{i}/{len(sample_tasks)}] [OK] 添加任务: {task['title']}")
     
     conn.commit()
     
     print()
     print("=" * 60)
-    print(f"✓ 成功添加 {len(sample_tasks)} 个示例任务")
+    print(f"[OK] 成功添加 {len(sample_tasks)} 个示例任务")
     print("=" * 60)
     print()
     print("任务分类统计:")

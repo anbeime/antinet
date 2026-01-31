@@ -22,7 +22,7 @@ async def demo_complete_workflow():
     
     print("\n" + "="*80)
     print("Antinet 完整数据分析流程演示")
-    print("真实数据 → 8-Agent 分析 → Excel 报告")
+    print("真实数据 -> 8-Agent 分析 -> Excel 报告")
     print("="*80 + "\n")
     
     # ========== 步骤 1: 准备演示数据 ==========
@@ -46,7 +46,7 @@ async def demo_complete_workflow():
     demo_file = demo_dir / "sales_demo.csv"
     demo_data.to_csv(demo_file, index=False, encoding='utf-8-sig')
     
-    print(f"  ✓ 演示数据已创建: {demo_file}")
+    print(f"  [OK] 演示数据已创建: {demo_file}")
     print(f"  - 数据行数: {len(demo_data)}")
     print(f"  - 字段: {list(demo_data.columns)}")
     print()
@@ -58,23 +58,23 @@ async def demo_complete_workflow():
         # 初始化数据库
         db_path = backend_dir / "data" / "antinet.db"
         db_manager = DatabaseManager(str(db_path))
-        print("  ✓ 数据库管理器初始化完成")
+        print("  [OK] 数据库管理器初始化完成")
         
         # 初始化记忆 Agent
         memory_path = backend_dir / "data" / "memory.db"
         memory = MemoryAgent(db_path=str(memory_path))
-        print("  ✓ 太史阁（记忆）初始化完成")
+        print("  [OK] 太史阁（记忆）初始化完成")
         
         # 初始化总指挥 Agent
         orchestrator = OrchestratorAgent(
             genie_api_base_url="http://127.0.0.1:8000",
             model_path="path/to/model"  # 实际使用时需要真实路径
         )
-        print("  ✓ 锦衣卫总指挥使初始化完成")
+        print("  [OK] 锦衣卫总指挥使初始化完成")
         print()
         
     except Exception as e:
-        print(f"  ✗ 初始化失败: {e}")
+        print(f"  [FAIL] 初始化失败: {e}")
         print("  注意: 这是演示模式，某些功能可能不可用")
         print()
         return
@@ -87,7 +87,7 @@ async def demo_complete_workflow():
         orchestrator=orchestrator,
         memory=memory
     )
-    print("  ✓ 导出器创建完成")
+    print("  [OK] 导出器创建完成")
     print()
     
     # ========== 步骤 4: 执行完整分析 ==========
@@ -110,7 +110,7 @@ async def demo_complete_workflow():
             include_charts=True
         )
         
-        print("  ✓ 分析完成！")
+        print("  [OK] 分析完成！")
         print()
         
         # ========== 步骤 5: 显示结果 ==========
@@ -152,15 +152,15 @@ async def demo_complete_workflow():
         print(f"  {output_file}")
         print()
         print("报告特点:")
-        print("  ✓ 基于真实数据分析")
-        print("  ✓ 8-Agent 协作生成")
-        print("  ✓ 四色卡片结构化呈现")
-        print("  ✓ 专业 Excel 格式")
-        print("  ✓ 包含数据可视化")
+        print("  [OK] 基于真实数据分析")
+        print("  [OK] 8-Agent 协作生成")
+        print("  [OK] 四色卡片结构化呈现")
+        print("  [OK] 专业 Excel 格式")
+        print("  [OK] 包含数据可视化")
         print()
         
     except Exception as e:
-        print(f"  ✗ 分析失败: {e}")
+        print(f"  [FAIL] 分析失败: {e}")
         print()
         import traceback
         traceback.print_exc()
@@ -221,7 +221,7 @@ async def demo_simple_export():
     
     result = export_cards_to_excel(cards, str(output_file), "演示卡片")
     
-    print(f"✓ 导出成功: {result}")
+    print(f"[OK] 导出成功: {result}")
     print(f"  - 卡片数量: {len(cards)}")
     print(f"  - 输出路径: {output_file}")
     print()

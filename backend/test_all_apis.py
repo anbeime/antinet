@@ -18,19 +18,19 @@ def test_api(name, url, method="GET", data=None):
             response = requests.post(url, json=data, timeout=5)
         
         if response.status_code == 200:
-            print(f"✓ {name:40s} - 成功 ({response.status_code})")
+            print(f"[OK] {name:40s} - 成功 ({response.status_code})")
             return True, response.json()
         else:
-            print(f"✗ {name:40s} - 失败 ({response.status_code})")
+            print(f"[FAIL] {name:40s} - 失败 ({response.status_code})")
             return False, None
     except requests.exceptions.Timeout:
-        print(f"✗ {name:40s} - 超时")
+        print(f"[FAIL] {name:40s} - 超时")
         return False, None
     except requests.exceptions.ConnectionError:
-        print(f"✗ {name:40s} - 连接失败")
+        print(f"[FAIL] {name:40s} - 连接失败")
         return False, None
     except Exception as e:
-        print(f"✗ {name:40s} - 错误: {str(e)[:30]}")
+        print(f"[FAIL] {name:40s} - 错误: {str(e)[:30]}")
         return False, None
 
 def main():
@@ -57,7 +57,7 @@ def main():
     success, data = test_api("获取所有卡片", f"{BASE_URL}/api/knowledge/cards")
     results["knowledge_cards"] = success
     if success and data:
-        print(f"      → 卡片数量: {len(data)} 张")
+        print(f"      -> 卡片数量: {len(data)} 张")
     print()
     
     # 3. GTD 任务 API
@@ -66,12 +66,12 @@ def main():
     success, data = test_api("获取所有任务", f"{BASE_URL}/api/gtd/tasks")
     results["gtd_tasks"] = success
     if success and data:
-        print(f"      → 任务数量: {len(data)} 个")
+        print(f"      -> 任务数量: {len(data)} 个")
     
     success, data = test_api("获取任务统计", f"{BASE_URL}/api/gtd/stats")
     results["gtd_stats"] = success
     if success and data:
-        print(f"      → 总任务数: {data.get('total', 0)}")
+        print(f"      -> 总任务数: {data.get('total', 0)}")
     
     success, data = test_api("GTD 健康检查", f"{BASE_URL}/api/gtd/health")
     results["gtd_health"] = success
@@ -83,7 +83,7 @@ def main():
     success, data = test_api("PDF 功能状态", f"{BASE_URL}/api/pdf/status")
     results["pdf_status"] = success
     if success and data:
-        print(f"      → PDF 可用: {data.get('available', False)}")
+        print(f"      -> PDF 可用: {data.get('available', False)}")
     
     success, data = test_api("PDF 健康检查", f"{BASE_URL}/api/pdf/health")
     results["pdf_health"] = success
@@ -95,7 +95,7 @@ def main():
     success, data = test_api("NPU 状态", f"{BASE_URL}/api/npu/status")
     results["npu_status"] = success
     if success and data:
-        print(f"      → NPU 可用: {data.get('available', False)}")
+        print(f"      -> NPU 可用: {data.get('available', False)}")
     print()
     
     # 6. Agent 系统 API
@@ -104,7 +104,7 @@ def main():
     success, data = test_api("Agent 列表", f"{BASE_URL}/api/agent/agents")
     results["agent_list"] = success
     if success and data:
-        print(f"      → Agent 数量: {len(data) if isinstance(data, list) else '未知'}")
+        print(f"      -> Agent 数量: {len(data) if isinstance(data, list) else '未知'}")
     print()
     
     # 7. 技能系统 API
@@ -113,7 +113,7 @@ def main():
     success, data = test_api("技能列表", f"{BASE_URL}/api/skill/skills")
     results["skill_list"] = success
     if success and data:
-        print(f"      → 技能数量: {len(data) if isinstance(data, list) else '未知'}")
+        print(f"      -> 技能数量: {len(data) if isinstance(data, list) else '未知'}")
     print()
     
     # 8. 数据分析 API
@@ -155,14 +155,14 @@ def main():
     print("详细结果:")
     print("-" * 70)
     for name, success in results.items():
-        status = "✓ 通过" if success else "✗ 失败"
+        status = "[OK] 通过" if success else "[FAIL] 失败"
         print(f"{status:10s} {name}")
     
     print()
     print("=" * 70)
     
     if failed == 0:
-        print("✓ 所有 API 测试通过！后端功能正常")
+        print("[OK] 所有 API 测试通过！后端功能正常")
     else:
         print(f"[!] {failed} 个 API 测试失败，请检查后端服务")
     

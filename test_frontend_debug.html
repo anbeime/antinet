@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Antinet 前端白屏问题诊断</h1>
+    
+    <div class="test-section">
+        <h2>1. 后端API连接测试</h2>
+        <button onclick="testBackendAPI()">测试后端连接</button>
+        <div id="backend-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. 前端资源加载测试</h2>
+        <p>当前页面URL: <span id="current-url"></span></p>
+        <p>React应用状态: <span id="react-status">检测中...</span></p>
+    </div>
+
+    <div class="test-section">
+        <h2>3. 浏览器控制台</h2>
+        <p>请打开浏览器开发者工具(F12)查看Console标签页中的错误信息</p>
+    </div>
+
+    <script>
+        // 显示当前URL
+        document.getElementById('current-url').textContent = window.location.href;
+
+        // 测试后端API
+        async function testBackendAPI() {
+            const resultDiv = document.getElementById('backend-result');
+            resultDiv.innerHTML = '测试中...';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/chat/health');
+                const data = await response.json();
+                resultDiv.innerHTML = `<span class="success">✓ 后端连接成功: ${JSON.stringify(data)}</span>`;
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">✗ 后端连接失败: ${error.message}</span>`;
+            }
+        }
+
+        // 检测React应用
+        setTimeout(() => {
+            const root = document.getElementById('root');
+            const reactStatus = document.getElementById('react-status');
+            
+            if (root && root.innerHTML.trim() !== '') {
+                reactStatus.innerHTML = '<span class="success">✓ React应用已加载</span>';
+            } else {
+                reactStatus.innerHTML = '<span class="error">✗ React应用未加载(可能白屏)</span>';
+            }
+        }, 2000);
+
+        // 自动测试后端
+        window.onload = () => {
+            testBackendAPI();
+        };
+    </script>
+</body>
+</html>

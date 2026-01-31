@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>错误捕获页面</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    #error-log { background: #f5f5f5; padding: 20px; margin-top: 20px; border: 1px solid #ddd; }
+    .error { color: red; margin: 10px 0; padding: 10px; background: #fee; border-left: 4px solid #f00; }
+    .warn { color: orange; margin: 10px 0; padding: 10px; background: #ffc; border-left: 4px solid orange; }
+    .info { color: blue; margin: 10px 0; padding: 10px; background: #eef; border-left: 4px solid blue; }
+    button { padding: 10px 20px; margin: 10px; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <h1>前端错误捕获工具</h1>
+
+  <div>
+    <button onclick="loadHomePage()">加载主页</button>
+    <button onclick="clearErrors()">清除错误</button>
+  </div>
+
+  <div id="error-log">
+    <h2>错误日志</h2>
+    <div id="errors"></div>
+  </div>
+
+  <script>
+    let errorCount = 0;
+    let warnCount = 0;
+    let infoCount = 0;
+
+    // 捕获错误
+    window.onerror = function(msg, url, line, col, error) {
+      errorCount++;
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+      errorDiv.innerHTML = `<strong>错误 #${errorCount}:</strong><br>
+        消息: ${msg}<br>
+        文件: ${url}<br>
+        行号: ${line}, 列: ${col}<br>
+        堆栈: ${error ? error.stack : 'N/A'}`;
+      document.getElementById('errors').appendChild(errorDiv);
+      return false;
+    };
+
+    // 捕获未处理的 Promise 拒绝
+    window.addEventListener('unhandledrejection', function(event) {
+      errorCount++;
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+      errorDiv.innerHTML = `<strong>未处理的 Promise 拒绝 #${errorCount}:</strong><br>
+        原因: ${event.reason}<br>
+        Promise: ${event.promise}`;
+      document.getElementById('errors').appendChild(errorDiv);
+    });
+
+    // 捕获警告
+    window.addEventListener('warning', function(event) {
+      warnCount++;
+      const warnDiv = document.createElement('div');
+      warnDiv.className = 'warn';
+      warnDiv.innerHTML = `<strong>警告 #${warnCount}:</strong><br>${event.message}`;
+      document.getElementById('errors').appendChild(warnDiv);
+    });
+
+    // 监听控制台输出
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
+
+    console.log = function(...args) {
+      infoCount++;
+      const infoDiv = document.createElement('div');
+      infoDiv.className = 'info';
+      infoDiv.innerHTML = `<strong>日志 #${infoCount}:</strong><br>${args.join(' ')}`;
+      document.getElementById('errors').appendChild(infoDiv);
+      originalLog.apply(console, args);
+    };
+
+    console.warn = function(...args) {
+      warnCount++;
+      const warnDiv = document.createElement('div');
+      warnDiv.className = 'warn';
+      warnDiv.innerHTML = `<strong>警告 #${warnCount}:</strong><br>${args.join(' ')}`;
+      document.getElementById('errors').appendChild(warnDiv);
+      originalWarn.apply(console, args);
+    };
+
+    console.error = function(...args) {
+      errorCount++;
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error';
+      errorDiv.innerHTML = `<strong>控制台错误 #${errorCount}:</strong><br>${args.join(' ')}`;
+      document.getElementById('errors').appendChild(errorDiv);
+      originalError.apply(console, args);
+    };
+
+    // 加载主页
+    function loadHomePage() {
+      window.location.href = 'http://localhost:3000';
+    }
+
+    // 清除错误
+    function clearErrors() {
+      document.getElementById('errors').innerHTML = '';
+      errorCount = 0;
+      warnCount = 0;
+      infoCount = 0;
+    }
+
+    // 自动显示信息
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'info';
+    infoDiv.innerHTML = `<strong>信息:</strong> 页面已加载，点击"加载主页"按钮查看错误。`;
+    document.getElementById('errors').appendChild(infoDiv);
+  </script>
+</body>
+</html>

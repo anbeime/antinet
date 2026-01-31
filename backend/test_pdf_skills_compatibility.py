@@ -11,10 +11,10 @@ def test_dependency(package_name, import_name=None):
     try:
         module = __import__(import_name)
         version = getattr(module, '__version__', 'unknown')
-        print(f"✓ {package_name:20s} 可用 (版本: {version})")
+        print(f"[OK] {package_name:20s} 可用 (版本: {version})")
         return True
     except ImportError as e:
-        print(f"✗ {package_name:20s} 不可用 ({str(e)[:50]}...)")
+        print(f"[FAIL] {package_name:20s} 不可用 ({str(e)[:50]}...)")
         return False
     except Exception as e:
         print(f"[!] {package_name:20s} 导入异常 ({str(e)[:50]}...)")
@@ -104,7 +104,7 @@ def main():
     }
     
     for feature, available in features.items():
-        status = "✓ 可用" if available else "✗ 不可用"
+        status = "[OK] 可用" if available else "[FAIL] 不可用"
         print(f"{feature:20s} {status}")
     print()
     

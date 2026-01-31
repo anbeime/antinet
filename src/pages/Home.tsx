@@ -291,15 +291,10 @@ const Home: React.FC = () => {
             id: String(card.id),
             title: card.title,
             content: card.content,
-            type: card.card_type || (card.category === '事实' ? 'blue' : card.category === '解释' ? 'green' : card.category === '风险' ? 'yellow' : 'red'),
-            category: card.category,
-            tags: card.tags ? card.tags.split(',') : [],
+            color: card.card_type || (card.category === '事实' ? 'blue' : card.category === '解释' ? 'green' : card.category === '风险' ? 'yellow' : 'red'),
+            address: card.address || '',
             createdAt: card.created_at,
-            updatedAt: card.updated_at,
-            source: card.source,
-            url: card.url,
-            relatedCards: [],
-            relatedCardIds: []
+            relatedCards: []
           }));
           setCards(formattedCards);
           console.log('从API加载卡片:', formattedCards.length);
@@ -338,10 +333,10 @@ const Home: React.FC = () => {
         
         // 统计卡片类型
         const typeCount = {
-          blue: cards.filter((c: any) => c.card_type === 'blue' || c.category === '事实').length,
-          green: cards.filter((c: any) => c.card_type === 'green' || c.category === '解释').length,
-          yellow: cards.filter((c: any) => c.card_type === 'yellow' || c.category === '风险').length,
-          red: cards.filter((c: any) => c.card_type === 'red' || c.category === '行动').length,
+          blue: cards.filter((c: any) => c.color === 'blue' || c.category === '事实').length,
+          green: cards.filter((c: any) => c.color === 'green' || c.category === '解释').length,
+          yellow: cards.filter((c: any) => c.color === 'yellow' || c.category === '风险').length,
+          red: cards.filter((c: any) => c.color === 'red' || c.category === '行动').length,
         };
         
         setKnowledgeStats([

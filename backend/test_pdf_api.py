@@ -22,9 +22,9 @@ def test_pdf_extract_text():
     
     if response.status_code == 200:
         result = response.json()
-        print(f"✓ 文件名: {result['filename']}")
-        print(f"✓ 页数: {len(result['pages'])}")
-        print(f"✓ 全文长度: {len(result['full_text'])} 字符")
+        print(f"[OK] 文件名: {result['filename']}")
+        print(f"[OK] 页数: {len(result['pages'])}")
+        print(f"[OK] 全文长度: {len(result['full_text'])} 字符")
         print()
         print("提取的文本（前 200 字符）:")
         print("-" * 60)
@@ -32,7 +32,7 @@ def test_pdf_extract_text():
         print("-" * 60)
         return True
     else:
-        print(f"✗ 请求失败: {response.status_code}")
+        print(f"[FAIL] 请求失败: {response.status_code}")
         print(f"  错误: {response.text}")
         return False
 
@@ -48,11 +48,11 @@ def test_pdf_status():
     
     if response.status_code == 200:
         result = response.json()
-        print(f"✓ PDF 功能可用: {result['available']}")
-        print(f"✓ 消息: {result['message']}")
+        print(f"[OK] PDF 功能可用: {result['available']}")
+        print(f"[OK] 消息: {result['message']}")
         return True
     else:
-        print(f"✗ 请求失败: {response.status_code}")
+        print(f"[FAIL] 请求失败: {response.status_code}")
         return False
 
 def test_pdf_health():
@@ -67,11 +67,11 @@ def test_pdf_health():
     
     if response.status_code == 200:
         result = response.json()
-        print(f"✓ 状态: {result['status']}")
-        print(f"✓ PDF 可用: {result['pdf_available']}")
+        print(f"[OK] 状态: {result['status']}")
+        print(f"[OK] PDF 可用: {result['pdf_available']}")
         return True
     else:
-        print(f"✗ 请求失败: {response.status_code}")
+        print(f"[FAIL] 请求失败: {response.status_code}")
         return False
 
 if __name__ == "__main__":
@@ -91,12 +91,12 @@ if __name__ == "__main__":
     print("=" * 60)
     print("测试总结")
     print("=" * 60)
-    print(f"PDF 状态: {'✓' if status_ok else '✗'}")
-    print(f"健康检查: {'✓' if health_ok else '✗'}")
-    print(f"文本提取: {'✓' if extract_ok else '✗'}")
+    print(f"PDF 状态: {'[OK]' if status_ok else '[FAIL]'}")
+    print(f"健康检查: {'[OK]' if health_ok else '[FAIL]'}")
+    print(f"文本提取: {'[OK]' if extract_ok else '[FAIL]'}")
     print()
     
     if all([status_ok, health_ok, extract_ok]):
-        print("✓ 所有测试通过！PDF 功能正常工作")
+        print("[OK] 所有测试通过！PDF 功能正常工作")
     else:
-        print("✗ 部分测试失败，请检查错误信息")
+        print("[FAIL] 部分测试失败，请检查错误信息")

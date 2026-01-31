@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端API对接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #22c55e; font-weight: bold; }
+        .error { color: #ef4444; font-weight: bold; }
+        .warning { color: #f59e0b; font-weight: bold; }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            max-height: 400px;
+        }
+        .card-preview {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .card-item {
+            border: 2px solid;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .card-item.blue { border-color: #3b82f6; background: #eff6ff; }
+        .card-item.green { border-color: #22c55e; background: #f0fdf4; }
+        .card-item.yellow { border-color: #eab308; background: #fefce8; }
+        .card-item.red { border-color: #ef4444; background: #fef2f2; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Antinet 前端API对接诊断</h1>
+
+    <div class="test-card">
+        <h2>1. 后端健康检查</h2>
+        <button onclick="testBackendHealth()">测试后端连接</button>
+        <div id="health-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>2. 卡片API数据格式测试</h2>
+        <button onclick="testCardsAPI()">获取卡片数据</button>
+        <button onclick="testDataMapping()">测试数据映射</button>
+        <div id="cards-result"></div>
+        <div id="cards-preview" class="card-preview"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>3. 前端数据转换测试</h2>
+        <button onclick="testFrontendMapping()">测试前端转换逻辑</button>
+        <div id="mapping-result"></div>
+    </div>
+
+    <div class="test-card">
+        <h2>4. 常见问题诊断</h2>
+        <div id="diagnosis-result">
+            <p>点击上方按钮开始测试...</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+
+        async function testBackendHealth() {
+            const resultDiv = document.getElementById('health-result');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/chat/health`);
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <p class="success">✓ 后端服务正常</p>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                `;
+                updateDiagnosis('backend', true);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">✗ 后端连接失败</p>
+                    <p>错误: ${error.message}</p>
+                    <p class="warning">请确保后端服务运行在 http://localhost:8000</p>
+                `;
+                updateDiagnosis('backend', false);
+            }
+        }
+
+        async function testCardsAPI() {
+            const resultDiv = document.getElementById('cards-result');
+            const previewDiv = document.getElementById('cards-preview');
+            resultDiv.innerHTML = '<p>获取卡片数据中...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/knowledge/cards`);
+                const cards = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <p class="success">✓ 成功获取 ${cards.length} 张卡片</p>
+                    <p>后端返回的字段: ${Object.keys(cards[0] || {}).join(', ')}</p>
+                    <details>
+                        <summary>查看原始数据 (前3条)</summary>
+                        <pre>${JSON.stringify(cards.slice(0, 3), null, 2)}</pre>
+                    </details>
+                `;
+                
+                // 显示卡片预览
+                previewDiv.innerHTML = cards.slice(0, 8).map(card => `
+                    <div class="card-item ${card.card_type}">
+                        <h4>${card.title}</h4>
+                        <p style="font-size: 12px; color: #666;">${card.content.substring(0, 80)}...</p>
+                        <p style="font-size: 11px; margin-top: 10px;">
+                            <strong>类型:</strong> ${card.card_type} | 
+                            <strong>ID:</strong> ${card.id}
+                        </p>
+                    </div>
+                `).join('');
+                
+                updateDiagnosis('api', true);
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <p class="error">✗ 获取卡片失败</p>
+                    <p>错误: ${error.message}</p>
+                `;
+                updateDiagnosis('api', false);
+            }
+        }
+
+        async function testDataMapping() {
+            const resultDiv = document.getElementById('cards-result');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/knowledge/cards`);
+                const apiCards = await response.json();
+                
+                // 模拟前端数据转换（修复后的版本）
+                const formattedCards = apiCards.slice(0, 5).map((card) => ({
+                    id: String(card.id),
+                    title: card.title,
+                    content: card.content,
+                    color: card.card_type || 'blue',  // 关键修复：使用color而不是type
+                    address: card.address || `${card.id}`,  // 关键修复：添加address字段
+                    category: card.category,
+                    createdAt: card.created_at,
+                    relatedCards: []
+                }));
+                
+                const issues = [];
+                formattedCards.forEach((card, idx) => {
+                    if (!card.color) issues.push(`卡片${idx}: 缺少color字段`);
+                    if (!card.address) issues.push(`卡片${idx}: 缺少address字段`);
+                    if (!['blue', 'green', 'yellow', 'red'].includes(card.color)) {
+                        issues.push(`卡片${idx}: color值无效 (${card.color})`);
+                    }
+                });
+                
+                if (issues.length === 0) {
+                    resultDiv.innerHTML += `
+                        <p class="success">✓ 数据映射正确</p>
+                        <p>前端期望的字段: ${Object.keys(formattedCards[0]).join(', ')}</p>
+                        <details>
+                            <summary>查看转换后数据 (前3条)</summary>
+                            <pre>${JSON.stringify(formattedCards.slice(0, 3), null, 2)}</pre>
+                        </details>
+                    `;
+                    updateDiagnosis('mapping', true);
+                } else {
+                    resultDiv.innerHTML += `
+                        <p class="error">✗ 数据映射存在问题</p>
+                        <ul>${issues.map(i => `<li>${i}</li>`).join('')}</ul>
+                    `;
+                    updateDiagnosis('mapping', false);
+                }
+            } catch (error) {
+                resultDiv.innerHTML += `
+                    <p class="error">✗ 数据映射测试失败: ${error.message}</p>
+                `;
+                updateDiagnosis('mapping', false);
+            }
+        }
+
+        function testFrontendMapping() {
+            const resultDiv = document.getElementById('mapping-result');
+            
+            // 测试数据
+            const testCard = {
+                id: 1,
+                title: "测试卡片",
+                content: "测试内容",
+                card_type: "blue",
+                category: "事实",
+                created_at: "2026-01-31"
+            };
+            
+            // 旧的错误映射
+            const oldMapping = {
+                id: String(testCard.id),
+                title: testCard.title,
+                content: testCard.content,
+                type: testCard.card_type,  // ❌ 错误：应该是color
+                // ❌ 错误：缺少address字段
+            };
+            
+            // 新的正确映射
+            const newMapping = {
+                id: String(testCard.id),
+                title: testCard.title,
+                content: testCard.content,
+                color: testCard.card_type,  // ✓ 正确
+                address: testCard.address || `${testCard.id}`,  // ✓ 正确
+                createdAt: testCard.created_at,
+                relatedCards: []
+            };
+            
+            resultDiv.innerHTML = `
+                <h3>对比分析</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <h4 class="error">❌ 修复前（错误）</h4>
+                        <pre>${JSON.stringify(oldMapping, null, 2)}</pre>
+                        <p class="error">问题：</p>
+                        <ul>
+                            <li>使用了 'type' 而不是 'color'</li>
+                            <li>缺少 'address' 字段</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="success">✓ 修复后（正确）</h4>
+                        <pre>${JSON.stringify(newMapping, null, 2)}</pre>
+                        <p class="success">改进：</p>
+                        <ul>
+                            <li>正确使用 'color' 字段</li>
+                            <li>添加了 'address' 字段</li>
+                            <li>字段与前端组件期望一致</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        const diagnosisState = {
+            backend: null,
+            api: null,
+            mapping: null
+        };
+
+        function updateDiagnosis(key, success) {
+            diagnosisState[key] = success;
+            
+            const diagnosisDiv = document.getElementById('diagnosis-result');
+            const allTested = Object.values(diagnosisState).every(v => v !== null);
+            
+            if (!allTested) return;
+            
+            const allPassed = Object.values(diagnosisState).every(v => v === true);
+            
+            if (allPassed) {
+                diagnosisDiv.innerHTML = `
+                    <h3 class="success">✓ 所有测试通过</h3>
+                    <p>前后端对接正常，可以启动前端应用：</p>
+                    <pre>pnpm dev</pre>
+                    <p>然后访问: <a href="http://localhost:3000" target="_blank">http://localhost:3000</a></p>
+                `;
+            } else {
+                diagnosisDiv.innerHTML = `
+                    <h3 class="error">✗ 发现问题</h3>
+                    <ul>
+                        ${!diagnosisState.backend ? '<li class="error">后端服务未运行</li>' : ''}
+                        ${!diagnosisState.api ? '<li class="error">API调用失败</li>' : ''}
+                        ${!diagnosisState.mapping ? '<li class="error">数据映射错误</li>' : ''}
+                    </ul>
+                    <h4>解决方案：</h4>
+                    <ol>
+                        <li>确保后端运行: <code>cd backend && python main.py</code></li>
+                        <li>检查修复是否已应用到 src/pages/Home.tsx</li>
+                        <li>重新构建前端: <code>pnpm build:client</code></li>
+                    </ol>
+                `;
+            }
+        }
+
+        // 页面加载时自动测试
+        window.onload = () => {
+            testBackendHealth();
+            setTimeout(() => testCardsAPI(), 500);
+            setTimeout(() => testDataMapping(), 1000);
+        };
+    </script>
+</body>
+</html>
