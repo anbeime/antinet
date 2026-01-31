@@ -1,13 +1,13 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo 重启后端服务
+echo 修复并重启后端服务
 echo ========================================
 echo.
 
 echo [1] 停止现有后端进程...
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do (
-    echo 找到进程 PID: %%a
+    echo 停止进程 PID: %%a
     taskkill /F /PID %%a 2>nul
 )
 timeout /t 2 /nobreak >nul
@@ -16,17 +16,17 @@ echo [2] 启动后端服务...
 cd /d C:\test\antinet\backend
 start "Antinet Backend" cmd /k "python main.py"
 
-echo.
 echo [3] 等待服务启动...
-timeout /t 5 /nobreak >nul
+timeout /t 8 /nobreak >nul
 
-echo [4] 测试后端API...
-curl -s http://localhost:8000/api/chat/health
+echo [4] 测试聊天API...
+echo.
+curl -X POST http://localhost:8000/api/chat/query -H "Content-Type: application/json" -d "{\"query\":\"Antinet\"}"
+echo.
 echo.
 
-echo.
 echo ========================================
-echo 后端服务已重启
-echo 现在可以测试聊天机器人了
+echo 测试完成
+echo 如果看到卡片数据，说明修复成功！
 echo ========================================
 pause

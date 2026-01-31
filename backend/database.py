@@ -101,7 +101,21 @@ class DatabaseManager:
                 )
             """)
 
-            # 6. 检查清单数据表
+            # 6. 知识卡片表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS knowledge_cards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    card_type TEXT DEFAULT 'blue',
+                    category TEXT,
+                    similarity REAL DEFAULT 0.0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 7. 检查清单数据表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS checklist_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -111,7 +125,7 @@ class DatabaseManager:
                 )
             """)
 
-            # 7. GTD任务表
+            # 8. GTD任务表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS gtd_tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

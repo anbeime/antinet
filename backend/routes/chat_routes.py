@@ -80,13 +80,20 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
 
         # 使用 SQL LIKE 进行模糊匹配
         query_lower = query.lower()
-        cursor.execute("""
-            SELECT id, type, title, content, source, category, created_at
+        print(f"[DEBUG] 搜索关键词: {query_lower}")
+        
+        sql = """
+            SELECT id, title, content, card_type, category, created_at
             FROM knowledge_cards
             WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
             ORDER BY id DESC
             LIMIT ?
-        """, (f"%{query_lower}%", f"%{query_lower}%", limit))
+        """
+        params = (f"%{query_lower}%", f"%{query_lower}%", limit)
+        print(f"[DEBUG] SQL: {sql}")
+        print(f"[DEBUG] 参数: {params}")
+        
+        cursor.execute(sql, params)
 
         rows = cursor.fetchall()
         cards = []
@@ -95,13 +102,12 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[1] if row[1] else "blue",  # 修正：type 在第2列
-                "title": row[2],
+                "title": row[1],
                 "content": {
-                    "description": row[3]
+                    "description": row[2]
                 },
-                "source": row[4],
-                "category": row[5],  # 修正：category 在第6列
+                "card_type": row[3] if row[3] else "blue",
+                "category": row[4],
                 "similarity": 0.8  # 简单相似度评分
             })
 
@@ -402,15 +408,15 @@ async def list_cards(
         # 构建查询
         if card_type:
             cursor.execute("""
-                SELECT id, type, title, content, source, category, created_at
+                SELECT id, title, content, card_type, category, created_at
                 FROM knowledge_cards
-                WHERE type = ?
+                WHERE card_type = ?
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
             """, (card_type, limit, offset))
         else:
             cursor.execute("""
-                SELECT id, type, title, content, source, category, created_at
+                SELECT id, title, content, card_type, category, created_at
                 FROM knowledge_cards
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
@@ -423,19 +429,18 @@ async def list_cards(
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
-                "card_type": row[1] if row[1] else "blue",  # 修正：type 在第2列
-                "title": row[2],
+                "title": row[1],
                 "content": {
-                    "description": row[3]
+                    "description": row[2]
                 },
-                "source": row[4],
-                "category": row[5],  # 修正：category 在第6列
+                "card_type": row[3] if row[3] else "blue",
+                "category": row[4],
                 "similarity": 0.8
             })
 
         # 获取总数
         if card_type:
-            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE type = ?", (card_type,))
+            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE card_type = ?", (card_type,))
         else:
             cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
         total = cursor.fetchone()[0]

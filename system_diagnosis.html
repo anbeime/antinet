@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antinet 功能全面诊断</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .test-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .test-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s;
+        }
+        .test-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+        .test-card h3 {
+            color: #495057;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .test-card h3 .icon {
+            font-size: 24px;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: auto;
+        }
+        .status.pending { background: #ffc107; color: #000; }
+        .status.testing { background: #17a2b8; color: #fff; }
+        .status.success { background: #28a745; color: #fff; }
+        .status.failed { background: #dc3545; color: #fff; }
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .test-result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-result.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            display: none;
+        }
+        .summary.show {
+            display: block;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .summary-item {
+            text-align: center;
+        }
+        .summary-item .number {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .summary-item .label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Antinet 系统功能全面诊断</h1>
+        <p class="subtitle">检测所有API端点的可用性和功能状态</p>
+
+        <div class="summary" id="summary">
+            <h2>📊 测试总结</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="number" id="total-tests">0</div>
+                    <div class="label">总测试数</div>
+                </div>
+                <div class="summary-item">
+                    <div class="number" id="passed-tests">0</div>
+                    <div class="label">通过</div>
+                </div>
+                <div class="summary-item">
+                    <div class="number" id="failed-tests">0</div>
+                    <div class="label">失败</div>
+                </div>
+                <div class="summary-item">
+                    <div class="number" id="success-rate">0%</div>
+                    <div class="label">成功率</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 30px;">
+            <button onclick="runAllTests()">🚀 开始全面诊断</button>
+        </div>
+
+        <div class="test-grid" id="test-grid"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        
+        const tests = [
+            {
+                id: 'backend-health',
+                name: '后端服务',
+                icon: '🖥️',
+                endpoint: '/docs',
+                method: 'GET',
+                description: '检查后端服务是否运行'
+            },
+            {
+                id: 'chat-health',
+                name: '聊天机器人',
+                icon: '💬',
+                endpoint: '/api/chat/health',
+                method: 'GET',
+                description: '聊天机器人健康检查'
+            },
+            {
+                id: 'chat-query',
+                name: '聊天查询',
+                icon: '🤖',
+                endpoint: '/api/chat/query',
+                method: 'POST',
+                body: { query: 'Antinet' },
+                description: '测试知识库查询功能'
+            },
+            {
+                id: 'knowledge-cards',
+                name: '知识卡片',
+                icon: '📇',
+                endpoint: '/api/knowledge/cards',
+                method: 'GET',
+                description: '获取知识卡片列表'
+            },
+            {
+                id: 'knowledge-graph',
+                name: '知识图谱',
+                icon: '🕸️',
+                endpoint: '/api/knowledge/graph',
+                method: 'GET',
+                description: '获取知识图谱数据'
+            },
+            {
+                id: 'pdf-status',
+                name: 'PDF处理',
+                icon: '📄',
+                endpoint: '/api/pdf/status',
+                method: 'GET',
+                description: 'PDF处理服务状态'
+            },
+            {
+                id: 'ppt-status',
+                name: 'PPT处理',
+                icon: '📊',
+                endpoint: '/api/ppt/status',
+                method: 'GET',
+                description: 'PPT处理服务状态'
+            },
+            {
+                id: 'excel-list',
+                name: 'Excel处理',
+                icon: '📈',
+                endpoint: '/api/excel/list',
+                method: 'GET',
+                description: 'Excel文件列表'
+            },
+            {
+                id: 'analysis-list',
+                name: '数据分析',
+                icon: '📉',
+                endpoint: '/api/analysis/list-analyses',
+                method: 'GET',
+                description: '分析结果列表'
+            },
+            {
+                id: 'npu-status',
+                name: 'NPU状态',
+                icon: '⚡',
+                endpoint: '/api/npu/status',
+                method: 'GET',
+                description: 'NPU模型状态'
+            },
+            {
+                id: 'agent-status',
+                name: 'Agent系统',
+                icon: '🤝',
+                endpoint: '/api/agent/status',
+                method: 'GET',
+                description: '8-Agent系统状态'
+            },
+            {
+                id: 'skill-list',
+                name: '技能系统',
+                icon: '🎯',
+                endpoint: '/api/skill/list',
+                method: 'GET',
+                description: '技能列表'
+            },
+            {
+                id: 'gtd-tasks',
+                name: 'GTD任务',
+                icon: '✅',
+                endpoint: '/api/data/gtd/tasks',
+                method: 'GET',
+                description: 'GTD任务管理'
+            },
+            {
+                id: 'team-members',
+                name: '团队成员',
+                icon: '👥',
+                endpoint: '/api/data/team-members',
+                method: 'GET',
+                description: '团队成员管理'
+            }
+        ];
+
+        let results = {};
+
+        function initTestCards() {
+            const grid = document.getElementById('test-grid');
+            grid.innerHTML = tests.map(test => `
+                <div class="test-card" id="card-${test.id}">
+                    <h3>
+                        <span class="icon">${test.icon}</span>
+                        <span>${test.name}</span>
+                        <span class="status pending" id="status-${test.id}">待测试</span>
+                    </h3>
+                    <p style="color: #6c757d; font-size: 13px; margin-bottom: 10px;">${test.description}</p>
+                    <div style="font-size: 12px; color: #868e96;">
+                        <code>${test.method} ${test.endpoint}</code>
+                    </div>
+                    <div id="result-${test.id}"></div>
+                </div>
+            `).join('');
+        }
+
+        async function testEndpoint(test) {
+            const statusEl = document.getElementById(`status-${test.id}`);
+            const resultEl = document.getElementById(`result-${test.id}`);
+            
+            statusEl.textContent = '测试中...';
+            statusEl.className = 'status testing';
+
+            try {
+                const options = {
+                    method: test.method,
+                    headers: { 'Content-Type': 'application/json' }
+                };
+
+                if (test.body) {
+                    options.body = JSON.stringify(test.body);
+                }
+
+                const response = await fetch(API_BASE + test.endpoint, options);
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.textContent = '✓ 正常';
+                    statusEl.className = 'status success';
+                    
+                    let message = `状态码: ${response.status}`;
+                    if (test.id === 'chat-query' && data.cards) {
+                        message += `<br>找到卡片: ${data.cards.length} 张`;
+                    } else if (test.id === 'knowledge-cards' && Array.isArray(data)) {
+                        message += `<br>卡片总数: ${data.length}`;
+                    } else if (test.id === 'npu-status' && data.model_loaded !== undefined) {
+                        message += `<br>模型加载: ${data.model_loaded ? '是' : '否'}`;
+                    }
+                    
+                    resultEl.innerHTML = `<div class="test-result success">${message}</div>`;
+                    results[test.id] = { success: true, data };
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                statusEl.textContent = '✗ 失败';
+                statusEl.className = 'status failed';
+                resultEl.innerHTML = `<div class="test-result error">错误: ${error.message}</div>`;
+                results[test.id] = { success: false, error: error.message };
+            }
+        }
+
+        async function runAllTests() {
+            results = {};
+            document.getElementById('summary').classList.remove('show');
+            
+            for (const test of tests) {
+                await testEndpoint(test);
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            showSummary();
+        }
+
+        function showSummary() {
+            const total = tests.length;
+            const passed = Object.values(results).filter(r => r.success).length;
+            const failed = total - passed;
+            const rate = Math.round((passed / total) * 100);
+
+            document.getElementById('total-tests').textContent = total;
+            document.getElementById('passed-tests').textContent = passed;
+            document.getElementById('failed-tests').textContent = failed;
+            document.getElementById('success-rate').textContent = rate + '%';
+            document.getElementById('summary').classList.add('show');
+
+            // 生成诊断报告
+            generateReport();
+        }
+
+        function generateReport() {
+            const failedTests = tests.filter(t => results[t.id] && !results[t.id].success);
+            
+            if (failedTests.length > 0) {
+                console.log('=== 失败的功能模块 ===');
+                failedTests.forEach(test => {
+                    console.log(`${test.icon} ${test.name}: ${results[test.id].error}`);
+                });
+            }
+        }
+
+        // 初始化
+        initTestCards();
+    </script>
+</body>
+</html>
