@@ -22,7 +22,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 基于四色卡片知识库提供答案\n3. 支持自然语言查询\n\n有什么可以帮您的？',
+      content: '你好！我是知易智能知识管家的知识库助手。\n\n 使用提示：\n1. 我可以回答关于系统使用的问题\n2. 基于四色卡片知识库提供答案\n3. 支持自然语言查询\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);

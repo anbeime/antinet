@@ -125,7 +125,7 @@ async def get_cards(
     params = []
 
     if card_type:
-        query += " AND type = ?"
+        query += " AND card_type = ?"
         params.append(card_type)
 
     if category:
@@ -179,27 +179,26 @@ async def create_card(card: KnowledgeCard):
         创建的卡片
     """
     logger.info(f"[CREATE_CARD] 收到创建卡片请求: {card.dict()}")
-    
+
     conn = db_manager.get_connection()
     cursor = conn.cursor()
 
     try:
         logger.info(f"[CREATE_CARD] 准备插入数据库，type={card.type}")
-        
+
+        # 使用正确的字段名 card_type（与数据库表结构一致）
         cursor.execute('''
-            INSERT INTO knowledge_cards (type, title, content, source, url, category)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO knowledge_cards (card_type, title, content, category)
+            VALUES (?, ?, ?, ?)
         ''', (
             card.type,
             card.title,
             card.content,
-            card.source,
-            card.url,
             card.category
         ))
 
         conn.commit()
-        
+
         logger.info(f"[CREATE_CARD] 插入成功，lastrowid={cursor.lastrowid}")
 
         # 获取新插入的卡片
@@ -254,8 +253,8 @@ async def get_stats():
         cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
         total_cards = cursor.fetchone()[0]
 
-        # 按类型分组 - 使用 type 字段（数据库字段名）
-        cursor.execute("SELECT type, COUNT(*) as count FROM knowledge_cards WHERE type IS NOT NULL GROUP BY type")
+        # 按类型分组 - 使用 card_type 字段（数据库字段名）
+        cursor.execute("SELECT card_type, COUNT(*) as count FROM knowledge_cards WHERE card_type IS NOT NULL GROUP BY card_type")
         cards_by_type = {row[0]: row[1] for row in cursor.fetchall() if row[0] is not None}
 
         # 按分类分组

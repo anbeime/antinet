@@ -40,7 +40,7 @@ const APITestPanel: React.FC = () => {
     method: string
   ): Promise<TestResult> => {
     const startTime = Date.now();
-    
+
     try {
       const response = await fetch(`http://localhost:8000${endpoint}`, {
         method,
@@ -48,7 +48,28 @@ const APITestPanel: React.FC = () => {
       });
 
       const responseTime = Date.now() - startTime;
-      const data = await response.json();
+
+      // 检查响应类型，避免将HTML解析为JSON
+      const contentType = response.headers.get('content-type');
+      let data: any = null;
+      let error: string | undefined = undefined;
+
+      if (response.ok) {
+        if (contentType && contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          data = await response.text();
+        }
+      } else {
+        // 处理错误响应
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          error = JSON.stringify(errorData);
+        } else {
+          const errorText = await response.text();
+          error = errorText.substring(0, 200) + (errorText.length > 200 ? '...' : '');
+        }
+      }
 
       return {
         endpoint: `${name} (${endpoint})`,
@@ -57,7 +78,7 @@ const APITestPanel: React.FC = () => {
         statusCode: response.status,
         responseTime,
         data: response.ok ? data : undefined,
-        error: response.ok ? undefined : JSON.stringify(data),
+        error: response.ok ? undefined : error,
       };
     } catch (error) {
       return {

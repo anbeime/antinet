@@ -17,7 +17,7 @@ interface KnowledgeCard {
   url?: string;
 }
 
-const API_BASE = 'http://localhost:8001';
+const API_BASE = 'http://localhost:8000';
 
 const DataManagement: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'cards' | 'tasks'>('cards');

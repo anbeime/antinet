@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Antinet 部署脚本
-# 用于在Windows ARM64环境下部署Antinet智能知识管家
+# 用于在Windows ARM64环境下部署知易智能知识管家
 
 set -e
 

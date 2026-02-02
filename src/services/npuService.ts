@@ -282,7 +282,7 @@ export const npuService = {
    */
   async getHealth(): Promise<any> {
     try {
-      const response = await fetch('http://localhost:8000/health');
+      const response = await fetch('http://localhost:8000/api/health');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

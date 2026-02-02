@@ -1,6 +1,6 @@
 @echo off
 REM Antinet 部署脚本 (Windows)
-REM 用于在Windows ARM64环境下部署Antinet智能知识管家
+REM 用于在Windows ARM64环境下部署知易智能知识管家
 
 echo ===================================
 echo Antinet 智能知识管家部署脚本

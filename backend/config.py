@@ -1,5 +1,5 @@
 # backend/config.py - 配置文件
-# Antinet智能知识管家 - 骁龙X Elite AIPC端侧AI应用
+# 知易智能知识管家 - 骁龙X Elite AIPC端侧AI应用
 # ============================================================
 # 硬件平台: 骁龙® X Elite (X1E-84-100)
 # SDK版本: QNN SDK v2.34 / v2.38 (兼容)
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     """应用配置 - 骁龙X Elite AIPC端侧AI配置"""
 
     # 基础配置
-    APP_NAME: str = "Antinet智能知识管家"
+    APP_NAME: str = "知易智能知识管家"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
 

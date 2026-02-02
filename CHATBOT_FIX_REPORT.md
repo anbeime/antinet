@@ -176,7 +176,7 @@ curl -X POST http://localhost:8000/api/chat/query \
 ```
 📊 相关事实：
 - Antinet系统概述
-  Antinet智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站...
+  知易智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站...
 
 💡 原因解释：
 - 为什么使用Antinet

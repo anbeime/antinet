@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,16 @@ async def get_team_members():
     try:
         db = get_db_manager()
         members = db.get_all_team_members()
+        
+        # 处理 permissions 字段，将 JSON 字符串解析为列表
+        for member in members:
+            if isinstance(member, dict):
+                if 'permissions' in member and isinstance(member['permissions'], str):
+                    try:
+                        member['permissions'] = json.loads(member['permissions'])
+                    except json.JSONDecodeError:
+                        member['permissions'] = ["read", "write"]
+        
         return members
     except Exception as e:
         logger.error(f"获取团队成员失败: {e}")

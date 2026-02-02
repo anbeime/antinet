@@ -1,4 +1,4 @@
-# Antinet智能知识管家 - 后端依赖
+# 知易智能知识管家 - 后端依赖
 # ========================================
 # 安装方法: pip install -r requirements.txt
 # 详细说明: 见 DEPENDENCIES.md

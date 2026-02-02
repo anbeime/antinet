@@ -458,7 +458,17 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM team_members ORDER BY contribution DESC")
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            members = []
+            for row in rows:
+                member = dict(row)
+                # 解析 JSON 字段
+                if member.get('permissions') and isinstance(member['permissions'], str):
+                    try:
+                        member['permissions'] = json.loads(member['permissions'])
+                    except:
+                        member['permissions'] = ['read']
+                members.append(member)
+            return members
 
     def add_team_member(self, name: str, role: str, avatar: str = '👤',
                         email: Optional[str] = None, contribution: int = 0) -> Dict[str, Any]:
@@ -475,7 +485,14 @@ class DatabaseManager:
             member_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM team_members WHERE id = ?", (member_id,))
-            return dict(cursor.fetchone())
+            member = dict(cursor.fetchone())
+            # 解析 JSON 字段
+            if member.get('permissions') and isinstance(member['permissions'], str):
+                try:
+                    member['permissions'] = json.loads(member['permissions'])
+                except:
+                    member['permissions'] = ['read', 'write']
+            return member
 
     def update_team_member(self, member_id: int, **kwargs) -> bool:
         """更新团队成员信息"""
@@ -507,7 +524,17 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM knowledge_spaces ORDER BY card_count DESC")
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            spaces = []
+            for row in rows:
+                space = dict(row)
+                # 解析 JSON 字段
+                if space.get('members') and isinstance(space['members'], str):
+                    try:
+                        space['members'] = json.loads(space['members'])
+                    except:
+                        space['members'] = []
+                spaces.append(space)
+            return spaces
 
     def add_knowledge_space(self, name: str, description: str, owner: str,
                             members: List[str] = None, is_public: bool = True) -> Dict[str, Any]:
@@ -524,7 +551,14 @@ class DatabaseManager:
             space_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM knowledge_spaces WHERE id = ?", (space_id,))
-            return dict(cursor.fetchone())
+            space = dict(cursor.fetchone())
+            # 解析 JSON 字段
+            if space.get('members') and isinstance(space['members'], str):
+                try:
+                    space['members'] = json.loads(space['members'])
+                except:
+                    space['members'] = []
+            return space
 
     # ========== 协作活动管理 ==========
     def get_recent_activities(self, limit: int = 20) -> List[Dict[str, Any]]:

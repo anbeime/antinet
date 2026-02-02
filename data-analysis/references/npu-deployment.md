@@ -12,7 +12,7 @@
 
 ## 概述
 
-本指南详细说明如何在Windows ARM64环境下部署Antinet智能知识管家，利用高通骁龙NPU加速实现端侧智能数据分析。
+本指南详细说明如何在Windows ARM64环境下部署知易智能知识管家，利用高通骁龙NPU加速实现端侧智能数据分析。
 
 ### 核心优势
 - **端侧隐私**：数据不出域，本地AES-256加密存储
@@ -692,7 +692,7 @@ monitor_inference_latency("Qwen2.0-7B-SSD", "分析上个月销售趋势", 100)
 
 ## 总结
 
-本指南涵盖了Antinet智能知识管家的完整NPU部署流程，包括：
+本指南涵盖了知易智能知识管家的完整NPU部署流程，包括：
 
 1. **环境准备**：venv_arm64、QNN SDK、GenieAPIService
 2. **模型量化**：使用QAI AppBuilder进行INT4/INT8量化

@@ -23,7 +23,7 @@ const AgentSystem: React.FC = () => {
     const loadAgentStatus = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('http://localhost:8001/api/agent/status');
+        const response = await fetch('http://localhost:8000/api/agent/status');
         if (response.ok) {
           const status = await response.json();
           setAgentStatus(status);

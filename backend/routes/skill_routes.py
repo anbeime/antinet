@@ -49,6 +49,7 @@ class SkillExecutionResponse(BaseModel):
 # ==================== 端点 ====================
 
 @router.get("/list")
+@router.get("/available")
 async def list_skills(agent_name: Optional[str] = None, category: Optional[str] = None):
     """
     列出所有可用技能

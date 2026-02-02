@@ -345,14 +345,17 @@ async def get_all_cards():
         # 从数据库读取卡片
         from database import DatabaseManager
         db = DatabaseManager(settings.DB_PATH)
-        
+
         # 获取所有卡片
-        cursor = db.conn.execute("""
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
             SELECT * FROM knowledge_cards
             ORDER BY created_at DESC
             LIMIT 100
         """)
         rows = cursor.fetchall()
+        conn.close()
         
         cards = []
         for row in rows:
@@ -421,7 +424,7 @@ async def chat_with_agent(query: str, context: Optional[Dict[str, Any]] = None):
         
         # 构建提示
         prompt = f"""
-你是Antinet智能知识管家的AI助手。
+你是知易智能知识管家的AI助手。
 
 用户问题：{query}
 
@@ -452,17 +455,20 @@ async def get_system_stats():
     try:
         from database import DatabaseManager
         db = DatabaseManager(settings.DB_PATH)
-        
+
         # 统计各类型卡片数量
-        cursor = db.conn.execute("""
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
             SELECT type, COUNT(*) as count
             FROM knowledge_cards
             GROUP BY type
         """)
         rows = cursor.fetchall()
+        conn.close()
 
         card_stats = {row['type']: row['count'] for row in rows}
-        
+
         return {
             "total_cards": sum(card_stats.values()),
             "cards_by_type": card_stats,
@@ -471,4 +477,29 @@ async def get_system_stats():
         }
     except Exception as e:
         logger.error(f"获取统计信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history")
+async def get_task_history(limit: int = 10):
+    """获取任务历史记录"""
+    try:
+        # 返回模拟的历史记录
+        # 实际应该从数据库或日志文件读取
+        tasks = []
+        for i in range(limit):
+            tasks.append({
+                "task_id": f"task_{i}",
+                "query": f"历史查询示例 {i+1}",
+                "status": "completed" if i % 2 == 0 else "failed",
+                "execution_time": 1.5 + (i * 0.1),
+                "created_at": f"2026-02-02T{(20 + i):02d}:00:00"
+            })
+
+        return {
+            "total": len(tasks),
+            "tasks": tasks
+        }
+    except Exception as e:
+        logger.error(f"获取任务历史失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

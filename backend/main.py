@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # backend/main.py - 主API服务
 """
-Antinet智能知识管家 - 后端API服务
+知易智能知识管家 - 后端API服务
 基于FastAPI,提供数据分析和知识管理接口
 """
 
@@ -123,6 +123,18 @@ if chat_router is not None:
     import routes.chat_routes as chat_routes_module
     chat_routes_module.db_manager = db_manager
     chat_router.db_manager = db_manager  # 同时设置router属性
+    
+    # 初始化向量搜索
+    try:
+        from routes.chat_vector_patch import init_vector_search
+        vector_enabled = init_vector_search(chat_routes_module, db_manager)
+        if vector_enabled:
+            logger.info("[OK] 向量搜索已启用")
+        else:
+            logger.warning("[Warning] 向量搜索初始化失败")
+    except Exception as e:
+        logger.error(f"[Error] 向量搜索初始化异常: {e}")
+    
     logger.info("[OK] 聊天机器人路由已注册")
 
 # 注册知识管理路由
@@ -138,7 +150,7 @@ except Exception as e:
 # 注册 8-Agent 系统路由
 try:
     from routes.agent_routes import router as agent_router
-    app.include_router(agent_router, prefix="/api/agent")  # 8-Agent 系统路由
+    app.include_router(agent_router)  # 8-Agent 系统路由（prefix已在router中定义）
     logger.info("[OK] 8-Agent 系统路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 8-Agent 系统路由: {e}")
@@ -453,7 +465,7 @@ async def root():
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "description": "Antinet智能知识管家 - 后端API",
+        "description": "知易智能知识管家 - 后端API",
         "status": "running",
         "model_loaded": model_loaded,
         "device": settings.QNN_DEVICE

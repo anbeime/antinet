@@ -1,6 +1,6 @@
 """
 FastAPI主应用
-Antinet智能知识管家 - Windows ARM64端侧智能数据工作站
+知易智能知识管家 - Windows ARM64端侧智能数据工作站
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # 创建FastAPI应用
 app = FastAPI(
-    title="Antinet智能知识管家",
+    title="知易智能知识管家",
     description="部署于Windows ARM64的端侧智能数据工作站，通过QNN SDK加速的Qwen2.0-7B实现自然语言驱动的数据分析与知识管理闭环。",
     version="1.0.0",
     docs_url="/docs",
@@ -49,7 +49,7 @@ app.add_middleware(
 async def root():
     """根路径"""
     return {
-        "name": "Antinet智能知识管家",
+        "name": "知易智能知识管家",
         "version": "1.0.0",
         "description": "Windows ARM64端侧智能数据工作站",
         "architecture": "8-Agent锦衣卫风格",

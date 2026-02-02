@@ -70,7 +70,7 @@ const PDFAnalysis: React.FC = () => {
             pageCount: 12,
             wordCount: 8540,
             extractedText: '这是从PDF中提取的示例文本内容。实际使用时，这里会包含完整的文档文本内容...',
-            summary: '本文档介绍了Antinet智能知识管家的核心功能和架构设计，重点阐述了基于骁龙AIPC平台的端侧智能数据处理能力。',
+            summary: '本文档介绍了知易智能知识管家的核心功能和架构设计，重点阐述了基于骁龙AIPC平台的端侧智能数据处理能力。',
             keyPoints: [
               '基于NPU加速的轻量化大模型推理',
               '四色卡片知识管理系统',

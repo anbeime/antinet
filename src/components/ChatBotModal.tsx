@@ -23,7 +23,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是Antinet智能知识管家的知识库助手。\n\n[提示] 使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
+      content: '你好！我是知易智能知识管家的知识库助手。\n\n[提示] 使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);

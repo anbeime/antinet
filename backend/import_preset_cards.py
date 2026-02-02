@@ -16,7 +16,7 @@ PRESET_KNOWLEDGE_CARDS = [
     # 蓝色卡片 - 事实
     {
         "title": "Antinet系统概述",
-        "content": "Antinet智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站，通过集成NPU加速的轻量化大模型，实现自然语言驱动的数据查询、自动数据分析与可视化、四色卡片知识沉淀、数据不出域、NPU加速推理等功能。",
+        "content": "知易智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站，通过集成NPU加速的轻量化大模型，实现自然语言驱动的数据查询、自动数据分析与可视化、四色卡片知识沉淀、数据不出域、NPU加速推理等功能。",
         "category": "事实",
         "card_type": "blue"
     },
@@ -76,7 +76,7 @@ PRESET_KNOWLEDGE_CARDS = [
     },
     {
         "title": "比赛信息",
-        "content": "参加2025骁龙人工智能创新应用大赛，AIPC赛道-通用赛，项目名称：Antinet智能知识管家。",
+        "content": "参加2025骁龙人工智能创新应用大赛，AIPC赛道-通用赛，项目名称：知易智能知识管家。",
         "category": "事实",
         "card_type": "blue"
     },

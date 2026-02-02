@@ -317,7 +317,7 @@ class KnowledgeGraphVisualizationSkill:
                 "id": "card_001",
                 "title": "Antinet系统概述",
                 "type": "blue",
-                "content": {"description": "Antinet智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站"},
+                "content": {"description": "知易智能知识管家是一款部署于骁龙AIPC的端侧智能数据工作站"},
                 "tags": ["系统", "概述", "AIPC"],
                 "created_at": "2026-01-26"
             },
