@@ -5,7 +5,7 @@ NPU 模型加载器
 硬件平台: 骁龙® X Elite (X1E-84-100)
 软件工具: QAI AppBuilder v2.31.0 + QNN SDK v2.38
 Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用Hexagon NPU
-模型: Qwen2.0-7B-SSD (INT8量化QNN格式)
+模型: Llama3.1-8B (INT8量化QNN格式)
 """
 import os
 import sys
@@ -26,11 +26,13 @@ if GENIE_PATH not in sys.path:
 logger = logging.getLogger(__name__)
 
 # 设置必要的环境变量，确保导入 GenieContext 前 NPU 库路径在 PATH 中
+# QNN 2.42 已安装到 Python 环境，无需额外配置 lib_path
 lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
-bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+# QNN 2.42 库路径（如果需要）
+# bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc"
 
-# 确保两个目录都在 PATH 中（注意顺序，bridge_lib_path在前）
-paths_to_add = [bridge_lib_path, lib_path]
+# 确保库目录都在 PATH 中
+paths_to_add = [lib_path]
 current_path = os.environ.get('PATH', '')
 for p in paths_to_add:
     if p not in current_path:
@@ -119,13 +121,40 @@ class ModelConfig:
 
     # 预装模型配置
     MODELS = {
-        "qwen2-7b-ssd": {
+        "qwen2.5-vl-3b": {
+            "name": "Qwen2.5-VL-3B",
+            "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
+            "params": "3B",
+            "quantization": "QNN 2.42",
+            "description": "最新模型，支持视觉+语言，QNN 2.42优化，2个分片",
+            "max_tokens": 2048,
+            "recommended": True
+        },
+        "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
             "path": "C:/model/Qwen2.0-7B-SSD-8380-2.34",
             "params": "7B",
             "quantization": "QNN 2.34",
-            "description": "推荐首选，对话/分析，速度快，中文支持好",
+            "description": "对话/分析，速度快，中文支持好（需要KV缓存）",
             "max_tokens": 2048,
+            "recommended": False
+        },
+        "llama3.2-3b": {
+            "name": "Llama3.2-3B",
+            "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
+            "params": "3B",
+            "quantization": "QNN 2.37",
+            "description": "轻量级场景，响应最快，内存占用小",
+            "max_tokens": 2048,
+            "recommended": False
+        },
+        "bge-base-zh": {
+            "name": "BGE-Base-ZH",
+            "path": "C:/model/bge-base-zh-v1.5-qnn-8380/bge-base-zh-v1.5-qnn-8380",
+            "params": "110M",
+            "quantization": "QNN",
+            "description": "中文文本嵌入模型，RAG知识库，完整单文件",
+            "max_tokens": 512,
             "recommended": True
         },
         "llama3.1-8b": {
@@ -133,23 +162,24 @@ class ModelConfig:
             "path": "C:/model/llama3.1-8b-8380-qnn2.38",
             "params": "8B",
             "quantization": "QNN 2.38",
-            "description": "对话生成，英文效果好，推理能力强",
+            "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",
             "max_tokens": 2048,
             "recommended": False
         },
         "llama3.2-3b": {
             "name": "Llama3.2-3B",
-            "path": "C:/model/llama3.2-3b-8380-qnn2.37",
+            "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
             "params": "3B",
             "quantization": "QNN 2.37",
-            "description": "轻量级场景，响应最快，内存占用小",
+            "description": "推荐首选，基础模式，3个分片，轻量快速",
             "max_tokens": 2048,
-            "recommended": False
+            "recommended": True
         }
     }
 
     # 默认使用的模型
-    DEFAULT_MODEL = "qwen2-7b-ssd"
+    # Llama3.2-3B: 纯文本模型，QNN 2.37，稳定可用
+    DEFAULT_MODEL = "llama3.2-3b"
 
 
 class NPUModelLoader:
@@ -236,26 +266,8 @@ class NPUModelLoader:
                 else:
                     logger.info(f"[OK] 确认使用 QnnHtp backend (NPU)")
 
-                # 启用BURST性能模式以优化延迟（如果qai_hub_models可用）
-                try:
-                    if PerfProfile is not None:
-                        PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
-                        logger.info("[OK] 已启用BURST性能模式（qai_hub_models）")
-                    else:
-                        logger.info("[INFO] qai_hub_models未安装，尝试通过环境变量启用BURST模式")
-                        # 尝试通过环境变量启用高性能模式
-                        os.environ['QNN_PERFORMANCE_MODE'] = 'BURST'
-                        os.environ['QNN_HTP_PERFORMANCE_MODE'] = 'burst'
-                        logger.info("[OK] 已通过环境变量启用 BURST 性能模式")
-                except Exception as e:
-                    logger.warning(f"[WARNING] 启用BURST模式失败: {e}")
-                    # 即使失败也尝试设置环境变量
-                    try:
-                        os.environ['QNN_PERFORMANCE_MODE'] = 'BURST'
-                        os.environ['QNN_HTP_PERFORMANCE_MODE'] = 'burst'
-                        logger.info("[OK] 已通过环境变量启用 BURST 性能模式（备用方案）")
-                    except:
-                        pass
+                # 注意：config.json已经配置了BURST模式，不需要在Python代码中重复设置
+                # 避免重复设置导致冲突
 
                 load_time = time.time() - start_time
 
@@ -268,6 +280,25 @@ class NPUModelLoader:
 
                 self.is_loaded = True
                 logger.info(f"[DEBUG load] 成功加载后 self.is_loaded={self.is_loaded}")
+
+                # 🔑 关键优化: 首次推理预热（解决NPU初始化慢的问题）
+                logger.info(f"[PERF] 执行预热推理（NPU初始化）...")
+                warmup_start = time.time()
+
+                # 执行一次简单推理进行预热（使用正确的prompt格式）
+                def warmup_callback(text):
+                    return True
+
+                try:
+                    # 使用正确的prompt格式进行预热
+                    warmup_prompt = self._format_prompt("Hello")
+                    self.model.Query(warmup_prompt, warmup_callback)
+                    warmup_time = (time.time() - warmup_start) * 1000
+                    logger.info(f"[PERF] 预热推理完成: {warmup_time:.2f}ms")
+                    logger.info(f"[PERF] 后续推理速度应该显著提升")
+                except Exception as e:
+                    logger.warning(f"[WARNING] 预热推理失败（可忽略）: {e}")
+
                 return self.model
 
             except Exception as e:
@@ -325,7 +356,7 @@ class NPUModelLoader:
         
         return formatted_prompt
 
-    def infer(self, prompt: str, max_new_tokens: int = 64, temperature: float = 0.7) -> str:
+    def infer(self, prompt: str, max_new_tokens: int = 32, temperature: float = 0.7) -> str:
         """
         执行推理
 
@@ -349,12 +380,15 @@ class NPUModelLoader:
             self.load()
 
         try:
-            start_time = time.time()
+            # 🔑 分段计时1: 整体开始
+            total_start = time.time()
 
-            # 格式化提示词为模型期望的格式
+            # 🔑 分段计时2: 提示词格式化
+            format_start = time.time()
             formatted_prompt = self._format_prompt(prompt)
-            logger.debug(f"推理提示词: {repr(prompt[:100])}... -> 格式化后长度: {len(formatted_prompt)}")
-            
+            format_time = (time.time() - format_start) * 1000
+            logger.debug(f"提示词格式化: {format_time:.2f}ms")
+
             # 设置推理参数
             if hasattr(self.model, 'SetParams'):
                 try:
@@ -369,54 +403,95 @@ class NPUModelLoader:
                 except Exception as param_error:
                     logger.warning(f"SetParams失败，使用默认参数: {param_error}")
 
+            # 🔑 关键优化1: 推理前启用BURST性能模式
+            burst_enabled = False
+            burst_start = time.time()
+            try:
+                if PerfProfile is not None:
+                    PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
+                    burst_enabled = True
+                    logger.info("[PERF] ✅ BURST模式已启用")
+                else:
+                    logger.info("[PERF] INFO: qai_hub_models未安装，依赖config.json中的BURST设置")
+            except Exception as e:
+                logger.warning(f"[PERF] ⚠️ 启用BURST模式失败: {e}")
+            burst_set_time = (time.time() - burst_start) * 1000
+            logger.info(f"[PERF] BURST模式设置耗时: {burst_set_time:.2f}ms")
+
             # 创建回调函数收集结果
             result_parts = []
-            callback_count = 0
-            
+            token_count = 0
+
             def callback(text):
-                nonlocal callback_count
-                callback_count += 1
+                nonlocal token_count
+                token_count += 1
                 result_parts.append(text)
                 # 只记录前几次回调，避免日志过多
-                if callback_count <= 5:
-                    logger.debug(f"回调 #{callback_count}: {repr(text[:50])}...")
+                if token_count <= 5:
+                    logger.debug(f"回调 #{token_count}: {repr(text[:50])}...")
                 return True
-            
-            # 执行推理
+
+            # 🔑 分段计时3: 纯推理时间
+            inference_start = time.time()
             logger.debug(f"开始NPU推理...")
             self.model.Query(formatted_prompt, callback)
-            logger.debug(f"推理完成，回调总次数: {callback_count}")
+            inference_time = (time.time() - inference_start) * 1000
+            logger.debug(f"推理完成，生成Token数: {token_count}")
+
+            # 🔑 分段计时4: 结果拼接
+            join_start = time.time()
             result = ''.join(result_parts)
-            logger.debug(f"总结果长度: {len(result)}")
+            join_time = (time.time() - join_start) * 1000
+            logger.debug(f"结果拼接: {join_time:.2f}ms")
 
-            inference_time = (time.time() - start_time) * 1000
+            # 🔑 关键优化2: 推理后立即释放BURST模式
+            if burst_enabled:
+                try:
+                    PerfProfile.RelPerfProfileGlobal()
+                    logger.info("[PERF] ✅ BURST模式已释放")
+                except Exception as e:
+                    logger.warning(f"[PERF] ⚠️ 释放BURST模式失败: {e}")
 
-            logger.info(f"[OK] 推理完成: {inference_time:.2f}ms")
+            # 🔑 分段计时5: 总耗时
+            total_time = (time.time() - total_start) * 1000
 
-            #  熔断检查：如果推理时间超过 2000ms，可能未走 NPU
-            # NPU 推理应该在 450ms 左右，但复杂推理可能需要更长时间
-            # 调整阈值到 2000ms 以避免误报
-            if inference_time > 2000:
+            # 🔑 详细的分段性能日志
+            logger.info(f"[PERF] ========== 推理分段性能 ==========")
+            logger.info(f"[PERF] 1. 格式化耗时: {format_time:.2f}ms")
+            logger.info(f"[PERF] 2. BURST设置: {burst_set_time:.2f}ms")
+            logger.info(f"[PERF] 3. 纯推理耗时: {inference_time:.2f}ms ⭐")
+            logger.info(f"[PERF] 4. 结果拼接: {join_time:.2f}ms")
+            logger.info(f"[PERF] 5. 总耗时: {total_time:.2f}ms")
+            logger.info(f"[PERF] =====================================")
+
+            logger.info(f"[PERF] ========== 推理性能统计 ==========")
+            logger.info(f"[PERF] 生成Token数: {token_count}")
+            if token_count > 0:
+                logger.info(f"[PERF] 每Token耗时: {inference_time/token_count:.2f}ms")
+                logger.info(f"[PERF] 吞吐量: {token_count/inference_time*1000:.1f} tokens/sec")
+            logger.info(f"[PERF] BURST模式: {'✅ 已启用' if burst_enabled else '❌ 未启用'}")
+            logger.info(f"[PERF] =====================================")
+
+            # 🔑 关键优化3: 性能检查与警告（高通赛道要求：推理延迟 < 500ms）
+            if inference_time > 500:
                 warning_msg = (
-                    f"[性能警告] 推理延迟 {inference_time:.2f}ms 超过 2000ms 建议阈值\n"
+                    f"[PERF] ⚠️ 推理延迟 {inference_time:.2f}ms > 500ms（高通赛道要求）\n"
                     f"可能原因：\n"
-                    f"  1. 未正确配置 NPU execution provider\n"
-                    f"  2. 模型加载在 CPU 上而非 NPU\n"
-                    f"  3. 没有使用 QNN HTP backend\n"
-                    f"  4. 内存未分配到 NPU 上\n"
-                    f"  5. 推理提示词过长或生成 token 数过多\n"
+                    f"  1. NPU初始化慢（首次推理）→ 后续应该变快\n"
+                    f"  2. Backend配置不是QnnHtp\n"
+                    f"  3. NPU驱动未正确加载\n"
+                    f"  4. 推理提示词过长或生成token数过多\n"
+                    f"  5. 模型需要重新预热\n"
                     f"\n"
                     f"建议检查：\n"
-                    f"  - config.json 中的 'backend.type' 是否为 'QnnHtp'\n"
-                    f"  - 确认 'allocated on NPU' 和 'execution provider: NPU'\n"
-                    f"  - 检查 QNN 日志输出以确认执行 provider\n"
-                    f"  - 尝试减少 max_new_tokens 或缩短提示词"
+                    f"  - 这是第几次推理？（首次推理通常慢）\n"
+                    f"  - config.json中的backend.type是否为'QnnHtp'\n"
+                    f"  - 尝试减少max_new_tokens或缩短提示词\n"
+                    f"  - 如果持续>500ms，考虑升级到QNN 2.42"
                 )
                 logger.warning(warning_msg)
             else:
-                logger.info(f"[性能检查通过] 推理时间 {inference_time:.2f}ms 在正常范围内 (< 1000ms)")
-                if inference_time > 500:
-                    logger.warning(f"[WARNING] 推理时间 {inference_time:.2f}ms 略高，建议检查提示词长度和 token 数")
+                logger.info(f"[PERF] ✅ 性能检查通过: {inference_time:.2f}ms < 500ms ✓")
 
             return result
 
