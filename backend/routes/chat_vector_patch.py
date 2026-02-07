@@ -21,10 +21,10 @@ def init_vector_search(chat_routes_module, db_mgr):
     global embedding_service
     
     try:
-        # 1. 导入嵌入服务
-        from services.embedding_service import get_embedding_service
-        embedding_service = get_embedding_service()
-        logger.info("[ChatRoutes] 嵌入服务已初始化")
+        # 1. 导入 BGE 嵌入服务
+        from embeddings.bge_service import get_embedding_service
+        embedding_service = get_embedding_service(use_qnn=True)
+        logger.info("[ChatRoutes] BGE 嵌入服务已初始化")
         
         # 2. 添加向量方法到数据库
         from database_vector import add_vector_methods
