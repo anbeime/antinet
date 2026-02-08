@@ -1,99 +1,126 @@
-
 """
-BGE 模型服务
+BGE Embedding Service
+Uses QAI AppBuilder Python API for BGE embedding
+Reference: https://www.aidevhome.com/?id=54
 
-使用 QNN 原生工具执行 BGE 嵌入推理
-需要 QNN SDK 2.41+ 和 qnn-net-run.exe
-
-硬件平台: 骁龙® X Elite (X1E-84-100)
-软件工具: QNN SDK 2.41
-模型: bge-base-zh-v1.5-qnn-8380
+Hardware: Snapdragon X Elite (X1E-84-100)
+Software: QAI AppBuilder (qai_appbuilder)
+Model: bge-base-zh-v1.5-qnn-8380
 """
 
 import os
 import sys
-import subprocess
 import logging
-from typing import List, Tuple
-from pathlib import Path
+import numpy as np
+from typing import List
 
 logger = logging.getLogger(__name__)
 
-# 模型路径
-BGE_MODEL_PATH = "C:/model/models_2.38/bge-base-zh-v1.5-qnn-8380"
-BGE_CONFIG_PATH = os.path.join(BGE_MODEL_PATH, "htp_backend.json")
+# Model paths
+MODEL_DIR = "C:/model/models_2.38/bge-base-zh-v1.5-qnn-8380"
+MODEL_BIN = os.path.join(MODEL_DIR, "model.bin")
 
-# QNN 工具路径（使用 2.38 版本）
-QNN_NET_RUN_PATH = r"C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/bin/x86_64-windows-msvc/qnn-net-run.exe"
-QNN_BACKEND_PATH = r"C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc/libQnnHtp.dll"
+# QAI AppBuilder library path
+QAI_LIBS_DIR = os.path.join(MODEL_DIR, "qai_libs")
+
 
 class BGEEmbeddingService:
-    """BGE 嵌入服务"""
+    """BGE Embedding Service (using QAI AppBuilder)"""
 
     def __init__(self, use_qnn=True):
         """
-        初始化
+        Initialize
 
         Args:
-            use_qnn: 是否使用 QNN 推理
+            use_qnn: Whether to use QNN inference
         """
         self.use_qnn = use_qnn
+        self.context = None
+        self.tokenizer = None
+        self.max_length = 512
 
-        if use_qnn:
-            # 检查 QNN 工具
-            if os.path.exists(QNN_NET_RUN_PATH):
-                logger.info(f"[OK] QNN 工具找到: {QNN_NET_RUN_PATH}")
-            else:
-                logger.warning(f"[WARNING] QNN 工具未找到: {QNN_NET_RUN_PATH}")
-                logger.info("将使用 TF-IDF 作为备用方案")
+        # Check model file
+        if not os.path.exists(MODEL_BIN):
+            logger.error(f"[ERROR] Model file not found: {MODEL_BIN}")
+            logger.warning("Will use TF-IDF as fallback")
+            self.use_qnn = False
+        else:
+            logger.info(f"[OK] Model file found: {MODEL_BIN}")
+
+        # Check QAI AppBuilder
+        try:
+            self._init_qai_appbuilder()
+        except ImportError:
+            logger.warning("[WARNING] qai_appbuilder not installed, will use TF-IDF")
+            self.use_qnn = False
+
+    def _init_qai_appbuilder(self):
+        """Initialize QAI AppBuilder"""
+        # Add model directory to Python path
+        if MODEL_DIR not in sys.path:
+            sys.path.insert(0, MODEL_DIR)
+        if os.path.join(MODEL_DIR, "python") not in sys.path:
+            sys.path.insert(0, os.path.join(MODEL_DIR, "python"))
+
+        try:
+            from qai_appbuilder import QNNContext, Runtime, LogLevel, QNNConfig
+            logger.info("[OK] QAI AppBuilder imported successfully")
+
+            # Configure QNN
+            QNNConfig.Config(QAI_LIBS_DIR, Runtime.HTP, LogLevel.WARN)
+            logger.info(f"[OK] QNN configured: {QAI_LIBS_DIR}")
+
+        except ImportError as e:
+            logger.error(f"[ERROR] QAI AppBuilder import failed: {e}")
+            raise
 
     def embed(self, text: str, max_length: int = 512) -> List[float]:
         """
-        将文本转换为向量
+        Convert text to vector
 
         Args:
-            text: 输入文本
-            max_length: 最大长度
+            text: Input text
+            max_length: Maximum length
 
         Returns:
-            向量列表
+            Vector list
         """
         if not self.use_qnn:
-            # 使用 TF-IDF（备用方案）
+            # Use TF-IDF (fallback)
             return self._embed_with_tfidf(text, max_length)
 
         try:
-            # 使用 QNN 原生工具
-            return self._embed_with_qnn(text, max_length)
+            # Use QAI AppBuilder inference
+            return self._embed_with_qai(text, max_length)
         except Exception as e:
-            logger.error(f"[ERROR] QNN 推理失败: {e}")
-            # 降级到 TF-IDF
-            logger.info("[INFO] 降级到 TF-IDF")
+            logger.error(f"[ERROR] QAI AppBuilder inference failed: {e}")
+            # Fallback to TF-IDF
+            logger.info("[INFO] Fallback to TF-IDF")
             return self._embed_with_tfidf(text, max_length)
 
     def encode_text(self, text: str, max_length: int = 512) -> List[float]:
         """
-        将文本转换为向量（兼容接口）
+        Convert text to vector (compatible interface)
 
         Args:
-            text: 输入文本
-            max_length: 最大长度
+            text: Input text
+            max_length: Maximum length
 
         Returns:
-            向量列表
+            Vector list
         """
         return self.embed(text, max_length)
 
     def embed_batch(self, texts: List[str], max_length: int = 512) -> List[List[float]]:
         """
-        批量嵌入
+        Batch embedding
 
         Args:
-            texts: 文本列表
-            max_length: 最大长度
+            texts: Text list
+            max_length: Maximum length
 
         Returns:
-            向量列表
+            Vector list
         """
         results = []
         for text in texts:
@@ -101,77 +128,81 @@ class BGEEmbeddingService:
             results.append(result)
         return results
 
-    def _embed_with_qnn(self, text: str, max_length: int = 512) -> List[float]:
-        """使用 QNN 推理"""
-        import numpy as np
-        import tempfile
+    def _embed_with_qai(self, text: str, max_length: int = 512) -> List[float]:
+        """Use QAI AppBuilder for inference"""
+        from qai_appbuilder import QNNContext
 
-        # 创建临时输入文件
-        input_dir = tempfile.mkdtemp()
+        # Initialize Context
+        if self.context is None:
+            self.context = QNNContext("bge", MODEL_BIN)
+            logger.info("[OK] BGE Context initialized")
 
-        # 创建 input_list.txt
-        input_list_path = os.path.join(input_dir, "input_list.txt")
-        with open(input_list_path, 'w', encoding='utf-8') as f:
-            f.write(f"0\t{len(text)}\t0\t{max_length}\n")
+        # Initialize Tokenizer
+        if self.tokenizer is None:
+            try:
+                from transformers import AutoTokenizer
+                self.tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-base-zh-v1.5")
+                logger.info("[OK] Tokenizer loaded")
+            except ImportError:
+                logger.warning("[WARNING] transformers not installed, using simple tokenization")
+                pass
 
-        # 创建输入文件（实际使用二进制格式）
-        input_file_path = os.path.join(input_dir, "input.bin")
-        # 这里需要根据 BGE 模型格式准备输入
+        # Tokenize
+        if self.tokenizer:
+            inputs = self.tokenizer(
+                text,
+                padding="max_length",
+                truncation=True,
+                max_length=max_length,
+                return_tensors="np"
+            )
+            input_ids = inputs["input_ids"].astype(np.int32)
+            attention_mask = inputs["attention_mask"].astype(np.int32)
+        else:
+            # Fallback: Simple tokenization
+            import jieba
+            tokens = list(jieba.cut(text))
+            # Simple token mapping
+            token_lengths = [len(t) for t in tokens[:max_length]]
+            input_ids = np.array([token_lengths], dtype=np.int32)
+            attention_mask = np.ones((1, max_length), dtype=np.int32)
 
-        # 构建命令
-        cmd = [
-            QNN_NET_RUN_PATH,
-            "--retrieve_context", os.path.join(BGE_MODEL_PATH, "model.bin"),
-            "--backend", QNN_BACKEND_PATH,
-            "--input_list", input_list_path,
-            "--use_native_input_files",
-            "--config_file", BGE_CONFIG_PATH,
-            "--output_dir", input_dir
-        ]
+        # Generate position_ids
+        position_ids = np.arange(max_length, dtype=np.int32).reshape(1, max_length)
 
-        logger.debug(f"[INFO] 执行命令: {' '.join(cmd)}")
-
-        # 执行命令
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30
+        # Execute inference
+        output_data = self.context.Inference(
+            input_ids,
+            attention_mask,
+            position_ids
         )
 
-        if result.returncode != 0:
-            logger.error(f"[ERROR] QNN 推理失败: {result.stderr}")
-            raise RuntimeError(f"QNN 推理失败: {result.stderr}")
+        # Post-processing: Extract [CLS] vector
+        embedding = output_data[0].astype(np.float32).flatten()
 
-        logger.debug(f"[INFO] 推理成功")
+        # Normalize
+        norm = np.linalg.norm(embedding)
+        if norm > 1e-12:
+            embedding = embedding / norm
 
-        # 读取输出
-        output_dir = os.path.join(input_dir, "output")
-        output_file = os.path.join(output_dir, "0.bin")
-
-        if os.path.exists(output_file):
-            with open(output_file, 'rb') as f:
-                vector = np.frombuffer(f.read(), dtype=np.float32)
-                return vector.tolist()
-        else:
-            raise RuntimeError("输出文件未找到")
+        return embedding.tolist()
 
     def _embed_with_tfidf(self, text: str, max_length: int = 512) -> List[float]:
-        """使用 TF-IDF（备用方案）"""
+        """Use TF-IDF (fallback)"""
         try:
             import jieba
             from sklearn.feature_extraction.text import TfidfVectorizer
 
-            # 中文分词
+            # Chinese tokenization
             tokens = list(jieba.cut(text))
-            tokenized_text = ' '.join(tokens)
+            tokenized_text = " ".join(tokens)
 
-            # TF-IDF 向量化
-            vectorizer = TfidfVectorizer(max_features=max_length, token_pattern=r'(?u)\b\w+\b')
+            # TF-IDF vectorization
+            vectorizer = TfidfVectorizer(max_features=max_length, token_pattern=r"(?u)\b\w+\b")
             vector = vectorizer.fit_transform([tokenized_text])
             result = vector.toarray()[0].tolist()
 
-            # 确保维度正确
+            # Ensure correct dimension
             if len(result) < max_length:
                 result.extend([0.0] * (max_length - len(result)))
             elif len(result) > max_length:
@@ -180,26 +211,30 @@ class BGEEmbeddingService:
             return result
 
         except ImportError:
-            logger.error("[ERROR] sklearn/jieba 未安装，无法使用 TF-IDF")
-            # 最后降级：返回零向量
+            logger.error("[ERROR] sklearn/jieba not installed, cannot use TF-IDF")
+            # Last fallback: Return zero vector
             return [0.0] * max_length
 
-# 全局服务实例
-_service: BGEEmbeddingService = None
 
-def get_embedding_service(use_qnn: bool = True) -> BGEEmbeddingService:
-    """获取嵌入服务实例"""
+# Global service instance
+_service = None
+
+
+def get_embedding_service(use_qnn: bool = True):
+    """Get embedding service instance"""
     global _service
     if _service is None:
         _service = BGEEmbeddingService(use_qnn=use_qnn)
     return _service
 
+
 def embed_text(text: str, max_length: int = 512) -> List[float]:
-    """便捷函数：嵌入文本"""
+    """Convenience function: Embed text"""
     service = get_embedding_service()
     return service.embed(text, max_length)
 
+
 def embed_batch(texts: List[str], max_length: int = 512) -> List[List[float]]:
-    """便捷函数：批量嵌入"""
+    """Convenience function: Batch embedding"""
     service = get_embedding_service()
     return service.embed_batch(texts, max_length)
