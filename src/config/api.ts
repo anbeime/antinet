@@ -87,6 +87,14 @@ export const API_ENDPOINTS = {
   'PPT_STATUS': '/api/ppt/status',
   'PPT_TEMPLATE_CREATE': '/api/ppt/template/create',
 
+  // 多模型API - 新增
+  'MULTI_CHAT': '/api/multi/chat',
+  'MULTI_CHAT_WITH_IMAGE': '/api/multi/chat-with-image',
+  'MULTI_MODELS': '/api/multi/models',
+  'MULTI_MODEL_INFO': '/api/multi/model-info',
+  'MULTI_STATUS': '/api/multi/status',
+  'MULTI_EMBEDDING': '/api/multi/embedding',
+
   // 其他
   '_ACTIVITIES': '/activities',
   'MOCK_ANALYTICS_REPORT': '/api/mock/analytics/report',
@@ -168,6 +176,12 @@ export const API_METHODS = {
   'PPT_HEALTH': ['GET'],
   'PPT_STATUS': ['GET'],
   'PPT_TEMPLATE_CREATE': ['POST'],
+  'MULTI_CHAT': ['POST'],
+  'MULTI_CHAT_WITH_IMAGE': ['POST'],
+  'MULTI_MODELS': ['GET'],
+  'MULTI_MODEL_INFO': ['GET'],
+  'MULTI_STATUS': ['GET'],
+  'MULTI_EMBEDDING': ['POST'],
   'SKILL_AGENT_AGENT_NAME': ['GET'],
   'SKILL_BATCH_EXECUTE': ['POST'],
   'SKILL_CATEGORIES': ['GET'],

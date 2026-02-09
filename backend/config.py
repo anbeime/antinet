@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "qwen2.5-vl-3b"  # 默认模型
     MODEL_PATH: str = "C:/model/models_2.42/qwen2.5vl3b-8380-2.42"
-    AUTO_LOAD_MODEL: bool = False  # 不自动加载，按需加载
+    AUTO_LOAD_MODEL: bool = False  # 禁用启动时预加载，避免阻塞服务启动
 
     # QNN配置
     # Backend: HTP (Hexagon Tensor Processor) = NPU

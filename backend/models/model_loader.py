@@ -281,23 +281,9 @@ class NPUModelLoader:
                 self.is_loaded = True
                 logger.info(f"[DEBUG load] 成功加载后 self.is_loaded={self.is_loaded}")
 
-                # 🔑 关键优化: 首次推理预热（解决NPU初始化慢的问题）
-                logger.info(f"[PERF] 执行预热推理（NPU初始化）...")
-                warmup_start = time.time()
-
-                # 执行一次简单推理进行预热（使用正确的prompt格式）
-                def warmup_callback(text):
-                    return True
-
-                try:
-                    # 使用正确的prompt格式进行预热
-                    warmup_prompt = self._format_prompt("Hello")
-                    self.model.Query(warmup_prompt, warmup_callback)
-                    warmup_time = (time.time() - warmup_start) * 1000
-                    logger.info(f"[PERF] 预热推理完成: {warmup_time:.2f}ms")
-                    logger.info(f"[PERF] 后续推理速度应该显著提升")
-                except Exception as e:
-                    logger.warning(f"[WARNING] 预热推理失败（可忽略）: {e}")
+                # ⚠️ 预热推理已禁用 - 避免阻塞FastAPI事件循环
+                # 首次推理可能会慢一些，但不会阻塞服务启动
+                logger.info(f"[PERF] 跳过预热推理（避免阻塞事件循环）")
 
                 return self.model
 

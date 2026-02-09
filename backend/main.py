@@ -212,6 +212,22 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 GTD 任务管理路由: {e}")
 
+# 注册多模型路由
+try:
+    from routes.multi_model_routes import router as multi_model_router
+    app.include_router(multi_model_router)  # 多模型API路由
+    logger.info("[OK] 多模型API路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入多模型API路由: {e}")
+
+# 注册视觉理解路由
+try:
+    from routes.vision_routes import router as vision_router
+    app.include_router(vision_router)  # 视觉理解路由
+    logger.info("[OK] 视觉理解路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入视觉理解路由: {e}")
+
 
 
 # 初始化 8-Agent 系统
@@ -474,51 +490,31 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """健康检查"""
+    """健康检查 - 轻量级，不触发模型加载"""
     logger.info("[/api/health] 开始健康检查")
 
     try:
-        # 导入全局模型加载器
-        from models.model_loader import _global_model_loader
-
-        # 如果全局加载器不存在，创建它
-        if _global_model_loader is None:
-            logger.info("[/api/health] 全局模型加载器为空，正在初始化...")
-            from models.model_loader import get_model_loader
-            _global_model_loader = get_model_loader()
-            logger.info(f"[/api/health] 创建了加载器: {_global_model_loader}")
-        
-        # 检查模型是否已加载
+        # 只检查模型加载器状态，不触发加载
         is_loaded = False
-        model_exists = _global_model_loader.model is not None
-        
-        if _global_model_loader.is_loaded:
-            is_loaded = True
-            logger.info(f"[/api/health] 模型已加载 (is_loaded=True)")
-        elif model_exists and not _global_model_loader.is_loaded:
-            # 模型实例存在但is_loaded=False，修正状态
-            logger.warning("[/api/health] 模型实例存在但is_loaded=False，修正状态")
-            _global_model_loader.is_loaded = True
-            is_loaded = True
-            logger.info("[/api/health] 已设置is_loaded=True")
-        else:
-            # 尝试加载模型
-            logger.info("[/api/health] 尝试加载模型...")
-            try:
-                model = _global_model_loader.load()
+        try:
+            from models.model_loader import _global_model_loader
+            if _global_model_loader is not None:
                 is_loaded = _global_model_loader.is_loaded
-                logger.info(f"[/api/health] 模型加载结果: is_loaded={is_loaded}")
-            except Exception as load_err:
-                logger.error(f"[/api/health] 模型加载失败: {load_err}")
-                is_loaded = False
+                logger.info(f"[/api/health] 模型状态: is_loaded={is_loaded}")
+            else:
+                logger.info("[/api/health] 模型加载器未初始化")
+        except ImportError:
+            logger.warning("[/api/health] 无法导入模型加载器")
+        except Exception as e:
+            logger.warning(f"[/api/health] 检查模型状态时出错: {e}")
         
+        # 根据模型状态确定健康状态
         status = "healthy" if is_loaded else "degraded"
+        
         logger.info(f"[/api/health] 最终状态: {status}, model_loaded={is_loaded}")
         
     except Exception as e:
         logger.error(f"[/api/health] 健康检查异常: {e}")
-        import traceback
-        logger.error(f"[/api/health] 详细堆栈:\n{traceback.format_exc()}")
         is_loaded = False
         status = "degraded"
     

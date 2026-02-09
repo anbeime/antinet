@@ -34,7 +34,7 @@ import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
 import PDFAnalysis from '@/pages/PDFAnalysisEnhanced';
 import BatchProcess from '@/pages/BatchProcess';
-import ChatBotModal from '@/components/ChatBotModal';
+import ChatBotModalWithVision from '@/components/ChatBotModalWithVision';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -1037,7 +1037,7 @@ const Home: React.FC = () => {
         />
 
         {/* 聊天机器人模态框 */}
-        <ChatBotModal
+        <ChatBotModalWithVision
           isOpen={showChatModal}
           onClose={() => setShowChatModal(false)}
         />

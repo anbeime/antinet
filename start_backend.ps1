@@ -1,109 +1,26 @@
-# Antinet Backend Startup Script
-# Use virtual environment Python
+# Start Backend Service in Background
+Write-Host "Starting Backend Service in Background..." -ForegroundColor Green
 
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Antinet Backend Service Startup" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
+$env:VIRTUAL_ENV = "C:\test\antinet\venv_arm64"
+$env:PATH = "$env:VIRTUAL_ENV\Scripts;" + $env:PATH
 
-# Change to script directory
-Set-Location $PSScriptRoot
+cd C:\test\antinet\backend
 
-# Check virtual environment
-Write-Host "[1/4] Checking virtual environment..." -ForegroundColor Yellow
-if (-not (Test-Path "venv_arm64\Scripts\python.exe")) {
-    Write-Host "[ERROR] Virtual environment not found: venv_arm64" -ForegroundColor Red
-    Write-Host "Please run deploy_antinet.bat first" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit 1
-}
-Write-Host "OK - Virtual environment exists" -ForegroundColor Green
-Write-Host ""
+Start-Process -FilePath "$env:VIRTUAL_ENV\Scripts\python.exe" -ArgumentList "-m uvicorn main:app --host 0.0.0.0 --port 8000" -NoNewWindow -RedirectStandardOutput "..\backend_startup.log" -RedirectStandardError "..\backend_error.log"
 
-# Disable CodeBuddy routes
-Write-Host "[2/4] Cleaning up CodeBuddy dependency..." -ForegroundColor Yellow
-$codebuddyFile = "backend\routes\codebuddy_chat_routes.py"
-$codebuddyDisabled = "backend\routes\codebuddy_chat_routes.py.disabled"
+Write-Host "Backend Service starting..." -ForegroundColor Yellow
+Write-Host "Log file: C:\test\antinet\backend_startup.log" -ForegroundColor Cyan
+Write-Host "Waiting for service to start..." -ForegroundColor Yellow
 
-if (Test-Path $codebuddyFile) {
-    if (-not (Test-Path $codebuddyDisabled)) {
-        Write-Host "Disabling codebuddy_chat_routes.py..." -ForegroundColor Gray
-        Rename-Item $codebuddyFile "codebuddy_chat_routes.py.disabled"
-        Write-Host "OK - Disabled" -ForegroundColor Green
-    } else {
-        Write-Host "OK - Already disabled" -ForegroundColor Green
-    }
+Start-Sleep -Seconds 5
+
+# Check if service is running
+$portCheck = netstat -ano | findstr :8000 | findstr LISTENING
+if ($portCheck) {
+    Write-Host "[SUCCESS] Backend Service is running on port 8000!" -ForegroundColor Green
+    Write-Host "API Docs: http://127.0.0.1:8000/docs" -ForegroundColor Cyan
+    Write-Host "Health Check: http://127.0.0.1:8000/api/health" -ForegroundColor Cyan
 } else {
-    Write-Host "OK - File not found or already disabled" -ForegroundColor Green
-}
-Write-Host ""
-
-# Check Python version
-Write-Host "[3/4] Checking virtual environment Python..." -ForegroundColor Yellow
-$venvPython = "venv_arm64\Scripts\python.exe"
-& $venvPython --version
-Write-Host ""
-
-# Check qai_appbuilder
-Write-Host "[4/4] Checking qai_appbuilder..." -ForegroundColor Yellow
-$checkCmd = "import qai_appbuilder; print('OK - qai_appbuilder installed')"
-$result = & $venvPython -c $checkCmd 2>&1
-if ($LASTEXITCODE -eq 0) {
-    Write-Host $result -ForegroundColor Green
-} else {
-    Write-Host "WARNING - qai_appbuilder not installed" -ForegroundColor Yellow
-    Write-Host "Trying to install..." -ForegroundColor Gray
-    
-    # Find whl file
-    $whlPaths = @(
-        "C:\ai-engine-direct-helper\samples\qai_appbuilder*.whl",
-        "C:\test\qai_appbuilder*.whl"
-    )
-    
-    $whlFile = $null
-    foreach ($path in $whlPaths) {
-        $found = Get-ChildItem -Path (Split-Path $path) -Filter (Split-Path $path -Leaf) -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            $whlFile = $found
-            break
-        }
-    }
-    
-    if ($whlFile) {
-        Write-Host "Found: $($whlFile.FullName)" -ForegroundColor Gray
-        & $venvPython -m pip install $whlFile.FullName
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "OK - qai_appbuilder installed successfully" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "WARNING - qai_appbuilder whl file not found" -ForegroundColor Yellow
-    }
-}
-Write-Host ""
-
-# Start backend service
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Starting Antinet Backend Service..." -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "Service URL: http://localhost:8000" -ForegroundColor Green
-Write-Host "API Docs: http://localhost:8000/docs" -ForegroundColor Green
-Write-Host ""
-Write-Host "Press Ctrl+C to stop the service" -ForegroundColor Yellow
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host ""
-
-# Change to backend directory and start service
-Set-Location "backend"
-& "..\venv_arm64\Scripts\python.exe" main.py
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Red
-    Write-Host "[ERROR] Backend service failed to start" -ForegroundColor Red
-    Write-Host "========================================" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Please check the error messages above" -ForegroundColor Yellow
-    Write-Host ""
-    Read-Host "Press Enter to exit"
+    Write-Host "[ERROR] Failed to start Backend Service" -ForegroundColor Red
+    Write-Host "Check backend_startup.log for details" -ForegroundColor Red
 }
