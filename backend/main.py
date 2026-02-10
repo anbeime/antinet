@@ -538,32 +538,27 @@ async def analyze_data(request: QueryRequest):
     logger.info(f"收到分析请求: {request.query}")
 
     try:
-        # 检查模型是否加载
-        current_model = load_model_if_needed()
+        # 检查模型是否加载（不触发加载）
+        from models.model_loader import _global_model_loader
+        model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
 
-        if current_model is None:
-            logger.error(f"模型加载失败，无法进行分析")
+        if not model_loaded:
+            logger.warning("模型未加载，跳过NPU分析")
             raise HTTPException(
                 status_code=503,
                 detail={
-                    "error": "模型加载失败",
-                    "message": "NPU模型未加载，请检查后端日志获取详细错误信息",
-                    "debug_info": {
-                        "model_path": str(settings.MODEL_PATH),
-                        "qai_libs_exists": os.path.exists("C:/ai-engine-direct-helper/samples/qai_libs/QnnHtp.dll"),
-                        "bridge_libs_exists": os.path.exists("C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc/QnnHtp.dll"),
-                        "qai_libs_path": os.environ.get('QAI_LIBS_PATH', 'Not set')
-                    },
-                    "suggestions": [
-                        "1. 检查模型文件是否存在",
-                        "2. 检查DLL文件和依赖库",
-                        "3. 查看后端启动日志中的详细错误堆栈",
-                        "4. 确保使用正确的 Python 环境（ARM64 + arm64x DLL）"
-                    ]
+                    "error": "模型未加载",
+                    "message": "NPU模型未加载，请先调用聊天或分析API触发模型加载",
+                    "model_loaded": False
                 }
             )
 
+
+        # 如果模型已加载，返回模型实例
+        current_model = _global_model_loader.model
+
         start_time = time.time()
+
 
         # 执行NPU推理
         raw_result = real_inference(request.query, current_model)
