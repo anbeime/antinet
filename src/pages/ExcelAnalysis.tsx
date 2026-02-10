@@ -108,6 +108,118 @@ const ExcelAnalysis: React.FC = () => {
     </div>
   );
 
+  const handleExportReport = async () => {
+    if (data.length === 0) {
+      alert('请先上传并分析Excel文件');
+      return;
+    }
+
+    try {
+      // 构建导出数据，包含高级分析结果
+      const exportData: any = {
+        analysis_info: {
+          title: `${uploadedFile?.name || 'Excel'} 分析报告`,
+          date: new Date().toISOString().split('T')[0],
+          data_source: uploadedFile?.name || 'unknown',
+          card_counts: {
+            fact: Object.keys(analysisResults).length,
+            interpret: 0,
+            risk: 0,
+            action: 0
+          },
+          summary: `数据分析报告，包含 ${Object.keys(analysisResults).length} 项高级分析`
+        },
+        cards_by_type: {
+          fact: Object.entries(analysisResults).map(([name, result]) => ({
+            id: `analysis_${name}`,
+            title: name,
+            content: { description: JSON.stringify(result, null, 2) },
+            card_type: 'blue',
+            category: '数据分析'
+          })),
+          interpret: [],
+          risk: [],
+          action: []
+        },
+        data_sheets: {
+          '原始数据': data.slice(0, 1000)
+        },
+        filename: `analysis_${uploadedFile?.name?.replace(/\.[^/.]+$/, '') || 'export'}.xlsx`
+      };
+
+      // 添加统计摘要
+      if (stats) {
+        exportData.data_sheets['统计摘要'] = [stats];
+      }
+
+      // 添加数据统计结果
+      if (analysisResults['数据统计']) {
+        const statsData: any[] = [];
+        Object.entries(analysisResults['数据统计'].results || {}).forEach(([col, colStats]: [string, any]) => {
+          statsData.push({
+            '列名': col,
+            '数量': colStats.count,
+            '均值': colStats.mean?.toFixed(2),
+            '中位数': colStats.median?.toFixed(2),
+            '标准差': colStats.std?.toFixed(2),
+            '最小值': colStats.min?.toFixed(2),
+            '最大值': colStats.max?.toFixed(2),
+            '偏度': colStats.skewness?.toFixed(3),
+            '峰度': colStats.kurtosis?.toFixed(3)
+          });
+        });
+        if (statsData.length > 0) {
+          exportData.data_sheets['数据统计'] = statsData;
+        }
+      }
+
+      // 添加异常检测结果
+      if (analysisResults['异常检测']) {
+        const anomalyData: any[] = [];
+        Object.entries(analysisResults['异常检测'].results || {}).forEach(([col, anomaly]: [string, any]) => {
+          if (anomaly.has_outliers) {
+            anomalyData.push({
+              '列名': col,
+              'Z-score异常数': anomaly.z_score_outliers.count,
+              'Z-score异常占比': `${anomaly.z_score_outliers.percentage.toFixed(2)}%`,
+              'IQR异常数': anomaly.iqr_outliers.count,
+              'IQR异常占比': `${anomaly.iqr_outliers.percentage.toFixed(2)}%`,
+              '下界': anomaly.iqr_outliers.lower_bound?.toFixed(2),
+              '上界': anomaly.iqr_outliers.upper_bound?.toFixed(2)
+            });
+          }
+        });
+        if (anomalyData.length > 0) {
+          exportData.data_sheets['异常检测'] = anomalyData;
+        }
+      }
+
+      const response = await fetch('http://localhost:8000/api/excel/export-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(exportData)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const link = document.createElement('a');
+        link.href = `http://localhost:8000${result.download_url}`;
+        link.download = result.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        alert(`分析报告导出成功！包含 ${Object.keys(analysisResults).length} 项分析结果`);
+      } else {
+        alert('导出失败');
+      }
+    } catch (error) {
+      console.error('导出异常:', error);
+      alert('导出失败');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -172,7 +284,10 @@ const ExcelAnalysis: React.FC = () => {
             </div>
 
             {/* Export */}
-            <button className="w-full flex items-center justify-center space-x-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors">
+            <button
+              onClick={handleExportReport}
+              className="w-full flex items-center justify-center space-x-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors"
+            >
               <Download className="w-4 h-4" />
               <span>导出分析报告</span>
             </button>
@@ -259,12 +374,19 @@ const ExcelAnalysis: React.FC = () => {
                   </div>
                   <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                      <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">薪资分析</h4>
-                      <p className="text-sm text-blue-700 dark:text-blue-300">平均薪资: ¥12,200，技术部薪资相对较低</p>
+                      <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">数据概览</h4>
+                      <p className="text-sm text-blue-700 dark:text-blue-300">
+                        共 {stats.totalRows} 行数据，{stats.totalColumns} 列字段
+                        {stats.missingValues > 0 && `，发现 ${stats.missingValues} 个缺失值`}
+                        {stats.duplicates > 0 && `，${stats.duplicates} 行重复数据`}
+                      </p>
                     </div>
                     <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                      <h4 className="font-medium text-green-800 dark:text-green-200 mb-2">绩效分布</h4>
-                      <p className="text-sm text-green-700 dark:text-green-300">平均绩效: 86.6分，销售部表现最佳</p>
+                      <h4 className="font-medium text-green-800 dark:text-green-200 mb-2">字段类型分布</h4>
+                      <p className="text-sm text-green-700 dark:text-green-300">
+                        数值列 {stats.numericColumns} 个，文本列 {stats.textColumns} 个
+                        {stats.dateColumns > 0 && `，日期列 ${stats.dateColumns} 个`}
+                      </p>
                     </div>
                   </div>
                 </div>

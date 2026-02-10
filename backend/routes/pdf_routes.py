@@ -270,6 +270,109 @@ async def batch_process(
         }
 
 
+# ========== 四色卡片生成 ==========
+
+@router.post("/generate/four-color-cards")
+async def generate_four_color_cards(
+    file: UploadFile = File(...),
+    max_cards: int = 50
+):
+    """
+    从 PDF 生成四色卡片（智能分类）
+    
+    Args:
+        file: PDF 文件
+        max_cards: 最大卡片数量
+        
+    Returns:
+        四色卡片列表和统计信息
+    """
+    if not PDF_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+    
+    # 保存上传的文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    try:
+        # 生成四色卡片
+        result = four_color_processor.generate_four_color_cards(tmp_path, max_cards)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "cards": result["cards"],
+            "stats": result["stats"],
+            "metadata": result["metadata"],
+            "message": result["message"]
+        }
+    
+    finally:
+        # 清理临时文件
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/export/four-color-excel")
+async def export_four_color_excel(
+    file: UploadFile = File(...),
+    max_cards: int = 50
+):
+    """
+    从 PDF 生成四色卡片并导出为 Excel
+    
+    Args:
+        file: PDF 文件
+        max_cards: 最大卡片数量
+        
+    Returns:
+        四色卡片 Excel 文件
+    """
+    if not PDF_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+    
+    # 保存上传的文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    # 创建输出文件路径
+    output_path = tmp_path.replace(".pdf", "_four_color_cards.xlsx")
+    
+    try:
+        # 生成四色卡片
+        cards_result = four_color_processor.generate_four_color_cards(tmp_path, max_cards)
+        
+        if not cards_result["success"]:
+            raise HTTPException(status_code=500, detail=cards_result["error"])
+        
+        # 导出到 Excel
+        export_result = four_color_processor.export_to_excel(cards_result["cards"], output_path)
+        
+        if not export_result["success"]:
+            raise HTTPException(status_code=500, detail=export_result["error"])
+        
+        # 返回文件
+        return FileResponse(
+            output_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=f"{Path(file.filename).stem}_四色卡片.xlsx",
+            background=None  # 确保文件发送后再清理
+        )
+    
+    except Exception as e:
+        # 清理临时文件
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== 健康检查 ==========
 
 @router.get("/health")

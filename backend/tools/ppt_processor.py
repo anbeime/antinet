@@ -1,8 +1,9 @@
 """
-PPT 处理器
-提供 PowerPoint 文档生成和处理功能
+PPT 处理器（增强版）
+提供 PowerPoint 文档生成和处理功能，包括从文本自动生成 PPT
 """
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -16,8 +17,121 @@ try:
 except ImportError:
     PPTX_AVAILABLE = False
     logging.warning("python-pptx 未安装，PPT 功能不可用")
+    # 提供占位符类以避免 NameError
+    class RGBColor:
+        def __init__(self, *args, **kwargs):
+            pass
+    class Presentation:
+        pass
+    class Inches:
+        def __init__(self, *args, **kwargs):
+            pass
+    class Pt:
+        def __init__(self, *args, **kwargs):
+            pass
+    class PP_ALIGN:
+        CENTER = None
 
 logger = logging.getLogger(__name__)
+
+
+def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
+    """
+    解析 Markdown 内容为幻灯片结构
+    
+    Args:
+        content: Markdown 格式的文本内容
+        
+    Returns:
+        幻灯片数据列表
+    """
+    slides = []
+    current_slide = None
+    
+    lines = content.split('\n')
+    
+    for line in lines:
+        line_stripped = line.strip()
+        
+        # 一级标题 - 新幻灯片标题
+        if line_stripped.startswith('# '):
+            if current_slide:
+                slides.append(current_slide)
+            current_slide = {
+                'title': line_stripped[2:].strip(),
+                'content': [],
+                'type': 'title'
+            }
+        
+        # 二级标题 - 新幻灯片或章节
+        elif line_stripped.startswith('## '):
+            if current_slide:
+                slides.append(current_slide)
+            current_slide = {
+                'title': line_stripped[3:].strip(),
+                'content': [],
+                'type': 'content'
+            }
+        
+        # 三级标题 - 内容标题
+        elif line_stripped.startswith('### '):
+            if current_slide is None:
+                current_slide = {
+                    'title': line_stripped[4:].strip(),
+                    'content': [],
+                    'type': 'content'
+                }
+            else:
+                current_slide['content'].append({
+                    'type': 'heading',
+                    'text': line_stripped[4:].strip()
+                })
+        
+        # 列表项
+        elif line_stripped.startswith('- ') or line_stripped.startswith('* '):
+            if current_slide is None:
+                current_slide = {
+                    'title': '内容',
+                    'content': [],
+                    'type': 'content'
+                }
+            current_slide['content'].append({
+                'type': 'bullet',
+                'text': line_stripped[2:].strip()
+            })
+        
+        # 编号列表
+        elif re.match(r'^\d+\.\s', line_stripped):
+            if current_slide is None:
+                current_slide = {
+                    'title': '内容',
+                    'content': [],
+                    'type': 'content'
+                }
+            text = re.sub(r'^\d+\.\s', '', line_stripped)
+            current_slide['content'].append({
+                'type': 'numbered',
+                'text': text.strip()
+            })
+        
+        # 普通段落
+        elif line_stripped and not line_stripped.startswith('#'):
+            if current_slide is None:
+                current_slide = {
+                    'title': '内容',
+                    'content': [],
+                    'type': 'content'
+                }
+            current_slide['content'].append({
+                'type': 'paragraph',
+                'text': line_stripped
+            })
+    
+    # 添加最后一个幻灯片
+    if current_slide:
+        slides.append(current_slide)
+    
+    return slides
 
 
 class PPTProcessor:
@@ -36,6 +150,31 @@ class PPTProcessor:
         "interpret": "解释卡片",
         "risk": "风险卡片",
         "action": "行动卡片"
+    }
+    
+    # 主题配色方案
+    THEMES = {
+        "professional": {
+            "primary": RGBColor(28, 40, 51),      # 深蓝灰
+            "secondary": RGBColor(52, 152, 219),  # 蓝色
+            "accent": RGBColor(241, 196, 15),     # 金色
+            "text": RGBColor(44, 62, 80),         # 深灰
+            "background": RGBColor(236, 240, 241) # 浅灰
+        },
+        "creative": {
+            "primary": RGBColor(155, 89, 182),    # 紫色
+            "secondary": RGBColor(52, 152, 219),  # 蓝色
+            "accent": RGBColor(230, 126, 34),     # 橙色
+            "text": RGBColor(44, 62, 80),         # 深灰
+            "background": RGBColor(236, 240, 241) # 浅灰
+        },
+        "minimal": {
+            "primary": RGBColor(44, 62, 80),      # 深灰
+            "secondary": RGBColor(149, 165, 166), # 中灰
+            "accent": RGBColor(52, 152, 219),     # 蓝色
+            "text": RGBColor(44, 62, 80),         # 深灰
+            "background": RGBColor(255, 255, 255) # 白色
+        }
     }
     
     def __init__(self):
@@ -68,6 +207,140 @@ class PPTProcessor:
         subtitle_shape.text = f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         return prs
+    
+    def create_from_text(
+        self,
+        content: str,
+        output_path: str,
+        title: str = "演示文稿",
+        theme: str = "professional"
+    ) -> str:
+        """
+        从文本内容创建 PPT
+        
+        Args:
+            content: 文本内容（支持 Markdown）
+            output_path: 输出文件路径
+            title: 演示文稿标题
+            theme: 主题风格
+            
+        Returns:
+            输出文件路径
+        """
+        try:
+            # 解析内容
+            slides_data = parse_markdown_content(content)
+            
+            if not slides_data:
+                raise ValueError("无法从内容中解析出幻灯片")
+            
+            # 创建演示文稿
+            prs = self.create_presentation(title)
+            
+            # 获取主题配色
+            theme_colors = self.THEMES.get(theme, self.THEMES["professional"])
+            
+            # 添加内容幻灯片
+            for slide_data in slides_data:
+                self._add_text_slide(prs, slide_data, theme_colors)
+            
+            # 保存文件
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            prs.save(str(output_path))
+            
+            logger.info(f"从文本生成 PPT 成功: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"从文本生成 PPT 失败: {e}", exc_info=True)
+            raise
+    
+    def _add_text_slide(
+        self,
+        prs: Presentation,
+        slide_data: Dict[str, Any],
+        theme_colors: Dict[str, RGBColor]
+    ) -> None:
+        """
+        添加文本幻灯片
+        
+        Args:
+            prs: Presentation 对象
+            slide_data: 幻灯片数据
+            theme_colors: 主题配色
+        """
+        if slide_data['type'] == 'title':
+            # 标题页
+            layout = prs.slide_layouts[0]
+            slide = prs.slides.add_slide(layout)
+            
+            title_shape = slide.shapes.title
+            title_shape.text = slide_data['title']
+            
+            if slide_data['content']:
+                subtitle_text = '\n'.join([
+                    item['text'] for item in slide_data['content']
+                    if item['type'] == 'paragraph'
+                ])
+                if len(slide.placeholders) > 1:
+                    slide.placeholders[1].text = subtitle_text
+        
+        else:
+            # 内容页 - 使用空白布局自定义
+            blank_layout = prs.slide_layouts[6]
+            slide = prs.slides.add_slide(blank_layout)
+            
+            # 添加标题
+            title_box = slide.shapes.add_textbox(
+                Inches(0.5), Inches(0.5),
+                Inches(9), Inches(0.8)
+            )
+            title_frame = title_box.text_frame
+            title_frame.text = slide_data['title']
+            title_frame.paragraphs[0].font.size = Pt(32)
+            title_frame.paragraphs[0].font.bold = True
+            title_frame.paragraphs[0].font.color.rgb = theme_colors['primary']
+            
+            # 添加内容
+            if slide_data['content']:
+                content_box = slide.shapes.add_textbox(
+                    Inches(0.5), Inches(1.5),
+                    Inches(9), Inches(5.5)
+                )
+                content_frame = content_box.text_frame
+                content_frame.word_wrap = True
+                
+                for i, item in enumerate(slide_data['content']):
+                    if i > 0:
+                        p = content_frame.add_paragraph()
+                    else:
+                        p = content_frame.paragraphs[0]
+                    
+                    if item['type'] == 'heading':
+                        p.text = item['text']
+                        p.font.size = Pt(20)
+                        p.font.bold = True
+                        p.font.color.rgb = theme_colors['secondary']
+                        p.space_before = Pt(12)
+                    
+                    elif item['type'] == 'bullet':
+                        p.text = item['text']
+                        p.level = 0
+                        p.font.size = Pt(16)
+                        p.font.color.rgb = theme_colors['text']
+                    
+                    elif item['type'] == 'numbered':
+                        p.text = item['text']
+                        p.level = 0
+                        p.font.size = Pt(16)
+                        p.font.color.rgb = theme_colors['text']
+                    
+                    elif item['type'] == 'paragraph':
+                        p.text = item['text']
+                        p.font.size = Pt(14)
+                        p.font.color.rgb = theme_colors['text']
+                        p.space_after = Pt(6)
     
     def add_card_slide(self, prs: Presentation, card: Dict[str, Any]) -> None:
         """
