@@ -181,7 +181,55 @@ export default function NPUAnalysis() {
             8-Agent 协作分析结果
           </h2>
 
-          <FourColorCards />
+          {/* 四色卡片展示 */}
+          {result.cards && result.cards.length > 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+              <h3 className="font-bold text-gray-900 dark:text-white mb-4">四色卡片分析结果</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {result.cards.map((card: any, index: number) => {
+                  const colorStyles = {
+                    blue: 'bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700',
+                    green: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-700',
+                    yellow: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-700',
+                    red: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-700',
+                  }[card.card_type] || 'bg-gray-50 border-gray-200';
+                  
+                  const titleColors = {
+                    blue: 'text-blue-800 dark:text-blue-200',
+                    green: 'text-green-800 dark:text-green-200',
+                    yellow: 'text-yellow-800 dark:text-yellow-200',
+                    red: 'text-red-800 dark:text-red-200',
+                  }[card.card_type] || 'text-gray-800';
+
+                  return (
+                    <motion.div
+                      key={card.card_id || index}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.1 }}
+                      className={`p-4 rounded-lg border ${colorStyles}`}
+                    >
+                      <h4 className={`font-bold mb-2 ${titleColors}`}>
+                        {card.title || '无标题'}
+                      </h4>
+                      <p className="text-gray-700 dark:text-gray-300 text-sm">
+                        {typeof card.content === 'string' 
+                          ? card.content 
+                          : JSON.stringify(card.content)}
+                      </p>
+                      <div className="mt-2 text-xs text-gray-500">
+                        类型: {card.category || card.card_type}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              暂无卡片数据
+            </div>
+          )}
 
           {result.generated_at && (
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center">

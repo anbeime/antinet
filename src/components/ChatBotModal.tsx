@@ -33,7 +33,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modalRef = React.useRef<HTMLDivElement>(null);
-  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+  const [transform, setTransform] = React.useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
   const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
@@ -61,11 +61,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     setIsDragging(true);
     const startMouseX = e.clientX;
     const startMouseY = e.clientY;
-    const startPosX = position.x;
-    const startPosY = position.y;
+    const startTransformX = transform.x;
+    const startTransformY = transform.y;
     
     setDragStart({ x: startMouseX, y: startMouseY });
-    setStartPos({ x: startPosX, y: startPosY });
+    setStartPos({ x: startTransformX, y: startTransformY });
     e.preventDefault();
   };
 
@@ -75,8 +75,17 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       const dy = e.clientY - dragStart.y;
       const newX = startPos.x + dx;
       const newY = startPos.y + dy;
-      
-      setPosition({ x: newX, y: newY });
+
+      // 边界检查
+      const modalWidth = modalRef.current?.offsetWidth || 0;
+      const modalHeight = modalRef.current?.offsetHeight || 0;
+      const maxX = window.innerWidth - modalWidth;
+      const maxY = window.innerHeight - modalHeight;
+
+      const clampedX = Math.max(0, Math.min(newX, maxX));
+      const clampedY = Math.max(0, Math.min(newY, maxY));
+
+      setTransform({ x: clampedX, y: clampedY });
     }
   }, [isDragging, dragStart, startPos]);
 
@@ -250,8 +259,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         animate={{ 
           opacity: 1, 
           scale: 1,
-          x: position.x,
-          y: position.y
+          transform: `translate(${transform.x}px, ${transform.y}px)`
         }}
         exit={{ opacity: 0, scale: 0.95 }}
         className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-2xl h-[600px] flex flex-col"

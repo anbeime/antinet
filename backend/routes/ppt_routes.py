@@ -11,7 +11,13 @@ from pathlib import Path
 import tempfile
 from datetime import datetime
 
-from tools.ppt_processor import PPTProcessor, PPTX_AVAILABLE
+try:
+    from skills.pptx.ppt_processor_enhanced import EnhancedPPTProcessor, PPTX_AVAILABLE
+    USE_ENHANCED = True
+except ImportError:
+    from tools.ppt_processor import PPTProcessor, PPTX_AVAILABLE
+    USE_ENHANCED = False
+    logger.warning("增强版 PPT 处理器不可用，使用基础版本")
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ppt", tags=["PPT"])
@@ -50,6 +56,14 @@ class AnalysisReportRequest(BaseModel):
     filename: Optional[str] = Field(default=None, description="输出文件名")
 
 
+class GenerateFromTextRequest(BaseModel):
+    """从文本生成PPT请求"""
+    content: str = Field(..., description="文本内容（支持 Markdown）")
+    title: str = Field(default="演示文稿", description="演示文稿标题")
+    theme: str = Field(default="professional", description="主题风格: professional/creative/minimal")
+    filename: Optional[str] = Field(default=None, description="输出文件名")
+
+
 # ==================== 端点 ====================
 
 @router.get("/status")
@@ -57,8 +71,27 @@ async def get_ppt_status():
     """检查 PPT 功能状态"""
     return {
         "available": PPTX_AVAILABLE,
+        "enhanced": USE_ENHANCED,
         "message": "PPT 功能已启用" if PPTX_AVAILABLE else "PPT 功能不可用，请安装 python-pptx"
     }
+
+
+@router.get("/themes")
+async def get_available_themes():
+    """获取可用主题列表"""
+    if not PPTX_AVAILABLE or not USE_ENHANCED:
+        return {"themes": [
+            {"id": "professional", "name": "Professional", "desc": "专业商务"},
+            {"id": "creative", "name": "Creative", "desc": "创意活泼"},
+            {"id": "minimal", "name": "Minimal", "desc": "简约现代"}
+        ]}
+    
+    try:
+        themes = EnhancedPPTProcessor.get_available_themes()
+        return {"themes": themes}
+    except Exception as e:
+        logger.error(f"获取主题列表失败: {e}")
+        return {"themes": []}
 
 
 @router.get("/health")
@@ -67,7 +100,7 @@ async def health_check():
     if not PPTX_AVAILABLE:
         raise HTTPException(
             status_code=503,
-            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
+            detail="PPT 功能不可用,请安装依赖: pip install python-pptx"
         )
     
     return {
@@ -75,6 +108,57 @@ async def health_check():
         "service": "ppt",
         "timestamp": datetime.now().isoformat()
     }
+
+
+@router.post("/generate/from-text")
+async def generate_ppt_from_text(request: GenerateFromTextRequest):
+    """
+    从文本内容生成 PPT
+    
+    Args:
+        request: 生成请求，包含文本内容、标题和主题
+        
+    Returns:
+        PPT 文件
+    """
+    if not PPTX_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
+        )
+    
+    try:
+        # 创建临时文件
+        filename = request.filename or f"{request.title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+        if not filename.endswith('.pptx'):
+            filename += '.pptx'
+        
+        temp_dir = Path(tempfile.gettempdir()) / "antinet_ppt"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        output_path = temp_dir / filename
+        
+        # 生成 PPT
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
+        result_path = processor.create_from_text(
+            content=request.content,
+            output_path=str(output_path),
+            title=request.title,
+            theme=request.theme
+        )
+        
+        # 返回文件
+        return FileResponse(
+            path=result_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+        
+    except Exception as e:
+        logger.error(f"从文本生成 PPT 失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/export/cards")

@@ -69,7 +69,13 @@ const categoryIcons: Record<'事实' | '解释' | '风险' | '行动', string> =
 };
 
 // 后端API返回的卡片格式转换为组件需要的格式
-function convertApiCardToComponentCard(apiCard: any): CardType {
+function convertApiCardToComponentCard(apiCard: any): CardType | null {
+  // 安全检查
+  if (!apiCard || typeof apiCard !== 'object') {
+    console.warn('Invalid card data:', apiCard);
+    return null;
+  }
+
   const content = apiCard.content || {};
   let contentText = '';
 
@@ -77,8 +83,8 @@ function convertApiCardToComponentCard(apiCard: any): CardType {
     // 根据卡片类型提取内容
     if (content.description) contentText = content.description;
     else if (content.explanation) contentText = content.explanation;
+    else if (content.risk) contentText = content.risk;
     else if (content.action) contentText = content.action;
-    else if (content.description) contentText = content.description;
     else contentText = JSON.stringify(content);
   } else if (typeof content === 'string') {
     contentText = content;
@@ -89,9 +95,15 @@ function convertApiCardToComponentCard(apiCard: any): CardType {
     'blue': 'blue',
     'green': 'green',
     'yellow': 'yellow',
-    'red': 'red'
+    'red': 'red',
+    '事实': 'blue',
+    '解释': 'green',
+    '风险': 'yellow',
+    '行动': 'red'
   };
-  const color: 'blue' | 'green' | 'yellow' | 'red' = colorMapType[apiCard.card_type] || 'blue';
+  
+  const cardType = apiCard.card_type || apiCard.type || 'blue';
+  const color: 'blue' | 'green' | 'yellow' | 'red' = colorMapType[cardType] || 'blue';
 
   // 映射card_type到category
   const categoryMap: Record<string, string> = {
@@ -100,14 +112,14 @@ function convertApiCardToComponentCard(apiCard: any): CardType {
     'yellow': '风险',
     'red': '行动'
   };
-  const category = categoryMap[apiCard.card_type] || '事实';
+  const category = apiCard.category || categoryMap[cardType] || '事实';
 
   return {
-    card_id: apiCard.card_id,
-    card_type: apiCard.card_type,
+    card_id: apiCard.card_id || apiCard.id || `card_${Math.random()}`,
+    card_type: cardType,
     color: color,
-    title: apiCard.title,
-    content: contentText,
+    title: apiCard.title || '无标题',
+    content: contentText || '无内容',
     category: category,
     similarity: apiCard.similarity
   };
@@ -127,15 +139,24 @@ export default function FourColorCards() {
 
         // 调用API获取所有卡片
         const response = await chatService.listCards();
+        
+        // 安全检查：确保 response 和 cards 存在
+        if (!response || !Array.isArray(response.cards)) {
+          console.warn('Invalid response from listCards:', response);
+          setCards([]);
+          return;
+        }
 
-        // 转换API卡片格式为组件需要的格式
-        const componentCards = response.cards.map(convertApiCardToComponentCard);
+        // 转换API卡片格式为组件需要的格式，过滤掉无效的卡片
+        const componentCards = response.cards
+          .map(convertApiCardToComponentCard)
+          .filter((card): card is CardType => card !== null);
 
         setCards(componentCards);
       } catch (err) {
         console.error('加载四色卡片失败:', err);
         setError(err instanceof Error ? err.message : '加载失败');
-        toast.error('加载四色卡片失败，请检查后端服务');
+        // 不显示 toast，避免打扰用户
       } finally {
         setLoading(false);
       }

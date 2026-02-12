@@ -104,7 +104,7 @@ try:
     HAS_QAI_HUB = True
     logger.info("[OK] 已导入 qai_hub_models.PerfProfile，性能优化可用")
 except ImportError:
-    logger.warning("[INFO] qai_hub_models 未安装，将使用默认性能配置")
+    logger.debug("[DEBUG] qai_hub_models 未安装，使用默认性能配置 (Windows ARM64 平台不需要安装此包)")
 
 try:
     from qai_appbuilder import GenieContext

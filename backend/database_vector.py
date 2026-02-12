@@ -30,7 +30,7 @@ def add_vector_methods(db_manager):
                     card_id INTEGER PRIMARY KEY,
                     embedding BLOB NOT NULL,
                     embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',
-                    dimension INTEGER DEFAULT 384,
+                    dimension INTEGER DEFAULT 768,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE
@@ -101,6 +101,13 @@ def add_vector_methods(db_manager):
         Returns:
             相似卡片列表，包含相似度分数
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 确保查询向量是一维的
+        query_embedding = np.array(query_embedding).flatten()
+        logger.debug(f"[DBVector] 查询向量维度: {query_embedding.shape}")
+        
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -114,6 +121,7 @@ def add_vector_methods(db_manager):
             """)
 
             rows = cursor.fetchall()
+            logger.debug(f"[DBVector] 从数据库获取 {len(rows)} 条向量记录")
 
             # 计算相似度
             results = []
@@ -122,9 +130,17 @@ def add_vector_methods(db_manager):
 
                 # 反序列化向量
                 card_embedding = pickle.loads(embedding_blob)
+                card_embedding = np.array(card_embedding).flatten()
+                
+                # 检查维度
+                if len(query_embedding) != len(card_embedding):
+                    logger.warning(f"[DBVector] 维度不匹配: 查询{len(query_embedding)} vs 卡片{len(card_embedding)}")
+                    continue
 
                 # 计算余弦相似度
                 similarity = self._compute_cosine_similarity(query_embedding, card_embedding)
+                
+                logger.debug(f"[DBVector] 卡片 {card_id} 相似度: {similarity:.4f}")
 
                 # 过滤低相似度
                 if similarity >= threshold:
@@ -141,6 +157,8 @@ def add_vector_methods(db_manager):
 
             # 按相似度排序
             results.sort(key=lambda x: x["similarity"], reverse=True)
+            
+            logger.debug(f"[DBVector] 返回 {len(results)} 个结果 (阈值: {threshold})")
 
             return results[:limit]
     

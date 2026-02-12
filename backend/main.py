@@ -187,6 +187,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入完整分析路由: {e}")
 
+# 注册高级数据分析路由
+try:
+    from routes.analysis_advanced_routes import router as analysis_advanced_router
+    app.include_router(analysis_advanced_router)  # 高级数据分析路由
+    logger.info("[OK] 高级数据分析路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入高级数据分析路由: {e}")
+
 # 注册 PDF 处理路由
 try:
     from routes.pdf_routes import router as pdf_router

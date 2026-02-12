@@ -31,21 +31,32 @@ def init_vector_search(chat_routes_module, db_mgr):
         add_vector_methods(db_mgr)
         logger.info("[ChatRoutes] 数据库向量方法已添加")
         
+        # 3. 创建向量表（如果不存在）
+        db_mgr.create_vector_table()
+        logger.info("[ChatRoutes] 向量表已创建/确认")
+        
         # 3. 添加向量搜索函数
         def _search_cards_by_vector(query: str, limit: int = 10):
             """使用向量相似度搜索"""
             try:
                 # 生成查询向量
                 query_embedding = embedding_service.encode_text(query)
+                logger.debug(f"[VectorSearch] 查询向量维度: {len(query_embedding)}, 前5个值: {query_embedding[:5]}")
+                
+                # 先获取向量统计
+                stats = db_mgr.get_embedding_stats()
+                logger.debug(f"[VectorSearch] 数据库向量统计: {stats}")
                 
                 # 向量搜索
                 results = db_mgr.search_similar_cards(
                     query_embedding,
                     limit=limit,
-                    threshold=0.3  # 相似度阈值
+                    threshold=0.1  # 降低阈值以便调试
                 )
                 
-                logger.info(f"[VectorSearch] 查询: {query}, 找到 {len(results)} 个结果")
+                logger.info(f"[VectorSearch] 查询: '{query}', 找到 {len(results)} 个结果")
+                if results:
+                    logger.debug(f"[VectorSearch] 最高相似度: {results[0].get('similarity', 0):.4f}")
                 return results
                 
             except Exception as e:

@@ -160,6 +160,85 @@ class SimplePDFProcessor:
                 "cards": []
             }
 
+    def extract_knowledge(self, pdf_path: str) -> Dict[str, Any]:
+        """
+        从 PDF 提取知识内容（用于生成四色卡片）
+        
+        Args:
+            pdf_path: PDF 文件路径
+            
+        Returns:
+            提取的知识内容
+        """
+        try:
+            # 提取文本
+            text_result = self.extract_text(pdf_path)
+            
+            if not text_result["success"]:
+                return {
+                    "success": False,
+                    "error": text_result.get("error", "文本提取失败"),
+                    "text_content": "",
+                    "tables": [],
+                    "metadata": {},
+                    "suggested_cards": []
+                }
+            
+            # 提取表格（pypdf 不支持，返回空）
+            tables_result = self.extract_tables(pdf_path)
+            
+            # 生成建议的卡片（基于文本内容）
+            suggested_cards = []
+            full_text = text_result["full_text"]
+            
+            # 简单分段并分类
+            paragraphs = [p.strip() for p in full_text.split('\n\n') if p.strip() and len(p.strip()) > 30]
+            
+            for idx, para in enumerate(paragraphs[:20], 1):  # 最多20张卡片
+                # 根据内容长度和特征简单分类
+                card_type = "blue"  # 默认为事实卡片
+                category = "事实"
+                
+                # 简单关键词分类
+                para_lower = para.lower()
+                if any(kw in para_lower for kw in ['原因', '因为', '解释', 'why', 'because', 'reason']):
+                    card_type = "green"
+                    category = "解释"
+                elif any(kw in para_lower for kw in ['风险', '警告', '注意', '问题', 'risk', 'warning', 'issue']):
+                    card_type = "yellow"
+                    category = "风险"
+                elif any(kw in para_lower for kw in ['建议', '行动', '措施', 'recommend', 'action', 'should', '需要']):
+                    card_type = "red"
+                    category = "行动"
+                
+                suggested_cards.append({
+                    "card_id": f"pdf_card_{idx}",
+                    "title": para[:50] + "..." if len(para) > 50 else para,
+                    "content": para,
+                    "card_type": card_type,
+                    "category": category
+                })
+            
+            return {
+                "success": True,
+                "text_content": full_text,
+                "tables": tables_result.get("tables", []),
+                "metadata": text_result.get("metadata", {}),
+                "suggested_cards": suggested_cards,
+                "message": f"成功提取知识，生成 {len(suggested_cards)} 张卡片建议"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"知识提取失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "text_content": "",
+                "tables": [],
+                "metadata": {},
+                "suggested_cards": []
+            }
+
 
 # 兼容性：提供与原 PDFProcessor 相同的接口
 PDFProcessor = SimplePDFProcessor

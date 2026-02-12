@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type } from 'lucide-react';
 import { toast } from 'sonner';
+import ThemeSelector from '@/components/ThemeSelector';
 
 interface KnowledgeCard {
   id: string;
@@ -56,7 +57,7 @@ const PPTAnalysis: React.FC = () => {
 
 感谢大家的支持！`);
   const [pptTitle, setPptTitle] = useState('我的演示文稿');
-  const [selectedTheme, setSelectedTheme] = useState<ThemeType>('professional');
+  const [selectedTheme, setSelectedTheme] = useState<ThemeType>('classic_blue');
 
   // 检查PPT服务状态
   useEffect(() => {
@@ -298,35 +299,12 @@ const PPTAnalysis: React.FC = () => {
                 />
               </div>
 
-              {/* Theme Selection */}
+              {/* Theme Selection - 使用新的主题选择器 */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                <label className="block text-sm font-medium mb-4">选择主题</label>
-                <div className="grid grid-cols-3 gap-3">
-                  {themes.map((theme) => (
-                    <motion.div
-                      key={theme.id}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setSelectedTheme(theme.id as ThemeType)}
-                      className={`p-4 rounded-lg cursor-pointer transition-all ${
-                        selectedTheme === theme.id
-                          ? 'bg-purple-50 dark:bg-purple-900/30 border-2 border-purple-500'
-                          : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-purple-300'
-                      }`}
-                    >
-                      <div className="text-center">
-                        <div className="text-3xl mb-2">{theme.icon}</div>
-                        <div className="text-sm font-medium mb-1">{theme.name}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">{theme.desc}</div>
-                        <div className="flex justify-center space-x-1">
-                          {theme.colors.map((color, i) => (
-                            <div key={i} className="w-4 h-4 rounded" style={{ backgroundColor: color }} />
-                          ))}
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
+                <ThemeSelector
+                  selectedTheme={selectedTheme}
+                  onThemeSelect={(themeId) => setSelectedTheme(themeId as ThemeType)}
+                />
               </div>
 
               {/* Content Input */}

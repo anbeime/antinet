@@ -13,6 +13,12 @@ import shutil
 
 from tools.pdf_processor import PDFProcessor, PDF_AVAILABLE
 
+try:
+    from tools.pdf_four_color_processor import PDFourColorProcessor
+    FOUR_COLOR_AVAILABLE = True
+except ImportError:
+    FOUR_COLOR_AVAILABLE = False
+
 router = APIRouter(prefix="/api/pdf", tags=["PDF处理"])
 
 # 初始化 PDF 处理器
@@ -20,6 +26,12 @@ if PDF_AVAILABLE:
     pdf_processor = PDFProcessor()
 else:
     pdf_processor = None
+
+# 初始化四色卡片处理器
+if FOUR_COLOR_AVAILABLE and PDF_AVAILABLE:
+    four_color_processor = PDFourColorProcessor()
+else:
+    four_color_processor = None
 
 
 @router.get("/status")
@@ -290,6 +302,9 @@ async def generate_four_color_cards(
     if not PDF_AVAILABLE:
         raise HTTPException(status_code=503, detail="PDF 功能未安装")
     
+    if not FOUR_COLOR_AVAILABLE or four_color_processor is None:
+        raise HTTPException(status_code=503, detail="四色卡片处理器未安装")
+    
     # 保存上传的文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
@@ -334,6 +349,9 @@ async def export_four_color_excel(
     """
     if not PDF_AVAILABLE:
         raise HTTPException(status_code=503, detail="PDF 功能未安装")
+    
+    if not FOUR_COLOR_AVAILABLE or four_color_processor is None:
+        raise HTTPException(status_code=503, detail="四色卡片处理器未安装")
     
     # 保存上传的文件
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
