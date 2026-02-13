@@ -59,7 +59,7 @@ async def call_qwen_vl_service(
     conversation_history: Optional[List[Dict]] = None
 ) -> str:
     """
-    调用 Qwen2.5-VL-3B 服务 (OpenAI 兼容格式)
+    调用 Qwen2.5-VL-3B 服务 (Genie VL 特殊格式)
     
     参数:
         prompt: 文本提示
@@ -70,51 +70,70 @@ async def call_qwen_vl_service(
         模型响应文本
     """
     try:
-        # 构建 OpenAI 格式的 messages
-        messages = []
+        # Genie VL 模型需要特殊的请求格式
+        # 参考: https://www.aidevhome.com/?id=55
         
-        # 添加对话历史
-        if conversation_history:
-            messages.extend(conversation_history)
-        
-        # 构建当前消息
         if image_path and os.path.exists(image_path):
+            # ========== VL (图文) 模式 ==========
             # 读取图片并转换为 base64
             with open(image_path, "rb") as f:
                 image_data = base64.b64encode(f.read()).decode('utf-8')
             
-            # 视觉模型格式: 图片 + 文本
-            messages.append({
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_data}"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
+            logger.info(f"[VisionRoutes] VL模式 - 图片: {image_path}")
+            
+            # 构建 VL 模型特殊格式的 messages
+            vl_messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {
+                    "role": "user",
+                    "content": {
+                        "question": prompt,      # 文本提示
+                        "image": image_data      # base64图片
                     }
-                ]
-            })
-            logger.info(f"[VisionRoutes] 包含图片: {image_path}")
+                }
+            ]
+            
+            # 添加对话历史（如果有）
+            if conversation_history:
+                # 将历史插入到system和当前user之间
+                vl_messages = [vl_messages[0]] + conversation_history + [vl_messages[1]]
+            
+            # 构建请求数据
+            request_data = {
+                "model": "qwen2.5vl3b-8380-2.42",
+                "messages": [{"role": "user", "content": "placeholder"}],  # 占位符
+                "extra_body": {
+                    "messages": vl_messages,  # 真实数据放在extra_body中
+                    "size": 4096,
+                    "temp": 0.7,
+                    "top_k": 1,
+                    "top_p": 0.9
+                }
+            }
         else:
-            # 纯文本消息
-            messages.append({
-                "role": "user",
-                "content": prompt
-            })
-        
-        # 构建 OpenAI 兼容的请求
-        request_data = {
-            "model": "qwen2.5vl3b-8380-2.42",
-            "messages": messages,
-            "max_tokens": 2048,
-            "temperature": 0.7,
-            "top_p": 0.9,
-        }
+            # ========== LLM (纯文本) 模式 ==========
+            logger.info(f"[VisionRoutes] LLM模式 - 纯文本")
+            
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+            
+            # 添加对话历史
+            if conversation_history:
+                messages = [messages[0]] + conversation_history + [messages[1]]
+            
+            # 构建请求数据
+            request_data = {
+                "model": "qwen2.5vl3b-8380-2.42",
+                "messages": messages,
+                "extra_body": {
+                    "size": 4096,
+                    "temp": 0.7,
+                    "top_k": 1,
+                    "top_p": 0.9
+                }
+            }
         
         logger.info(f"[VisionRoutes] 调用 Qwen VL 服务: {QWEN_VL_SERVICE_URL}")
         logger.debug(f"[VisionRoutes] 请求数据: {request_data}")
@@ -144,6 +163,11 @@ async def call_qwen_vl_service(
         raise HTTPException(status_code=504, detail="视觉模型服务超时,请稍后重试")
     except httpx.HTTPStatusError as e:
         logger.error(f"[VisionRoutes] Qwen VL 服务错误: {e}")
+        # 如果是500错误（模型加载失败），返回友好提示
+        if e.response.status_code == 500:
+            logger.warning("[VisionRoutes] 视觉服务不可用，返回降级响应")
+            return "抱歉，视觉理解功能暂时维护中。您可以继续使用文本对话功能，我会尽力帮助您！"
+        
         error_detail = f"视觉模型服务错误: {str(e)}"
         try:
             error_body = e.response.json()

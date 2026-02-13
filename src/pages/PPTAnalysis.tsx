@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
+import OfficePreview from '@/components/OfficePreview';
 
 interface KnowledgeCard {
   id: string;
@@ -57,7 +58,12 @@ const PPTAnalysis: React.FC = () => {
 
 感谢大家的支持！`);
   const [pptTitle, setPptTitle] = useState('我的演示文稿');
-  const [selectedTheme, setSelectedTheme] = useState<ThemeType>('classic_blue');
+  const [selectedTheme, setSelectedTheme] = useState<ThemeType>('professional');
+  
+  // 预览相关状态
+  const [previewFile, setPreviewFile] = useState<Blob | null>(null);
+  const [previewFileName, setPreviewFileName] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
 
   // 检查PPT服务状态
   useEffect(() => {
@@ -122,14 +128,12 @@ const PPTAnalysis: React.FC = () => {
 
       if (response.ok) {
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${pptTitle}.pptx`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        const fileName = `${pptTitle}.pptx`;
+        
+        // 显示预览
+        setPreviewFile(blob);
+        setPreviewFileName(fileName);
+        setShowPreview(true);
         toast.success('PPT生成成功！');
       } else {
         const error = await response.json();
@@ -179,14 +183,12 @@ const PPTAnalysis: React.FC = () => {
 
       if (response.ok) {
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = exportData.title;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        const fileName = 'Antinet 四色卡片分析报告.pptx';
+        
+        // 显示预览
+        setPreviewFile(blob);
+        setPreviewFileName(fileName);
+        setShowPreview(true);
         toast.success('PPT导出成功！');
       } else {
         const error = await response.json();
@@ -218,6 +220,21 @@ const PPTAnalysis: React.FC = () => {
     } else {
       setSelectedCards(new Set(cards.map(c => c.id)));
     }
+  };
+
+  // 下载文件
+  const handleDownload = () => {
+    if (!previewFile) return;
+    
+    const url = window.URL.createObjectURL(previewFile);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = previewFileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    toast.success('文件下载成功！');
   };
 
   const themes = [
@@ -509,6 +526,17 @@ const PPTAnalysis: React.FC = () => {
           </div>
         )}
       </div>
+      
+      {/* 文件预览弹窗 */}
+      {showPreview && previewFile && (
+        <OfficePreview
+          file={previewFile}
+          fileName={previewFileName}
+          fileType="pptx"
+          onClose={() => setShowPreview(false)}
+          onDownload={handleDownload}
+        />
+      )}
     </div>
   );
 };

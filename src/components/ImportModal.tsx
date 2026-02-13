@@ -40,8 +40,6 @@ const cardTypeMap = {
   }
 };
 
-
-
 interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -49,7 +47,8 @@ interface ImportModalProps {
     title: string;
     content: string;
     color: CardColor;
-    address: string;  }>) => void;
+    address: string;
+  }>) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({ 
@@ -66,52 +65,214 @@ const ImportModal: React.FC<ImportModalProps> = ({
     content: string;
     color: CardColor;
     confidence: number;
-    address: string;  }>>([]);
+    address: string;
+  }>>([]);
   const [showResults, setShowResults] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
-  // AI分类逻辑 - 需要后端支持
-  const autoClassifyContent = (content: string): Array<{
+  // 智能分析内容 - 调用后端8智能体系统
+  const autoClassifyContent = async (content: string): Promise<Array<{
     title: string;
     content: string;
     color: CardColor;
     confidence: number;
-    address: string;  }> => {
+    address: string;
+  }>> => {
+    try {
+      // 调用后端智能分析API
+      const response = await fetch('http://localhost:8000/api/knowledge/import/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: content,
+          auto_save: false
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API调用失败: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      
+      // 转换API返回格式为组件需要的格式
+      return result.cards.map((card: any, index: number) => ({
+        title: card.title,
+        content: card.content,
+        color: card.card_type as CardColor,
+        confidence: card.confidence,
+        address: card.address || `${card.card_type.toUpperCase()}${index + 1}`,
+        relatedCards: card.related_cards || []
+      }));
+      
+    } catch (error) {
+      console.error('智能分析失败，降级到本地分类:', error);
+      
+      // 降级到本地分类算法
+      return localClassifyContent(content);
+    }
+  };
+  
+  // 本地分类算法（作为降级方案）
+  const localClassifyContent = (content: string): Array<{
+    title: string;
+    content: string;
+    color: CardColor;
+    confidence: number;
+    address: string;
+  }> => {
     // 分割文本为段落
-    const paragraphs = content.split('\n\n')
+    const paragraphs = content.split(/\n\s*\n/)
       .filter(para => para.trim().length > 0)
       .map(para => para.trim());
 
     if (paragraphs.length === 0) {
-      throw new Error('未找到有效内容，请确保文本包含完整的知识记录');
+      throw new Error('未找到有效内容,请确保文本包含完整的知识记录');
     }
 
-    // 分类功能需要后端API支持
-    throw new Error('文本分类功能需要后端服务支持。请确保后端服务已启动，并调用NPU进行真实推理。');
+    // 智能分类函数
+    const classifyParagraph = (text: string): { color: CardColor; confidence: number } => {
+      const lowerText = text.toLowerCase();
+      
+      // 定义各类型的关键词
+      const conceptKeywords = ['定义', '概念', '理论', '原理', '思想', '观点', '主要', '核心', '基础', '本质', '什么是', '是指', '含义', '意思'];
+      const linkKeywords = ['关联', '联系', '相关', '连接', '关系', '对比', '区别', '类似', '参见', '参考', '与', '和', '比较', '相似'];
+      const sourceKeywords = ['来源', '出处', '引用', '参考文献', '资料', '文档', 'http', 'www', '链接', '网址', '书籍', '论文', '作者', '出版'];
+      const indexKeywords = ['关键词', '标签', '索引', '分类', '术语', '名词', '概念词', 'tag', 'keyword'];
+      
+      let scores = {
+        blue: 0,
+        green: 0,
+        yellow: 0,
+        red: 0
+      };
+      
+      // 计算各类型得分
+      conceptKeywords.forEach(keyword => {
+        if (lowerText.includes(keyword)) scores.blue += 1;
+      });
+      
+      linkKeywords.forEach(keyword => {
+        if (lowerText.includes(keyword)) scores.green += 1;
+      });
+      
+      sourceKeywords.forEach(keyword => {
+        if (lowerText.includes(keyword)) scores.yellow += 1;
+      });
+      
+      indexKeywords.forEach(keyword => {
+        if (lowerText.includes(keyword)) scores.red += 1;
+      });
+      
+      // 额外规则
+      // 如果包含URL,很可能是参考来源
+      if (/https?:\/\/|www\.|\.com|\.org|\.net/i.test(text)) {
+        scores.yellow += 3;
+      }
+      
+      // 如果文本很短(少于50字),可能是索引关键词
+      if (text.length < 50) {
+        scores.red += 2;
+      }
+      
+      // 如果文本很长(超过200字),可能是核心概念
+      if (text.length > 200) {
+        scores.blue += 1;
+      }
+      
+      // 如果包含问号,可能是核心概念
+      if (text.includes('?') || text.includes('？')) {
+        scores.blue += 1;
+      }
+      
+      // 如果包含冒号,可能是定义
+      if (text.includes(':') || text.includes('：')) {
+        scores.blue += 0.5;
+      }
+      
+      // 找出得分最高的类型
+      const maxScore = Math.max(scores.blue, scores.green, scores.yellow, scores.red);
+      
+      let selectedColor: CardColor = 'blue'; // 默认为核心概念
+      if (maxScore === 0) {
+        // 如果没有匹配任何关键词,根据长度判断
+        if (text.length < 50) {
+          selectedColor = 'red';
+        } else if (text.length > 200) {
+          selectedColor = 'blue';
+        } else {
+          selectedColor = 'blue';
+        }
+      } else {
+        if (scores.yellow === maxScore && scores.yellow > 0) selectedColor = 'yellow';
+        else if (scores.blue === maxScore) selectedColor = 'blue';
+        else if (scores.green === maxScore) selectedColor = 'green';
+        else if (scores.red === maxScore) selectedColor = 'red';
+      }
+      
+      // 计算置信度(0.5-0.95之间)
+      const totalScore = scores.blue + scores.green + scores.yellow + scores.red;
+      const confidence = totalScore === 0 ? 0.6 : Math.min(0.95, 0.5 + (maxScore / (totalScore + 1)) * 0.45);
+      
+      return { color: selectedColor, confidence };
+    };
+
+    // 生成地址
+    const colorCounts: Record<CardColor, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
+    
+    const generateAddress = (color: CardColor): string => {
+      const prefixes: Record<CardColor, string> = {
+        blue: 'A',
+        green: 'B',
+        yellow: 'C',
+        red: 'D'
+      };
+      colorCounts[color]++;
+      return `${prefixes[color]}${colorCounts[color]}`;
+    };
+
+    // 提取标题(取第一行或前30个字符)
+    const extractTitle = (text: string): string => {
+      // 尝试提取第一行作为标题
+      const lines = text.split('\n').filter(line => line.trim());
+      const firstLine = lines[0]?.trim() || '';
+      
+      // 如果第一行是标题格式(# 开头或很短)
+      if (firstLine.startsWith('#')) {
+        return firstLine.replace(/^#+\s*/, '').trim();
+      }
+      
+      if (firstLine.length > 0 && firstLine.length <= 60) {
+        return firstLine;
+      }
+      
+      // 否则取前30个字符
+      const title = text.substring(0, 30).trim();
+      return title + (text.length > 30 ? '...' : '');
+    };
+
+    // 对每个段落进行分类
+    const results = paragraphs.map((para) => {
+      const { color, confidence } = classifyParagraph(para);
+      const title = extractTitle(para);
+      const address = generateAddress(color);
+      
+      return {
+        title,
+        content: para,
+        color,
+        confidence,
+        address
+      };
+    });
+
+    return results;
   };
 
-  // PDF文件解析功能需要后端支持
-  const parsePDFFile = (_file: File): Promise<string> => {
-    return Promise.reject(new Error('PDF解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
-  };
-
-  // Excel文件解析功能需要后端支持
-  const parseExcelFile = (_file: File): Promise<string> => {
-    return Promise.reject(new Error('Excel解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
-  };
-
-  // Word文件解析功能需要后端支持
-  const parseWordFile = (_file: File): Promise<string> => {
-    return Promise.reject(new Error('Word文档解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
-  };
-
-  // 图片文件解析功能需要后端支持
-  const parseImageFile = (_file: File): Promise<string> => {
-    return Promise.reject(new Error('图片OCR解析功能需要后端服务支持。请确保后端服务已启动，并实现相应的文件解析API。'));
-  };
-
-  // Markdown文件解析 - 直接读取文本内容
-  const parseMarkdownFile = (file: File): Promise<string> => {
+  // 文本文件解析
+  const parseTextFile = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -119,85 +280,105 @@ const ImportModal: React.FC<ImportModalProps> = ({
         resolve(content);
       };
       reader.onerror = () => {
-        reject(new Error('读取Markdown文件失败'));
+        reject(new Error('读取文本文件失败'));
       };
-      reader.readAsText(file);
+      reader.readAsText(file, 'UTF-8');
     });
+  };
+
+  // Markdown文件解析
+  const parseMarkdownFile = (file: File): Promise<string> => {
+    return parseTextFile(file);
+  };
+
+  // PDF文件解析 - 提示需要后端支持
+  const parsePDFFile = (_file: File): Promise<string> => {
+    toast('PDF解析需要后端支持,请使用文本或Markdown文件', {
+      icon: <AlertCircle size={16} />,
+      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+    });
+    return Promise.reject(new Error('PDF解析功能需要后端服务支持'));
+  };
+
+  // Excel文件解析 - 提示需要后端支持
+  const parseExcelFile = (_file: File): Promise<string> => {
+    toast('Excel解析需要后端支持,请使用文本或Markdown文件', {
+      icon: <AlertCircle size={16} />,
+      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+    });
+    return Promise.reject(new Error('Excel解析功能需要后端服务支持'));
+  };
+
+  // Word文件解析 - 提示需要后端支持
+  const parseWordFile = (_file: File): Promise<string> => {
+    toast('Word文档解析需要后端支持,请使用文本或Markdown文件', {
+      icon: <AlertCircle size={16} />,
+      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+    });
+    return Promise.reject(new Error('Word文档解析功能需要后端服务支持'));
+  };
+
+  // 图片文件解析 - 提示需要后端支持
+  const parseImageFile = (_file: File): Promise<string> => {
+    toast('图片OCR解析需要后端支持,请使用文本或Markdown文件', {
+      icon: <AlertCircle size={16} />,
+      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+    });
+    return Promise.reject(new Error('图片OCR解析功能需要后端服务支持'));
   };
 
   // 处理文件上传
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const fileExtension = file.name.split('.').pop()?.toLowerCase();
-    const validExtensions = ['txt', 'pdf', 'md', 'xls', 'xlsx', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    if (!file) return;
+    
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    const validExtensions = ['txt', 'md', 'pdf', 'xls', 'xlsx', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
+    
+    if (!validExtensions.includes(fileExtension || '')) {
+      toast('请上传支持的文件格式：.txt、.md、.pdf、.xls、.xlsx、.doc、.docx、.jpg、.jpeg、.png', {
+        icon: <AlertCircle size={16} />,
+        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      });
+      return;
+    }
+    
+    setSelectedFile(file);
+    setIsProcessing(true);
+    
+    try {
+      let content = '';
       
-      if (!validExtensions.includes(fileExtension || '')) {
-        toast('请上传支持的文件格式：.txt、.pdf、.md、.xls、.xlsx、.doc、.docx、.jpg、.jpeg、.png', {
-          icon: <AlertCircle size={16} />,
-          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      // 根据文件类型选择解析方法
+      if (fileExtension === 'txt') {
+        content = await parseTextFile(file);
+        toast('文本文件解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
         });
-        return;
+      } else if (fileExtension === 'md') {
+        content = await parseMarkdownFile(file);
+        toast('Markdown文件解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
+      } else if (fileExtension === 'pdf') {
+        content = await parsePDFFile(file);
+      } else if (fileExtension && ['doc', 'docx'].includes(fileExtension)) {
+        content = await parseWordFile(file);
+      } else if (fileExtension && ['xls', 'xlsx'].includes(fileExtension)) {
+        content = await parseExcelFile(file);
+      } else if (fileExtension && ['jpg', 'jpeg', 'png'].includes(fileExtension)) {
+        content = await parseImageFile(file);
       }
       
-      setSelectedFile(file);
-      
-      try {
-        setIsProcessing(true);
-        
-           // 根据文件类型选择不同的解析方法
-          if (fileExtension === 'pdf') {
-            toast('正在解析PDF文件，请稍候...', {
-              icon: <Loader2 size={16} className="animate-spin" />,
-              className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-            });
-            const content = await parsePDFFile(file);
-            setImportContent(content);
-          } else if (fileExtension && ['doc', 'docx'].includes(fileExtension)) {
-            toast('正在解析Word文档，请稍候...', {
-              icon: <Loader2 size={16} className="animate-spin" />,
-              className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-            });
-            const content = await parseWordFile(file);
-            setImportContent(content);
-          } else if (fileExtension === 'md') {
-            toast('正在解析Markdown文件，请稍候...', {
-              icon: <Loader2 size={16} className="animate-spin" />,
-              className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-            });
-            const content = await parseMarkdownFile(file);
-            setImportContent(content);
-          } else if (fileExtension && ['jpg', 'jpeg', 'png'].includes(fileExtension)) {
-            toast('正在解析图片文件，请稍候...', {
-              icon: <Loader2 size={16} className="animate-spin" />,
-              className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-            });
-            const content = await parseImageFile(file);
-            setImportContent(content);
-          } else if (fileExtension && ['xls', 'xlsx'].includes(fileExtension)) {
-            toast('正在解析Excel文件，请稍候...', {
-              icon: <Loader2 size={16} className="animate-spin" />,
-              className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-            });
-            const content = await parseExcelFile(file);
-            setImportContent(content);
-          } else {
-          // 文本文件直接读取
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const content = e.target?.result as string;
-            setImportContent(content);
-          };
-          reader.readAsText(file);
-        }
-      } catch (error) {
-        toast('文件解析失败，请尝试其他文件', {
-          icon: <AlertCircle size={16} />,
-          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
-        });
-      } finally {
-        setIsProcessing(false);
-      }
+      setImportContent(content);
+    } catch (error) {
+      console.error('文件解析错误:', error);
+      setSelectedFile(null);
+      setImportContent('');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -207,27 +388,30 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setIsProcessing(true);
     
     try {
-      // 处理延迟（UI反馈）
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const content = importContent.trim();
       
-      const content = importType === 'paste' ? importContent : importContent;
-      
-      if (!content.trim()) {
+      if (!content) {
         throw new Error('请输入或上传要导入的知识内容');
       }
       
-      const classifiedResults = autoClassifyContent(content);
+      toast.loading('正在使用8智能体系统分析...', { id: 'analyzing' });
+      
+      // ✅ 调用智能分析（带await）
+      const classifiedResults = await autoClassifyContent(content);
+      
       setImportResults(classifiedResults);
       setShowResults(true);
       
-      toast(`成功识别并分类了 ${classifiedResults.length} 条知识记录`, {
+      toast.success(`成功识别并分类了 ${classifiedResults.length} 条知识记录`, {
+        id: 'analyzing',
         icon: <Check size={16} />,
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '导入过程中发生错误';
       setErrors([errorMessage]);
-      toast(errorMessage, {
+      toast.error(errorMessage, {
+        id: 'analyzing',
         icon: <AlertCircle size={16} />,
         className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
       });
@@ -347,12 +531,23 @@ const ImportModal: React.FC<ImportModalProps> = ({
                     id="import-content"
                     value={importContent}
                     onChange={(e) => setImportContent(e.target.value)}
-                    placeholder="请粘贴要导入的知识记录内容，每条记录请用空行分隔..."
-                    rows={10}
+                    placeholder="请粘贴要导入的知识记录内容，每条记录请用空行分隔...
+
+示例：
+知识管理系统
+知识管理系统是一种用于收集、组织、存储和分享知识的工具。
+
+参考资料
+https://example.com/knowledge-management
+这是一篇关于知识管理的优秀文章。
+
+关键词
+知识管理、信息组织、知识共享"
+                    rows={12}
                     className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none resize-none dark:bg-gray-700 border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600"
                   />
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    提示：请确保每条知识记录之间用空行分隔，以便系统正确识别和分类。
+                    💡 提示：每条知识记录之间用空行分隔，系统会自动识别并分类为核心概念、关联链接、参考来源或索引关键词。
                   </p>
                 </div>
               ) : (
@@ -362,7 +557,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
                     type="file"
                     id="file-upload"
                     onChange={handleFileUpload}
-                    accept=".txt,.pdf,.md,.xls,.xlsx"
+                    accept=".txt,.md,.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
                     className="hidden"
                   />
                   <label htmlFor="file-upload" className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center space-x-2 transition-colors">
@@ -370,9 +565,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
                     <span>选择文件</span>
                   </label>
                   
-                       {selectedFile && (
+                  {selectedFile && (
                     <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 inline-flex items-center">
-                       {selectedFile.name.endsWith('.pdf') ? (
+                      {selectedFile.name.endsWith('.pdf') ? (
                         <File size={20} className="text-red-500 mr-3" />
                       ) : selectedFile.name.endsWith('.md') ? (
                         <FileText size={20} className="text-purple-500 mr-3" />
@@ -393,7 +588,10 @@ const ImportModal: React.FC<ImportModalProps> = ({
                       </div>
                       <button 
                         type="button"
-                        onClick={() => setSelectedFile(null)}
+                        onClick={() => {
+                          setSelectedFile(null);
+                          setImportContent('');
+                        }}
                         className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                       >
                         <X size={16} />
@@ -401,37 +599,38 @@ const ImportModal: React.FC<ImportModalProps> = ({
                     </div>
                   )}
                   
-                     <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-2 justify-center">
-                      <div className="flex flex-col items-center p-2">
-                        <FileText size={24} className="text-blue-500 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">文本文档</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.txt</span>
+                  <div className="mt-6 text-left">
+                    <p className="text-sm font-medium mb-3">✅ 当前支持的格式：</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
+                        <span>.txt 文本文件</span>
                       </div>
-                      <div className="flex flex-col items-center p-2">
-                        <File size={24} className="text-red-500 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">PDF文档</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.pdf</span>
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
+                        <span>.md Markdown文件</span>
                       </div>
-                      <div className="flex flex-col items-center p-2">
-                        <FileText size={24} className="text-purple-500 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Markdown</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.md</span>
+                    </div>
+                    
+                    <p className="text-sm font-medium mt-4 mb-3">⏳ 需要后端支持的格式：</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center">
+                        <AlertCircle size={14} className="mr-1" />
+                        <span>.pdf PDF文档</span>
                       </div>
-                      <div className="flex flex-col items-center p-2">
-                        <FileSpreadsheet size={24} className="text-green-500 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Excel表格</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.xls, .xlsx</span>
+                      <div className="flex items-center">
+                        <AlertCircle size={14} className="mr-1" />
+                        <span>.doc/.docx Word文档</span>
                       </div>
-                      <div className="flex flex-col items-center p-2">
-                        <FileText size={24} className="text-blue-700 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">Word文档</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.doc, .docx</span>
+                      <div className="flex items-center">
+                        <AlertCircle size={14} className="mr-1" />
+                        <span>.xls/.xlsx Excel表格</span>
                       </div>
-                      <div className="flex flex-col items-center p-2">
-                        <FileText size={24} className="text-amber-600 mb-1" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400">图片文件</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">.jpg, .png</span>
+                      <div className="flex items-center">
+                        <AlertCircle size={14} className="mr-1" />
+                        <span>.jpg/.png 图片OCR</span>
                       </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -453,9 +652,16 @@ const ImportModal: React.FC<ImportModalProps> = ({
             <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
               <div className="flex items-start">
                 <Brain size={18} className="text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
-                <p className="text-sm text-blue-800 dark:text-blue-300">
-                  系统将自动分析您导入的内容，并根据内容特征将其分类到核心概念、关联链接、参考来源或索引关键词四种卡片类型中。
-                </p>
+                <div className="text-sm text-blue-800 dark:text-blue-300">
+                  <p className="font-medium mb-1">智能分类说明：</p>
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    <li>系统会根据内容特征自动分类</li>
+                    <li>包含定义、概念的内容 → 核心概念(蓝色)</li>
+                    <li>包含关联、对比的内容 → 关联链接(绿色)</li>
+                    <li>包含URL、引用的内容 → 参考来源(黄色)</li>
+                    <li>短文本、关键词 → 索引关键词(红色)</li>
+                  </ul>
+                </div>
               </div>
             </div>
             
@@ -471,20 +677,23 @@ const ImportModal: React.FC<ImportModalProps> = ({
               <button 
                 type="button"
                 onClick={handleImport}
-                disabled={isProcessing || (!importContent.trim() && importType === 'paste') || (!selectedFile && importType === 'upload')}
-                className={`px-6 py-2 rounded-lg transition-colors ${
-                  isProcessing 
-                    ? 'bg-gray-400 cursor-not-allowed' 
+                disabled={isProcessing || !importContent.trim()}
+                className={`px-6 py-2 rounded-lg transition-colors flex items-center ${
+                  isProcessing || !importContent.trim()
+                    ? 'bg-gray-400 cursor-not-allowed text-white' 
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
               >
                 {isProcessing ? (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 size={16} className="animate-spin" />
+                  <>
+                    <Loader2 size={16} className="animate-spin mr-2" />
                     <span>正在分析...</span>
-                  </div>
+                  </>
                 ) : (
-                  '分析并分类'
+                  <>
+                    <Brain size={16} className="mr-2" />
+                    <span>智能分析并分类</span>
+                  </>
                 )}
               </button>
             </div>
@@ -507,52 +716,58 @@ const ImportModal: React.FC<ImportModalProps> = ({
                   key={index}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
+                  transition={{ delay: index * 0.05 }}
                   className="border rounded-lg p-4 border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow"
                 >
                   <div className="flex justify-between items-start mb-3">
-                    <div className="flex items-center">
+                    <div className="flex items-center flex-1">
                       <div className={`w-8 h-8 rounded-full ${
                         result.color === 'blue' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400' :
                         result.color === 'green' ? 'bg-green-100 text-green-600 dark:bg-green-900/50 dark:text-green-400' :
                         result.color === 'yellow' ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' :
                         'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400'
-                      } flex items-center justify-center mr-3`}>
+                      } flex items-center justify-center mr-3 flex-shrink-0`}>
                         {cardTypeMap[result.color].icon}
                       </div>
-                      <div>
-                        <h4 className="font-medium">{result.title}</h4>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{cardTypeMap[result.color].name} · 地址: {result.address}</span>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium truncate">{result.title}</h4>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {cardTypeMap[result.color].name} · 地址: {result.address}
+                        </span>
                       </div>
                     </div>
-                    <div className="flex items-center">
-                      <div className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 mr-2">
-                        置信度: {Math.round(result.confidence * 100)}%
-                      </div>
+                    <div className="text-xs px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 ml-2 flex-shrink-0">
+                      {Math.round(result.confidence * 100)}%
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 line-clamp-3">{result.content}</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">{result.content}</p>
                 </motion.div>
               ))}
             </div>
             
             {/* 统计信息 */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               <div className="bg-gray-50 dark:bg-gray-750 rounded-lg p-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">总记录数</p>
-                <p className="text-lg font-bold">{importResults.length}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">总记录数</p>
+                <p className="text-2xl font-bold">{importResults.length}</p>
               </div>
               <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">核心概念</p>
-                <p className="text-lg font-bold">{importResults.filter(r => r.color === 'blue').length}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">核心概念</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {importResults.filter(r => r.color === 'blue').length}
+                </p>
               </div>
               <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">关联链接</p>
-                <p className="text-lg font-bold">{importResults.filter(r => r.color === 'green').length}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">关联链接</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {importResults.filter(r => r.color === 'green').length}
+                </p>
               </div>
               <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-3">
-                <p className="text-sm text-gray-500 dark:text-gray-400">参考来源</p>
-                <p className="text-lg font-bold">{importResults.filter(r => r.color === 'yellow').length}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">参考来源</p>
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                  {importResults.filter(r => r.color === 'yellow').length}
+                </p>
               </div>
             </div>
             
@@ -568,9 +783,10 @@ const ImportModal: React.FC<ImportModalProps> = ({
               <button 
                 type="button"
                 onClick={handleConfirmImport}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center"
               >
-                确认导入
+                <Check size={16} className="mr-2" />
+                确认导入 {importResults.length} 条记录
               </button>
             </div>
           </div>

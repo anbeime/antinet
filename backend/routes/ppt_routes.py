@@ -189,7 +189,10 @@ async def export_cards_to_ppt(request: ExportCardsRequest):
         cards = [card.model_dump() for card in request.cards]
         
         # 生成 PPT
-        processor = PPTProcessor()
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
         result_path = processor.export_cards_to_ppt(
             cards=cards,
             output_path=str(output_path),
@@ -242,7 +245,10 @@ async def export_analysis_report(request: AnalysisReportRequest):
         }
         
         # 生成 PPT
-        processor = PPTProcessor()
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
         result_path = processor.create_analysis_report(
             analysis_data=analysis_data,
             output_path=str(output_path)
@@ -289,7 +295,10 @@ async def create_template_ppt(
         output_path = temp_dir / filename
         
         # 创建模板
-        processor = PPTProcessor()
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
         prs = processor.create_presentation(title)
         
         # 添加示例卡片

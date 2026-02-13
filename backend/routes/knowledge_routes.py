@@ -215,6 +215,63 @@ async def create_card(card: KnowledgeCard):
         raise HTTPException(status_code=400, detail=f"创建失败: {str(e)}")
 
 
+@router.put("/cards/{card_id}")
+async def update_card(card_id: int, card: KnowledgeCard):
+    """
+    更新知识卡片
+
+    Args:
+        card_id: 卡片ID
+        card: 更新的卡片数据
+
+    Returns:
+        更新后的卡片
+    """
+    logger.info(f"[UPDATE_CARD] 收到更新卡片请求: id={card_id}, data={card.dict()}")
+
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 检查卡片是否存在
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        existing_card = cursor.fetchone()
+        
+        if not existing_card:
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+
+        # 更新卡片
+        cursor.execute('''
+            UPDATE knowledge_cards 
+            SET card_type = ?, title = ?, content = ?, category = ?
+            WHERE id = ?
+        ''', (
+            card.type,
+            card.title,
+            card.content,
+            card.category,
+            card_id
+        ))
+
+        conn.commit()
+
+        # 获取更新后的卡片
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        updated_card = dict(cursor.fetchone())
+
+        conn.close()
+        logger.info(f"[UPDATE_CARD] 更新成功: {updated_card}")
+        return updated_card
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[UPDATE_CARD] 更新失败: {e}", exc_info=True)
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"更新失败: {str(e)}")
+
+
 @router.delete("/cards/{card_id}")
 async def delete_card(card_id: int):
     """
