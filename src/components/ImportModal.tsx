@@ -792,6 +792,62 @@ https://example.com/knowledge-management
           </div>
         )}
       </motion.div>
+
+      {/* 未保存更改确认对话框 */}
+      {showConfirmDialog && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowConfirmDialog(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/50 flex items-center justify-center text-yellow-600 dark:text-yellow-400 mr-4">
+                <AlertCircle size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">未保存的更改</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  您有 {importResults.length} 条知识记录尚未保存
+                </p>
+              </div>
+            </div>
+
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              您可以选择保存这些记录到知识库，或者放弃更改。如果直接关闭，系统将尝试自动保存。
+            </p>
+
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={handleDiscardAndClose}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                不保存
+              </button>
+              <button
+                onClick={() => setShowConfirmDialog(false)}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                继续编辑
+              </button>
+              <button
+                onClick={handleSaveAndClose}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                保存并关闭
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </motion.div>
   );
 };

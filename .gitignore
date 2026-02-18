@@ -39,6 +39,7 @@ dist-ssr
 # Python
 backend/venv/
 venv_arm64/
+venv_x64/
 backend/__pycache__/
 *.pyc
 *.pyo
@@ -83,3 +84,28 @@ rooroo-prompt-clean.md
 # 备份目录（临时文件，不推送）
 backup_20260129/
 backup_*/
+
+# 自动化脚本输出
+auto/
+
+# 临时调试文件
+debug_export.html
+diagnose_export.py
+check_db_schema.py
+skill_installer.py
+
+# 测试脚本
+test_*.py
+
+# 启动脚本（可选，根据需求）
+start_antinet.bat
+start_antinet.ps1
+start_services.bat
+start_services.ps1
+stop_antinet.bat
+stop_antinet.ps1
+install_ppt_preview_deps.bat
+
+# 文档文件（不需要推送）
+*.md
+!README.md
