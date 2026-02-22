@@ -151,6 +151,26 @@ class DatabaseManager:
             except:
                 pass
 
+            # 9. 专题研究表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS research_projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    color TEXT DEFAULT 'blue',
+                    icon TEXT DEFAULT '📚',
+                    status TEXT DEFAULT 'active',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # 10. 知识卡片关联专题字段
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN project_id INTEGER")
+            except:
+                pass
+
             # 8. 知识库卡片表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS knowledge_cards (

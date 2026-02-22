@@ -147,6 +147,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入知识管理路由: {e}")
 
+# 注册专题研究路由
+try:
+    from routes.research_routes import router as research_router
+    app.include_router(research_router)  # 专题研究路由
+    logger.info("[OK] 专题研究路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入专题研究路由: {e}")
+
 # 注册 8-Agent 系统路由
 try:
     from routes.agent_routes import router as agent_router

@@ -286,4 +286,85 @@ export const gtdTaskService = {
   },
 };
 
+// ========== 专题研究服务 ==========
+const RESEARCH_API_BASE = 'http://localhost:8000/api/research';
 
+export interface ResearchProject {
+  id?: number;
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const researchProjectService = {
+  // 获取所有专题
+  getAll: async (): Promise<ResearchProject[]> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects`);
+    if (!response.ok) throw new Error('获取专题失败');
+    return response.json();
+  },
+
+  // 获取单个专题
+  getById: async (id: number): Promise<ResearchProject> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`);
+    if (!response.ok) throw new Error('获取专题详情失败');
+    return response.json();
+  },
+
+  // 创建专题
+  create: async (project: Omit<ResearchProject, 'id' | 'created_at' | 'updated_at'>): Promise<ResearchProject> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project),
+    });
+    if (!response.ok) throw new Error('创建专题失败');
+    return response.json();
+  },
+
+  // 更新专题
+  update: async (id: number, project: Partial<ResearchProject>): Promise<ResearchProject> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project),
+    });
+    if (!response.ok) throw new Error('更新专题失败');
+    return response.json();
+  },
+
+  // 删除专题
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('删除专题失败');
+  },
+
+  // 获取专题下的任务
+  getTasks: async (projectId: number): Promise<GtdTask[]> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks`);
+    if (!response.ok) throw new Error('获取专题任务失败');
+    return response.json();
+  },
+
+  // 添加任务到专题
+  addTask: async (projectId: number, taskId: number): Promise<void> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks/${taskId}`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('添加任务到专题失败');
+  },
+
+  // 从专题移除任务
+  removeTask: async (projectId: number, taskId: number): Promise<void> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks/${taskId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('从专题移除任务失败');
+  },
+};

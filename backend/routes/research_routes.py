@@ -119,6 +119,7 @@ async def get_project(project_id: int):
 @router.post("/projects", response_model=ResearchProject)
 async def create_project(project: ResearchProjectCreate):
     """创建专题研究"""
+    print(f"Received project data: {project}")
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -323,3 +324,129 @@ async def remove_task_from_project(project_id: int, task_id: int):
         return {"message": "任务已从专题中移除"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"移除任务失败: {str(e)}")
+
+
+@router.get("/projects/{project_id}/cards")
+async def get_project_cards(project_id: int):
+    """获取专题相关的所有四色卡片"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 检查专题是否存在
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+        
+        # 获取专题相关的卡片
+        cursor.execute("""
+            SELECT * FROM knowledge_cards
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+        """, (project_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        cards = []
+        for row in rows:
+            cards.append({
+                "id": row["id"],
+                "card_type": row["card_type"],
+                "title": row["title"],
+                "content": row["content"],
+                "category": row["category"],
+                "project_id": row["project_id"],
+                "created_at": row["created_at"]
+            })
+        return cards
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取专题卡片失败: {str(e)}")
+
+
+@router.post("/projects/{project_id}/cards/{card_id}")
+async def add_card_to_project(project_id: int, card_id: int):
+    """将卡片关联到专题"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 检查专题是否存在
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+        
+        # 检查卡片是否存在
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+        
+        # 关联卡片到专题
+        cursor.execute("""
+            UPDATE knowledge_cards 
+            SET project_id = ?
+            WHERE id = ?
+        """, (project_id, card_id))
+        conn.commit()
+        conn.close()
+        
+        return {"message": "卡片已关联到专题"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"关联卡片失败: {str(e)}")
+
+
+@router.post("/cards/{card_id}/to-task")
+async def convert_card_to_task(card_id: int):
+    """将卡片转换为GTD任务"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 获取卡片
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        card = cursor.fetchone()
+        if not card:
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+        
+        # 根据卡片类型确定任务优先级
+        priority_map = {
+            'blue': 'medium',    # 事实 -> 中优先级
+            'green': 'low',      # 解释 -> 低优先级
+            'yellow': 'high',    # 风险 -> 高优先级
+            'red': 'high'        # 行动 -> 高优先级
+        }
+        priority = priority_map.get(card["card_type"], 'medium')
+        
+        # 创建任务
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id, created_at, updated_at)
+            VALUES (?, ?, ?, 'inbox', 'card', ?, ?, ?)
+        """, (
+            card["title"],
+            card["content"],
+            priority,
+            card_id,
+            now,
+            now
+        ))
+        task_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return {
+            "message": "卡片已转换为任务",
+            "task_id": task_id,
+            "priority": priority
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"转换任务失败: {str(e)}")

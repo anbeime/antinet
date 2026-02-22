@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
+import ResearchProjectManager from './ResearchProjectManager';
 
 // 定义分类类型
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
@@ -434,137 +435,142 @@ const GTDSystem: React.FC = () => {
 
       {/* 内容区域 */}
       <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold capitalize">
-            {activeCategory === 'inbox' ? '收集箱' : 
-             activeCategory === 'today' ? '等待处理' :
-             activeCategory === 'later' ? '将来可能' :
-             activeCategory === 'archive' ? '归档资料' : '专题研究'}
-          </h2>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
-            onClick={() => setShowCreateModal(true)}
-          >
-            <PlusCircle size={16} />
-            <span>新建任务</span>
-          </motion.button>
-        </div>
-
-        {/* 搜索框和筛选 */}
-        <div className="flex flex-wrap gap-4 mb-6">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              type="text"
-              placeholder="搜索任务..."
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            />
-          </div>
-          
-          <select
-            value={priorityFilter}
-            onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-          >
-            <option value="all">全部优先级</option>
-            <option value="high">高优先级</option>
-            <option value="medium">中优先级</option>
-            <option value="low">低优先级</option>
-          </select>
-          
-          <select
-            value={timeFilter}
-            onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-          >
-            <option value="all">全部时间</option>
-            <option value="today">今天</option>
-            <option value="week">本周</option>
-            <option value="month">本月</option>
-          </select>
-        </div>
-
-        {/* 批量操作工具栏 */}
-        {selectedTaskIds.size > 0 && (
-          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
-            <span className="text-sm text-blue-600 dark:text-blue-400">已选 {selectedTaskIds.size} 项</span>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => setSelectedTaskIds(new Set())}
-                className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
+        {/* 专题研究页面 - 特殊处理 */}
+        {activeCategory === 'projects' ? (
+          <ResearchProjectManager />
+        ) : (
+          <>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold capitalize">
+                {activeCategory === 'inbox' ? '收集箱' : 
+                 activeCategory === 'today' ? '等待处理' :
+                 activeCategory === 'later' ? '将来可能' :
+                 activeCategory === 'archive' ? '归档资料' : '专题研究'}
+              </h2>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
+                onClick={() => setShowCreateModal(true)}
               >
-                取消选择
-              </button>
-              <button
-                onClick={async () => {
-                  if (confirm(`确定删除 ${selectedTaskIds.size} 个任务？`)) {
-                    for (const taskId of selectedTaskIds) {
-                      await gtdTaskService.delete(taskId);
-                    }
-                    setSelectedTaskIds(new Set());
-                    const allTasks = await gtdTaskService.getAll();
-                    const organizedTasks: Record<Category, GtdTaskType[]> = {
-                      inbox: allTasks.filter(task => task.category === 'inbox'),
-                      today: allTasks.filter(task => task.category === 'today'),
-                      later: allTasks.filter(task => task.category === 'later'),
-                      archive: allTasks.filter(task => task.category === 'archive'),
-                      projects: allTasks.filter(task => task.category === 'projects')
-                    };
-                    setTasks(organizedTasks);
-                    toast('批量删除成功！', { className: 'bg-green-50 text-green-800' });
-                  }
-                }}
-                className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
-              >
-                批量删除
-              </button>
+                <PlusCircle size={16} />
+                <span>新建任务</span>
+              </motion.button>
             </div>
-          </div>
-        )}
 
-        {/* 任务列表 */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-            <div className="flex items-center space-x-3">
-              <input
-                type="checkbox"
-                checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
-                onChange={(e) => {
-                  if (e.target.checked) {
-                    setSelectedTaskIds(new Set(filteredTasks.map(t => t.id!)));
-                  } else {
-                    setSelectedTaskIds(new Set());
-                  }
-                }}
-                className="w-4 h-4 rounded border-gray-300"
-              />
-              <h2 className="text-lg font-semibold">任务列表</h2>
-              <span className="text-sm text-gray-500">共 {filteredTasks.length} 个</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-500">每页:</span>
+            {/* 搜索框和筛选 */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="搜索任务..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
+              </div>
+              
               <select
-                value={pageSize}
-                onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
-                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm"
+                value={priorityFilter}
+                onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
               >
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
+                <option value="all">全部优先级</option>
+                <option value="high">高优先级</option>
+                <option value="medium">中优先级</option>
+                <option value="low">低优先级</option>
+              </select>
+              
+              <select
+                value={timeFilter}
+                onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+              >
+                <option value="all">全部时间</option>
+                <option value="today">今天</option>
+                <option value="week">本周</option>
+                <option value="month">本月</option>
               </select>
             </div>
-          </div>
-          
-          <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {paginatedTasks.map(task => (
-              <div
-                key={task.id}
-                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-              >
+
+            {/* 批量操作工具栏 */}
+            {selectedTaskIds.size > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+                <span className="text-sm text-blue-600 dark:text-blue-400">已选 {selectedTaskIds.size} 项</span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setSelectedTaskIds(new Set())}
+                    className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
+                  >
+                    取消选择
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (confirm(`确定删除 ${selectedTaskIds.size} 个任务？`)) {
+                        for (const taskId of selectedTaskIds) {
+                          await gtdTaskService.delete(taskId);
+                        }
+                        setSelectedTaskIds(new Set());
+                        const allTasks = await gtdTaskService.getAll();
+                        const organizedTasks: Record<Category, GtdTaskType[]> = {
+                          inbox: allTasks.filter(task => task.category === 'inbox'),
+                          today: allTasks.filter(task => task.category === 'today'),
+                          later: allTasks.filter(task => task.category === 'later'),
+                          archive: allTasks.filter(task => task.category === 'archive'),
+                          projects: allTasks.filter(task => task.category === 'projects')
+                        };
+                        setTasks(organizedTasks);
+                        toast('批量删除成功！', { className: 'bg-green-50 text-green-800' });
+                      }
+                    }}
+                    className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
+                  >
+                    批量删除
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 任务列表 */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedTaskIds(new Set(filteredTasks.map(t => t.id!)));
+                      } else {
+                        setSelectedTaskIds(new Set());
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <h2 className="text-lg font-semibold">任务列表</h2>
+                  <span className="text-sm text-gray-500">共 {filteredTasks.length} 个</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-500">每页:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {paginatedTasks.map(task => (
+                  <div
+                    key={task.id}
+                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                  >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-3">
                     <input
@@ -743,6 +749,8 @@ const GTDSystem: React.FC = () => {
               </button>
             )}
           </div>
+        )}
+          </>
         )}
       </div>
 

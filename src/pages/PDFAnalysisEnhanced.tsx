@@ -321,53 +321,6 @@ const PDFAnalysisEnhanced: React.FC = () => {
     }
   };
 
-  // PDF 转图片
-  const handlePDFToImages = async () => {
-    if (!uploadedFile) {
-      toast.error('请先上传 PDF 文件');
-      return;
-    }
-
-    setIsProcessing(true);
-    setProcessingStatus({ stage: 'convert', progress: 30, message: '正在转换为图片...' });
-
-    const formData = new FormData();
-    formData.append('file', uploadedFile);
-    formData.append('format', 'jpg');
-    formData.append('dpi', '150');
-
-    try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/pdf-to-images`, {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`转换失败: ${errorText}`);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'pdf_images.zip';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      setProcessingStatus({ stage: 'complete', progress: 100, message: '转换完成' });
-      toast.success('PDF 转图片成功！');
-    } catch (error) {
-      console.error('转换失败:', error);
-      toast.error('PDF 转图片失败');
-      setProcessingStatus({ stage: 'error', progress: 0, message: '转换失败' });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   // 图片转 PDF
   const handleImagesToPDF = async () => {
     if (uploadedFiles.length < 1) {
@@ -487,7 +440,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
         </motion.div>
 
         {/* Feature Tabs */}
-        <div className="grid grid-cols-7 gap-3 mb-8">
+        <div className="grid grid-cols-6 gap-3 mb-8">
           {features.map((feature) => (
             <motion.button
               key={feature.id}

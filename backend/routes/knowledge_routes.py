@@ -91,6 +91,7 @@ class KnowledgeCard(BaseModel):
     source: Optional[str] = None
     url: Optional[str] = None
     category: Optional[str] = None
+    project_id: Optional[int] = None  # 关联的专题ID
 
 
 class KnowledgeSource(BaseModel):
@@ -190,13 +191,14 @@ async def create_card(card: KnowledgeCard):
 
         # 使用正确的字段名 card_type（与数据库表结构一致）
         cursor.execute('''
-            INSERT INTO knowledge_cards (card_type, title, content, category)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
+            VALUES (?, ?, ?, ?, ?)
         ''', (
             card.type,
             card.title,
             card.content,
-            card.category
+            card.category,
+            card.project_id
         ))
 
         conn.commit()
@@ -246,13 +248,14 @@ async def update_card(card_id: int, card: KnowledgeCard):
         # 更新卡片
         cursor.execute('''
             UPDATE knowledge_cards 
-            SET card_type = ?, title = ?, content = ?, category = ?
+            SET card_type = ?, title = ?, content = ?, category = ?, project_id = ?
             WHERE id = ?
         ''', (
             card.type,
             card.title,
             card.content,
             card.category,
+            card.project_id,
             card_id
         ))
 

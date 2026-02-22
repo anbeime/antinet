@@ -1,0 +1,56 @@
+{
+  "backup_time": "20260222_174033",
+  "task_count": 5,
+  "tasks": [
+    {
+      "id": 1,
+      "title": "完成项目文档",
+      "description": "编写项目API文档和用户手册",
+      "priority": "high",
+      "due_date": null,
+      "category": "today",
+      "created_at": "2026-02-02 12:56:30",
+      "updated_at": "2026-02-02 12:56:30"
+    },
+    {
+      "id": 2,
+      "title": "测试聊天机器人",
+      "description": "验证ChatBotModal输入框功能",
+      "priority": "high",
+      "due_date": null,
+      "category": "inbox",
+      "created_at": "2026-02-02 12:56:30",
+      "updated_at": "2026-02-02 12:56:30"
+    },
+    {
+      "id": 3,
+      "title": "学习向量检索",
+      "description": "研究向量数据库和相似度搜索技术",
+      "priority": "medium",
+      "due_date": null,
+      "category": "later",
+      "created_at": "2026-02-02 12:56:30",
+      "updated_at": "2026-02-02 12:56:30"
+    },
+    {
+      "id": 4,
+      "title": "优化前端性能",
+      "description": "分析并优化React组件渲染性能",
+      "priority": "medium",
+      "due_date": null,
+      "category": "projects",
+      "created_at": "2026-02-02 12:56:30",
+      "updated_at": "2026-02-02 12:56:30"
+    },
+    {
+      "id": 5,
+      "title": "整理会议记录",
+      "description": "整理上周团队会议的重要决策",
+      "priority": "low",
+      "due_date": null,
+      "category": "archive",
+      "created_at": "2026-02-02 12:56:30",
+      "updated_at": "2026-02-02 12:56:30"
+    }
+  ]
+}
