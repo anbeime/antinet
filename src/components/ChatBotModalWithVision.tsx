@@ -162,10 +162,10 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
         const data = await response.json();
         result = data.result || data.analysis || JSON.stringify(data);
       } else {
-        const response = await fetch('http://localhost:8000/api/chat', {
+        const response = await fetch('http://localhost:8000/api/chat/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: input.trim() }),
+          body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
         });
 
         if (!response.ok) {

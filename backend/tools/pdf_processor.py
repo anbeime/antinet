@@ -3,14 +3,24 @@
 解决 Windows ARM64 上 pdfplumber 的依赖问题
 """
 
-from pypdf import PdfReader
 from typing import List, Dict, Any
 from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
 
-PDF_AVAILABLE = True  # pypdf 已安装
+# 尝试导入 pypdf
+try:
+    from pypdf import PdfReader
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+    logger.warning("pypdf 未安装，PDF 功能不可用")
+    
+    # 创建占位符类
+    class PdfReader:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("pypdf 未安装，请运行: pip install pypdf")
 
 
 class SimplePDFProcessor:

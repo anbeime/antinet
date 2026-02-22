@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  Layers, CheckCircle, Clock, Zap, Download, Settings, 
-  Play, Pause, RotateCcw, Loader, AlertTriangle, 
-  BarChart3, Gauge, Upload, FileText, FileSpreadsheet, 
-  Presentation, Image, X, FolderOpen
+  Layers, CheckCircle, Clock, Settings, 
+  Play, RotateCcw, Loader, AlertTriangle, 
+  BarChart3, Upload, FileText, FileSpreadsheet, 
+  Presentation, Image, X, FolderOpen, Database, FileDown
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface BatchFile {
   id: string;
@@ -16,20 +17,30 @@ interface BatchFile {
   status: 'waiting' | 'processing' | 'completed' | 'failed';
   progress: number;
   result?: any;
+  extractedCards?: ExtractedCard[];
   error?: string;
+}
+
+interface ExtractedCard {
+  title: string;
+  content: string;
+  card_type: 'blue' | 'green' | 'yellow' | 'red';
+  confidence: number;
 }
 
 interface ProcessingOptions {
   extractContent: boolean;
   generateSummary: boolean;
   generateCards: boolean;
+  autoSaveCards: boolean;
+  syncToGTD: boolean;
   useNPU: boolean;
 }
 
 const BatchProcess: React.FC = () => {
   const [files, setFiles] = useState<BatchFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentTask, setCurrentTask] = useState<string | null>(null);
+  const [savedCardsCount, setSavedCardsCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   
@@ -37,6 +48,8 @@ const BatchProcess: React.FC = () => {
     extractContent: true,
     generateSummary: true,
     generateCards: true,
+    autoSaveCards: true,
+    syncToGTD: true,
     useNPU: true
   });
 
@@ -95,15 +108,11 @@ const BatchProcess: React.FC = () => {
   const clearAllFiles = () => {
     if (confirm('确定要清空所有文件吗？')) {
       setFiles([]);
-      setCurrentTask(null);
     }
   };
 
   // 处理单个文件
   const processFile = async (batchFile: BatchFile): Promise<void> => {
-    setCurrentTask(batchFile.id);
-    
-    // 更新状态为处理中
     setFiles(prev => prev.map(f => 
       f.id === batchFile.id 
         ? { ...f, status: 'processing', progress: 10 }
@@ -114,24 +123,9 @@ const BatchProcess: React.FC = () => {
       const formData = new FormData();
       formData.append('file', batchFile.file);
 
-      let apiUrl = '';
-      
-      // 根据文件类型选择API
-      switch (batchFile.type) {
-        case 'excel':
-          apiUrl = 'http://localhost:8000/api/analysis/upload-and-analyze';
-          break;
-        case 'pdf':
-          apiUrl = 'http://localhost:8000/api/pdf/extract';
-          break;
-        case 'image':
-          apiUrl = 'http://localhost:8000/api/vision/analyze';
-          break;
-        default:
-          throw new Error('不支持的文件类型');
-      }
+      // 使用统一的知识导入API
+      const apiUrl = 'http://localhost:8000/api/knowledge/import/file';
 
-      // 进度更新模拟
       const progressInterval = setInterval(() => {
         setFiles(prev => prev.map(f => 
           f.id === batchFile.id && f.progress < 90
@@ -150,9 +144,49 @@ const BatchProcess: React.FC = () => {
       const result = await response.json();
 
       if (response.ok) {
+        const extractedCards: ExtractedCard[] = result.cards || [];
+        
+        // 自动保存卡片到数据库
+        if (options.autoSaveCards && extractedCards.length > 0) {
+          let savedCount = 0;
+          for (const card of extractedCards) {
+            try {
+              const saveResponse = await fetch('http://localhost:8000/api/knowledge/cards', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: card.card_type,
+                  title: card.title,
+                  content: card.content,
+                  category: card.card_type === 'blue' ? '事实' : 
+                            card.card_type === 'green' ? '解释' : 
+                            card.card_type === 'yellow' ? '风险' : '行动'
+                })
+              });
+              if (saveResponse.ok) savedCount++;
+            } catch (e) {
+              console.error('保存卡片失败:', e);
+            }
+          }
+          
+          setSavedCardsCount(prev => prev + savedCount);
+          
+          // 同步风险/行动卡片到GTD
+          if (options.syncToGTD) {
+            const actionCards = extractedCards.filter(c => c.card_type === 'red' || c.card_type === 'yellow');
+            if (actionCards.length > 0) {
+              try {
+                await fetch('http://localhost:8000/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
+              } catch (e) {
+                console.log('同步GTD失败:', e);
+              }
+            }
+          }
+        }
+        
         setFiles(prev => prev.map(f => 
           f.id === batchFile.id 
-            ? { ...f, status: 'completed', progress: 100, result }
+            ? { ...f, status: 'completed', progress: 100, result, extractedCards }
             : f
         ));
       } else {
@@ -175,55 +209,142 @@ const BatchProcess: React.FC = () => {
   // 开始批量处理
   const startBatchProcessing = async () => {
     if (files.length === 0) {
-      alert('请先选择要处理的文件');
+      toast.error('请先选择要处理的文件');
       return;
     }
 
     const waitingFiles = files.filter(f => f.status === 'waiting');
     if (waitingFiles.length === 0) {
-      alert('没有等待处理的文件');
+      toast.warning('没有等待处理的文件');
       return;
     }
 
     setIsProcessing(true);
+    setSavedCardsCount(0);
 
-    // 顺序处理每个文件
     for (const file of waitingFiles) {
       await processFile(file);
     }
 
     setIsProcessing(false);
-    setCurrentTask(null);
+    
+    const totalCards = files.reduce((sum, f) => sum + (f.extractedCards?.length || 0), 0);
+    if (options.autoSaveCards && savedCardsCount > 0) {
+      toast.success(`处理完成！已保存 ${savedCardsCount} 张卡片到知识库`);
+    } else {
+      toast.success(`处理完成！共提取 ${totalCards} 张卡片`);
+    }
   };
 
-  // 导出结果
-  const exportResults = () => {
-    const completedFiles = files.filter(f => f.status === 'completed');
-    if (completedFiles.length === 0) {
-      alert('没有可导出的结果');
+  // 导出为知识卡片格式
+  const exportAsCards = () => {
+    const allCards: ExtractedCard[] = [];
+    files.filter(f => f.status === 'completed').forEach(f => {
+      if (f.extractedCards) {
+        allCards.push(...f.extractedCards.map(card => ({
+          ...card,
+          source: f.name
+        })));
+      }
+    });
+    
+    if (allCards.length === 0) {
+      toast.warning('没有可导出的卡片');
       return;
     }
 
-    const exportData = {
-      processedAt: new Date().toISOString(),
-      totalFiles: files.length,
-      completedFiles: completedFiles.length,
-      results: completedFiles.map(f => ({
-        filename: f.name,
-        type: f.type,
-        result: f.result
-      }))
-    };
-
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(allCards, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `batch_results_${Date.now()}.json`;
+    link.download = `knowledge_cards_${Date.now()}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    toast.success(`已导出 ${allCards.length} 张卡片`);
+  };
+
+  // 导出为 Markdown 格式
+  const exportAsMarkdown = () => {
+    const allCards: ExtractedCard[] = [];
+    files.filter(f => f.status === 'completed').forEach(f => {
+      if (f.extractedCards) allCards.push(...f.extractedCards);
+    });
+    
+    if (allCards.length === 0) {
+      toast.warning('没有可导出的卡片');
+      return;
+    }
+
+    const colorEmoji = { blue: '🔵', green: '🟢', yellow: '🟡', red: '🔴' };
+    const colorName = { blue: '事实', green: '解释', yellow: '风险', red: '行动' };
+    
+    let md = `# 批量处理知识卡片导出\n\n`;
+    md += `导出时间: ${new Date().toLocaleString('zh-CN')}\n`;
+    md += `卡片总数: ${allCards.length}\n\n---\n\n`;
+    
+    allCards.forEach((card) => {
+      md += `## ${colorEmoji[card.card_type]} ${card.title}\n\n`;
+      md += `**类型**: ${colorName[card.card_type]}\n\n`;
+      md += `${card.content}\n\n---\n\n`;
+    });
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `knowledge_cards_${Date.now()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 Markdown 文件`);
+  };
+
+  // 导出分析报告
+  const exportReport = () => {
+    const completedFiles = files.filter(f => f.status === 'completed');
+    if (completedFiles.length === 0) {
+      toast.warning('没有可导出的结果');
+      return;
+    }
+
+    let report = `# 批量处理报告\n\n`;
+    report += `处理时间: ${new Date().toLocaleString('zh-CN')}\n\n`;
+    report += `## 统计信息\n\n`;
+    report += `- 总文件数: ${files.length}\n`;
+    report += `- 成功处理: ${completedFiles.length}\n`;
+    report += `- 处理失败: ${files.filter(f => f.status === 'failed').length}\n`;
+    report += `- 提取卡片: ${completedFiles.reduce((sum, f) => sum + (f.extractedCards?.length || 0), 0)} 张\n\n`;
+    
+    report += `## 处理详情\n\n`;
+    completedFiles.forEach(f => {
+      report += `### ${f.name}\n\n`;
+      report += `- 文件类型: ${f.type}\n`;
+      report += `- 提取卡片: ${f.extractedCards?.length || 0} 张\n`;
+      if (f.extractedCards && f.extractedCards.length > 0) {
+        report += `\n卡片预览:\n`;
+        f.extractedCards.slice(0, 3).forEach(card => {
+          report += `- ${card.title}\n`;
+        });
+        if (f.extractedCards.length > 3) {
+          report += `- ... 还有 ${f.extractedCards.length - 3} 张卡片\n`;
+        }
+      }
+      report += `\n`;
+    });
+
+    const blob = new Blob([report], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `batch_report_${Date.now()}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('已导出分析报告');
   };
 
   const getStatusIcon = (status: BatchFile['status']) => {
@@ -397,16 +518,45 @@ const BatchProcess: React.FC = () => {
                 <RotateCcw className="w-4 h-4" />
                 <span>清空列表</span>
               </button>
-              
-              <button 
-                onClick={exportResults}
-                disabled={completedCount === 0}
-                className="w-full flex items-center justify-center space-x-2 bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 transition-colors disabled:opacity-50"
-              >
-                <Download className="w-4 h-4" />
-                <span>导出结果 ({completedCount})</span>
-              </button>
             </div>
+            
+            {/* 导出选项 */}
+            {completedCount > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                  <FileDown className="w-5 h-5 mr-2 text-green-500" />
+                  导出选项
+                </h3>
+                <div className="space-y-2">
+                  <button 
+                    onClick={exportAsCards}
+                    className="w-full flex items-center justify-center space-x-2 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    <Database className="w-4 h-4" />
+                    <span>导出知识卡片 (JSON)</span>
+                  </button>
+                  <button 
+                    onClick={exportAsMarkdown}
+                    className="w-full flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 px-4 rounded-lg hover:bg-purple-600 transition-colors"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>导出 Markdown</span>
+                  </button>
+                  <button 
+                    onClick={exportReport}
+                    className="w-full flex items-center justify-center space-x-2 bg-teal-500 text-white py-2 px-4 rounded-lg hover:bg-teal-600 transition-colors"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    <span>导出分析报告</span>
+                  </button>
+                </div>
+                {savedCardsCount > 0 && (
+                  <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-700 dark:text-green-300">
+                    ✓ 已自动保存 {savedCardsCount} 张卡片到知识库
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Stats */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
@@ -531,7 +681,7 @@ const BatchProcess: React.FC = () => {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold flex items-center">
-                    <Gauge className="w-5 h-5 mr-2 text-teal-500" />
+                    <Layers className="w-5 h-5 mr-2 text-teal-500" />
                     总体进度
                   </h3>
                   <span className="text-lg font-bold text-teal-600 dark:text-teal-400">

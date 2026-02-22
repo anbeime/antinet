@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
@@ -6,6 +6,7 @@ import {
   Database,
   Search,
   ChevronRight,
+  ChevronDown,
   PlusCircle,
   Lightbulb,
   Briefcase,
@@ -18,7 +19,13 @@ import {
   FolderOpen,
   Cpu,
   Sparkles,
-  FileText
+  FileText,
+  Eye,
+  Trash2,
+  Layers,
+  ListTodo,
+  Bot,
+  Users
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -34,7 +41,11 @@ import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
 import PDFAnalysis from '@/pages/PDFAnalysisEnhanced';
 import BatchProcess from '@/pages/BatchProcess';
+import MultiModel from '@/pages/MultiModel';
+import FormatConverter from '@/pages/FormatConverter';
+import TeamCollaboration from '@/components/TeamCollaboration';
 import ChatBotModalWithVision from '@/components/ChatBotModalWithVision';
+import { WorkingChatBot } from '@/components/WorkingChatBot';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -106,16 +117,26 @@ const cardTypeMap = {
 
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'data-analysis' | 'ppt-analysis' | 'excel-analysis' | 'data-management' | 'agent-system' | 'skill-center' | 'pdf-analysis' | 'batch-process'>('dashboard');
+  // 主菜单和子菜单状态
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [managementSearchQuery, setManagementSearchQuery] = useState('');
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showAllCardsModal, setShowAllCardsModal] = useState(false);
+  
+  // 卡片管理筛选和分页
+  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | CardColor>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   
   // Mock数据状态管理
   const [featureHighlights, setFeatureHighlights] = useState<any[]>([]);
@@ -151,7 +172,7 @@ const Home: React.FC = () => {
   });
 
   // 处理创建卡片
-  const handleCreateCard = (cardData: CardFormData) => {
+  const handleCreateCard = async (cardData: CardFormData) => {
     // 检查是否存在内容完全相同的卡片
     const isDuplicate = cards.some(
       card => card.title.toLowerCase().trim() === cardData.title.toLowerCase().trim() && 
@@ -159,91 +180,169 @@ const Home: React.FC = () => {
     );
     
     if (isDuplicate) {
-      toast('警告：已存在相同内容的卡片，请勿重复创建！', {
+      toast.warning('警告：已存在相同内容的卡片，请勿重复创建！', {
         className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
       });
       return;
     }
     
-    // 确保relatedCards数组存在
-    const validRelatedCards = cardData.relatedCards || [];
-    
-    const newCard: KnowledgeCard = {
-      id: `card-${Date.now()}`,
-      title: cardData.title,
-      content: cardData.content,
-      color: cardData.color,
-      address: cardData.address,
-      createdAt: new Date().toISOString(),
-      relatedCards: validRelatedCards
-    };
-    
-    // 添加新卡片到卡片列表
-    setCards(prevCards => [newCard, ...prevCards]);
-    
-     // 保存到localStorage
-     localStorage.setItem('antinet_cards', JSON.stringify([newCard, ...cards]));
-     
-     // 显示成功提示
-     toast('卡片创建成功！', {
-       className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-     });
+    try {
+      // 调用后端API创建卡片
+      const response = await fetch('http://localhost:8000/api/knowledge/cards', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: cardData.color,
+          title: cardData.title,
+          content: cardData.content,
+          category: cardData.color === 'blue' ? '事实' : 
+                    cardData.color === 'green' ? '解释' : 
+                    cardData.color === 'yellow' ? '风险' : '行动'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('创建失败');
+      }
+
+      const newCard = await response.json();
+      
+      // 转换为前端格式并添加到列表
+      const formattedCard: KnowledgeCard = {
+        id: String(newCard.id),
+        title: newCard.title,
+        content: newCard.content,
+        color: newCard.card_type || cardData.color,
+        address: newCard.address || cardData.address,
+        createdAt: newCard.created_at || new Date().toISOString(),
+        relatedCards: []
+      };
+      
+      setCards(prevCards => [formattedCard, ...prevCards]);
+      
+      // 如果是风险或行动卡片，自动同步到GTD
+      if (newCard.card_type === 'yellow' || newCard.card_type === 'red' || cardData.color === 'yellow' || cardData.color === 'red') {
+        try {
+          await fetch(`http://localhost:8000/api/data/gtd-tasks/sync-card/${newCard.id}`, { method: 'POST' });
+          toast.success(`卡片创建成功！已自动添加到任务管理`, {
+            className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+          });
+        } catch {
+          toast.success('卡片创建成功！', {
+            className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+          });
+        }
+      } else {
+        toast.success('卡片创建成功！', {
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
+      }
+      
+    } catch (error) {
+      console.error('创建卡片失败:', error);
+      toast.error('创建失败，请检查后端服务', {
+        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      });
+    }
   };
   
   // 处理导入卡片
-  const handleImportCards = (importedCards: Array<{
+  const handleImportCards = async (importedCards: Array<{
     title: string;
     content: string;
     color: CardColor;
     address: string;
   }>) => {
-    // 创建知识卡片
-    const newCards: KnowledgeCard[] = importedCards.map(card => ({
-      id: `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: card.title,
-      content: card.content,
-      color: card.color,
-      address: card.address,
-      createdAt: new Date().toISOString(),
-      relatedCards: []
-    }));
-    
-     // 过滤掉重复的卡片
-    const uniqueNewCards = newCards.filter(newCard => 
-      !cards.some(
-        existingCard => 
-          existingCard.title.toLowerCase().trim() === newCard.title.toLowerCase().trim() && 
-          existingCard.content.toLowerCase().trim() === newCard.content.toLowerCase().trim()
-      )
-    );
-    
-    if (uniqueNewCards.length === 0) {
-      toast('导入的所有内容均已存在，未添加新卡片！', {
-        className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
-      });
-      return;
+    try {
+      let savedCount = 0;
+      let duplicateCount = 0;
+      
+      // 逐个保存到后端数据库
+      for (const card of importedCards) {
+        // 检查是否重复
+        const isDuplicate = cards.some(
+          existingCard => 
+            existingCard.title.toLowerCase().trim() === card.title.toLowerCase().trim() && 
+            existingCard.content.toLowerCase().trim() === card.content.toLowerCase().trim()
+        );
+        
+        if (isDuplicate) {
+          duplicateCount++;
+          continue;
+        }
+        
+        // 调用后端API保存
+        const response = await fetch('http://localhost:8000/api/knowledge/cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: card.color,
+            title: card.title,
+            content: card.content,
+            category: card.color === 'blue' ? '事实' : 
+                      card.color === 'green' ? '解释' : 
+                      card.color === 'yellow' ? '风险' : '行动'
+          })
+        });
+        
+        if (response.ok) {
+          savedCount++;
+        }
+      }
+      
+      // 重新从后端加载卡片列表
+      const cardsResponse = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+      if (cardsResponse.ok) {
+        const apiCards = await cardsResponse.json();
+        const formattedCards = apiCards.map((card: any) => ({
+          id: String(card.id),
+          title: card.title,
+          content: card.content,
+          color: card.card_type || card.type,
+          address: card.address || '',
+          createdAt: card.created_at,
+          relatedCards: []
+        }));
+        setCards(formattedCards);
+        
+        // 自动同步风险和行动卡片到GTD
+        const actionCards = importedCards.filter(c => c.color === 'red' || c.color === 'yellow');
+        if (actionCards.length > 0) {
+          try {
+            await fetch('http://localhost:8000/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
+          } catch (e) {
+            console.log('同步到GTD失败:', e);
+          }
+        }
+      }
+      
+      // 显示结果
+      const actionCards = importedCards.filter(c => c.color === 'red' || c.color === 'yellow');
+      const actionMsg = actionCards.length > 0 ? `，${actionCards.length} 条已同步到任务管理` : '';
+      
+      if (savedCount > 0 && duplicateCount > 0) {
+        toast(`已跳过 ${duplicateCount} 条重复，成功导入 ${savedCount} 条新记录${actionMsg}！`, {
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
+      } else if (savedCount > 0) {
+        toast(`${savedCount} 条知识记录已成功导入并分类${actionMsg}！`, {
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
+      } else if (duplicateCount > 0) {
+        toast(`导入的所有内容均已存在，未添加新卡片！`, {
+          className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+        });
+      }
+      
+      // 切换到卡片视图
+      setActiveTab('cards');
+      
+    } catch (error) {
+      console.error('导入卡片失败:', error);
+      toast.error('导入失败，请检查后端服务');
     }
-    
-    if (uniqueNewCards.length < newCards.length) {
-      const duplicateCount = newCards.length - uniqueNewCards.length;
-      toast(`已跳过 ${duplicateCount} 条重复内容，成功导入 ${uniqueNewCards.length} 条新记录！`, {
-        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-      });
-    } else {
-      toast(`${uniqueNewCards.length} 条知识记录已成功导入并分类！`, {
-        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-      });
-    }
-    
-    // 添加新卡片到卡片列表
-    const updatedCards = [...uniqueNewCards, ...cards];
-    setCards(updatedCards);
-    
-    // 保存到localStorage
-    localStorage.setItem('antinet_cards', JSON.stringify(updatedCards));
-    
-    // 切换到卡片视图
-    setActiveTab('cards');
   };
 
   // 打开创建卡片模态框
@@ -270,20 +369,37 @@ const Home: React.FC = () => {
   };
 
   // 删除卡片
-  const handleDeleteCard = (cardId: string) => {
-    // 从列表中移除卡片
-    setCards(prevCards => prevCards.filter(card => card.id !== cardId));
-    
-    // 更新localStorage
-    const updatedCards = cards.filter(card => card.id !== cardId);
-    localStorage.setItem('antinet_cards', JSON.stringify(updatedCards));
+  const handleDeleteCard = async (cardId: string) => {
+    try {
+      // 调用后端API删除卡片
+      const response = await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('删除失败');
+      }
+
+      // 从列表中移除卡片
+      setCards(prevCards => prevCards.filter(card => card.id !== cardId));
+      
+      toast.success('卡片删除成功！', {
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
+      
+    } catch (error) {
+      console.error('删除卡片失败:', error);
+      toast.error('删除失败，请检查后端服务', {
+        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      });
+    }
   };
 
   // 从后端API加载卡片
   React.useEffect(() => {
     const loadCardsFromAPI = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/knowledge/cards');
+        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
         if (response.ok) {
           const apiCards = await response.json();
           // 转换后端数据格式到前端格式
@@ -318,7 +434,7 @@ const Home: React.FC = () => {
 
 
 
-  // 加载仪表板数据
+// 加载仪表板数据
   useEffect(() => {
     const loadDashboardData = async () => {
       if (activeTab !== 'dashboard') return;
@@ -328,15 +444,22 @@ const Home: React.FC = () => {
       
       try {
         // 从知识卡片API获取真实数据
-        const response = await fetch('http://localhost:8000/api/knowledge/cards');
-        const cards = await response.json();
+        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+        if (!response.ok) throw new Error('API请求失败');
+        const rawCards = await response.json();
+        
+        // 转换数据格式
+        const cards = rawCards.map((c: any) => ({
+          ...c,
+          color: c.card_type || (c.category === '事实' ? 'blue' : c.category === '解释' ? 'green' : c.category === '风险' ? 'yellow' : 'red')
+        }));
         
         // 统计卡片类型
         const typeCount = {
-          blue: cards.filter((c: any) => c.color === 'blue' || c.category === '事实').length,
-          green: cards.filter((c: any) => c.color === 'green' || c.category === '解释').length,
-          yellow: cards.filter((c: any) => c.color === 'yellow' || c.category === '风险').length,
-          red: cards.filter((c: any) => c.color === 'red' || c.category === '行动').length,
+          blue: cards.filter((c: any) => c.color === 'blue' || c.card_type === 'blue' || c.category === '事实').length,
+          green: cards.filter((c: any) => c.color === 'green' || c.card_type === 'green' || c.category === '解释').length,
+          yellow: cards.filter((c: any) => c.color === 'yellow' || c.card_type === 'yellow' || c.category === '风险').length,
+          red: cards.filter((c: any) => c.color === 'red' || c.card_type === 'red' || c.category === '行动').length,
         };
         
         setKnowledgeStats([
@@ -374,7 +497,7 @@ const Home: React.FC = () => {
   }, [activeTab]);
 
   // 更新卡片
-  const handleUpdateCard = (updatedCard: KnowledgeCard) => {
+  const handleUpdateCard = async (updatedCard: KnowledgeCard) => {
     // 确保关联卡片数组存在
     const cardWithValidRelations = {
       ...updatedCard,
@@ -388,9 +511,6 @@ const Home: React.FC = () => {
     
     // 设置更新后的卡片列表
     setCards(updatedCards);
-    
-    // 更新localStorage
-    localStorage.setItem('antinet_cards', JSON.stringify(updatedCards));
     
     // 更新选中的卡片
     setSelectedCard(cardWithValidRelations);
@@ -423,80 +543,144 @@ const Home: React.FC = () => {
             </h1>
           </div>
           
-          <div className="hidden md:flex items-center space-x-6">
+          <div className="hidden md:flex items-center space-x-1">
+            {/* 概览 */}
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
               <Database size={18} />
               <span>概览</span>
             </button>
-            <button
-              onClick={() => setActiveTab('cards')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'cards' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Briefcase size={18} />
-              <span>知识卡片</span>
-            </button>
-<button
-              onClick={() => setActiveTab('data-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <TrendingUp size={18} />
-              <span>智能分析</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('ppt-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'ppt-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Presentation size={18} />
-              <span>PPT生成</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('excel-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'excel-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Table size={18} />
-              <span>Excel导出</span>
-            </button>
+
+            {/* 知识管理下拉菜单 */}
+            <div className="relative group">
+              <button
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['cards', 'cards-management'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              >
+                <Briefcase size={18} />
+                <span>知识管理</span>
+                <ChevronDown size={14} className="ml-1" />
+              </button>
+              <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <button
+                  onClick={() => setActiveTab('cards')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'cards' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Layers size={16} />
+                  <span>知识卡片</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('cards-management')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'cards-management' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <FolderOpen size={16} />
+                  <span>卡片管理</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 任务管理 */}
             <button
               onClick={() => setActiveTab('data-management')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
-              <FolderOpen size={18} />
-              <span>数据管理</span>
+            <ListTodo size={18} />
+              <span>任务管理</span>
             </button>
+
+            {/* 团队协作 */}
             <button
-              onClick={() => setActiveTab('agent-system')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'agent-system' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
+              onClick={() => setActiveTab('team-collaboration')}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'team-collaboration' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
-              <Cpu size={18} />
-              <span>Agent系统</span>
+              <Users size={18} />
+              <span>团队协作</span>
             </button>
-            <button
-              onClick={() => setActiveTab('skill-center')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'skill-center' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Sparkles size={18} />
-              <span>技能中心</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('pdf-analysis')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'pdf-analysis' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <FileText size={18} />
-              <span>PDF分析</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('batch-process')}
-              className={`flex items-center space-x-1 py-2 border-b-2 ${activeTab === 'batch-process' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent'}`}
-            >
-              <Upload size={18} />
-              <span>批量处理</span>
-            </button>
+
+            {/* 文档中心下拉菜单 */}
+            <div className="relative group">
+              <button
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'batch-process'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              >
+                <FileText size={18} />
+                <span>文档中心</span>
+                <ChevronDown size={14} className="ml-1" />
+              </button>
+              <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <button
+                  onClick={() => setActiveTab('pdf-analysis')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <FileText size={16} />
+                  <span>PDF分析</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('ppt-analysis')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Presentation size={16} />
+                  <span>PPT生成</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('excel-analysis')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Table size={16} />
+                  <span>Excel分析</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('batch-process')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'batch-process' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Upload size={16} />
+                  <span>批量处理</span>
+                </button>
+              </div>
             </div>
-            
-            <div className="flex items-center space-x-4">
+
+            {/* AI工具下拉菜单 */}
+            <div className="relative group">
+              <button
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              >
+                <Cpu size={18} />
+                <span>AI工具</span>
+                <ChevronDown size={14} className="ml-1" />
+              </button>
+              <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <button
+                  onClick={() => setActiveTab('data-analysis')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'data-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <TrendingUp size={16} />
+                  <span>智能分析</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('agent-system')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Bot size={16} />
+                  <span>Agent系统</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('skill-center')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Sparkles size={16} />
+                  <span>技能中心</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('multi-model')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Layers size={16} />
+                  <span>多模型</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-4">
               <button 
                 onClick={toggleTheme}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
@@ -519,28 +703,6 @@ const Home: React.FC = () => {
         </div>
        </header>
 
-      {/* 导入模态框按钮 - 仅在卡片视图显示 */}
-      {activeTab === 'cards' && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="container mx-auto px-4 mb-6"
-        >
-          <div className="flex justify-end">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
-              onClick={() => setShowImportModal(true)}
-            >
-              <Upload size={16} />
-              <span>导入知识记录</span>
-            </motion.button>
-          </div>
-        </motion.div>
-      )}
-
       {/* 主内容区域 */}
       <main className="flex-1 container mx-auto px-4 py-6">
         {/* 仪表板视图 */}
@@ -554,7 +716,18 @@ const Home: React.FC = () => {
                 transition={{ duration: 0.5 }}
                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
               >
-                <h2 className="text-xl font-bold mb-4">知识概览</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">知识概览</h2>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-colors"
+                    onClick={() => setShowImportModal(true)}
+                  >
+                    <Upload size={18} />
+                    <span>导入知识记录</span>
+                  </motion.button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {Object.entries(cardTypeMap).map(([color, type]) => (
                     <div 
@@ -585,9 +758,12 @@ const Home: React.FC = () => {
                 transition={{ duration: 0.5, delay: 0.2 }}
                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
               >
-                <div className="flex justify-between items-center mb-4">
+<div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">最近知识活动</h2>
-                  <button className="text-blue-600 dark:text-blue-400 text-sm flex items-center hover:underline">
+                  <button 
+                    onClick={() => setShowAllCardsModal(true)}
+                    className="text-blue-600 dark:text-blue-400 text-sm flex items-center hover:underline"
+                  >
                     查看全部 <ChevronRight size={16} />
                   </button>
                 </div>
@@ -819,8 +995,20 @@ const Home: React.FC = () => {
             transition={{ duration: 0.5 }}
           >
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">知识卡片库</h2>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center space-x-3">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                    <Layers className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                      知识卡片库
+                    </h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      管理和浏览所有知识卡片
+                    </p>
+                  </div>
+                </div>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -881,7 +1069,10 @@ const Home: React.FC = () => {
                           <div className={`${cardTypeMap[card.color].color} p-2 rounded-full mr-3`}>
                             {cardTypeMap[card.color].icon}
                           </div>
-                          <h3 className="font-semibold">{card.title}</h3>
+                          <h3 
+                            className="font-semibold cursor-pointer hover:underline"
+                            onClick={() => openDetailModal(card)}
+                          >{card.title}</h3>
                         </div>
                         <span className={`text-xs px-2 py-1 rounded-full ${cardTypeMap[card.color].color} text-white`}>{card.address}</span>
                       </div>
@@ -954,6 +1145,356 @@ const Home: React.FC = () => {
         )}
 
         {/* 数据管理视图 */}
+        {activeTab === 'cards-management' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            {/* 页面标题 */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                  <FolderOpen className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    卡片管理
+                  </h1>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    管理所有知识卡片，支持批量操作
+                  </p>
+                </div>
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <PlusCircle size={20} />
+                  <span>新建卡片</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 统计卡片 */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{cards.length}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">总卡片数</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-2xl font-bold text-blue-600">{cards.filter(c => c.color === 'blue').length}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">事实类</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-2xl font-bold text-green-600">{cards.filter(c => c.color === 'green').length}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">解释类</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-2xl font-bold text-yellow-600">{cards.filter(c => c.color === 'yellow').length}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">风险类</div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+                <div className="text-2xl font-bold text-red-600">{cards.filter(c => c.color === 'red').length}</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">行动类</div>
+              </div>
+            </div>
+
+            {/* 筛选工具栏 */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+              <div className="flex flex-wrap items-center gap-4">
+                {/* 时间筛选 */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">时间:</span>
+                  <select
+                    value={timeFilter}
+                    onChange={(e) => { setTimeFilter(e.target.value as any); setCurrentPage(1); }}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+                  >
+                    <option value="all">全部</option>
+                    <option value="today">今天</option>
+                    <option value="week">本周</option>
+                    <option value="month">本月</option>
+                    <option value="year">本年</option>
+                  </select>
+                </div>
+                
+                {/* 类型筛选 */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">类型:</span>
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700"
+                  >
+                    <option value="all">全部</option>
+                    <option value="blue">事实</option>
+                    <option value="green">解释</option>
+                    <option value="yellow">风险</option>
+                    <option value="red">行动</option>
+                  </select>
+                </div>
+                
+                {/* 搜索框 */}
+                <div className="flex-1 min-w-[200px]">
+                  <input
+                    type="text"
+                    placeholder="搜索卡片..."
+                    value={managementSearchQuery}
+                    onChange={(e) => { setManagementSearchQuery(e.target.value); setCurrentPage(1); }}
+                    className="w-full px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+                  />
+                </div>
+                
+                {/* 批量操作 */}
+                {selectedCardIds.size > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-blue-600">已选 {selectedCardIds.size} 项</span>
+                    <button
+                      onClick={() => setSelectedCardIds(new Set())}
+                      className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (confirm(`确定删除 ${selectedCardIds.size} 张卡片？`)) {
+                          for (const cardId of selectedCardIds) {
+                            await handleDeleteCard(cardId);
+                          }
+                          setSelectedCardIds(new Set());
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
+                    >
+                      批量删除
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 卡片列表 */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedCardIds.size === (() => {
+                      const now = new Date();
+                      return cards.filter(card => {
+                        const cardDate = new Date(card.createdAt);
+                        const matchTime = timeFilter === 'all' ? true :
+                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
+                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
+                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
+                          cardDate.getFullYear() === now.getFullYear();
+                        const matchType = typeFilter === 'all' || card.color === typeFilter;
+                        const matchSearch = !managementSearchQuery || 
+                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                        return matchTime && matchType && matchSearch;
+                      }).length;
+                    })()}
+                    onChange={(e) => {
+                      const now = new Date();
+                      const filteredIds = cards.filter(card => {
+                        const cardDate = new Date(card.createdAt);
+                        const matchTime = timeFilter === 'all' ? true :
+                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
+                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
+                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
+                          cardDate.getFullYear() === now.getFullYear();
+                        const matchType = typeFilter === 'all' || card.color === typeFilter;
+                        const matchSearch = !managementSearchQuery || 
+                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                        return matchTime && matchType && matchSearch;
+                      }).map(c => c.id);
+                      if (e.target.checked) {
+                        setSelectedCardIds(new Set(filteredIds));
+                      } else {
+                        setSelectedCardIds(new Set());
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <h2 className="text-lg font-semibold">卡片列表</h2>
+                  <span className="text-sm text-gray-500">
+                    共 {(() => {
+                      const now = new Date();
+                      return cards.filter(card => {
+                        const cardDate = new Date(card.createdAt);
+                        const matchTime = timeFilter === 'all' ? true :
+                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
+                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
+                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
+                          cardDate.getFullYear() === now.getFullYear();
+                        const matchType = typeFilter === 'all' || card.color === typeFilter;
+                        const matchSearch = !managementSearchQuery || 
+                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                        return matchTime && matchType && matchSearch;
+                      }).length;
+                    })()} 张
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-500">每页:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                    className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                {(() => {
+                  const now = new Date();
+                  const filtered = cards.filter(card => {
+                    const cardDate = new Date(card.createdAt);
+                    const matchTime = timeFilter === 'all' ? true :
+                      timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
+                      timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
+                      timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
+                      cardDate.getFullYear() === now.getFullYear();
+                    const matchType = typeFilter === 'all' || card.color === typeFilter;
+                    const matchSearch = !managementSearchQuery || 
+                      card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                      card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                    return matchTime && matchType && matchSearch;
+                  });
+                  
+                  const startIndex = (currentPage - 1) * pageSize;
+                  const paginatedCards = filtered.slice(startIndex, startIndex + pageSize);
+                  const totalPages = Math.ceil(filtered.length / pageSize);
+                  
+                  return paginatedCards.length > 0 ? (
+                    <>
+                      {paginatedCards.map((card) => (
+                        <div
+                          key={card.id}
+                          className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start space-x-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedCardIds.has(card.id)}
+                                onChange={(e) => {
+                                  const newSet = new Set(selectedCardIds);
+                                  if (e.target.checked) {
+                                    newSet.add(card.id);
+                                  } else {
+                                    newSet.delete(card.id);
+                                  }
+                                  setSelectedCardIds(newSet);
+                                }}
+                                className="mt-1 w-4 h-4 rounded border-gray-300"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2">
+                                  <h3 className="font-medium text-gray-900 dark:text-white">{card.title}</h3>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    card.color === 'blue' ? 'bg-blue-100 text-blue-800' :
+                                    card.color === 'green' ? 'bg-green-100 text-green-800' :
+                                    card.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-red-100 text-red-800'
+                                  }`}>
+                                    {cardTypeMap[card.color].name}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
+                                <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
+                                  <span>ID: {card.address}</span>
+                                  <span>创建于: {new Date(card.createdAt).toLocaleDateString('zh-CN')}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2 ml-4">
+                              <button
+                                onClick={() => {
+                                  setSelectedCard(card);
+                                  setShowDetailModal(true);
+                                }}
+                                className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="查看详情"
+                              >
+                                <Eye size={18} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteCard(card.id)}
+                                className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="删除"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      
+                      {/* 分页 */}
+                      {totalPages > 1 && (
+                        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-center items-center space-x-2">
+                          <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 border rounded disabled:opacity-50"
+                          >
+                            上一页
+                          </button>
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let page;
+                            if (totalPages <= 5) {
+                              page = i + 1;
+                            } else if (currentPage <= 3) {
+                              page = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              page = totalPages - 4 + i;
+                            } else {
+                              page = currentPage - 2 + i;
+                            }
+                            return (
+                              <button
+                                key={page}
+                                onClick={() => setCurrentPage(page)}
+                                className={`px-3 py-1 border rounded ${currentPage === page ? 'bg-blue-500 text-white' : ''}`}
+                              >
+                                {page}
+                              </button>
+                            );
+                          })}
+                          <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 border rounded disabled:opacity-50"
+                          >
+                            下一页
+                          </button>
+                          <span className="text-sm text-gray-500 ml-2">
+                            第 {currentPage}/{totalPages} 页
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="p-8 text-center text-gray-500">
+                      没有找到匹配的卡片
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {activeTab === 'data-management' && (
           <DataManagement />
         )}
@@ -976,6 +1517,21 @@ const Home: React.FC = () => {
         {/* 批量处理视图 */}
         {activeTab === 'batch-process' && (
           <BatchProcess />
+        )}
+
+        {/* 多模型API视图 */}
+        {activeTab === 'multi-model' && (
+          <MultiModel />
+        )}
+
+        {/* 格式转换视图 */}
+        {activeTab === 'format-converter' && (
+          <FormatConverter />
+        )}
+
+        {/* 团队协作视图 */}
+        {activeTab === 'team-collaboration' && (
+          <TeamCollaboration />
         )}
        </main>
 
@@ -1029,14 +1585,67 @@ const Home: React.FC = () => {
           }}
         />
         
-        {/* 导入模态框 */}
-        <ImportModal
-          isOpen={showImportModal}
-          onClose={() => setShowImportModal(false)}
-          onImport={handleImportCards}
-        />
+{/* 导入模态框 */}
+         <ImportModal
+           isOpen={showImportModal}
+           onClose={() => setShowImportModal(false)}
+           onImport={handleImportCards}
+         />
 
-        {/* 聊天机器人模态框 */}
+         {/* 查看全部卡片模态框 */}
+         {showAllCardsModal && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden m-4">
+               <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                 <h2 className="text-xl font-bold">全部知识卡片 ({cards.length})</h2>
+                 <button 
+                   onClick={() => setShowAllCardsModal(false)}
+                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                 >
+                   <X size={20} />
+                 </button>
+               </div>
+               <div className="p-4 overflow-y-auto max-h-[calc(90vh-80px)]">
+                 {cards.length === 0 ? (
+                   <div className="text-center py-12 text-gray-500">
+                     <Database size={48} className="mx-auto mb-4 opacity-50" />
+                     <p>暂无知识卡片</p>
+                     <p className="text-sm mt-2">点击右上角"新建卡片"开始创建</p>
+                   </div>
+                 ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                     {cards.map(card => (
+                       <motion.div
+                         key={card.id}
+                         whileHover={{ scale: 1.02 }}
+                         className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow"
+                         onClick={() => {
+                           setSelectedCard(card);
+                           setShowDetailModal(true);
+                           setShowAllCardsModal(false);
+                         }}
+                       >
+                         <div className="flex items-start justify-between mb-2">
+                           <h3 className="font-medium line-clamp-1">{card.title}</h3>
+                           <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.color].bgColor} ${cardTypeMap[card.color].textColor}`}>
+                             {cardTypeMap[card.color].name}
+                           </span>
+                         </div>
+                         <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-2">{card.content}</p>
+                         <div className="flex items-center justify-between text-xs text-gray-500">
+                           <span>ID: {card.id}</span>
+                           <span>{formatDate(card.createdAt)}</span>
+                         </div>
+                       </motion.div>
+                     ))}
+                   </div>
+                 )}
+               </div>
+             </div>
+           </div>
+         )}
+
+         {/* 聊天机器人模态框 */}
         <ChatBotModalWithVision
           isOpen={showChatModal}
           onClose={() => setShowChatModal(false)}
@@ -1060,3 +1669,5 @@ const Home: React.FC = () => {
 };
 
 export default Home;
+
+

@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
-import OfficePreview from '@/components/OfficePreview';
 
 interface KnowledgeCard {
   id: string;
@@ -60,11 +59,6 @@ const PPTAnalysis: React.FC = () => {
   const [pptTitle, setPptTitle] = useState('我的演示文稿');
   const [selectedTheme, setSelectedTheme] = useState<ThemeType>('professional');
   
-  // 预览相关状态
-  const [previewFile, setPreviewFile] = useState<Blob | null>(null);
-  const [previewFileName, setPreviewFileName] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
-
   // 检查PPT服务状态
   useEffect(() => {
     checkPPTStatus();
@@ -119,10 +113,9 @@ const PPTAnalysis: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: textContent,
+          text: textContent,
           title: pptTitle,
-          theme: selectedTheme,
-          filename: `${pptTitle}_${Date.now()}.pptx`
+          theme: selectedTheme
         }),
       });
 
@@ -130,11 +123,17 @@ const PPTAnalysis: React.FC = () => {
         const blob = await response.blob();
         const fileName = `${pptTitle}.pptx`;
         
-        // 显示预览
-        setPreviewFile(blob);
-        setPreviewFileName(fileName);
-        setShowPreview(true);
-        toast.success('PPT生成成功！');
+        // 直接下载，不显示预览弹窗
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        toast.success('PPT已生成并下载！');
       } else {
         const error = await response.json();
         toast.error(`生成失败: ${error.detail || '未知错误'}`);
@@ -185,11 +184,17 @@ const PPTAnalysis: React.FC = () => {
         const blob = await response.blob();
         const fileName = 'Antinet 四色卡片分析报告.pptx';
         
-        // 显示预览
-        setPreviewFile(blob);
-        setPreviewFileName(fileName);
-        setShowPreview(true);
-        toast.success('PPT导出成功！');
+        // 直接下载，不显示预览弹窗
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        toast.success('PPT已导出并下载！');
       } else {
         const error = await response.json();
         toast.error(`导出失败: ${error.detail || '未知错误'}`);
@@ -220,21 +225,6 @@ const PPTAnalysis: React.FC = () => {
     } else {
       setSelectedCards(new Set(cards.map(c => c.id)));
     }
-  };
-
-  // 下载文件
-  const handleDownload = () => {
-    if (!previewFile) return;
-    
-    const url = window.URL.createObjectURL(previewFile);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = previewFileName;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-    toast.success('文件下载成功！');
   };
 
   const themes = [
@@ -527,16 +517,6 @@ const PPTAnalysis: React.FC = () => {
         )}
       </div>
       
-      {/* 文件预览弹窗 */}
-      {showPreview && previewFile && (
-        <OfficePreview
-          file={previewFile}
-          fileName={previewFileName}
-          fileType="pptx"
-          onClose={() => setShowPreview(false)}
-          onDownload={handleDownload}
-        />
-      )}
     </div>
   );
 };

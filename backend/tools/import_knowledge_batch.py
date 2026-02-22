@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def batch_import(html_dir: str, db_path: str = "C:/test/antinet/data/antinet.db"):
+def batch_import(html_dir: str, db_path: str = "C:/test/antinet/backend/data/antinet.db"):
     """
     批量导入 HTML 文件到知识库
 
@@ -110,7 +110,7 @@ def main():
     )
     parser.add_argument(
         '--db-path',
-        default='C:/test/antinet/data/antinet.db',
+        default='C:/test/antinet/backend/data/antinet.db',
         help='数据库文件路径'
     )
 

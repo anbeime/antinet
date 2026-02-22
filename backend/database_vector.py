@@ -221,7 +221,7 @@ if __name__ == "__main__":
     from pathlib import Path
     
     # 初始化数据库
-    db = DatabaseManager(Path('C:/test/antinet/data/antinet.db'))
+    db = DatabaseManager(Path('C:/test/antinet/backend/data/antinet.db'))
     
     # 添加向量方法
     add_vector_methods(db)

@@ -401,3 +401,100 @@ async def health_check():
         "service": "PDF Processing",
         "version": "1.0.0"
     }
+
+
+try:
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+
+from pydantic import BaseModel
+from typing import Dict, Any
+
+
+class CardsExportRequest(BaseModel):
+    """卡片导出请求"""
+    cards: List[Dict[str, Any]]
+    title: str = "Antinet 分析报告"
+    author: str = "Antinet 智能知识管家"
+
+
+@router.post("/export/cards-docx")
+async def export_cards_to_docx(request: CardsExportRequest):
+    """
+    将四色卡片导出为 Word 文档
+    
+    请求体:
+    {
+        "cards": [...],
+        "title": "报告标题",
+        "author": "作者"
+    }
+    """
+    if not DOCX_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Word 导出功能未安装，请运行: pip install python-docx")
+    
+    if not request.cards:
+        raise HTTPException(status_code=400, detail="卡片列表不能为空")
+    
+    try:
+        doc = Document()
+        
+        doc.add_heading(request.title, 0)
+        doc.add_paragraph(f"作者: {request.author}")
+        doc.add_paragraph(f"生成时间: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        doc.add_paragraph()
+        
+        card_colors = {
+            "blue": RGBColor(52, 152, 219),
+            "green": RGBColor(46, 204, 113),
+            "yellow": RGBColor(241, 196, 15),
+            "red": RGBColor(231, 76, 60)
+        }
+        
+        card_names = {
+            "blue": "事实卡片",
+            "green": "解释卡片",
+            "yellow": "风险卡片",
+            "red": "行动卡片"
+        }
+        
+        for idx, card in enumerate(request.cards, 1):
+            card_type = card.get("card_type", card.get("type", "blue"))
+            card_title = card.get("title", f"卡片 {idx}")
+            card_content = card.get("content", "")
+            
+            if isinstance(card_content, dict):
+                card_content = card_content.get("description", str(card_content))
+            
+            heading = doc.add_heading(f"{idx}. {card_title}", level=1)
+            
+            color = card_colors.get(card_type, RGBColor(128, 128, 128))
+            for run in heading.runs:
+                run.font.color.rgb = color
+            
+            type_para = doc.add_paragraph()
+            type_run = type_para.add_run(f"[{card_names.get(card_type, '卡片')}]")
+            type_run.font.color.rgb = color
+            type_run.font.bold = True
+            
+            doc.add_paragraph(card_content)
+            doc.add_paragraph()
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
+            output_path = tmp_file.name
+        
+        doc.save(output_path)
+        
+        return FileResponse(
+            output_path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"{request.title}.docx"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")

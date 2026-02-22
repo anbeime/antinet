@@ -2,10 +2,12 @@
 知识管理路由
 提供知识库的 CRUD 接口
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import logging
+import tempfile
+import os
 
 from config import settings
 from database import DatabaseManager
@@ -380,6 +382,226 @@ async def get_sources():
 
     conn.close()
     return sources
+
+
+class ImportAnalyzeRequest(BaseModel):
+    """导入分析请求"""
+    content: str = Field(..., description="要分析的内容")
+    auto_save: bool = Field(default=False, description="是否自动保存")
+
+
+@router.post("/import/analyze")
+async def import_analyze(request: ImportAnalyzeRequest):
+    """
+    智能分析导入内容，自动分类为四色卡片
+    
+    Args:
+        request: 包含content和auto_save的请求体
+        
+    Returns:
+        分析结果，包含分类后的卡片列表
+    """
+    try:
+        content = request.content
+        cards = []
+        
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        
+        if not paragraphs:
+            paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
+        
+        for idx, para in enumerate(paragraphs):
+            if len(para) < 10:
+                continue
+            
+            lower_para = para.lower()
+            
+            card_type = 'blue'
+            confidence = 0.5
+            
+            if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
+                card_type = 'blue'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
+                card_type = 'green'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
+                card_type = 'yellow'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
+                card_type = 'red'
+                confidence = 0.8
+            
+            title = para[:50] + '...' if len(para) > 50 else para
+            if '\n' in title:
+                title = title.split('\n')[0]
+            
+            card = {
+                'title': title,
+                'content': para,
+                'card_type': card_type,
+                'confidence': confidence,
+                'address': f"{card_type.upper()}{idx + 1}"
+            }
+            cards.append(card)
+        
+        if request.auto_save:
+            conn = db_manager.get_connection()
+            cursor = conn.cursor()
+            for card in cards:
+                cursor.execute('''
+                    INSERT INTO knowledge_cards (card_type, title, content, category)
+                    VALUES (?, ?, ?, ?)
+                ''', (card['card_type'], card['title'], card['content'], card['card_type']))
+            conn.commit()
+            conn.close()
+        
+        return {
+            'success': True,
+            'cards': cards,
+            'total': len(cards)
+        }
+        
+    except Exception as e:
+        logger.error(f"导入分析失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
+
+
+@router.post("/import/file")
+async def import_file(file: UploadFile = File(...)):
+    """
+    导入文件并解析为知识卡片
+    
+    支持格式：PDF, TXT, MD, DOCX, XLSX, 图片
+    """
+    try:
+        # 获取文件扩展名
+        filename = file.filename or ""
+        ext = os.path.splitext(filename)[1].lower()
+        
+        # 保存上传的文件到临时目录
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        extracted_text = ""
+        
+        # 根据文件类型解析
+        if ext == '.pdf':
+            from tools.pdf_processor import SimplePDFProcessor
+            processor = SimplePDFProcessor()
+            result = processor.extract_text(tmp_path)
+            extracted_text = result.get('full_text', '')
+            
+        elif ext in ['.txt', '.md']:
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                extracted_text = f.read()
+                
+        elif ext in ['.docx', '.doc']:
+            try:
+                from docx import Document
+                doc = Document(tmp_path)
+                extracted_text = '\n'.join([p.text for p in doc.paragraphs if p.text])
+            except ImportError:
+                raise HTTPException(status_code=503, detail="Word解析未安装，请运行: pip install python-docx")
+                
+        elif ext in ['.xlsx', '.xls']:
+            try:
+                import pandas as pd
+                df = pd.read_excel(tmp_path)
+                extracted_text = df.to_string()
+            except ImportError:
+                raise HTTPException(status_code=503, detail="Excel解析未安装，请运行: pip install pandas openpyxl")
+                
+        elif ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif']:
+            # 图片需要OCR或视觉模型
+            try:
+                import base64
+                with open(tmp_path, 'rb') as f:
+                    img_data = base64.b64encode(f.read()).decode('utf-8')
+                
+                # 调用视觉模型
+                import httpx
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "qwen2.5vl3b-8380-2.42",
+                            "messages": [{"role": "user", "content": "placeholder"}],
+                            "extra_body": {
+                                "messages": [
+                                    {"role": "system", "content": "You are a helpful assistant."},
+                                    {"role": "user", "content": {"question": "请提取图片中的所有文字内容", "image": img_data}}
+                                ]
+                            }
+                        }
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        extracted_text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+            except Exception as e:
+                logger.warning(f"图片OCR失败: {e}")
+                extracted_text = f"[图片文件: {filename}]"
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}")
+        
+        # 清理临时文件
+        os.unlink(tmp_path)
+        
+        # 分析提取的文本
+        cards = []
+        paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
+        if not paragraphs:
+            paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
+        
+        for idx, para in enumerate(paragraphs):
+            if len(para) < 10:
+                continue
+            
+            lower_para = para.lower()
+            card_type = 'blue'
+            confidence = 0.5
+            
+            if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
+                card_type = 'blue'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
+                card_type = 'green'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
+                card_type = 'yellow'
+                confidence = 0.8
+            elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
+                card_type = 'red'
+                confidence = 0.8
+            
+            title = para[:50] + '...' if len(para) > 50 else para
+            if '\n' in title:
+                title = title.split('\n')[0]
+            
+            cards.append({
+                'title': title,
+                'content': para,
+                'card_type': card_type,
+                'confidence': confidence,
+                'address': f"{card_type.upper()}{idx + 1}"
+            })
+        
+        return {
+            'success': True,
+            'filename': filename,
+            'file_type': ext,
+            'extracted_length': len(extracted_text),
+            'cards': cards,
+            'total': len(cards)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件导入失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
 
 @router.post("/import")

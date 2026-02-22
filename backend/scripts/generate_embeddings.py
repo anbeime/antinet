@@ -7,7 +7,7 @@ sys.path.insert(0, 'C:/test/antinet')
 
 from backend.database import DatabaseManager
 from backend.database_vector import add_vector_methods
-from backend.services.embedding_service import get_embedding_service
+from backend.embeddings.bge_service import get_embedding_service
 from pathlib import Path
 import time
 
@@ -19,7 +19,7 @@ def main():
     
     # 1. 初始化数据库
     print("1. 初始化数据库...")
-    db_path = Path('C:/test/antinet/data/antinet.db')
+    db_path = Path('C:/test/antinet/backend/data/antinet.db')
     db = DatabaseManager(db_path)
     
     # 添加向量方法

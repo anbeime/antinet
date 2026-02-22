@@ -99,12 +99,17 @@ except Exception as e:
 
 # qai_hub_models是可选的，仅用于性能配置（BURST模式）
 PerfProfile = None
+HAS_QAI_HUB = False
 try:
     from qai_hub_models.models._shared.perf_profile import PerfProfile
     HAS_QAI_HUB = True
     logger.info("[OK] 已导入 qai_hub_models.PerfProfile，性能优化可用")
 except ImportError:
     logger.debug("[DEBUG] qai_hub_models 未安装，使用默认性能配置 (Windows ARM64 平台不需要安装此包)")
+    # 通过环境变量启用BURST模式
+    os.environ['QNN_PERFORMANCE_MODE'] = 'BURST'
+    os.environ['QNN_HTP_PERFORMANCE_MODE'] = 'burst'
+    logger.info("[OK] 已通过环境变量启用BURST模式 (QNN_PERFORMANCE_MODE=BURST)")
 
 try:
     from qai_appbuilder import GenieContext
@@ -396,9 +401,12 @@ class NPUModelLoader:
                 if PerfProfile is not None:
                     PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
                     burst_enabled = True
-                    logger.info("[PERF] ✅ BURST模式已启用")
+                    logger.info("[PERF] ✅ BURST模式已启用 (via PerfProfile)")
+                elif os.environ.get('QNN_PERFORMANCE_MODE') == 'BURST':
+                    burst_enabled = True
+                    logger.info("[PERF] ✅ BURST模式已启用 (via 环境变量)")
                 else:
-                    logger.info("[PERF] INFO: qai_hub_models未安装，依赖config.json中的BURST设置")
+                    logger.info("[PERF] INFO: 未检测到BURST模式配置")
             except Exception as e:
                 logger.warning(f"[PERF] ⚠️ 启用BURST模式失败: {e}")
             burst_set_time = (time.time() - burst_start) * 1000

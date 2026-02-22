@@ -1,25 +1,17 @@
 import sqlite3
 
-conn = sqlite3.connect('C:/test/antinet/data/antinet.db')
+conn = sqlite3.connect('C:\\test\\antinet\\backend\\data\\antinet.db')
 cursor = conn.cursor()
 
-# 查看所有表
-cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-tables = [row[0] for row in cursor.fetchall()]
-print('数据库表:', tables)
+total = cursor.execute('SELECT COUNT(*) FROM knowledge_cards').fetchone()[0]
+feb = cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE created_at >= '2026-02-01'").fetchone()[0]
 
-# 检查 knowledge_cards 表
-if 'knowledge_cards' in tables:
-    cursor.execute('SELECT COUNT(*) FROM knowledge_cards')
-    count = cursor.fetchone()[0]
-    print(f'\nknowledge_cards 表中的记录数: {count}')
-    
-    if count > 0:
-        cursor.execute('SELECT * FROM knowledge_cards LIMIT 3')
-        print('\n前3条记录:')
-        for row in cursor.fetchall():
-            print(row)
-else:
-    print('\n⚠️ knowledge_cards 表不存在！')
+print(f'总卡片数: {total}')
+print(f'2月份卡片: {feb}')
+
+latest = cursor.execute("SELECT title, created_at FROM knowledge_cards ORDER BY id DESC LIMIT 5").fetchall()
+print('\n最新5张:')
+for title, created_at in latest:
+    print(f'  {title} ({created_at})')
 
 conn.close()

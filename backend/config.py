@@ -11,6 +11,9 @@ from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import Dict, Any
 
+# 获取后端目录的绝对路径
+BACKEND_DIR = Path(__file__).parent.absolute()
+
 class Settings(BaseSettings):
     """应用配置 - 骁龙X Elite AIPC端侧AI配置"""
 
@@ -36,9 +39,9 @@ class Settings(BaseSettings):
     QNN_PERFORMANCE_MODE: str = "BURST"  # BURST高性能模式 | DEFAULT | POWER_SAVER
     QNN_LOG_LEVEL: str = "DEBUG"  # DEBUG | TRACE | INFO | WARN | ERROR
 
-    # 数据配置
-    DATA_DIR: Path = Path("./data")
-    DB_PATH: Path = Path("./data/antinet.db")
+    # 数据配置 - 使用绝对路径确保一致性
+    DATA_DIR: Path = BACKEND_DIR / "data"
+    DB_PATH: Path = BACKEND_DIR / "data" / "antinet.db"
 
     # 安全配置
     DATA_STAYS_LOCAL: bool = True  # 数据不出域

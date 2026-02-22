@@ -11,6 +11,8 @@ from pathlib import Path
 import tempfile
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
+
 try:
     from skills.pptx.ppt_processor_enhanced import EnhancedPPTProcessor, PPTX_AVAILABLE
     USE_ENHANCED = True
@@ -19,7 +21,6 @@ except ImportError:
     USE_ENHANCED = False
     logger.warning("增强版 PPT 处理器不可用，使用基础版本")
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ppt", tags=["PPT"])
 
 # ==================== API 模型 ====================
@@ -56,325 +57,234 @@ class AnalysisReportRequest(BaseModel):
     filename: Optional[str] = Field(default=None, description="输出文件名")
 
 
-class GenerateFromTextRequest(BaseModel):
-    """从文本生成PPT请求"""
-    content: str = Field(..., description="文本内容（支持 Markdown）")
-    title: str = Field(default="演示文稿", description="演示文稿标题")
-    theme: str = Field(default="professional", description="主题风格: professional/creative/minimal")
-    filename: Optional[str] = Field(default=None, description="输出文件名")
+class TextToPPTRequest(BaseModel):
+    """文本转PPT请求"""
+    text: str = Field(..., description="Markdown格式的文本内容")
+    title: str = Field(default="演示文稿", description="PPT标题")
+    theme: str = Field(default="professional", description="主题: professional/creative/minimal")
 
 
-# ==================== 端点 ====================
+class ThemeResponse(BaseModel):
+    """主题信息响应"""
+    id: str
+    name: str
+    description: str
+    preview_colors: List[str]
+
+
+# ==================== API 端点 ====================
 
 @router.get("/status")
 async def get_ppt_status():
-    """检查 PPT 功能状态"""
+    """获取 PPT 服务状态"""
     return {
         "available": PPTX_AVAILABLE,
         "enhanced": USE_ENHANCED,
-        "message": "PPT 功能已启用" if PPTX_AVAILABLE else "PPT 功能不可用，请安装 python-pptx"
+        "message": "PPT 服务正常运行" if PPTX_AVAILABLE else "PPT 功能不可用，请安装 python-pptx"
     }
 
 
-@router.get("/themes")
-async def get_available_themes():
-    """获取可用主题列表"""
-    if not PPTX_AVAILABLE or not USE_ENHANCED:
-        return {"themes": [
-            {"id": "professional", "name": "Professional", "desc": "专业商务"},
-            {"id": "creative", "name": "Creative", "desc": "创意活泼"},
-            {"id": "minimal", "name": "Minimal", "desc": "简约现代"}
-        ]}
-    
-    try:
-        themes = EnhancedPPTProcessor.get_available_themes()
-        return {"themes": themes}
-    except Exception as e:
-        logger.error(f"获取主题列表失败: {e}")
-        return {"themes": []}
-
-
-@router.get("/health")
-async def health_check():
-    """健康检查"""
-    if not PPTX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PPT 功能不可用,请安装依赖: pip install python-pptx"
-        )
-    
-    return {
-        "status": "healthy",
-        "service": "ppt",
-        "timestamp": datetime.now().isoformat()
-    }
+@router.get("/themes", response_model=List[ThemeResponse])
+async def get_themes():
+    """获取可用的 PPT 主题列表"""
+    themes = [
+        ThemeResponse(
+            id="professional",
+            name="Professional",
+            description="专业商务风格，适合正式场合",
+            preview_colors=["#1C2833", "#3498DB", "#F1C40F"]
+        ),
+        ThemeResponse(
+            id="creative",
+            name="Creative",
+            description="创意活泼风格，适合创意展示",
+            preview_colors=["#9B59B6", "#3498DB", "#E67E22"]
+        ),
+        ThemeResponse(
+            id="minimal",
+            name="Minimal",
+            description="简约现代风格，适合简洁演示",
+            preview_colors=["#2C3E50", "#95A5A6", "#3498DB"]
+        ),
+    ]
+    return themes
 
 
 @router.post("/generate/from-text")
-async def generate_ppt_from_text(request: GenerateFromTextRequest):
-    """
-    从文本内容生成 PPT
-    
-    Args:
-        request: 生成请求，包含文本内容、标题和主题
-        
-    Returns:
-        PPT 文件
-    """
+async def generate_ppt_from_text(request: TextToPPTRequest):
+    """从文本生成 PPT"""
     if not PPTX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
-        )
+        raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
         # 创建临时文件
-        filename = request.filename or f"{request.title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
-        if not filename.endswith('.pptx'):
-            filename += '.pptx'
+        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+            output_path = tmp.name
         
-        temp_dir = Path(tempfile.gettempdir()) / "antinet_ppt"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        output_path = temp_dir / filename
-        
-        # 生成 PPT
+        # 使用 PPT 处理器生成
         if USE_ENHANCED:
             processor = EnhancedPPTProcessor()
         else:
             processor = PPTProcessor()
-        result_path = processor.create_from_text(
-            content=request.content,
-            output_path=str(output_path),
+        
+        # 解析 Markdown 并生成 PPT
+        from tools.ppt_processor import parse_markdown_content
+        slides_data = parse_markdown_content(request.text)
+        
+        # 根据主题生成 PPT
+        processor.create_presentation_from_slides(
+            slides_data=slides_data,
             title=request.title,
+            output_path=output_path,
             theme=request.theme
         )
         
         # 返回文件
+        filename = f"{request.title.replace(' ', '_')}.pptx"
         return FileResponse(
-            path=result_path,
+            path=output_path,
             filename=filename,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
         
     except Exception as e:
-        logger.error(f"从文本生成 PPT 失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"生成 PPT 失败: {e}")
+        raise HTTPException(status_code=500, detail=f"生成 PPT 失败: {str(e)}")
 
 
 @router.post("/export/cards")
 async def export_cards_to_ppt(request: ExportCardsRequest):
-    """
-    将四色卡片导出为 PPT
-    
-    Args:
-        request: 导出请求，包含卡片数据和配置
-        
-    Returns:
-        PPT 文件
-    """
+    """将卡片导出为 PPT"""
     if not PPTX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
-        )
+        raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
         # 创建临时文件
-        filename = request.filename or f"antinet_cards_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
-        temp_dir = Path(tempfile.gettempdir()) / "antinet_ppt"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        output_path = temp_dir / filename
+        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+            output_path = tmp.name
         
-        # 转换卡片数据
-        cards = [card.model_dump() for card in request.cards]
-        
-        # 生成 PPT
+        # 使用 PPT 处理器
         if USE_ENHANCED:
             processor = EnhancedPPTProcessor()
         else:
             processor = PPTProcessor()
-        result_path = processor.export_cards_to_ppt(
-            cards=cards,
-            output_path=str(output_path),
+        
+        # 转换卡片数据
+        cards_data = []
+        for card in request.cards:
+            cards_data.append({
+                'type': card.type,
+                'title': card.title,
+                'content': card.content if isinstance(card.content, list) else [card.content],
+                'tags': card.tags or [],
+                'created_at': card.created_at or datetime.now().isoformat()
+            })
+        
+        # 生成 PPT
+        processor.create_presentation_from_cards(
+            cards=cards_data,
             title=request.title,
+            output_path=output_path,
             include_summary=request.include_summary
         )
         
         # 返回文件
+        filename = request.filename or f"{request.title.replace(' ', '_')}.pptx"
         return FileResponse(
-            path=result_path,
+            path=output_path,
             filename=filename,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
         
     except Exception as e:
-        logger.error(f"导出卡片为 PPT 失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"导出卡片到 PPT 失败: {e}")
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 
-@router.post("/export/analysis")
+@router.post("/export/analysis-report")
 async def export_analysis_report(request: AnalysisReportRequest):
-    """
-    创建完整的分析报告 PPT
-    
-    Args:
-        request: 分析报告请求
-        
-    Returns:
-        PPT 文件
-    """
+    """导出分析报告为 PPT"""
     if not PPTX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
-        )
+        raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
         # 创建临时文件
-        filename = request.filename or f"antinet_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
-        temp_dir = Path(tempfile.gettempdir()) / "antinet_ppt"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        output_path = temp_dir / filename
+        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+            output_path = tmp.name
         
-        # 准备分析数据
-        analysis_data = {
-            "title": request.title,
-            "cards": [card.model_dump() for card in request.cards],
-            "charts": [chart.model_dump() for chart in request.charts] if request.charts else [],
-            "summary": request.summary
+        # 使用 PPT 处理器
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
+        
+        # 转换数据
+        cards_data = []
+        for card in request.cards:
+            cards_data.append({
+                'type': card.type,
+                'title': card.title,
+                'content': card.content if isinstance(card.content, list) else [card.content],
+                'tags': card.tags or [],
+                'created_at': card.created_at or datetime.now().isoformat()
+            })
+        
+        charts_data = []
+        if request.charts:
+            for chart in request.charts:
+                charts_data.append({
+                    'title': chart.title,
+                    'data': chart.data
+                })
+        
+        # 生成报告
+        processor.create_analysis_report(
+            title=request.title,
+            cards=cards_data,
+            charts=charts_data,
+            summary=request.summary,
+            output_path=output_path
+        )
+        
+        # 返回文件
+        filename = request.filename or f"{request.title.replace(' ', '_')}_report.pptx"
+        return FileResponse(
+            path=output_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+        
+    except Exception as e:
+        logger.error(f"导出分析报告失败: {e}")
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+@router.post("/process")
+async def process_ppt_file(file: UploadFile = File(...)):
+    """处理上传的 PPT 文件"""
+    if not PPTX_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
+    
+    try:
+        # 保存上传的文件
+        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            input_path = tmp.name
+        
+        # 处理 PPT
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
+        
+        result = processor.process_ppt(input_path)
+        
+        return {
+            "success": True,
+            "data": result
         }
         
-        # 生成 PPT
-        if USE_ENHANCED:
-            processor = EnhancedPPTProcessor()
-        else:
-            processor = PPTProcessor()
-        result_path = processor.create_analysis_report(
-            analysis_data=analysis_data,
-            output_path=str(output_path)
-        )
-        
-        # 返回文件
-        return FileResponse(
-            path=result_path,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-        
     except Exception as e:
-        logger.error(f"创建分析报告 PPT 失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/template/create")
-async def create_template_ppt(
-    title: str = "Antinet 演示模板",
-    slide_count: int = 5
-):
-    """
-    创建 PPT 模板
-    
-    Args:
-        title: 模板标题
-        slide_count: 幻灯片数量
-        
-    Returns:
-        PPT 模板文件
-    """
-    if not PPTX_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="PPT 功能不可用，请安装依赖: pip install python-pptx"
-        )
-    
-    try:
-        # 创建临时文件
-        filename = f"antinet_template_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
-        temp_dir = Path(tempfile.gettempdir()) / "antinet_ppt"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        output_path = temp_dir / filename
-        
-        # 创建模板
-        if USE_ENHANCED:
-            processor = EnhancedPPTProcessor()
-        else:
-            processor = PPTProcessor()
-        prs = processor.create_presentation(title)
-        
-        # 添加示例卡片
-        sample_cards = [
-            {
-                "type": "fact",
-                "title": "事实卡片示例",
-                "content": "这是一个事实卡片的示例内容",
-                "tags": ["示例", "模板"]
-            },
-            {
-                "type": "interpret",
-                "title": "解释卡片示例",
-                "content": "这是一个解释卡片的示例内容",
-                "tags": ["示例", "模板"]
-            },
-            {
-                "type": "risk",
-                "title": "风险卡片示例",
-                "content": "这是一个风险卡片的示例内容",
-                "tags": ["示例", "模板"]
-            },
-            {
-                "type": "action",
-                "title": "行动卡片示例",
-                "content": "这是一个行动卡片的示例内容",
-                "tags": ["示例", "模板"]
-            }
-        ]
-        
-        for card in sample_cards[:slide_count-1]:  # -1 因为已有标题页
-            processor.add_card_slide(prs, card)
-        
-        # 保存
-        prs.save(str(output_path))
-        
-        # 返回文件
-        return FileResponse(
-            path=str(output_path),
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-        
-    except Exception as e:
-        logger.error(f"创建 PPT 模板失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/card-types")
-async def get_card_types():
-    """获取支持的卡片类型"""
-    return {
-        "card_types": [
-            {
-                "type": "fact",
-                "name": "事实卡片",
-                "color": "#3498db",
-                "description": "客观数据和事实陈述"
-            },
-            {
-                "type": "interpret",
-                "name": "解释卡片",
-                "color": "#2ecc71",
-                "description": "数据解释和原因分析"
-            },
-            {
-                "type": "risk",
-                "name": "风险卡片",
-                "color": "#f1c40f",
-                "description": "风险识别和预警"
-            },
-            {
-                "type": "action",
-                "name": "行动卡片",
-                "color": "#e74c3c",
-                "description": "行动建议和决策支持"
-            }
-        ]
-    }
+        logger.error(f"处理 PPT 文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")

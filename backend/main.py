@@ -797,3 +797,13 @@ if __name__ == "__main__":
         workers=1,     # 确保单进程，避免多进程间的状态隔离
         log_level="info"
     )
+
+# ============ 聊天机器人路由 ============
+try:
+    from routes.chat_routes_simple import router as simple_chat_router
+    app.include_router(simple_chat_router)
+    print("[INIT] 聊天机器人路由已注册: /api/chat/simple")
+except Exception as e:
+    print(f"[WARN] 聊天机器人路由注册失败: {e}")
+# =========================================
+

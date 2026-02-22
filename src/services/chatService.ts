@@ -143,12 +143,14 @@ export const chatService = {
     offset: number = 0
   ): Promise<CardSearchResponse> => {
     try {
-      let url = `/cards?limit=${limit}&offset=${offset}`;
+      let url = `http://localhost:8000/api/knowledge/cards?limit=${limit}&offset=${offset}`;
       if (cardType) {
         url += `&card_type=${cardType}`;
       }
 
-      return apiCall<CardSearchResponse>(url);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('获取卡片失败');
+      return await response.json();
     } catch (error) {
       console.error('列出卡片失败:', error);
       throw error;
@@ -162,7 +164,9 @@ export const chatService = {
    */
   getCard: async (cardId: string): Promise<any> => {
     try {
-      return apiCall<any>(`/card/${cardId}`);
+      const response = await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`);
+      if (!response.ok) throw new Error('获取卡片详情失败');
+      return await response.json();
     } catch (error) {
       console.error('获取卡片详情失败:', error);
       throw error;

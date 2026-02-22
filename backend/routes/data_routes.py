@@ -384,3 +384,35 @@ async def delete_gtd_task(task_id: int):
     except Exception as e:
         logger.error(f"删除GTD任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/gtd-tasks/sync-card/{card_id}")
+async def sync_card_to_gtd(card_id: int):
+    """将单个卡片同步到GTD任务"""
+    try:
+        db = get_db_manager()
+        result = db.sync_card_to_gtd(card_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="卡片不存在或不是风险/行动卡片")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"同步卡片到GTD失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/gtd-tasks/sync-all-cards")
+async def sync_all_cards_to_gtd():
+    """同步所有风险/行动卡片到GTD"""
+    try:
+        db = get_db_manager()
+        result = db.sync_all_cards_to_gtd()
+        return {
+            "success": True,
+            "message": f"已同步 {result['synced']} 张卡片，跳过 {result['skipped']} 张已存在的卡片",
+            **result
+        }
+    except Exception as e:
+        logger.error(f"批量同步卡片到GTD失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -228,33 +228,85 @@ class PPTProcessor:
             输出文件路径
         """
         try:
-            # 解析内容
             slides_data = parse_markdown_content(content)
             
             if not slides_data:
                 raise ValueError("无法从内容中解析出幻灯片")
             
-            # 创建演示文稿
-            prs = self.create_presentation(title)
-            
-            # 获取主题配色
-            theme_colors = self.THEMES.get(theme, self.THEMES["professional"])
-            
-            # 添加内容幻灯片
-            for slide_data in slides_data:
-                self._add_text_slide(prs, slide_data, theme_colors)
-            
-            # 保存文件
-            output_path = Path(output_path)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            prs.save(str(output_path))
-            
-            logger.info(f"从文本生成 PPT 成功: {output_path}")
-            return str(output_path)
+            return self.create_presentation_from_slides(
+                slides_data=slides_data,
+                title=title,
+                output_path=output_path,
+                theme=theme
+            )
             
         except Exception as e:
             logger.error(f"从文本生成 PPT 失败: {e}", exc_info=True)
             raise
+    
+    def create_presentation_from_slides(
+        self,
+        slides_data: List[Dict[str, Any]],
+        title: str,
+        output_path: str,
+        theme: str = "professional"
+    ) -> str:
+        """
+        从幻灯片数据创建 PPT
+        
+        Args:
+            slides_data: 幻灯片数据列表
+            title: 演示文稿标题
+            output_path: 输出文件路径
+            theme: 主题风格
+            
+        Returns:
+            输出文件路径
+        """
+        try:
+            prs = self.create_presentation(title)
+            
+            theme_colors = self.THEMES.get(theme, self.THEMES["professional"])
+            
+            for slide_data in slides_data:
+                self._add_text_slide(prs, slide_data, theme_colors)
+            
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            prs.save(str(output_path))
+            
+            logger.info(f"从幻灯片数据生成 PPT 成功: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            logger.error(f"从幻灯片数据生成 PPT 失败: {e}", exc_info=True)
+            raise
+    
+    def create_presentation_from_cards(
+        self,
+        cards: List[Dict[str, Any]],
+        title: str,
+        output_path: str,
+        include_summary: bool = True
+    ) -> str:
+        """
+        从卡片数据创建 PPT
+        
+        Args:
+            cards: 卡片列表
+            title: 演示文稿标题
+            output_path: 输出文件路径
+            include_summary: 是否包含总结页
+            
+        Returns:
+            输出文件路径
+        """
+        return self.export_cards_to_ppt(
+            cards=cards,
+            output_path=output_path,
+            title=title,
+            include_summary=include_summary
+        )
     
     def _add_text_slide(
         self,

@@ -178,7 +178,7 @@ if __name__ == "__main__":
     import routes.chat_routes as chat_routes
     
     # 初始化数据库
-    db = DatabaseManager(Path('C:/test/antinet/data/antinet.db'))
+    db = DatabaseManager(Path('C:/test/antinet/backend/data/antinet.db'))
     chat_routes.db_manager = db
     
     # 初始化向量搜索

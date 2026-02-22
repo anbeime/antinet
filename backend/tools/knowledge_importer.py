@@ -12,7 +12,7 @@ from datetime import datetime
 class KnowledgeImporter:
     """知识导入器"""
 
-    def __init__(self, db_path: str = "C:/test/antinet/data/antinet.db"):
+    def __init__(self, db_path: str = "C:/test/antinet/backend/data/antinet.db"):
         """
         初始化知识导入器
 

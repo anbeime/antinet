@@ -9,6 +9,8 @@ import DataManagement from "@/pages/DataManagement";
 import BatchProcess from "@/pages/BatchProcess";
 import AgentSystem from "@/pages/AgentSystem";
 import SkillCenter from "@/pages/SkillCenter";
+import MultiModel from "@/pages/MultiModel";
+import FormatConverter from "@/pages/FormatConverter";
 import { useState } from "react";
 import { AuthContext } from '@/contexts/authContext';
 
@@ -35,6 +37,8 @@ export default function App() {
           <Route path="/batch-process" element={<BatchProcess />} />
           <Route path="/agent-system" element={<AgentSystem />} />
           <Route path="/skill-center" element={<SkillCenter />} />
+          <Route path="/multi-model" element={<MultiModel />} />
+          <Route path="/format-converter" element={<FormatConverter />} />
         </Routes>
       </AuthContext.Provider>
   );

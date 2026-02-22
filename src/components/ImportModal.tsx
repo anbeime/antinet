@@ -69,6 +69,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   }>>([]);
   const [showResults, setShowResults] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // 智能分析内容 - 调用后端8智能体系统
   const autoClassifyContent = async (content: string): Promise<Array<{
@@ -291,40 +292,56 @@ const ImportModal: React.FC<ImportModalProps> = ({
     return parseTextFile(file);
   };
 
-  // PDF文件解析 - 提示需要后端支持
-  const parsePDFFile = (_file: File): Promise<string> => {
-    toast('PDF解析需要后端支持,请使用文本或Markdown文件', {
-      icon: <AlertCircle size={16} />,
-      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+  // PDF文件解析 - 调用后端API
+  const parsePDFFile = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+      method: 'POST',
+      body: formData
     });
-    return Promise.reject(new Error('PDF解析功能需要后端服务支持'));
+    if (!response.ok) throw new Error('PDF解析失败');
+    const result = await response.json();
+    return result.cards.map((c: any) => c.content).join('\n\n');
   };
 
-  // Excel文件解析 - 提示需要后端支持
-  const parseExcelFile = (_file: File): Promise<string> => {
-    toast('Excel解析需要后端支持,请使用文本或Markdown文件', {
-      icon: <AlertCircle size={16} />,
-      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+  // Excel文件解析 - 调用后端API
+  const parseExcelFile = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+      method: 'POST',
+      body: formData
     });
-    return Promise.reject(new Error('Excel解析功能需要后端服务支持'));
+    if (!response.ok) throw new Error('Excel解析失败');
+    const result = await response.json();
+    return result.cards.map((c: any) => c.content).join('\n\n');
   };
 
-  // Word文件解析 - 提示需要后端支持
-  const parseWordFile = (_file: File): Promise<string> => {
-    toast('Word文档解析需要后端支持,请使用文本或Markdown文件', {
-      icon: <AlertCircle size={16} />,
-      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+  // Word文件解析 - 调用后端API
+  const parseWordFile = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+      method: 'POST',
+      body: formData
     });
-    return Promise.reject(new Error('Word文档解析功能需要后端服务支持'));
+    if (!response.ok) throw new Error('Word解析失败');
+    const result = await response.json();
+    return result.cards.map((c: any) => c.content).join('\n\n');
   };
 
-  // 图片文件解析 - 提示需要后端支持
-  const parseImageFile = (_file: File): Promise<string> => {
-    toast('图片OCR解析需要后端支持,请使用文本或Markdown文件', {
-      icon: <AlertCircle size={16} />,
-      className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+  // 图片文件解析 - 调用后端API
+  const parseImageFile = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+      method: 'POST',
+      body: formData
     });
-    return Promise.reject(new Error('图片OCR解析功能需要后端服务支持'));
+    if (!response.ok) throw new Error('图片OCR解析失败');
+    const result = await response.json();
+    return result.cards.map((c: any) => c.content).join('\n\n');
   };
 
   // 处理文件上传
@@ -364,12 +381,28 @@ const ImportModal: React.FC<ImportModalProps> = ({
         });
       } else if (fileExtension === 'pdf') {
         content = await parsePDFFile(file);
+        toast('PDF文件解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
       } else if (fileExtension && ['doc', 'docx'].includes(fileExtension)) {
         content = await parseWordFile(file);
+        toast('Word文档解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
       } else if (fileExtension && ['xls', 'xlsx'].includes(fileExtension)) {
         content = await parseExcelFile(file);
+        toast('Excel文件解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
       } else if (fileExtension && ['jpg', 'jpeg', 'png'].includes(fileExtension)) {
         content = await parseImageFile(file);
+        toast('图片OCR解析成功', {
+          icon: <Check size={16} />,
+          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+        });
       }
       
       setImportContent(content);
@@ -444,6 +477,23 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setShowResults(false);
     setImportResults([]);
     setErrors([]);
+  };
+
+  // 放弃更改并关闭
+  const handleDiscardAndClose = () => {
+    resetForm();
+    setShowConfirmDialog(false);
+    onClose();
+  };
+
+  // 保存并关闭
+  const handleSaveAndClose = async () => {
+    if (importResults.length > 0) {
+      await onImport(importResults);
+    }
+    resetForm();
+    setShowConfirmDialog(false);
+    onClose();
   };
 
   // 当模态框关闭时重置表单
@@ -600,7 +650,7 @@ https://example.com/knowledge-management
                   )}
                   
                   <div className="mt-6 text-left">
-                    <p className="text-sm font-medium mb-3">✅ 当前支持的格式：</p>
+                    <p className="text-sm font-medium mb-3">✅ 支持的文件格式：</p>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div className="flex items-center text-green-600 dark:text-green-400">
                         <Check size={14} className="mr-1" />
@@ -610,24 +660,20 @@ https://example.com/knowledge-management
                         <Check size={14} className="mr-1" />
                         <span>.md Markdown文件</span>
                       </div>
-                    </div>
-                    
-                    <p className="text-sm font-medium mt-4 mb-3">⏳ 需要后端支持的格式：</p>
-                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <div className="flex items-center">
-                        <AlertCircle size={14} className="mr-1" />
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
                         <span>.pdf PDF文档</span>
                       </div>
-                      <div className="flex items-center">
-                        <AlertCircle size={14} className="mr-1" />
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
                         <span>.doc/.docx Word文档</span>
                       </div>
-                      <div className="flex items-center">
-                        <AlertCircle size={14} className="mr-1" />
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
                         <span>.xls/.xlsx Excel表格</span>
                       </div>
-                      <div className="flex items-center">
-                        <AlertCircle size={14} className="mr-1" />
+                      <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Check size={14} className="mr-1" />
                         <span>.jpg/.png 图片OCR</span>
                       </div>
                     </div>

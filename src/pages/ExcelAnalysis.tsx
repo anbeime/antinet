@@ -32,7 +32,6 @@ const ExcelAnalysis: React.FC = () => {
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && (file.type.includes('spreadsheet') || file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
@@ -40,7 +39,6 @@ const ExcelAnalysis: React.FC = () => {
       setIsAnalyzing(true);
       
       try {
-        // 上传并分析文件
         const formData = new FormData();
         formData.append('file', file);
         
@@ -51,7 +49,6 @@ const ExcelAnalysis: React.FC = () => {
         
         if (response.ok) {
           const result = await response.json();
-          // 处理返回的分析结果
           if (result.data && result.columns) {
             setData(result.data);
             setColumns(result.columns);
@@ -59,54 +56,23 @@ const ExcelAnalysis: React.FC = () => {
               totalRows: result.data.length,
               totalColumns: result.columns.length,
               numericColumns: 0,
-              textColumns: 0,
+              textColumns: result.columns.length,
               dateColumns: 0,
               missingValues: 0,
               duplicates: 0
             });
           }
         } else {
-          console.error('文件分析失败');
+          alert('文件分析失败');
         }
       } catch (error) {
-        console.error('文件上传异常:', error);
+        console.error('上传失败:', error);
+        alert('上传失败');
       } finally {
         setIsAnalyzing(false);
       }
     }
   };
-
-  const renderDataTable = () => (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-        <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-          <tr>
-            {columns.map(col => (
-              <th key={col.key} scope="col" className="px-6 py-3">
-                {col.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.slice(0, 10).map((row, index) => (
-            <tr key={index} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
-              {columns.map(col => (
-                <td key={col.key} className="px-6 py-4">
-                  {col.type === 'number' ? row[col.key]?.toLocaleString() : row[col.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {data.length > 10 && (
-        <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-          显示前10行，共{data.length}行数据
-        </div>
-      )}
-    </div>
-  );
 
   const handleExportReport = async () => {
     if (data.length === 0) {
@@ -115,31 +81,49 @@ const ExcelAnalysis: React.FC = () => {
     }
 
     try {
-      // 构建导出数据，包含高级分析结果
+      // 构建导出数据
       const exportData: any = {
         analysis_info: {
           title: `${uploadedFile?.name || 'Excel'} 分析报告`,
           date: new Date().toISOString().split('T')[0],
           data_source: uploadedFile?.name || 'unknown',
           card_counts: {
-            fact: Object.keys(analysisResults).length,
-            interpret: 0,
-            risk: 0,
-            action: 0
+            fact: 1,
+            interpret: 1,
+            risk: 1,
+            action: 1
           },
-          summary: `数据分析报告，包含 ${Object.keys(analysisResults).length} 项高级分析`
+          summary: `数据分析报告，包含 ${data.length} 行数据，${columns.length} 列字段`
         },
         cards_by_type: {
-          fact: Object.entries(analysisResults).map(([name, result]) => ({
-            id: `analysis_${name}`,
-            title: name,
-            content: { description: JSON.stringify(result, null, 2) },
+          fact: [{
+            id: 'fact_001',
+            title: '数据概览',
+            content: `本次分析共处理 ${stats?.totalRows || data.length} 行数据，包含 ${stats?.totalColumns || columns.length} 个列。其中数值列 ${stats?.numericColumns || 0} 个，文本列 ${stats?.textColumns || 0} 个。`,
             card_type: 'blue',
             category: '数据分析'
-          })),
-          interpret: [],
-          risk: [],
-          action: []
+          }],
+          interpret: [{
+            id: 'interpret_001',
+            title: '数据质量分析',
+            content: `数据完整性分析：发现 ${stats?.missingValues || 0} 个缺失值。${stats?.duplicates ? `重复数据 ${stats.duplicates} 行。` : ''}`,
+            card_type: 'green',
+            category: '数据质量'
+          }],
+          risk: [{
+            id: 'risk_001',
+            title: '数据风险提示',
+            content: stats?.missingValues ? '数据存在缺失值，可能影响分析准确性。建议清理或补充数据。' : '数据质量良好，无明显风险。',
+            card_type: 'yellow',
+            category: '风险提示'
+          }],
+          action: [{
+            id: 'action_001',
+            title: '优化建议',
+            content: stats?.missingValues ? '建议：清理缺失值或补充数据。继续进行深入的数据探索和可视化分析。' : '建议：继续进行深入的数据探索和可视化分析。',
+            card_type: 'red',
+            category: '行动建议'
+          }]
         },
         data_sheets: {
           '原始数据': data.slice(0, 1000)
@@ -150,48 +134,6 @@ const ExcelAnalysis: React.FC = () => {
       // 添加统计摘要
       if (stats) {
         exportData.data_sheets['统计摘要'] = [stats];
-      }
-
-      // 添加数据统计结果
-      if (analysisResults['数据统计']) {
-        const statsData: any[] = [];
-        Object.entries(analysisResults['数据统计'].results || {}).forEach(([col, colStats]: [string, any]) => {
-          statsData.push({
-            '列名': col,
-            '数量': colStats.count,
-            '均值': colStats.mean?.toFixed(2),
-            '中位数': colStats.median?.toFixed(2),
-            '标准差': colStats.std?.toFixed(2),
-            '最小值': colStats.min?.toFixed(2),
-            '最大值': colStats.max?.toFixed(2),
-            '偏度': colStats.skewness?.toFixed(3),
-            '峰度': colStats.kurtosis?.toFixed(3)
-          });
-        });
-        if (statsData.length > 0) {
-          exportData.data_sheets['数据统计'] = statsData;
-        }
-      }
-
-      // 添加异常检测结果
-      if (analysisResults['异常检测']) {
-        const anomalyData: any[] = [];
-        Object.entries(analysisResults['异常检测'].results || {}).forEach(([col, anomaly]: [string, any]) => {
-          if (anomaly.has_outliers) {
-            anomalyData.push({
-              '列名': col,
-              'Z-score异常数': anomaly.z_score_outliers.count,
-              'Z-score异常占比': `${anomaly.z_score_outliers.percentage.toFixed(2)}%`,
-              'IQR异常数': anomaly.iqr_outliers.count,
-              'IQR异常占比': `${anomaly.iqr_outliers.percentage.toFixed(2)}%`,
-              '下界': anomaly.iqr_outliers.lower_bound?.toFixed(2),
-              '上界': anomaly.iqr_outliers.upper_bound?.toFixed(2)
-            });
-          }
-        });
-        if (anomalyData.length > 0) {
-          exportData.data_sheets['异常检测'] = anomalyData;
-        }
       }
 
       const response = await fetch('http://localhost:8000/api/excel/export-analysis', {
@@ -210,13 +152,15 @@ const ExcelAnalysis: React.FC = () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        alert(`分析报告导出成功！包含 ${Object.keys(analysisResults).length} 项分析结果`);
+        alert('分析报告导出成功！');
       } else {
-        alert('导出失败');
+        const errorText = await response.text();
+        console.error('导出失败:', errorText);
+        alert('导出失败: ' + errorText);
       }
     } catch (error) {
       console.error('导出异常:', error);
-      alert('导出失败');
+      alert('导出失败: ' + (error as Error).message);
     }
   };
 
@@ -255,18 +199,74 @@ const ExcelAnalysis: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 <Upload className="w-5 h-5 mr-2 text-green-500" />
-                上传表格
+                上传文件
               </h3>
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-green-400 dark:hover:border-green-500 transition-colors">
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="excel-upload" />
-                <label htmlFor="excel-upload" className="cursor-pointer">
-                  <FileSpreadsheet className="w-10 h-10 mx-auto text-gray-400 dark:text-gray-500 mb-3" />
+              <label className="block">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
+                  <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {uploadedFile ? uploadedFile.name : '选择Excel文件'}
+                    点击上传Excel文件
                   </p>
-                </label>
-              </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    支持 .xlsx, .xls 格式
+                  </p>
+                </div>
+              </label>
+              {uploadedFile && (
+                <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                  <p className="text-sm text-green-700 dark:text-green-300 flex items-center">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    {uploadedFile.name}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {/* Stats */}
+            {stats && (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                  <BarChart3 className="w-5 h-5 mr-2 text-blue-500" />
+                  数据统计
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">总行数</span>
+                    <span className="font-semibold">{stats.totalRows.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">总列数</span>
+                    <span className="font-semibold">{stats.totalColumns}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">数值列</span>
+                    <span className="font-semibold text-blue-600">{stats.numericColumns}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">文本列</span>
+                    <span className="font-semibold text-green-600">{stats.textColumns}</span>
+                  </div>
+                  {stats.missingValues > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">缺失值</span>
+                      <span className="font-semibold text-yellow-600">{stats.missingValues}</span>
+                    </div>
+                  )}
+                  {stats.duplicates > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">重复行</span>
+                      <span className="font-semibold text-red-600">{stats.duplicates}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Analysis Tools */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
@@ -308,95 +308,85 @@ const ExcelAnalysis: React.FC = () => {
               </div>
             ) : stats ? (
               <>
-                {/* Stats Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">总行数</p>
-                        <p className="text-2xl font-bold text-green-600 dark:text-green-400">{stats.totalRows}</p>
-                      </div>
-                      <Table className="w-8 h-8 text-green-500" />
-                    </div>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">列数</p>
-                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.totalColumns}</p>
-                      </div>
-                      <BarChart3 className="w-8 h-8 text-blue-500" />
-                    </div>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">数值列</p>
-                        <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.numericColumns}</p>
-                      </div>
-                      <Calculator className="w-8 h-8 text-orange-500" />
-                    </div>
-                  </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">缺失值</p>
-                        <p className="text-2xl font-bold text-red-600 dark:text-red-400">{stats.missingValues}</p>
-                      </div>
-                      <AlertTriangle className="w-8 h-8 text-red-500" />
-                    </div>
-                  </div>
-                </div>
-
                 {/* Data Preview */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                  <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h3 className="text-lg font-semibold flex items-center">
-                      <Table className="w-5 h-5 mr-2 text-green-500" />
+                      <Table className="w-5 h-5 mr-2 text-blue-500" />
                       数据预览
                     </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      显示数据表格的前10行
-                    </p>
+                    <span className="text-sm text-gray-500">
+                      显示前 {Math.min(data.length, 100)} 行
+                    </span>
                   </div>
-                  <div className="p-6">
-                    {renderDataTable()}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                          {columns.map(col => (
+                            <th key={col.key} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                              <div className="flex items-center space-x-1">
+                                <span>{col.name}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                  col.type === 'number' ? 'bg-blue-100 text-blue-700' :
+                                  col.type === 'date' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {col.type}
+                                </span>
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {data.slice(0, 100).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            {columns.map(col => (
+                              <td key={col.key} className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                                {row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-'}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
-                {/* Quick Insights */}
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
-                  <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="text-lg font-semibold flex items-center">
-                      <TrendingUp className="w-5 h-5 mr-2 text-green-500" />
-                      快速洞察
-                    </h3>
-                  </div>
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                      <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">数据概览</h4>
-                      <p className="text-sm text-blue-700 dark:text-blue-300">
-                        共 {stats.totalRows} 行数据，{stats.totalColumns} 列字段
-                        {stats.missingValues > 0 && `，发现 ${stats.missingValues} 个缺失值`}
-                        {stats.duplicates > 0 && `，${stats.duplicates} 行重复数据`}
-                      </p>
-                    </div>
-                    <div className="p-4 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                      <h4 className="font-medium text-green-800 dark:text-green-200 mb-2">字段类型分布</h4>
-                      <p className="text-sm text-green-700 dark:text-green-300">
-                        数值列 {stats.numericColumns} 个，文本列 {stats.textColumns} 个
-                        {stats.dateColumns > 0 && `，日期列 ${stats.dateColumns} 个`}
-                      </p>
-                    </div>
+                {/* Column Info */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center">
+                    <TrendingUp className="w-5 h-5 mr-2 text-purple-500" />
+                    字段信息
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {columns.map(col => (
+                      <div key={col.key} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{col.name}</span>
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            col.type === 'number' ? 'bg-blue-100 text-blue-700' :
+                            col.type === 'date' ? 'bg-green-100 text-green-700' :
+                            col.type === 'boolean' ? 'bg-purple-100 text-purple-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {col.type}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          示例: {col.sample !== null && col.sample !== undefined ? String(col.sample).substring(0, 50) : '-'}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-96 bg-white dark:bg-gray-800 rounded-xl shadow-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+              <div className="flex items-center justify-center h-96 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
                 <div className="text-center">
-                  <FileSpreadsheet className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-800 dark:text-gray-200 mb-2">等待Excel上传</h3>
-                  <p className="text-gray-500 dark:text-gray-400">上传Excel文件开始智能数据分析</p>
+                  <FileSpreadsheet className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                  <p className="text-gray-500 dark:text-gray-400">请上传Excel文件开始分析</p>
                 </div>
               </div>
             )}

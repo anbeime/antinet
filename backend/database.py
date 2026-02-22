@@ -134,10 +134,22 @@ class DatabaseManager:
                     priority TEXT CHECK(priority IN ('low', 'medium', 'high')),
                     due_date TEXT,
                     category TEXT CHECK(category IN ('inbox', 'today', 'later', 'archive', 'projects')),
+                    source_type TEXT,
+                    source_id INTEGER,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # 迁移：为旧表添加 source_type 和 source_id 字段
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_type TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_id INTEGER")
+            except:
+                pass
 
             # 8. 知识库卡片表
             cursor.execute("""
@@ -697,14 +709,14 @@ class DatabaseManager:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_gtd_task(self, title: str, description: str, priority: str, category: str, due_date: Optional[str] = None) -> Dict[str, Any]:
+    def add_gtd_task(self, title: str, description: str, priority: str, category: str, due_date: Optional[str] = None, source_type: Optional[str] = None, source_id: Optional[int] = None) -> Dict[str, Any]:
         """添加GTD任务"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO gtd_tasks (title, description, priority, category, due_date)
-                VALUES (?, ?, ?, ?, ?)
-            """, (title, description, priority, category, due_date))
+                INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (title, description, priority, category, due_date, source_type, source_id))
             task_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM gtd_tasks WHERE id = ?", (task_id,))
@@ -719,9 +731,10 @@ class DatabaseManager:
             for key, value in kwargs.items():
                 updates.append(f"{key} = ?")
                 values.append(value)
+            values.append(datetime.now().isoformat())
             values.append(task_id)
             cursor.execute(f"UPDATE gtd_tasks SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
-                          values + [datetime.now().isoformat()])
+                          values)
             conn.commit()
             return cursor.rowcount > 0
 
@@ -732,3 +745,66 @@ class DatabaseManager:
             cursor.execute("DELETE FROM gtd_tasks WHERE id = ?", (task_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def sync_card_to_gtd(self, card_id: int) -> Optional[Dict[str, Any]]:
+        """将风险/行动卡片同步到GTD任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 获取卡片信息
+            cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+            card = cursor.fetchone()
+            if not card:
+                return None
+            
+            card_dict = dict(card)
+            card_type = card_dict.get('card_type', card_dict.get('type', ''))
+            
+            # 只同步风险卡片和行动卡片
+            if card_type not in ['yellow', 'red']:
+                return None
+            
+            # 检查是否已同步
+            cursor.execute("SELECT id FROM gtd_tasks WHERE source_type = 'card' AND source_id = ?", (card_id,))
+            existing = cursor.fetchone()
+            if existing:
+                return {'status': 'already_synced', 'task_id': existing[0]}
+            
+            # 确定优先级
+            priority = 'high' if card_type == 'red' else 'medium'
+            category = 'inbox'
+            
+            # 创建GTD任务
+            cursor.execute("""
+                INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id)
+                VALUES (?, ?, ?, ?, 'card', ?)
+            """, (card_dict['title'], card_dict['content'], priority, category, card_id))
+            
+            task_id = cursor.lastrowid
+            conn.commit()
+            
+            return {'status': 'synced', 'task_id': task_id, 'card_id': card_id}
+
+    def sync_all_cards_to_gtd(self) -> Dict[str, Any]:
+        """同步所有风险/行动卡片到GTD"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 获取所有风险和行动卡片
+            cursor.execute("""
+                SELECT * FROM knowledge_cards 
+                WHERE card_type IN ('yellow', 'red')
+            """)
+            cards = cursor.fetchall()
+            
+            synced = 0
+            skipped = 0
+            
+            for card in cards:
+                result = self.sync_card_to_gtd(card['id'])
+                if result and result.get('status') == 'synced':
+                    synced += 1
+                else:
+                    skipped += 1
+            
+            return {'synced': synced, 'skipped': skipped, 'total': len(cards)}

@@ -9,8 +9,8 @@ from pathlib import Path
 # 添加项目路径
 sys.path.insert(0, 'C:/test/antinet')
 
-DB_PATH = Path('C:/test/antinet/data/antinet.db')
-BACKUP_PATH = Path('C:/test/antinet/data/antinet.db.backup')
+DB_PATH = Path('C:/test/antinet/backend/data/antinet.db')
+BACKUP_PATH = Path('C:/test/antinet/backend/data/antinet.db.backup')
 
 def backup_database():
     """备份数据库"""

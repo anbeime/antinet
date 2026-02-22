@@ -17,9 +17,18 @@ import pandas as pd
 
 router = APIRouter(prefix="/api/excel", tags=["excel"])
 
-# 输出目录
 OUTPUT_DIR = Path("./data/exports")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@router.get("/health")
+async def health_check():
+    """Excel 服务健康检查"""
+    return {
+        "status": "healthy",
+        "service": "excel",
+        "available": True
+    }
 
 
 class CardExportRequest(BaseModel):
@@ -73,7 +82,7 @@ async def export_cards(request: CardExportRequest):
         output_path = OUTPUT_DIR / filename
 
         # 简单导出（使用pandas）
-        cards_df = pd.DataFrame([card.model_dump() for card in request.cards])
+        cards_df = pd.DataFrame(request.cards)
         cards_df.to_excel(output_path, index=False, engine='openpyxl')
 
         return {

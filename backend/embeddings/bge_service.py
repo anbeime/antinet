@@ -24,6 +24,8 @@ class BGEEmbeddingService:
         Initialize
         """
         self.max_length = 512
+        self.model_name = 'BGE-Local'
+        self.dimension = EMBEDDING_DIM
         logger.info("[OK] BGE 本地嵌入服务已初始化")
 
     def embed(self, text: str, max_length: int = 512) -> List[float]:

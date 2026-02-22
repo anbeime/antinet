@@ -162,7 +162,7 @@ export const npuService = {
    */
   async getCards(limit: number = 100, offset: number = 0): Promise<{ cards: Card[]; total: number }> {
     try {
-      const response = await fetch(`${API_BASE}/cards?limit=${limit}&offset=${offset}`);
+      const response = await fetch(`${API_BASE}/knowledge/cards?limit=${limit}&offset=${offset}`);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -180,7 +180,7 @@ export const npuService = {
    */
   async createCard(card: Partial<Card>): Promise<Card> {
     try {
-      const response = await fetch(`${API_BASE}/cards`, {
+      const response = await fetch(`${API_BASE}/knowledge/cards`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
