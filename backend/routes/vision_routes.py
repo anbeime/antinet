@@ -277,44 +277,72 @@ async def vision_chat(request: VisionChatRequest):
         raise HTTPException(status_code=500, detail=f"视觉对话失败: {str(e)}")
 
 
-@router.post("/analyze", response_model=VisionChatResponse)
+@router.post("/analyze")
 async def analyze_image(
-    image_path: str = Form(...),
-    query: str = Form(default="请详细描述这张图片的内容")
+    file: UploadFile = File(...),
+    question: str = Form(default="请详细描述这张图片的内容")
 ):
     """
-    图片分析接口
+    图片分析接口 - 接收文件上传
     
     参数:
-        image_path: 图片路径
-        query: 分析问题(可选,默认为通用描述)
+        file: 上传的图片文件
+        question: 分析问题(可选,默认为通用描述)
     """
-    logger.info(f"[VisionRoutes] 收到图片分析请求: {image_path}")
+    logger.info(f"[VisionRoutes] 收到图片分析请求: {file.filename}")
     
     try:
-        # 验证图片存在
-        if not os.path.exists(image_path):
-            raise HTTPException(status_code=404, detail="图片不存在")
+        # 验证文件类型
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/bmp", "image/gif"]
+        if file.content_type not in allowed_types:
+            return {
+                "success": False,
+                "error": f"不支持的图片格式: {file.content_type}"
+            }
+        
+        # 验证文件大小 (10MB)
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            return {
+                "success": False,
+                "error": "图片大小超过10MB限制"
+            }
+        
+        # 保存文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_str = file.filename or "image.jpg"
+        ext = os.path.splitext(filename_str)[1]
+        filename = f"analyze_{timestamp}{ext}"
+        file_path = UPLOAD_DIR / filename
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        logger.info(f"[VisionRoutes] 图片已保存: {file_path}")
         
         # 调用 Qwen VL 服务
         response_text = await call_qwen_vl_service(
-            prompt=query,
-            image_path=image_path
+            prompt=question,
+            image_path=str(file_path)
         )
         
         logger.info(f"[VisionRoutes] 图片分析完成")
         
-        return VisionChatResponse(
-            response=response_text,
-            image_path=image_path,
-            model="qwen2.5-vl-3b"
-        )
+        return {
+            "success": True,
+            "result": response_text,
+            "analysis": response_text,
+            "description": response_text,
+            "image_path": str(file_path),
+            "model": "qwen2.5-vl-3b"
+        }
     
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"[VisionRoutes] 图片分析失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"图片分析失败: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
 
 @router.get("/health")

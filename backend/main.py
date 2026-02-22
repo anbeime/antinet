@@ -236,6 +236,13 @@ try:
 except Exception as e:
     logger.warning(f"无法导入视觉理解路由: {e}")
 
+# 注册8-Agent会议路由
+try:
+    from routes.meeting_routes import router as meeting_router
+    app.include_router(meeting_router)  # 8-Agent会议路由
+    logger.info("[OK] 8-Agent会议路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入8-Agent会议路由: {e}")
 
 
 # 初始化 8-Agent 系统

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
@@ -18,6 +18,9 @@ import {
   Eye,
   X,
   AlertCircle,
+  Image,
+  FileImage,
+  Compress,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
@@ -50,386 +53,61 @@ interface KnowledgeCard {
   createdAt: string;
 }
 
-interface ConversionTask {
-  id: string;
-  fileName: string;
-  targetFormat: 'word' | 'excel' | 'pdf';
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  progress: number;
-  resultUrl?: string;
-  resultBlob?: Blob;
-  errorMessage?: string;
-}
-
 const API_BASE = 'http://localhost:8000';
-
-// 格式配置
-const formatConfig = {
-  word: {
-    name: 'Word 文档',
-    icon: <FileType className="w-5 h-5" />,
-    color: 'bg-blue-500',
-    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    borderColor: 'border-blue-200 dark:border-blue-800',
-    description: '完美支持中文，可编辑'
-  },
-  excel: {
-    name: 'Excel 表格',
-    icon: <FileSpreadsheet className="w-5 h-5" />,
-    color: 'bg-green-500',
-    bgColor: 'bg-green-50 dark:bg-green-900/20',
-    borderColor: 'border-green-200 dark:border-green-800',
-    description: '适合数据分析'
-  },
-  pdf: {
-    name: 'PDF 预览',
-    icon: <FileText className="w-5 h-5" />,
-    color: 'bg-red-500',
-    bgColor: 'bg-red-50 dark:bg-red-900/20',
-    borderColor: 'border-red-200 dark:border-red-800',
-    description: '可打印保存'
-  }
-};
 
 const PDFAnalysisEnhanced: React.FC = () => {
   useTheme();
   const navigate = useNavigate();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [generatedCards, setGeneratedCards] = useState<KnowledgeCard[]>([]);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'convert'>('extract');
-  
-  // 格式转换相关状态
-  const [selectedFormat, setSelectedFormat] = useState<'word' | 'excel' | 'pdf'>('word');
-  const [conversionTask, setConversionTask] = useState<ConversionTask | null>(null);
-  const [isConverting, setIsConverting] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convert'>('extract');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      setUploadedFile(file);
-      setAnalysisResult(null);
-      setGeneratedCards([]);
-      setConversionTask(null);
-      toast.success(`已选择文件: ${file.name}`);
-    } else {
-      toast.error('请选择有效的 PDF 文件');
-    }
-  };
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
-  // 开始格式转换
-  const handleStartConversion = async () => {
-    if (!uploadedFile) {
-      toast.error('请先上传 PDF 文件');
+    // 验证文件类型
+    const validFiles = files.filter(file => file.type === 'application/pdf');
+    if (validFiles.length !== files.length) {
+      toast.error('请选择有效的 PDF 文件');
       return;
     }
 
-    setIsConverting(true);
-    
-    const newTask: ConversionTask = {
-      id: Date.now().toString(),
-      fileName: uploadedFile.name,
-      targetFormat: selectedFormat,
-      status: 'processing',
-      progress: 0
-    };
-    
-    setConversionTask(newTask);
-
-    const formData = new FormData();
-    formData.append('file', uploadedFile);
-    formData.append('max_cards', '50');
-
-    try {
-      if (selectedFormat === 'word') {
-        await convertToWord(newTask, formData);
-      } else if (selectedFormat === 'excel') {
-        await convertToExcel(newTask, formData);
-      } else if (selectedFormat === 'pdf') {
-        await convertToPDF(newTask, formData);
-      }
-    } catch (error) {
-      console.error('转换失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '转换失败';
-      setConversionTask(prev => prev ? {
-        ...prev,
-        status: 'error',
-        errorMessage: errorMessage
-      } : null);
-      toast.error(errorMessage);
-    } finally {
-      setIsConverting(false);
-    }
-  };
-
-  // 转换为 Word
-  const convertToWord = async (task: ConversionTask, formData: FormData) => {
-    setConversionTask(prev => prev ? { ...prev, progress: 30 } : null);
-
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!analyzeResponse.ok) {
-      const errorText = await analyzeResponse.text();
-      throw new Error(`PDF 分析失败: ${errorText}`);
-    }
-
-    const analysisResult = await analyzeResponse.json();
-    
-    // 检查返回数据
-    if (!analysisResult || typeof analysisResult !== 'object') {
-      throw new Error('返回数据格式错误：不是有效的 JSON 对象');
-    }
-    
-    if (analysisResult.success === false) {
-      throw new Error(analysisResult.error || 'PDF 分析失败');
-    }
-
-    const cardsData = analysisResult.cards;
-    if (!cardsData || !Array.isArray(cardsData)) {
-      throw new Error('返回数据格式错误：缺少卡片数据');
-    }
-    
-    setConversionTask(prev => prev ? { ...prev, progress: 60 } : null);
-
-    const cardsForExport = cardsData.map((card: any) => ({
-      type: card?.type === 'explanation' ? 'interpret' : (card?.type || 'fact'),
-      title: String(card?.title || '无标题'),
-      content: String(card?.content || '无内容'),
-      tags: Array.isArray(card?.tags) ? card.tags : [],
-      source: task.fileName
-    }));
-
-    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cards: cardsForExport,
-        title: `${task.fileName.replace('.pdf', '')}_分析报告`,
-        author: 'Antinet 智能知识管家'
-      })
-    });
-
-    if (!wordResponse.ok) {
-      const errorText = await wordResponse.text();
-      throw new Error(`Word 导出失败: ${errorText}`);
-    }
-
-    const blob = await wordResponse.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    setConversionTask(prev => prev ? {
-      ...prev,
-      status: 'completed',
-      progress: 100,
-      resultUrl: url,
-      resultBlob: blob
-    } : null);
-
-    toast.success('Word 转换完成！');
-  };
-
-  // 转换为 Excel
-  const convertToExcel = async (task: ConversionTask, formData: FormData) => {
-    setConversionTask(prev => prev ? { ...prev, progress: 30 } : null);
-
-    const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Excel 导出失败: ${errorText}`);
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    setConversionTask(prev => prev ? {
-      ...prev,
-      status: 'completed',
-      progress: 100,
-      resultUrl: url,
-      resultBlob: blob
-    } : null);
-
-    toast.success('Excel 转换完成！');
-  };
-
-  // 转换为 PDF - 使用浏览器打印功能生成 PDF
-  const convertToPDF = async (task: ConversionTask, formData: FormData) => {
-    setConversionTask(prev => prev ? { ...prev, progress: 30 } : null);
-
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!analyzeResponse.ok) {
-      const errorText = await analyzeResponse.text();
-      throw new Error(`PDF 分析失败: ${errorText}`);
-    }
-
-    const analysisResult = await analyzeResponse.json();
-    
-    // 检查返回数据
-    if (!analysisResult || typeof analysisResult !== 'object') {
-      throw new Error('返回数据格式错误：不是有效的 JSON 对象');
-    }
-    
-    setConversionTask(prev => prev ? { ...prev, progress: 70 } : null);
-
-    // 生成 HTML 内容用于预览和打印
-    const htmlContent = generatePDFPreview(analysisResult, task.fileName);
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = window.URL.createObjectURL(blob);
-
-    setConversionTask(prev => prev ? {
-      ...prev,
-      status: 'completed',
-      progress: 100,
-      resultUrl: url,
-      resultBlob: blob
-    } : null);
-
-    toast.success('PDF 预览已生成，请点击预览查看');
-  };
-
-  // 生成 PDF 预览 HTML
-  const generatePDFPreview = (analysisResult: any, fileName: string) => {
-    const cards = analysisResult?.cards || [];
-    
-    const cardHTML = cards.map((card: any, index: number) => {
-      const colors: Record<string, string> = {
-        fact: '#3b82f6',
-        explanation: '#10b981',
-        risk: '#f59e0b',
-        action: '#ef4444'
-      };
-      
-      const typeNames: Record<string, string> = {
-        fact: '事实',
-        explanation: '解释',
-        risk: '风险',
-        action: '行动'
-      };
-
-      const cardType = card?.type || 'fact';
-      const cardTitle = card?.title || '无标题';
-      const cardContent = card?.content || '无内容';
-
-      return `
-        <div style="
-          margin-bottom: 20px;
-          padding: 15px;
-          border-left: 4px solid ${colors[cardType] || '#3b82f6'};
-          background: #f9fafb;
-          page-break-inside: avoid;
-        ">
-          <div style="
-            font-weight: bold;
-            color: ${colors[cardType] || '#3b82f6'};
-            margin-bottom: 8px;
-          ">
-            [${typeNames[cardType] || '事实'}] #${index + 1} ${cardTitle}
-          </div>
-          <div style="color: #374151; line-height: 1.6;">
-            ${cardContent.replace(/\n/g, '<br>')}
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${fileName} - 分析报告</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px 20px;
-            line-height: 1.6;
-            color: #1f2937;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #e5e7eb;
-          }
-          .header h1 {
-            margin: 0 0 10px 0;
-            color: #111827;
-          }
-          .header p {
-            color: #6b7280;
-            margin: 0;
-          }
-          @media print {
-            body { padding: 20px; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>分析报告</h1>
-          <p>文件名: ${fileName}</p>
-          <p>生成时间: ${new Date().toLocaleString()}</p>
-        </div>
-        <div class="content">
-          ${cardHTML || '<p style="text-align: center; color: #9ca3af;">暂无卡片数据</p>'}
-        </div>
-        <div class="no-print" style="margin-top: 40px; padding: 20px; background: #f3f4f6; border-radius: 8px; text-align: center;">
-          <p style="margin: 0 0 10px 0; color: #6b7280;">提示：按 Ctrl+P (或 Cmd+P) 可以打印或保存为 PDF</p>
-        </div>
-      </body>
-      </html>
-    `;
-  };
-
-  // 下载转换后的文件
-  const downloadConvertedFile = () => {
-    if (!conversionTask?.resultUrl) return;
-    
-    const a = document.createElement('a');
-    a.href = conversionTask.resultUrl;
-    a.download = `${conversionTask.fileName.replace('.pdf', '')}_converted.${
-      conversionTask.targetFormat === 'word' ? 'docx' : 
-      conversionTask.targetFormat === 'excel' ? 'xlsx' : 'html'
-    }`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  // 预览转换后的文件
-  const previewConvertedFile = () => {
-    if (!conversionTask?.resultUrl) return;
-    
-    if (conversionTask.targetFormat === 'pdf') {
-      const previewWindow = window.open('', '_blank');
-      if (previewWindow) {
-        previewWindow.document.write(`
-          <iframe 
-            src="${conversionTask.resultUrl}" 
-            style="width:100%;height:100vh;border:none;"
-          ></iframe>
-        `);
-        previewWindow.document.close();
-      }
+    if (activeFeature === 'merge') {
+      setUploadedFiles(prev => [...prev, ...validFiles]);
     } else {
-      downloadConvertedFile();
+      setUploadedFile(validFiles[0]);
     }
+    
+    setAnalysisResult(null);
+    setGeneratedCards([]);
+    toast.success(`已选择 ${validFiles.length} 个文件`);
+  };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    // 验证图片格式
+    const validTypes = ['image/jpeg', 'image/png', 'image/bmp', 'image/tiff'];
+    const validFiles = files.filter(file => validTypes.includes(file.type));
+    
+    if (validFiles.length !== files.length) {
+      toast.error('请选择有效的图片文件（JPG/PNG/BMP/TIFF）');
+      return;
+    }
+
+    setUploadedFiles(validFiles);
+    toast.success(`已选择 ${validFiles.length} 张图片`);
+  };
+
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleExtractText = async () => {
@@ -506,7 +184,6 @@ const PDFAnalysisEnhanced: React.FC = () => {
 
       const result = await response.json();
       
-      // 安全地处理返回数据
       if (!result || typeof result !== 'object') {
         throw new Error('返回数据为空或格式错误');
       }
@@ -521,7 +198,6 @@ const PDFAnalysisEnhanced: React.FC = () => {
       }
 
       const cards: KnowledgeCard[] = cardsData.map((card: any, index: number) => {
-        // 确保每个字段都有值
         const safeCard = {
           id: String(card?.id || `card-${Date.now()}-${index}`),
           type: String(card?.type || 'fact'),
@@ -553,6 +229,192 @@ const PDFAnalysisEnhanced: React.FC = () => {
     }
   };
 
+  // PDF 合并
+  const handleMergePDF = async () => {
+    if (uploadedFiles.length < 2) {
+      toast.error('请至少上传2个 PDF 文件');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus({ stage: 'merge', progress: 30, message: '正在合并 PDF...' });
+
+    const formData = new FormData();
+    uploadedFiles.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pdf/toolkit/merge`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`合并失败: ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'merged.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setProcessingStatus({ stage: 'complete', progress: 100, message: '合并完成' });
+      toast.success('PDF 合并成功！');
+    } catch (error) {
+      console.error('合并失败:', error);
+      toast.error('PDF 合并失败');
+      setProcessingStatus({ stage: 'error', progress: 0, message: '合并失败' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // PDF 拆分
+  const handleSplitPDF = async () => {
+    if (!uploadedFile) {
+      toast.error('请先上传 PDF 文件');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus({ stage: 'split', progress: 30, message: '正在拆分 PDF...' });
+
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pdf/toolkit/split`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`拆分失败: ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'split_pdfs.zip';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setProcessingStatus({ stage: 'complete', progress: 100, message: '拆分完成' });
+      toast.success('PDF 拆分成功！');
+    } catch (error) {
+      console.error('拆分失败:', error);
+      toast.error('PDF 拆分失败');
+      setProcessingStatus({ stage: 'error', progress: 0, message: '拆分失败' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // PDF 转图片
+  const handlePDFToImages = async () => {
+    if (!uploadedFile) {
+      toast.error('请先上传 PDF 文件');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus({ stage: 'convert', progress: 30, message: '正在转换为图片...' });
+
+    const formData = new FormData();
+    formData.append('file', uploadedFile);
+    formData.append('format', 'jpg');
+    formData.append('dpi', '150');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pdf/toolkit/pdf-to-images`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`转换失败: ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pdf_images.zip';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setProcessingStatus({ stage: 'complete', progress: 100, message: '转换完成' });
+      toast.success('PDF 转图片成功！');
+    } catch (error) {
+      console.error('转换失败:', error);
+      toast.error('PDF 转图片失败');
+      setProcessingStatus({ stage: 'error', progress: 0, message: '转换失败' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 图片转 PDF
+  const handleImagesToPDF = async () => {
+    if (uploadedFiles.length < 1) {
+      toast.error('请至少上传1张图片');
+      return;
+    }
+
+    setIsProcessing(true);
+    setProcessingStatus({ stage: 'convert', progress: 30, message: '正在合并为 PDF...' });
+
+    const formData = new FormData();
+    uploadedFiles.forEach(file => {
+      formData.append('files', file);
+    });
+
+    try {
+      const response = await fetch(`${API_BASE}/api/pdf/toolkit/images-to-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`合并失败: ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'images.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      setProcessingStatus({ stage: 'complete', progress: 100, message: '合并完成' });
+      toast.success('图片转 PDF 成功！');
+    } catch (error) {
+      console.error('合并失败:', error);
+      toast.error('图片转 PDF 失败');
+      setProcessingStatus({ stage: 'error', progress: 0, message: '合并失败' });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleGoToFormatConverter = () => {
     navigate('/format-converter');
   };
@@ -573,10 +435,31 @@ const PDFAnalysisEnhanced: React.FC = () => {
       color: 'from-purple-500 to-pink-500',
     },
     {
+      id: 'merge' as const,
+      name: 'PDF合并',
+      icon: <Combine size={20} />,
+      description: '合并多个 PDF 文件',
+      color: 'from-green-500 to-emerald-500',
+    },
+    {
+      id: 'split' as const,
+      name: 'PDF拆分',
+      icon: <Scissors size={20} />,
+      description: '拆分 PDF 页面',
+      color: 'from-orange-500 to-red-500',
+    },
+    {
+      id: 'fromImages' as const,
+      name: '图片转PDF',
+      icon: <FileImage size={20} />,
+      description: '将图片合并为 PDF',
+      color: 'from-teal-500 to-cyan-500',
+    },
+    {
       id: 'convert' as const,
       name: '格式转换',
       icon: <RefreshCw size={20} />,
-      description: '转换为 Word/Excel/PDF',
+      description: '转换为 Word/Excel',
       color: 'from-indigo-500 to-blue-600',
     },
   ];
@@ -604,24 +487,28 @@ const PDFAnalysisEnhanced: React.FC = () => {
         </motion.div>
 
         {/* Feature Tabs */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-7 gap-3 mb-8">
           {features.map((feature) => (
             <motion.button
               key={feature.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setActiveFeature(feature.id)}
-              className={`p-4 rounded-xl border-2 transition-all ${
+              onClick={() => {
+                setActiveFeature(feature.id);
+                setUploadedFile(null);
+                setUploadedFiles([]);
+              }}
+              className={`p-3 rounded-xl border-2 transition-all ${
                 activeFeature === feature.id
                   ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                   : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
               }`}
             >
-              <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${feature.color} flex items-center justify-center mb-3`}>
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${feature.color} flex items-center justify-center mb-2 mx-auto`}>
                 {feature.icon}
               </div>
-              <h3 className="font-semibold mb-1">{feature.name}</h3>
-              <p className="text-xs text-gray-600 dark:text-gray-400">{feature.description}</p>
+              <h3 className="font-semibold text-xs mb-1">{feature.name}</h3>
+              <p className="text-xs text-gray-600 dark:text-gray-400 leading-tight">{feature.description}</p>
             </motion.button>
           ))}
         </div>
@@ -638,32 +525,55 @@ const PDFAnalysisEnhanced: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 <Upload className="w-5 h-5 mr-2 text-red-500" />
-                文档上传
+                {activeFeature === 'fromImages' ? '上传图片' : '上传 PDF'}
               </h3>
 
-              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-red-400 dark:hover:border-red-500 transition-colors">
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-red-400 dark:hover:border-red-500 transition-colors">
                 <input
                   type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
+                  accept={activeFeature === 'fromImages' ? ".jpg,.jpeg,.png,.bmp,.tiff" : ".pdf"}
+                  onChange={activeFeature === 'fromImages' ? handleImageUpload : handleFileUpload}
                   className="hidden"
-                  id="pdf-upload"
+                  id="file-upload"
+                  multiple={activeFeature === 'merge' || activeFeature === 'fromImages'}
                 />
-                <label htmlFor="pdf-upload" className="cursor-pointer">
-                  {uploadedFile ? (
+                <label htmlFor="file-upload" className="cursor-pointer">
+                  {uploadedFile || uploadedFiles.length > 0 ? (
                     <div className="flex flex-col items-center">
-                      <CheckCircle className="w-12 h-12 text-green-500 mb-2" />
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">{uploadedFile.name}</p>
+                      <CheckCircle className="w-10 h-10 text-green-500 mb-2" />
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                        {uploadedFile ? uploadedFile.name : `已选择 ${uploadedFiles.length} 个文件`}
+                      </p>
                       <p className="text-xs text-gray-500 mt-1">点击更换文件</p>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center">
-                      <FileText className="w-12 h-12 text-gray-400 mb-2" />
-                      <p className="text-sm text-gray-600 dark:text-gray-400">点击选择 PDF 文件</p>
+                      {activeFeature === 'fromImages' ? <Image className="w-10 h-10 text-gray-400 mb-2" /> : <FileText className="w-10 h-10 text-gray-400 mb-2" />}
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {activeFeature === 'fromImages' ? '点击选择图片' : '点击选择 PDF 文件'}
+                      </p>
                     </div>
                   )}
                 </label>
               </div>
+
+              {/* File List for Merge/ImagesToPDF */}
+              {(activeFeature === 'merge' || activeFeature === 'fromImages') && uploadedFiles.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm font-medium">已选择的文件：</p>
+                  {uploadedFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded text-sm">
+                      <span className="truncate flex-1">{file.name}</span>
+                      <button
+                        onClick={() => removeFile(index)}
+                        className="ml-2 text-red-500 hover:text-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Action Buttons */}
               <div className="space-y-3 mt-6">
@@ -684,6 +594,36 @@ const PDFAnalysisEnhanced: React.FC = () => {
                     className="w-full bg-gradient-to-r from-purple-500 to-pink-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
                   >
                     {isProcessing ? '生成中...' : '生成知识卡片'}
+                  </button>
+                )}
+
+                {activeFeature === 'merge' && (
+                  <button
+                    onClick={handleMergePDF}
+                    disabled={uploadedFiles.length < 2 || isProcessing}
+                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    {isProcessing ? '合并中...' : `合并 ${uploadedFiles.length} 个 PDF`}
+                  </button>
+                )}
+
+                {activeFeature === 'split' && (
+                  <button
+                    onClick={handleSplitPDF}
+                    disabled={!uploadedFile || isProcessing}
+                    className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    {isProcessing ? '拆分中...' : '拆分 PDF'}
+                  </button>
+                )}
+
+                {activeFeature === 'fromImages' && (
+                  <button
+                    onClick={handleImagesToPDF}
+                    disabled={uploadedFiles.length < 1 || isProcessing}
+                    className="w-full bg-gradient-to-r from-teal-500 to-cyan-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  >
+                    {isProcessing ? '合并中...' : `合并 ${uploadedFiles.length} 张图片`}
                   </button>
                 )}
 
@@ -717,119 +657,6 @@ const PDFAnalysisEnhanced: React.FC = () => {
                     />
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Format Conversion Panel */}
-            {activeFeature === 'convert' && uploadedFile && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold mb-4 flex items-center">
-                  <RefreshCw className="w-5 h-5 mr-2 text-indigo-500" />
-                  格式转换
-                </h3>
-
-                {/* Format Selection */}
-                <div className="space-y-3 mb-6">
-                  {(Object.keys(formatConfig) as Array<'word' | 'excel' | 'pdf'>).map((format) => {
-                    const config = formatConfig[format];
-                    return (
-                      <button
-                        key={format}
-                        onClick={() => setSelectedFormat(format)}
-                        className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                          selectedFormat === format
-                            ? `${config.borderColor} ${config.bgColor} border-2`
-                            : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg ${config.color} flex items-center justify-center text-white`}>
-                            {config.icon}
-                          </div>
-                          <div>
-                            <div className="font-medium">{config.name}</div>
-                            <div className="text-xs text-gray-500">{config.description}</div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Convert Button */}
-                <button
-                  onClick={handleStartConversion}
-                  disabled={isConverting}
-                  className="w-full bg-gradient-to-r from-indigo-500 to-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {isConverting ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader className="w-5 h-5 animate-spin" />
-                      转换中...
-                    </span>
-                  ) : (
-                    `转换为 ${formatConfig[selectedFormat].name}`
-                  )}
-                </button>
-
-                {/* Conversion Status */}
-                {conversionTask && (
-                  <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium">{conversionTask.fileName}</span>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        conversionTask.status === 'completed' ? 'bg-green-100 text-green-600' :
-                        conversionTask.status === 'error' ? 'bg-red-100 text-red-600' :
-                        conversionTask.status === 'processing' ? 'bg-blue-100 text-blue-600' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {conversionTask.status === 'completed' ? '已完成' :
-                         conversionTask.status === 'error' ? '失败' :
-                         conversionTask.status === 'processing' ? '转换中' : '等待中'}
-                      </span>
-                    </div>
-                    
-                    {conversionTask.status === 'processing' && (
-                      <div>
-                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <motion.div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-blue-500"
-                            initial={{ width: 0 }}
-                            animate={{ width: `${conversionTask.progress}%` }}
-                            transition={{ duration: 0.3 }}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">{conversionTask.progress}%</p>
-                      </div>
-                    )}
-
-                    {conversionTask.errorMessage && (
-                      <p className="text-sm text-red-500 flex items-center gap-1 mt-2">
-                        <AlertCircle className="w-4 h-4" />
-                        {conversionTask.errorMessage}
-                      </p>
-                    )}
-
-                    {conversionTask.status === 'completed' && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={previewConvertedFile}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                          预览
-                        </button>
-                        <button
-                          onClick={downloadConvertedFile}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition-colors"
-                        >
-                          <Download className="w-4 h-4" />
-                          下载
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </motion.div>
@@ -936,39 +763,40 @@ const PDFAnalysisEnhanced: React.FC = () => {
               </div>
             )}
 
-            {/* Convert Feature Info */}
-            {activeFeature === 'convert' && !uploadedFile && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 border border-gray-200 dark:border-gray-700 text-center">
-                <RefreshCw className="w-16 h-16 mx-auto text-indigo-500 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">格式转换</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  将 PDF 文件转换为 Word、Excel 或 PDF 格式
-                </p>
-                <ul className="text-left max-w-md mx-auto space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    <span>Word 文档 - 完美支持中文，可编辑</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    <span>Excel 表格 - 适合数据分析</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                    <span>PDF 预览 - 可打印保存</span>
-                  </li>
-                </ul>
-              </div>
-            )}
-
             {/* Empty State */}
-            {!isProcessing && !analysisResult && generatedCards.length === 0 && activeFeature !== 'convert' && (
+            {!isProcessing && !analysisResult && generatedCards.length === 0 && (
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 border border-gray-200 dark:border-gray-700 text-center">
-                <FileText className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">开始分析</h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  上传 PDF 文件并选择功能开始分析
-                </p>
+                {activeFeature === 'merge' ? (
+                  <>
+                    <Combine className="w-16 h-16 mx-auto text-green-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">PDF 合并</h3>
+                    <p className="text-gray-600 dark:text-gray-400">选择多个 PDF 文件进行合并</p>
+                  </>
+                ) : activeFeature === 'split' ? (
+                  <>
+                    <Scissors className="w-16 h-16 mx-auto text-orange-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">PDF 拆分</h3>
+                    <p className="text-gray-600 dark:text-gray-400">将 PDF 拆分为多个单页文件</p>
+                  </>
+                ) : activeFeature === 'fromImages' ? (
+                  <>
+                    <FileImage className="w-16 h-16 mx-auto text-teal-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">图片转 PDF</h3>
+                    <p className="text-gray-600 dark:text-gray-400">将多张图片合并为一个 PDF</p>
+                  </>
+                ) : activeFeature === 'convert' ? (
+                  <>
+                    <RefreshCw className="w-16 h-16 mx-auto text-indigo-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">格式转换</h3>
+                    <p className="text-gray-600 dark:text-gray-400">转换为 Word、Excel 等格式</p>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-500 mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">开始分析</h3>
+                    <p className="text-gray-600 dark:text-gray-400">上传 PDF 文件并选择功能开始分析</p>
+                  </>
+                )}
               </div>
             )}
           </motion.div>

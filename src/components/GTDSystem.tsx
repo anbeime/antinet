@@ -14,7 +14,8 @@ import {
   Check,
   Trash2,
   Edit,
-  ArrowRight
+  ArrowRight,
+  Share2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
@@ -125,19 +126,6 @@ const GTDSystem: React.FC = () => {
 
     loadGTDData();
   }, []);
-
-  // 格式化日期
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '无截止日期';
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
-  };
 
   // 获取优先级样式
   const getPriorityStyle = (priority: string) => {
@@ -464,162 +452,264 @@ const GTDSystem: React.FC = () => {
           </motion.button>
         </div>
 
-        {/* 搜索框 */}
-        <div className="relative mb-6">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-          <input
-            type="text"
-            placeholder="搜索任务..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-          />
-          {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-            >
-              <X size={16} />
-            </button>
-          )}
+        {/* 搜索框和筛选 */}
+        <div className="flex flex-wrap gap-4 mb-6">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              placeholder="搜索任务..."
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+          
+          <select
+            value={priorityFilter}
+            onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+          >
+            <option value="all">全部优先级</option>
+            <option value="high">高优先级</option>
+            <option value="medium">中优先级</option>
+            <option value="low">低优先级</option>
+          </select>
+          
+          <select
+            value={timeFilter}
+            onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+          >
+            <option value="all">全部时间</option>
+            <option value="today">今天</option>
+            <option value="week">本周</option>
+            <option value="month">本月</option>
+          </select>
         </div>
 
+        {/* 批量操作工具栏 */}
+        {selectedTaskIds.size > 0 && (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+            <span className="text-sm text-blue-600 dark:text-blue-400">已选 {selectedTaskIds.size} 项</span>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setSelectedTaskIds(new Set())}
+                className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
+              >
+                取消选择
+              </button>
+              <button
+                onClick={async () => {
+                  if (confirm(`确定删除 ${selectedTaskIds.size} 个任务？`)) {
+                    for (const taskId of selectedTaskIds) {
+                      await gtdTaskService.delete(taskId);
+                    }
+                    setSelectedTaskIds(new Set());
+                    const allTasks = await gtdTaskService.getAll();
+                    const organizedTasks: Record<Category, GtdTaskType[]> = {
+                      inbox: allTasks.filter(task => task.category === 'inbox'),
+                      today: allTasks.filter(task => task.category === 'today'),
+                      later: allTasks.filter(task => task.category === 'later'),
+                      archive: allTasks.filter(task => task.category === 'archive'),
+                      projects: allTasks.filter(task => task.category === 'projects')
+                    };
+                    setTasks(organizedTasks);
+                    toast('批量删除成功！', { className: 'bg-green-50 text-green-800' });
+                  }
+                }}
+                className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
+              >
+                批量删除
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 任务列表 */}
-        <div className="space-y-3">
-          {filteredTasks.map(task => (
-            <div
-              key={task.id}
-              className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden hover:shadow-md transition-shadow bg-white dark:bg-gray-800"
-            >
-              <div className="p-4">
-                <div className="flex items-start gap-3">
-                  {/* 复选框 */}
-                  <input
-                    type="checkbox"
-                    checked={selectedTaskIds.has(task.id!)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedTaskIds);
-                      if (e.target.checked) {
-                        newSet.add(task.id!);
-                      } else {
-                        newSet.delete(task.id!);
-                      }
-                      setSelectedTaskIds(newSet);
-                    }}
-                    className="mt-1 w-4 h-4 rounded border-gray-300 flex-shrink-0"
-                  />
-                  
-                  {/* 内容区 */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-medium text-gray-900 dark:text-white truncate">{task.title}</h3>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div className="flex items-center space-x-3">
+              <input
+                type="checkbox"
+                checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedTaskIds(new Set(filteredTasks.map(t => t.id!)));
+                  } else {
+                    setSelectedTaskIds(new Set());
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-300"
+              />
+              <h2 className="text-lg font-semibold">任务列表</h2>
+              <span className="text-sm text-gray-500">共 {filteredTasks.length} 个</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">每页:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm"
+              >
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            {paginatedTasks.map(task => (
+              <div
+                key={task.id}
+                className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start space-x-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedTaskIds.has(task.id!)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedTaskIds);
+                        if (e.target.checked) {
+                          newSet.add(task.id!);
+                        } else {
+                          newSet.delete(task.id!);
+                        }
+                        setSelectedTaskIds(newSet);
+                      }}
+                      className="mt-1 w-4 h-4 rounded border-gray-300"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2">
+                        <h3 
+                          className="font-medium text-gray-900 dark:text-white cursor-pointer hover:underline"
+                          onClick={() => handleEditTask(task)}
+                        >{task.title}</h3>
                         <span className={`w-2 h-2 rounded-full ${getPriorityStyle(task.priority)}`}></span>
-                        
-                        {/* 快速归档按钮 */}
-                        {task.category !== 'archive' && (
-                          <button 
-                            onClick={() => handleArchiveTask(task.id!)}
-                            className="text-green-500 hover:text-green-700 p-1 hover:bg-green-50 dark:hover:bg-green-900/20 rounded"
-                            title="完成并归档"
-                          >
-                            <Check size={16} />
-                          </button>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          task.priority === 'high' ? 'bg-red-100 text-red-800' :
+                          task.priority === 'medium' ? 'bg-amber-100 text-amber-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{task.description || '无描述'}</p>
+                      <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
+                        <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
+                        {task.due_date && (
+                          <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Calendar size={10} />
+                            截止: {new Date(task.due_date).toLocaleDateString('zh-CN')}
+                          </span>
                         )}
-                        
-                        {/* 操作菜单按钮 */}
-                        <div className="relative">
-                          <button 
-                            onClick={() => setShowActionMenu(showActionMenu === task.id ? null : task.id!)}
-                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                          >
-                            <MoreHorizontal size={18} />
-                          </button>
-                          
-                          {/* 操作菜单 */}
-                          {showActionMenu === task.id && (
-                            <div className="absolute right-0 top-8 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-10 py-1">
-                              <button 
-                                onClick={() => handleEditTask(task)}
-                                className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                              >
-                                <Edit size={14} />
-                                <span>编辑</span>
-                              </button>
-                              
-                              {task.category !== 'inbox' && (
-                                <button 
-                                  onClick={() => { handleMoveTask(task.id!, 'inbox'); setShowActionMenu(null); }}
-                                  className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                                >
-                                  <ArrowRight size={14} />
-                                  <span>移到收集箱</span>
-                                </button>
-                              )}
-                              
-                              {task.category !== 'today' && (
-                                <button 
-                                  onClick={() => { handleMoveTask(task.id!, 'today'); setShowActionMenu(null); }}
-                                  className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                                >
-                                  <ArrowRight size={14} />
-                                  <span>移到等待处理</span>
-                                </button>
-                              )}
-                              
-                              {task.category !== 'later' && (
-                                <button 
-                                  onClick={() => { handleMoveTask(task.id!, 'later'); setShowActionMenu(null); }}
-                                  className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                                >
-                                  <ArrowRight size={14} />
-                                  <span>移到将来可能</span>
-                                </button>
-                              )}
-                              
-                              {task.category !== 'archive' && (
-                                <button 
-                                  onClick={() => { handleMoveTask(task.id!, 'archive'); setShowActionMenu(null); }}
-                                  className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                                >
-                                  <Archive size={14} />
-                                  <span>归档</span>
-                                </button>
-                              )}
-                              
-                              <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-                              
-                              <button 
-                                onClick={() => handleDeleteTask(task.id!)}
-                                className="w-full px-4 py-2 text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 flex items-center gap-2 text-sm"
-                              >
-                                <Trash2 size={14} />
-                                <span>删除</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </div>
-                    
-                    {/* 描述 - 限制高度 */}
-                    <p className="text-gray-600 dark:text-gray-300 text-sm mt-2 line-clamp-2">{task.description || '无描述'}</p>
-                    
-                    {/* 底部信息 */}
-                    <div className="flex items-center justify-between mt-3 text-xs text-gray-500 dark:text-gray-400">
-                      <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
-                      {task.due_date && (
-                        <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Calendar size={10} />
-                          截止: {new Date(task.due_date).toLocaleDateString('zh-CN')}
-                        </span>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    {task.category !== 'archive' && (
+                      <button 
+                        onClick={() => handleArchiveTask(task.id!)}
+                        className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        title="完成并归档"
+                      >
+                        <Check size={18} />
+                      </button>
+                    )}
+                    <div className="relative">
+                      <button 
+                        onClick={() => setShowActionMenu(showActionMenu === task.id ? null : task.id!)}
+                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <MoreHorizontal size={18} />
+                      </button>
+                      
+                      {showActionMenu === task.id && (
+                        <div className="absolute right-0 top-10 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
+                          <button 
+                            onClick={() => { handleEditTask(task); setShowActionMenu(null); }}
+                            className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                          >
+                            <Edit size={14} />
+                            <span>编辑</span>
+                          </button>
+                          {task.category !== 'inbox' && (
+                            <button 
+                              onClick={() => { handleMoveTask(task.id!, 'inbox'); setShowActionMenu(null); }}
+                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            >
+                              <ArrowRight size={14} />
+                              <span>移到收集箱</span>
+                            </button>
+                          )}
+                          {task.category !== 'today' && (
+                            <button 
+                              onClick={() => { handleMoveTask(task.id!, 'today'); setShowActionMenu(null); }}
+                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            >
+                              <ArrowRight size={14} />
+                              <span>移到等待处理</span>
+                            </button>
+                          )}
+                          {task.category !== 'later' && (
+                            <button 
+                              onClick={() => { handleMoveTask(task.id!, 'later'); setShowActionMenu(null); }}
+                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            >
+                              <ArrowRight size={14} />
+                              <span>移到将来可能</span>
+                            </button>
+                          )}
+                          {task.category !== 'archive' && (
+                            <button 
+                              onClick={() => { handleMoveTask(task.id!, 'archive'); setShowActionMenu(null); }}
+                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                            >
+                              <Archive size={14} />
+                              <span>归档</span>
+                            </button>
+                          )}
+                          <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                          <button 
+                            onClick={() => handleDeleteTask(task.id!)}
+                            className="w-full px-4 py-2 text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 flex items-center gap-2 text-sm"
+                          >
+                            <Trash2 size={14} />
+                            <span>删除</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+          
+          {/* 分页 */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-center items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50"
+              >
+                上一页
+              </button>
+              <span className="text-sm text-gray-500">
+                第 {currentPage} / {totalPages} 页
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm disabled:opacity-50"
+              >
+                下一页
+              </button>
             </div>
-          ))}
+          )}
         </div>
 
         {/* 空状态 */}
@@ -659,14 +749,14 @@ const GTDSystem: React.FC = () => {
       {/* 创建任务模态框 */}
       {showCreateModal && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 overflow-y-auto"
           onClick={() => setShowCreateModal(false)}
         >
           <div 
-            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden"
+            className="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-2xl overflow-hidden my-8"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
               <h2 className="text-xl font-bold">新建任务</h2>
               <button 
                 onClick={() => setShowCreateModal(false)}
@@ -677,7 +767,7 @@ const GTDSystem: React.FC = () => {
               </button>
             </div>
             
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               <div>
                 <label htmlFor="title" className="block text-sm font-medium mb-2">任务标题 *</label>
                 <input
@@ -687,7 +777,7 @@ const GTDSystem: React.FC = () => {
                   onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
                   placeholder="输入任务标题"
                   autoFocus
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                 />
               </div>
               
@@ -698,8 +788,8 @@ const GTDSystem: React.FC = () => {
                   value={newTask.description}
                   onChange={(e) => handleDescriptionChange(e.target.value)}
                   placeholder="输入任务描述..."
-                  rows={4}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                  rows={6}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                 />
               </div>
               
@@ -709,7 +799,7 @@ const GTDSystem: React.FC = () => {
                   <button 
                     type="button"
                     onClick={() => setNewTask(prev => ({ ...prev, priority: 'low' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
+                    className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
                       newTask.priority === 'low' 
                         ? 'bg-green-500 text-white' 
                         : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
@@ -721,7 +811,7 @@ const GTDSystem: React.FC = () => {
                   <button 
                     type="button"
                     onClick={() => setNewTask(prev => ({ ...prev, priority: 'medium' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
+                    className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
                       newTask.priority === 'medium' 
                         ? 'bg-amber-500 text-white' 
                         : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
@@ -733,7 +823,7 @@ const GTDSystem: React.FC = () => {
                   <button 
                     type="button"
                     onClick={() => setNewTask(prev => ({ ...prev, priority: 'high' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
+                    className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
                       newTask.priority === 'high' 
                         ? 'bg-red-500 text-white' 
                         : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
@@ -744,24 +834,24 @@ const GTDSystem: React.FC = () => {
                   </button>
                 </div>
               </div>
-              
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex justify-end space-x-3">
-                  <button 
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="px-6 py-2 border rounded-lg hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={handleCreateTask}
-                    className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                  >
-                    创建任务
-                  </button>
-                </div>
+            </div>
+            
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-white dark:bg-gray-800">
+              <div className="flex justify-end space-x-3">
+                <button 
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-6 py-2 border rounded-lg hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700 transition-colors"
+                >
+                  取消
+                </button>
+                <button 
+                  type="button"
+                  onClick={handleCreateTask}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  创建任务
+                </button>
               </div>
             </div>
           </div>
@@ -771,90 +861,161 @@ const GTDSystem: React.FC = () => {
       {/* 编辑任务模态框 */}
       {showEditModal && editingTask && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
           onClick={() => setShowEditModal(false)}
         >
-          <div 
-            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden"
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="w-full max-w-3xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-2xl overflow-hidden flex flex-col my-4"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold">编辑任务</h2>
-              <button 
-                onClick={() => setShowEditModal(false)}
-                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-              >
-                <X size={20} />
-              </button>
+            {/* 头部 */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${
+                  editingTask.priority === 'high' ? 'bg-red-500' :
+                  editingTask.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
+                }`}></div>
+                <h2 className="text-xl font-bold">{editingTask.title}</h2>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button 
+                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                  aria-label="分享"
+                  onClick={() => {
+                    const shareText = `任务: ${editingTask.title}\n描述: ${editingTask.description || '无'}\n优先级: ${editingTask.priority === 'high' ? '高' : editingTask.priority === 'medium' ? '中' : '低'}`;
+                    navigator.clipboard?.writeText(shareText);
+                    toast('任务信息已复制到剪贴板', { className: 'bg-green-50 text-green-800' });
+                  }}
+                >
+                  <Share2 size={18} />
+                </button>
+                <button 
+                  className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                  aria-label="删除"
+                  onClick={() => {
+                    if (confirm('确定删除此任务？')) {
+                      handleDeleteTask(editingTask.id!);
+                      setShowEditModal(false);
+                    }
+                  }}
+                >
+                  <Trash2 size={18} />
+                </button>
+                <button 
+                  onClick={() => setShowEditModal(false)}
+                  className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  aria-label="关闭"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
             
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">任务标题 *</label>
-                <input
-                  type="text"
-                  value={newTask.title}
-                  onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
-                  placeholder="输入任务标题"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none border-gray-300 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">任务描述</label>
-                <textarea
-                  value={newTask.description}
-                  onChange={(e) => handleDescriptionChange(e.target.value)}
-                  placeholder="输入任务描述..."
-                  rows={4}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none resize-none border-gray-300 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium mb-2">优先级</label>
-                <div className="flex space-x-2">
-                  <button 
-                    type="button"
-                    onClick={() => setNewTask(prev => ({ ...prev, priority: 'low' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
-                      newTask.priority === 'low' 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    <Flag size={16} className="mr-1" />
-                    <span>低</span>
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setNewTask(prev => ({ ...prev, priority: 'medium' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
-                      newTask.priority === 'medium' 
-                        ? 'bg-amber-500 text-white' 
-                        : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    <Flag size={16} className="mr-1" />
-                    <span>中</span>
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setNewTask(prev => ({ ...prev, priority: 'high' }))}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center ${
-                      newTask.priority === 'high' 
-                        ? 'bg-red-500 text-white' 
-                        : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    <Flag size={16} className="mr-1" />
-                    <span>高</span>
-                  </button>
+            {/* 内容区 */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {/* 任务基本信息 */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mb-6">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
+                  <div className="flex items-center">
+                    <span className={`text-xs px-2 py-1 rounded-full text-white ${
+                      editingTask.priority === 'high' ? 'bg-red-500' :
+                      editingTask.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
+                    }`}>
+                      {editingTask.priority === 'high' ? '高优先级' : editingTask.priority === 'medium' ? '中优先级' : '低优先级'}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400 text-sm ml-3 flex items-center">
+                      <Calendar size={14} className="mr-1" />
+                      创建于 {editingTask.created_at ? new Date(editingTask.created_at).toLocaleDateString('zh-CN') : '-'}
+                    </span>
+                  </div>
+                  <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
+                    {editingTask.category === 'inbox' ? '收集箱' : 
+                     editingTask.category === 'today' ? '等待处理' :
+                     editingTask.category === 'later' ? '将来可能' :
+                     editingTask.category === 'archive' ? '归档' : '专题研究'}
+                  </span>
                 </div>
               </div>
               
-              <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex justify-end space-x-3">
+              {/* 编辑表单 */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">任务标题 *</label>
+                  <input
+                    type="text"
+                    value={newTask.title}
+                    onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="输入任务标题"
+                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none border-gray-300 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">任务描述</label>
+                  <textarea
+                    value={newTask.description}
+                    onChange={(e) => handleDescriptionChange(e.target.value)}
+                    placeholder="输入任务描述..."
+                    rows={8}
+                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none resize-none border-gray-300 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">优先级</label>
+                  <div className="flex space-x-2">
+                    <button 
+                      type="button"
+                      onClick={() => setNewTask(prev => ({ ...prev, priority: 'low' }))}
+                      className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
+                        newTask.priority === 'low' 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      <Flag size={16} className="mr-1" />
+                      <span>低</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setNewTask(prev => ({ ...prev, priority: 'medium' }))}
+                      className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
+                        newTask.priority === 'medium' 
+                          ? 'bg-amber-500 text-white' 
+                          : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      <Flag size={16} className="mr-1" />
+                      <span>中</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setNewTask(prev => ({ ...prev, priority: 'high' }))}
+                      className={`flex-1 py-3 rounded-lg transition-colors flex items-center justify-center ${
+                        newTask.priority === 'high' 
+                          ? 'bg-red-500 text-white' 
+                          : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      <Flag size={16} className="mr-1" />
+                      <span>高</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* 底部按钮 */}
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 bg-white dark:bg-gray-800">
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-gray-500">
+                  ID: {editingTask.id} | {editingTask.category}
+                </div>
+                <div className="flex space-x-3">
                   <button 
                     type="button"
                     onClick={() => setShowEditModal(false)}
@@ -867,12 +1028,12 @@ const GTDSystem: React.FC = () => {
                     onClick={handleSaveEdit}
                     className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                   >
-                    保存
+                    保存修改
                   </button>
                 </div>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
     </div>

@@ -438,8 +438,8 @@ class NPUModelLoader:
             join_time = (time.time() - join_start) * 1000
             logger.debug(f"结果拼接: {join_time:.2f}ms")
 
-            # 🔑 关键优化2: 推理后立即释放BURST模式
-            if burst_enabled:
+            # 🔑 关键优化2: 推理后释放BURST模式（仅在使用PerfProfile时）
+            if burst_enabled and PerfProfile is not None:
                 try:
                     PerfProfile.RelPerfProfileGlobal()
                     logger.info("[PERF] ✅ BURST模式已释放")
@@ -466,26 +466,31 @@ class NPUModelLoader:
             logger.info(f"[PERF] BURST模式: {'✅ 已启用' if burst_enabled else '❌ 未启用'}")
             logger.info(f"[PERF] =====================================")
 
-            # 🔑 关键优化3: 性能检查与警告（高通赛道要求：推理延迟 < 500ms）
-            if inference_time > 500:
+            # 🔑 关键优化3: 性能检查（高通赛道要求：每Token延迟 < 200ms）
+            avg_token_time = inference_time / token_count if token_count > 0 else 0
+            throughput = token_count / inference_time * 1000 if token_count > 0 else 0
+            
+            if avg_token_time > 200:
                 warning_msg = (
-                    f"[PERF] ⚠️ 推理延迟 {inference_time:.2f}ms > 500ms（高通赛道要求）\n"
+                    f"[PERF] ⚠️ 每Token延迟 {avg_token_time:.2f}ms > 200ms（性能不佳）\n"
                     f"可能原因：\n"
-                    f"  1. NPU初始化慢（首次推理）→ 后续应该变快\n"
+                    f"  1. NPU驱动未正确加载\n"
                     f"  2. Backend配置不是QnnHtp\n"
-                    f"  3. NPU驱动未正确加载\n"
-                    f"  4. 推理提示词过长或生成token数过多\n"
-                    f"  5. 模型需要重新预热\n"
+                    f"  3. BURST模式未生效\n"
                     f"\n"
                     f"建议检查：\n"
-                    f"  - 这是第几次推理？（首次推理通常慢）\n"
                     f"  - config.json中的backend.type是否为'QnnHtp'\n"
-                    f"  - 尝试减少max_new_tokens或缩短提示词\n"
-                    f"  - 如果持续>500ms，考虑升级到QNN 2.42"
+                    f"  - htp_backend_ext_config.json中perf_profile是否为'burst'\n"
+                    f"  - NPU驱动是否正确安装"
+                )
+                logger.warning(warning_msg)
+            elif throughput < 5:
+                warning_msg = (
+                    f"[PERF] ⚠️ 吞吐量 {throughput:.1f} tokens/sec < 5（性能不佳）"
                 )
                 logger.warning(warning_msg)
             else:
-                logger.info(f"[PERF] ✅ 性能检查通过: {inference_time:.2f}ms < 500ms ✓")
+                logger.info(f"[PERF] ✅ 性能正常: {throughput:.1f} tokens/sec, 每Token {avg_token_time:.1f}ms")
 
             return result
 

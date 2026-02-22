@@ -370,34 +370,86 @@ async def chat_with_db(request: ChatRequest):
 QWEN_VL_SERVICE_URL = "http://127.0.0.1:8910"
 
 
+@app.post("/api/vision/analyze")
+async def vision_analyze_proxy(file: UploadFile = File(...)):
+    """代理视觉分析请求到 Qwen VL 服务"""
+    try:
+        logger.info(f"收到视觉分析请求: {file.filename}")
+        
+        if not file.content_type or not file.content_type.startswith("image/"):
+            return {"success": False, "error": "请上传图片文件"}
+        
+        # 保存上传的文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_path = UPLOAD_DIR / f"{timestamp}_{file.filename}"
+        
+        content = await file.read()
+        
+        if len(content) > 10 * 1024 * 1024:
+            return {"success": False, "error": "图片大小不能超过 10MB"}
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        logger.info(f"图片已保存: {file_path}, 开始调用视觉服务...")
+        
+        # 调用视觉服务
+        vision_result = await call_vision_service(str(file_path))
+        
+        return vision_result
+        
+    except Exception as e:
+        logger.error(f"视觉分析失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
 async def call_vision_service(image_path: str, prompt: str = "描述这张图片的内容") -> Dict[str, Any]:
-    """调用视觉分析服务"""
+    """调用视觉分析服务 - 使用 Genie VL 格式"""
     try:
         # 读取图片并转为 base64
         with open(image_path, "rb") as f:
             image_base64 = base64.b64encode(f.read()).decode()
         
-        # 调用 Qwen VL 服务
+        # Genie VL 模型需要特殊的请求格式
+        # 参考: https://www.aidevhome.com/?id=55
+        vl_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                    {"type": "text", "text": prompt}
+                ]
+            }
+        ]
+        
+        request_data = {
+            "model": "qwen2.5vl3b-8380-2.42",
+            "messages": [{"role": "user", "content": "placeholder"}],  # 占位符
+            "extra_body": {
+                "messages": vl_messages,  # 真实数据放在extra_body中
+                "size": 4096,
+                "temp": 0.7,
+                "top_k": 1,
+                "top_p": 0.9
+            }
+        }
+        
+        logger.info(f"调用 Qwen VL 服务: {QWEN_VL_SERVICE_URL}")
+        
+        # 调用服务
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{QWEN_VL_SERVICE_URL}/v1/chat/completions",
-                json={
-                    "model": "qwen2.5-vl-3b",
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-                                {"type": "text", "text": prompt}
-                            ]
-                        }
-                    ]
-                }
+                json=request_data
             )
+            response.raise_for_status()
             
-            if response.status_code == 200:
-                result = response.json()
-                analysis_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            result = response.json()
+            logger.info(f"视觉服务响应: {result}")
+            
+            # 解析响应
+            if "choices" in result and len(result["choices"]) > 0:
+                analysis_text = result["choices"][0].get("message", {}).get("content", "")
                 
                 return {
                     "success": True,
@@ -408,7 +460,7 @@ async def call_vision_service(image_path: str, prompt: str = "描述这张图片
             else:
                 return {
                     "success": False,
-                    "error": f"视觉服务返回错误: {response.status_code}"
+                    "error": "视觉服务返回格式错误"
                 }
                 
     except Exception as e:

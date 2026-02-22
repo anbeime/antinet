@@ -498,3 +498,240 @@ async def export_cards_to_docx(request: CardsExportRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+# ==================== PDF 工具集路由 ====================
+
+try:
+    from tools.pdf_toolkit import PDFToolkit
+    PDF_TOOLKIT_AVAILABLE = True
+except ImportError:
+    PDF_TOOLKIT_AVAILABLE = False
+
+
+@router.post("/toolkit/merge")
+async def merge_pdfs(
+    files: List[UploadFile] = File(..., description="要合并的 PDF 文件列表")
+):
+    """
+    合并多个 PDF 文件
+    
+    Args:
+        files: PDF 文件列表（至少2个）
+        
+    Returns:
+        合并后的 PDF 文件
+    """
+    if not PDF_TOOLKIT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 工具集未安装")
+    
+    if len(files) < 2:
+        raise HTTPException(status_code=400, detail="至少需要2个 PDF 文件")
+    
+    # 保存上传的文件
+    input_files = []
+    for file in files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            shutil.copyfileobj(file.file, tmp_file)
+            input_files.append(tmp_file.name)
+    
+    # 创建输出文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        output_path = tmp_file.name
+    
+    try:
+        # 合并 PDF
+        result = PDFToolkit.merge_pdfs(input_files, output_path)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+        
+        return FileResponse(
+            output_path,
+            media_type="application/pdf",
+            filename="merged.pdf"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
+    
+    finally:
+        # 清理临时文件
+        for f in input_files:
+            try:
+                os.unlink(f)
+            except:
+                pass
+
+
+@router.post("/toolkit/split")
+async def split_pdf(
+    file: UploadFile = File(..., description="要拆分的 PDF 文件"),
+    page_range: Optional[str] = Form(None, description="页码范围（如 '1,3,5-7'），为空则拆分为单页")
+):
+    """
+    拆分 PDF 文件
+    
+    Args:
+        file: PDF 文件
+        page_range: 页码范围（如 "1,3,5-7"），为空则拆分为单页
+        
+    Returns:
+        拆分后的 PDF 文件（ZIP 压缩包）
+    """
+    if not PDF_TOOLKIT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 工具集未安装")
+    
+    # 保存上传的文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        input_path = tmp_file.name
+    
+    # 创建输出目录
+    output_dir = tempfile.mkdtemp()
+    
+    try:
+        # 拆分 PDF
+        result = PDFToolkit.split_pdf(input_path, output_dir, page_range)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+        
+        # 创建 ZIP 文件
+        zip_path = os.path.join(tempfile.gettempdir(), "split_pdfs.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for output_file in result["output_files"]:
+                zipf.write(output_file, os.path.basename(output_file))
+        
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename="split_pdfs.zip"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"拆分失败: {str(e)}")
+    
+    finally:
+        # 清理临时文件
+        try:
+            os.unlink(input_path)
+            shutil.rmtree(output_dir)
+        except:
+            pass
+
+
+@router.post("/toolkit/pdf-to-images")
+async def pdf_to_images(
+    file: UploadFile = File(..., description="PDF 文件"),
+    format: str = Form("jpg", description="输出格式（jpg/png）"),
+    dpi: int = Form(150, description="图片分辨率"),
+    pages: Optional[str] = Form(None, description="页码范围（如 '1-3'），为空则转换所有页")
+):
+    """
+    将 PDF 转换为图片
+    
+    Args:
+        file: PDF 文件
+        format: 输出格式（jpg/png）
+        dpi: 图片分辨率
+        pages: 页码范围（如 "1-3"），为空则转换所有页
+        
+    Returns:
+        图片文件（ZIP 压缩包）
+    """
+    if not PDF_TOOLKIT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 工具集未安装")
+    
+    # 保存上传的文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        input_path = tmp_file.name
+    
+    # 创建输出目录
+    output_dir = tempfile.mkdtemp()
+    
+    try:
+        # 转换 PDF 为图片
+        result = PDFToolkit.pdf_to_images(input_path, output_dir, format, dpi, pages)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+        
+        # 创建 ZIP 文件
+        zip_path = os.path.join(tempfile.gettempdir(), "pdf_images.zip")
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for output_file in result["output_files"]:
+                zipf.write(output_file, os.path.basename(output_file))
+        
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename="pdf_images.zip"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"转换失败: {str(e)}")
+    
+    finally:
+        # 清理临时文件
+        try:
+            os.unlink(input_path)
+            shutil.rmtree(output_dir)
+        except:
+            pass
+
+
+@router.post("/toolkit/images-to-pdf")
+async def images_to_pdf(
+    files: List[UploadFile] = File(..., description="图片文件列表（jpg/png/bmp/tiff）")
+):
+    """
+    将多张图片合并为 PDF
+    
+    Args:
+        files: 图片文件列表
+        
+    Returns:
+        合并后的 PDF 文件
+    """
+    if not PDF_TOOLKIT_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PDF 工具集未安装")
+    
+    if len(files) < 1:
+        raise HTTPException(status_code=400, detail="至少需要1个图片文件")
+    
+    # 保存上传的文件
+    input_files = []
+    for file in files:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp_file:
+            shutil.copyfileobj(file.file, tmp_file)
+            input_files.append(tmp_file.name)
+    
+    # 创建输出文件
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        output_path = tmp_file.name
+    
+    try:
+        # 合并图片为 PDF
+        result = PDFToolkit.images_to_pdf(input_files, output_path)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+        
+        return FileResponse(
+            output_path,
+            media_type="application/pdf",
+            filename="images.pdf"
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"合并失败: {str(e)}")
+    
+    finally:
+        # 清理临时文件
+        for f in input_files:
+            try:
+                os.unlink(f)
+            except:
+                pass

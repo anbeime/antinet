@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Bookmark, Edit2, Trash2, Clock, Lightbulb, Plus } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 // 定义卡片类型
@@ -95,13 +95,20 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   // 显示搜索建议
   const [showSuggestions, setShowSuggestions] = useState(false);
+  // 编辑模式
+  const [isEditing, setIsEditing] = useState(false);
+  // 编辑中的标题和内容
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
 
   // 当卡片数据变化时，更新编辑中的关联列表
   React.useEffect(() => {
     if (card) {
       setEditingRelatedCards([...card.relatedCards]);
+      setEditTitle(card.title);
+      setEditContent(card.content);
     }
-  }, [card?.relatedCards]);
+  }, [card?.relatedCards, card?.title, card?.content]);
 
   // 如果没有卡片数据或模态框未打开，则不渲染
   if (!isOpen || !card) return null;
@@ -120,6 +127,43 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
       });
     }
+  };
+
+  // 开始编辑
+  const startEditing = () => {
+    setEditTitle(card.title);
+    setEditContent(card.content);
+    setIsEditing(true);
+  };
+
+  // 取消编辑
+  const cancelEditing = () => {
+    setEditTitle(card.title);
+    setEditContent(card.content);
+    setIsEditing(false);
+  };
+
+  // 保存编辑
+  const saveEditing = () => {
+    if (!editTitle.trim()) {
+      toast('标题不能为空', { className: 'bg-red-50 text-red-800' });
+      return;
+    }
+    const updatedCard = {
+      ...card,
+      title: editTitle,
+      content: editContent
+    };
+    onUpdateCard(updatedCard);
+    setIsEditing(false);
+    toast('卡片已更新', { className: 'bg-green-50 text-green-800' });
+  };
+
+  // 分享卡片
+  const handleShare = () => {
+    const shareText = `【${cardTypeMap[card.color].name}】${card.title}\n\n${card.content}\n\nID: ${card.address}`;
+    navigator.clipboard?.writeText(shareText);
+    toast('卡片内容已复制到剪贴板', { className: 'bg-green-50 text-green-800' });
   };
 
   // 过滤可关联的卡片
@@ -196,40 +240,59 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className={`${cardTypeMap[card.color].color} w-3 h-3 rounded-full mr-2`}></div>
-            <h2 className="text-xl font-bold">{card.title}</h2>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none flex-1"
+                autoFocus
+              />
+            ) : (
+              <h2 className="text-xl font-bold">{card.title}</h2>
+            )}
           </div>
           <div className="flex items-center space-x-3">
-            <button 
-              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              aria-label="分享"
-            >
-              <Share2 size={18} />
-            </button>
-            <button 
-              className="p-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              aria-label="收藏"
-            >
-              <Bookmark size={18} />
-            </button>
-            <button 
-              className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
-              aria-label="编辑"
-              onClick={() => {
-                toast('编辑功能开发中，敬请期待！', {
-                  icon: <Edit2 size={16} />,
-                  className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
-                });
-              }}
-            >
-              <Edit2 size={18} />
-            </button>
-            <button 
-              className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-              aria-label="删除"
-              onClick={handleDelete}
-            >
-              <Trash2 size={18} />
-            </button>
+            {isEditing ? (
+              <>
+                <button 
+                  className="px-3 py-1.5 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm"
+                  onClick={cancelEditing}
+                >
+                  取消
+                </button>
+                <button 
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                  onClick={saveEditing}
+                >
+                  保存
+                </button>
+              </>
+            ) : (
+              <>
+                <button 
+                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                  aria-label="分享"
+                  onClick={handleShare}
+                >
+                  <Share2 size={18} />
+                </button>
+                <button 
+                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                  aria-label="编辑"
+                  onClick={startEditing}
+                >
+                  <Edit2 size={18} />
+                </button>
+                <button 
+                  className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                  aria-label="删除"
+                  onClick={handleDelete}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </>
+            )}
             <button 
               onClick={onClose}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
@@ -258,7 +321,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 {card.address}
               </div>
             </div>
-            <p className="text-lg leading-relaxed whitespace-pre-line">{card.content}</p>
+            {isEditing ? (
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                className="w-full min-h-[200px] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none"
+                placeholder="输入卡片内容..."
+              />
+            ) : (
+              <p className="text-lg leading-relaxed whitespace-pre-line">{card.content}</p>
+            )}
           </div>
           
           {/* 关联卡片 */}

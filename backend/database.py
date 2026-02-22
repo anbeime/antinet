@@ -808,3 +808,102 @@ class DatabaseManager:
                     skipped += 1
             
             return {'synced': synced, 'skipped': skipped, 'total': len(cards)}
+
+    # ========== 专题研究管理 ==========
+    def get_all_research_projects(self) -> List[Dict[str, Any]]:
+        """获取所有专题研究"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM research_projects
+                WHERE status = 'active'
+                ORDER BY created_at DESC
+            """)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_research_project(self, project_id: int) -> Optional[Dict[str, Any]]:
+        """获取单个专题研究详情"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def add_research_project(self, name: str, description: str = None, 
+                             color: str = 'blue', icon: str = '📚') -> Dict[str, Any]:
+        """添加专题研究"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute("""
+                INSERT INTO research_projects (name, description, color, icon, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (name, description, color, icon, now, now))
+            project_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+            return dict(cursor.fetchone())
+
+    def update_research_project(self, project_id: int, **kwargs) -> bool:
+        """更新专题研究"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            values = []
+            for key, value in kwargs.items():
+                updates.append(f"{key} = ?")
+                values.append(value)
+            values.append(datetime.now().isoformat())
+            values.append(project_id)
+            cursor.execute(f"UPDATE research_projects SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
+                          values)
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_research_project(self, project_id: int) -> bool:
+        """删除专题研究（软删除）"""
+        return self.update_research_project(project_id, status='deleted')
+
+    def get_project_tasks(self, project_id: int) -> List[Dict[str, Any]]:
+        """获取专题下的所有任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM gtd_tasks
+                WHERE source_type = 'project' AND source_id = ?
+                ORDER BY created_at DESC
+            """, (project_id,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def add_task_to_project(self, project_id: int, title: str, description: str = None,
+                           priority: str = 'medium', category: str = 'inbox') -> Dict[str, Any]:
+        """添加任务到专题"""
+        return self.add_gtd_task(
+            title=title,
+            description=description,
+            priority=priority,
+            category=category,
+            source_type='project',
+            source_id=project_id
+        )
+
+    def move_task_to_project(self, task_id: int, project_id: Optional[int]) -> bool:
+        """移动任务到专题（或从专题移出）"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if project_id:
+                cursor.execute("""
+                    UPDATE gtd_tasks 
+                    SET source_type = 'project', source_id = ?
+                    WHERE id = ?
+                """, (project_id, task_id))
+            else:
+                cursor.execute("""
+                    UPDATE gtd_tasks 
+                    SET source_type = NULL, source_id = NULL
+                    WHERE id = ?
+                """, (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0

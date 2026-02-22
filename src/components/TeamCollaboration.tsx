@@ -55,210 +55,356 @@ import {
   Radar
 } from 'recharts';
 
-// ========== 锦衣卫会议面板组件 ==========
-const JinyiweiMeetingPanel: React.FC = () => {
+// ========== 8-Agent会议面板组件(使用真实后端)==========
+const AgentMeetingPanel: React.FC = () => {
   const [topic, setTopic] = useState('');
+  const [context, setContext] = useState('');
   const [rounds, setRounds] = useState(3);
-  const [isMeetingActive, setIsMeetingActive] = useState(false);
-  const [meetingLog, setMeetingLog] = useState<string[]>([]);
-  const [currentRound, setCurrentRound] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [meetingResult, setMeetingResult] = useState<any>(null);
+  const [agents, setAgents] = useState<any[]>([]);
+  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
 
-  // 8个锦衣卫Agent定义
-  const agents = [
-    { id: 'zhihuishi', name: '指挥使', role: '会议主持', avatar: '👑', color: 'from-amber-500 to-orange-600' },
-    { id: 'tongzhi', name: '同知', role: '战略顾问', avatar: '🎯', color: 'from-blue-500 to-blue-600' },
-    { id: 'qianhu', name: '千户', role: '执行专家', avatar: '⚔️', color: 'from-red-500 to-red-600' },
-    { id: 'baihu', name: '百户', role: '技术专家', avatar: '🔧', color: 'from-cyan-500 to-cyan-600' },
-    { id: 'zongqi', name: '总旗', role: '情报分析', avatar: '📊', color: 'from-purple-500 to-purple-600' },
-    { id: 'xiaoqi', name: '小旗', role: '创新专员', avatar: '💡', color: 'from-orange-500 to-orange-600' },
-    { id: 'tixingguan', name: '提刑官', role: '风险评估', avatar: '⚖️', color: 'from-indigo-500 to-indigo-600' },
-    { id: 'zhangxingguan', name: '掌刑官', role: '实施监督', avatar: '📋', color: 'from-green-500 to-green-600' },
-  ];
+  // 加载Agent信息
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/meeting/agents');
+        if (response.ok) {
+          const data = await response.json();
+          setAgents(data);
+        }
+      } catch (error) {
+        console.error('加载Agent失败:', error);
+        // 使用默认数据
+        setAgents([
+          { id: 'taishige', name: '太史阁', title: '历史记录与反思官', avatar: '📚', color: 'from-blue-500 to-blue-600', description: '负责记录所有操作、决策和结果' },
+          { id: 'jinjiyu', name: '锦衣卫', title: '安全与情报收集官', avatar: '🛡️', color: 'from-red-500 to-red-600', description: '监控系统安全状态,识别潜在威胁' },
+          { id: 'tongzhengsi', name: '通政司', title: '信息与通讯中枢', avatar: '📡', color: 'from-green-500 to-green-600', description: '管理所有信息流,确保通讯畅通' },
+          { id: 'jianchayuan', name: '监察院', title: '监督与审计官', avatar: '🔍', color: 'from-purple-500 to-purple-600', description: '监督各项操作和流程的执行情况' },
+          { id: 'mijuanfang', name: '密卷房', title: '知识库与档案管理员', avatar: '📂', color: 'from-indigo-500 to-indigo-600', description: '负责非结构化知识的整理、归档' },
+          { id: 'chengxiangfu', name: '丞相府', title: '战略规划与决策支持官', avatar: '👑', color: 'from-yellow-500 to-yellow-600', description: '基于全局数据进行战略分析' },
+          { id: 'junjichu', name: '军机处', title: '任务执行与结果官', avatar: '⚔️', color: 'from-orange-500 to-orange-600', description: '执行具体任务,生成分析结果' },
+          { id: 'zhihuishi', name: '指挥使', title: '任务协调官', avatar: '🎯', color: 'from-teal-500 to-teal-600', description: '协调各部门工作,确保任务高效流转' },
+        ]);
+      }
+    };
+    loadAgents();
+  }, []);
 
-  const startMeeting = () => {
+  const startMeeting = async () => {
     if (!topic.trim()) {
       toast.error('请输入会议主题');
       return;
     }
-    setIsMeetingActive(true);
-    setMeetingLog([`🏛️ 锦衣卫会议开始 - 主题：${topic}`]);
-    setCurrentRound(1);
     
-    // 模拟会议进程
-    let round = 1;
-    const interval = setInterval(() => {
-      if (round > rounds) {
-        clearInterval(interval);
-        setMeetingLog(prev => [...prev, '✅ 会议结束，已形成决议']);
-        setIsMeetingActive(false);
-        return;
-      }
-      
-      setMeetingLog(prev => [...prev, `\n📢 第${round}轮讨论：`]);
-      
-      agents.forEach((agent, idx) => {
-        setTimeout(() => {
-          const speeches = [
-            `【${agent.name}】关于此议题，我认为...`,
-            `【${agent.name}】从${agent.role}角度分析...`,
-            `【${agent.name}】建议采取以下措施...`,
-            `【${agent.name}】补充一点...`,
-          ];
-          const speech = speeches[Math.floor(Math.random() * speeches.length)];
-          setMeetingLog(prev => [...prev, `${agent.avatar} ${speech}`]);
-        }, idx * 800);
+    setIsLoading(true);
+    toast.info('正在召集8-Agent进行讨论...');
+    
+    try {
+      const response = await fetch('http://localhost:8000/api/meeting/discuss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: topic.trim(),
+          context: context.trim(),
+          rounds: rounds,
+          card_ids: []
+        })
       });
       
-      round++;
-      setCurrentRound(round);
-    }, 6000);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const result = await response.json();
+      setMeetingResult(result);
+      toast.success('8-Agent协作会议完成！');
+    } catch (error) {
+      console.error('会议创建失败:', error);
+      toast.error('会议创建失败,请检查后端服务');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const resetMeeting = () => {
-    setIsMeetingActive(false);
-    setMeetingLog([]);
-    setCurrentRound(0);
+    setMeetingResult(null);
     setTopic('');
+    setContext('');
+    setExpandedRounds(new Set());
+    toast.info('会议已重置');
+  };
+
+  const toggleRound = (roundNum: number) => {
+    const newExpanded = new Set(expandedRounds);
+    if (newExpanded.has(roundNum)) {
+      newExpanded.delete(roundNum);
+    } else {
+      newExpanded.add(roundNum);
+    }
+    setExpandedRounds(newExpanded);
+  };
+
+  const exportResult = (format: 'json' | 'markdown') => {
+    if (!meetingResult) return;
+    
+    let content = '';
+    let filename = '';
+    
+    if (format === 'markdown') {
+      content = `# 8-Agent协作会议记录\n\n`;
+      content += `**主题**:${meetingResult.topic}\n\n`;
+      content += `**时间**:${meetingResult.start_time}\n\n`;
+      content += `**参与人员**:${meetingResult.participants.join('、')}\n\n`;
+      content += `**耗时**:${meetingResult.duration_seconds}秒\n\n`;
+      content += `---\n\n`;
+      
+      meetingResult.rounds.forEach((round: any) => {
+        content += `## 第${round.round}轮:${round.theme}\n\n`;
+        round.speeches.forEach((speech: any) => {
+          content += `### ${speech.agent_name}(${speech.agent_title})${speech.avatar}\n\n`;
+          content += `${speech.speech}\n\n`;
+        });
+      });
+      
+      content += `## 会议决策\n\n${meetingResult.decision}\n\n`;
+      content += `## 行动项\n\n`;
+      meetingResult.action_items.forEach((item: string, idx: number) => {
+        content += `${idx + 1}. ${item}\n`;
+      });
+      
+      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.md`;
+    } else {
+      content = JSON.stringify(meetingResult, null, 2);
+      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.json`;
+    }
+    
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('会议记录已导出');
   };
 
   return (
     <div className="space-y-6">
       <div className="mb-6">
         <h2 className="text-xl font-bold mb-2 flex items-center">
-          <Crown className="mr-2 text-red-600" />
-          锦衣卫智能体会议
+          <Crown className="mr-2 text-amber-600" />
+          8-Agent智能协作会议
         </h2>
         <p className="text-gray-600 dark:text-gray-300">
-          8位锦衣卫智能体基于知识卡片进行深度讨论，模拟真实团队协作场景
+          8位AI智能体基于后端数据库进行真实讨论,形成决策和行动方案
         </p>
       </div>
 
       {/* 会议设置 */}
-      <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div>
-            <label className="block text-sm font-medium mb-2">会议主题</label>
-            <input
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="输入需要讨论的主题..."
-              disabled={isMeetingActive}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none disabled:opacity-50"
-            />
+      {!meetingResult && (
+        <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium mb-2">会议主题 *</label>
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="输入需要讨论的主题,例如:新产品开发策略"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">背景信息(可选)</label>
+              <textarea
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                placeholder="提供相关背景信息,帮助Agent更好地理解议题..."
+                rows={3}
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">讨论轮数</label>
+              <div className="flex space-x-2">
+                {[1, 2, 3, 4, 5].map((num) => (
+                  <button
+                    key={num}
+                    onClick={() => setRounds(num)}
+                    className={`px-4 py-2 rounded-lg border transition-colors ${
+                      rounds === num
+                        ? 'bg-amber-600 text-white border-amber-600'
+                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-amber-500'
+                    }`}
+                  >
+                    {num}轮
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">讨论轮数</label>
-            <div className="flex space-x-2">
-              {[1, 2, 3, 4, 5].map((num) => (
-                <button
-                  key={num}
-                  onClick={() => !isMeetingActive && setRounds(num)}
-                  disabled={isMeetingActive}
-                  className={`px-4 py-2 rounded-lg border transition-colors ${
-                    rounds === num
-                      ? 'bg-red-600 text-white border-red-600'
-                      : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-red-500'
-                  } disabled:opacity-50`}
+
+          {/* 参会人员 */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium mb-3">参会人员(8位Agent)</label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {agents.map((agent) => (
+                <div
+                  key={agent.id}
+                  className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
                 >
-                  {num}轮
-                </button>
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${agent.color} flex items-center justify-center text-white text-lg`}>
+                      {agent.avatar}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{agent.name}</p>
+                      <p className="text-xs text-gray-500">{agent.title}</p>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        </div>
 
-        {/* 参会人员 */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-3">参会人员（8位锦衣卫）</label>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {agents.map((agent) => (
-              <div
-                key={agent.id}
-                className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${agent.color} flex items-center justify-center text-white text-lg`}>
-                    {agent.avatar}
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">{agent.name}</p>
-                    <p className="text-xs text-gray-500">{agent.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 控制按钮 */}
-        <div className="flex space-x-4">
+          {/* 开始按钮 */}
           <button
             onClick={startMeeting}
-            disabled={isMeetingActive || !topic.trim()}
-            className="flex-1 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-semibold flex items-center justify-center transition-all"
+            disabled={isLoading || !topic.trim()}
+            className="w-full py-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-semibold text-lg flex items-center justify-center transition-all"
           >
-            {isMeetingActive ? (
+            {isLoading ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                会议进行中...
+                正在召集Agent讨论...
               </>
             ) : (
               <>
-                <Play size={20} className="mr-2" />
-                召开锦衣卫会议
+                <Sparkles size={20} className="mr-2" />
+                召开8-Agent协作会议
               </>
             )}
           </button>
-          <button
-            onClick={resetMeeting}
-            disabled={isMeetingActive}
-            className="px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold flex items-center transition-colors disabled:opacity-50"
-          >
-            <RotateCcw size={20} className="mr-2" />
-            重置
-          </button>
         </div>
-      </div>
+      )}
 
-      {/* 会议记录 */}
-      {meetingLog.length > 0 && (
+      {/* 会议结果 */}
+      {meetingResult && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-gray-900 rounded-xl p-6 border border-gray-700"
+          className="space-y-6"
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white flex items-center">
-              <MessageSquare className="mr-2 text-green-400" />
-              会议记录
-            </h3>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-400">
-                第 {currentRound} / {rounds} 轮
-              </span>
-              {isMeetingActive && (
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              )}
+          {/* 结果头部 */}
+          <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold">{meetingResult.topic}</h3>
+                <p className="text-amber-100 mt-1">
+                  {meetingResult.rounds.length}轮讨论 · {meetingResult.participants.length}位Agent参与 · 耗时{meetingResult.duration_seconds}秒
+                </p>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => exportResult('markdown')}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
+                >
+                  <Download size={16} className="mr-1" />
+                  导出
+                </button>
+                <button
+                  onClick={resetMeeting}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
+                >
+                  <RotateCcw size={16} className="mr-1" />
+                  新会议
+                </button>
+              </div>
             </div>
           </div>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto font-mono text-sm">
-            {meetingLog.map((log, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className={`p-2 rounded ${
-                  log.startsWith('🏛️') ? 'bg-red-900/30 text-red-300' :
-                  log.startsWith('📢') ? 'bg-blue-900/30 text-blue-300' :
-                  log.startsWith('✅') ? 'bg-green-900/30 text-green-300' :
-                  'text-gray-300'
-                }`}
-              >
-                {log}
-              </motion.div>
-            ))}
+
+          {/* 决策结果 */}
+          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+            <h4 className="font-semibold mb-3 flex items-center">
+              <CheckCircle2 className="mr-2 text-green-600" />
+              会议决策
+            </h4>
+            <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+              {meetingResult.decision}
+            </p>
+          </div>
+
+          {/* 行动项 */}
+          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+            <h4 className="font-semibold mb-3 flex items-center">
+              <Award className="mr-2 text-amber-600" />
+              行动项
+            </h4>
+            <ul className="space-y-2">
+              {meetingResult.action_items.map((item: string, idx: number) => (
+                <li key={idx} className="flex items-start">
+                  <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* 讨论记录 */}
+          <div className="bg-white dark:bg-gray-750 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <h4 className="font-semibold flex items-center">
+                <MessageSquare className="mr-2 text-blue-600" />
+                讨论记录
+              </h4>
+            </div>
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              {meetingResult.rounds.map((round: any) => (
+                <div key={round.round} className="p-4">
+                  <button
+                    onClick={() => toggleRound(round.round)}
+                    className="w-full flex items-center justify-between text-left"
+                  >
+                    <div className="flex items-center">
+                      <span className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold mr-3">
+                        {round.round}
+                      </span>
+                      <span className="font-medium">{round.theme}</span>
+                    </div>
+                    {expandedRounds.has(round.round) ? (
+                      <ChevronUp size={20} className="text-gray-400" />
+                    ) : (
+                      <ChevronDown size={20} className="text-gray-400" />
+                    )}
+                  </button>
+                  
+                  {expandedRounds.has(round.round) && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      className="mt-4 space-y-3 pl-11"
+                    >
+                      {round.speeches.map((speech: any, idx: number) => (
+                        <div key={idx} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+                          <div className="flex items-center mb-2">
+                            <span className="text-lg mr-2">{speech.avatar}</span>
+                            <span className="font-medium text-sm">{speech.agent_name}</span>
+                            <span className="text-xs text-gray-500 ml-2">{speech.agent_title}</span>
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300">{speech.speech}</p>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </motion.div>
       )}
@@ -411,7 +557,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
           contribution: m.contribution || Math.floor(Math.random() * 100)
         })));
 
-        // 初始化知识缺口数据（可以从后端加载）
+        // 初始化知识缺口数据(可以从后端加载)
         setKnowledgeGaps([
           { id: 1, area: 'API设计', gapScore: 85, priority: '高', description: '团队缺乏系统性的API设计规范和最佳实践', suggestions: ['建立API设计规范文档', '开展API设计培训'] },
           { id: 2, area: 'UI/UX', gapScore: 72, priority: '中', description: '用户体验设计能力需要提升', suggestions: ['引入设计系统', '增加用户研究环节'] },
@@ -421,15 +567,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
         // 初始化协作消息
         setMessages([
-          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略，结合AI技术和用户体验研究的最新成果。', timestamp: '2026-02-20 10:30' },
-          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手，识别关键痛点和机会点，然后用AI技术来优化这些环节。', timestamp: '2026-02-20 10:35', replies: [
-            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研，收集一些初步反馈。', timestamp: '2026-02-20 10:40' }
+          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略,结合AI技术和用户体验研究的最新成果.', timestamp: '2026-02-20 10:30' },
+          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手,识别关键痛点和机会点,然后用AI技术来优化这些环节.', timestamp: '2026-02-20 10:35', replies: [
+            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研,收集一些初步反馈.', timestamp: '2026-02-20 10:40' }
           ]},
-          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制，制定一个分阶段的实施计划。', timestamp: '2026-02-20 10:45' }
+          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
         ]);
 
       } catch (err) {
-        setError('加载协作数据失败，请检查后端连接');
+        setError('加载协作数据失败,请检查后端连接');
         console.error('Collaboration data load error:', err);
         toast.error('加载协作数据失败');
       } finally {
@@ -660,14 +806,14 @@ const TeamCollaborationEnhanced: React.FC = () => {
           onClick={() => setActiveTab('jinyiwei')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
             activeTab === 'jinyiwei' 
-              ? 'border-red-500 text-red-600 dark:text-red-400 font-medium' 
+              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-medium' 
               : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
           }`}
         >
           <div className="flex items-center justify-center">
             <Crown size={18} className="mr-2" />
-            <span>锦衣卫会议</span>
-            <span className="ml-2 text-xs bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-2 py-0.5 rounded-full">
+            <span>8-Agent会议</span>
+            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full">
               AI
             </span>
           </div>
@@ -682,7 +828,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold mb-2">团队知识整合</h2>
-                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容，生成完整的团队知识图谱</p>
+                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容,生成完整的团队知识图谱</p>
               </div>
               <button 
                 onClick={handleAddMember}
@@ -694,7 +840,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧：整合状态和进度 */}
+              {/* 左侧:整合状态和进度 */}
               <div className="lg:col-span-1 space-y-4">
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
@@ -764,7 +910,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 </motion.div>
               </div>
 
-              {/* 右侧：团队成员和统计图表 */}
+              {/* 右侧:团队成员和统计图表 */}
               <div className="lg:col-span-2 grid grid-cols-1 gap-4">
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
@@ -838,7 +984,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-bold mb-2">实时协作编辑</h2>
-              <p className="text-gray-600 dark:text-gray-300">多人同时编辑和评论，加速知识发展过程</p>
+              <p className="text-gray-600 dark:text-gray-300">多人同时编辑和评论,加速知识发展过程</p>
             </div>
 
             <div className="grid grid-cols-1 gap-6">
@@ -976,7 +1122,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧：知识空白列表 */}
+              {/* 左侧:知识空白列表 */}
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1055,7 +1201,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 </div>
               </motion.div>
 
-              {/* 右侧：知识覆盖度雷达图 */}
+              {/* 右侧:知识覆盖度雷达图 */}
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
@@ -1163,7 +1309,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   </div>
                   <div className="p-3 mt-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-800">
                     <p className="text-sm text-blue-800 dark:text-blue-300">
-                      团队倾向于异步协作模式，建议优化异步协作工具和流程，提高效率。
+                      团队倾向于异步协作模式,建议优化异步协作工具和流程,提高效率.
                     </p>
                   </div>
                 </div>
@@ -1269,6 +1415,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
               </motion.div>
             </div>
           </div>
+        )}
+
+        {/* 8-Agent会议 */}
+        {activeTab === 'jinyiwei' && (
+          <AgentMeetingPanel />
         )}
       </div>
 
