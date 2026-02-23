@@ -6,7 +6,10 @@ import {
   X, 
   Edit2, 
   Trash2,
-  ChevronRight
+  ChevronRight,
+  CheckSquare,
+  FileText,
+  ArrowRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -14,6 +17,16 @@ import {
   ResearchProject, 
   GtdTask
 } from '@/services/dataService';
+
+interface ProjectCard {
+  id: number;
+  card_type: string;
+  title: string;
+  content: string;
+  category?: string;
+  project_id?: number;
+  created_at?: string;
+}
 
 interface ResearchProjectManagerProps {
   onSelectProject?: (project: ResearchProject) => void;
@@ -30,6 +43,15 @@ const colorOptions = [
 
 const iconOptions = ['📚', '🔬', '💡', '📊', '🎯', '🚀', '🔧', '🎨', '📝', '⚙️'];
 
+const cardTypeConfig: Record<string, { name: string; color: string; bgColor: string }> = {
+  blue: { name: '事实', color: 'text-blue-600', bgColor: 'bg-blue-50' },
+  green: { name: '解释', color: 'text-green-600', bgColor: 'bg-green-50' },
+  yellow: { name: '风险', color: 'text-yellow-600', bgColor: 'bg-yellow-50' },
+  red: { name: '行动', color: 'text-red-600', bgColor: 'bg-red-50' },
+};
+
+const RESEARCH_API_BASE = 'http://localhost:8000/api/research';
+
 const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   onSelectProject,
   selectedProjectId
@@ -41,6 +63,8 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   const [editingProject, setEditingProject] = useState<ResearchProject | null>(null);
   const [expandedProject, setExpandedProject] = useState<number | null>(null);
   const [projectTasks, setProjectTasks] = useState<Record<number, GtdTask[]>>({});
+  const [projectCards, setProjectCards] = useState<Record<number, ProjectCard[]>>({});
+  const [activeTab, setActiveTab] = useState<Record<number, 'tasks' | 'cards'>>({});
   
   const [newProject, setNewProject] = useState({
     name: '',
@@ -74,6 +98,39 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
       setProjectTasks(prev => ({ ...prev, [projectId]: tasks }));
     } catch (err) {
       console.error('加载专题任务失败:', err);
+    }
+  };
+
+  // 加载专题下的卡片
+  const loadProjectCards = async (projectId: number) => {
+    try {
+      const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards`);
+      if (response.ok) {
+        const cards = await response.json();
+        setProjectCards(prev => ({ ...prev, [projectId]: cards }));
+      }
+    } catch (err) {
+      console.error('加载专题卡片失败:', err);
+    }
+  };
+
+  // 将卡片转换为任务
+  const convertCardToTask = async (cardId: number) => {
+    try {
+      const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(`已创建任务 (优先级: ${result.priority})`);
+        // 刷新任务列表
+        if (expandedProject) {
+          loadProjectTasks(expandedProject);
+        }
+      }
+    } catch (err) {
+      console.error('转换任务失败:', err);
+      toast.error('转换任务失败');
     }
   };
 
@@ -137,8 +194,12 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
       setExpandedProject(null);
     } else {
       setExpandedProject(projectId);
+      setActiveTab(prev => ({ ...prev, [projectId]: 'tasks' }));
       if (!projectTasks[projectId]) {
         loadProjectTasks(projectId);
+      }
+      if (!projectCards[projectId]) {
+        loadProjectCards(projectId);
       }
     }
   };
@@ -253,7 +314,7 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
                   </div>
                 </div>
 
-                {/* 展开的任务列表 */}
+                {/* 展开的任务/卡片列表 */}
                 <AnimatePresence>
                   {isExpanded && (
                     <motion.div
@@ -263,31 +324,99 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
                       className="overflow-hidden"
                     >
                       <div className="p-3 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
-                        {tasks.length === 0 ? (
-                          <p className="text-sm text-gray-500 text-center py-4">
-                            该专题下暂无任务
-                          </p>
-                        ) : (
-                          <div className="space-y-2">
-                            {tasks.map((task: GtdTask) => (
-                              <div
-                                key={task.id}
-                                className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
-                              >
-                                <div className={`w-2 h-2 rounded-full mr-2 ${
-                                  task.priority === 'high' ? 'bg-red-500' :
-                                  task.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
-                                }`} />
-                                <span className="flex-1 truncate">{task.title}</span>
-                                <span className="text-xs text-gray-500 ml-2">
-                                  {task.category === 'inbox' ? '收集箱' :
-                                   task.category === 'today' ? '等待处理' :
-                                   task.category === 'later' ? '将来可能' :
-                                   task.category === 'archive' ? '归档' : '专题'}
-                                </span>
+                        {/* Tab切换 */}
+                        <div className="flex mb-3 border-b border-gray-200 dark:border-gray-700">
+                          <button
+                            onClick={() => setActiveTab(prev => ({ ...prev, [project.id!]: 'tasks' }))}
+                            className={`flex items-center px-4 py-2 text-sm border-b-2 transition-colors ${
+                              activeTab[project.id!] === 'tasks' || !activeTab[project.id!]
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            <CheckSquare className="w-4 h-4 mr-1" />
+                            任务 ({tasks.length})
+                          </button>
+                          <button
+                            onClick={() => setActiveTab(prev => ({ ...prev, [project.id!]: 'cards' }))}
+                            className={`flex items-center px-4 py-2 text-sm border-b-2 transition-colors ${
+                              activeTab[project.id!] === 'cards'
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                            }`}
+                          >
+                            <FileText className="w-4 h-4 mr-1" />
+                            卡片 ({(projectCards[project.id!] || []).length})
+                          </button>
+                        </div>
+                        
+                        {/* 任务列表 */}
+                        {(activeTab[project.id!] === 'tasks' || !activeTab[project.id!]) && (
+                          <>
+                            {tasks.length === 0 ? (
+                              <p className="text-sm text-gray-500 text-center py-4">
+                                该专题下暂无任务
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {tasks.map((task: GtdTask) => (
+                                  <div
+                                    key={task.id}
+                                    className="flex items-center p-2 bg-gray-50 dark:bg-gray-800 rounded text-sm"
+                                  >
+                                    <div className={`w-2 h-2 rounded-full mr-2 ${
+                                      task.priority === 'high' ? 'bg-red-500' :
+                                      task.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
+                                    }`} />
+                                    <span className="flex-1 truncate">{task.title}</span>
+                                    <span className="text-xs text-gray-500 ml-2">
+                                      {task.category === 'inbox' ? '收集箱' :
+                                       task.category === 'today' ? '等待处理' :
+                                       task.category === 'later' ? '将来可能' :
+                                       task.category === 'archive' ? '归档' : '专题'}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            )}
+                          </>
+                        )}
+                        
+                        {/* 卡片列表 */}
+                        {activeTab[project.id!] === 'cards' && (
+                          <>
+                            {(projectCards[project.id!] || []).length === 0 ? (
+                              <p className="text-sm text-gray-500 text-center py-4">
+                                该专题下暂无知识卡片
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {(projectCards[project.id!] || []).map((card: ProjectCard) => {
+                                  const typeConfig = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
+                                  return (
+                                    <div
+                                      key={card.id}
+                                      className={`flex items-center p-2 ${typeConfig.bgColor} rounded text-sm`}
+                                    >
+                                      <div className={`flex-1 truncate ${typeConfig.color}`}>
+                                        <span className="font-medium">{typeConfig.name}:</span> {card.title}
+                                      </div>
+                                      {card.card_type === 'red' && (
+                                        <button
+                                          onClick={() => convertCardToTask(card.id)}
+                                          className="flex items-center px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                                          title="转换为任务"
+                                        >
+                                          <ArrowRight className="w-3 h-3 mr-1" />
+                                          转任务
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </motion.div>

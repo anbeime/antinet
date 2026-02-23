@@ -87,29 +87,40 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
             FROM knowledge_cards
             WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
             ORDER BY id DESC
-            LIMIT ?
         """
-        params = (f"%{query_lower}%", f"%{query_lower}%", limit)
+        params = (f"%{query_lower}%", f"%{query_lower}%")
         print(f"[DEBUG] SQL: {sql}")
         print(f"[DEBUG] 参数: {params}")
 
         cursor.execute(sql, params)
 
         rows = cursor.fetchall()
+        
+        seen_content = set()
         cards = []
 
         for row in rows:
+            content_text = row[2] if row[2] else ""
+            content_key = content_text[:100]
+            
+            if content_key in seen_content:
+                continue
+            seen_content.add(content_key)
+            
             cards.append({
                 "card_id": f"db_{row[0]}",
                 "id": row[0],
                 "title": row[1],
                 "content": {
-                    "description": row[2]
+                    "description": content_text
                 },
                 "card_type": row[3] if row[3] else "blue",
                 "category": row[4],
-                "similarity": 0.8  # 简单相似度评分
+                "similarity": 0.8
             })
+            
+            if len(cards) >= limit:
+                break
 
         conn.close()
         return cards
@@ -308,6 +319,79 @@ def _generate_empty_response(query: str) -> str:
 我可以帮您解答关于 Antinet 系统功能、NPU 推理、团队协作、知识管理等方面的问题。"""
 
 
+def _generate_ai_response(query: str, cards: List[Dict]) -> str:
+    """
+    使用NPU模型生成回答（基于搜索到的卡片内容）
+    
+    这是真正的RAG：检索增强生成
+    """
+    if not cards:
+        return _generate_empty_response(query)
+    
+    try:
+        from models.model_loader import get_model_loader
+        
+        loader = get_model_loader()
+        if not loader.is_loaded:
+            try:
+                loader.load()
+            except Exception as e:
+                logger.warning(f"模型加载失败，使用模板回答: {e}")
+                return _generate_general_answer(query, cards)
+        
+        # 构建上下文：将搜索到的卡片内容作为参考
+        context_parts = []
+        for i, card in enumerate(cards[:5], 1):
+            title = card.get("title", "")
+            content = card.get("content", {})
+            desc = content.get("description", "") if isinstance(content, dict) else str(content)
+            card_type = card.get("card_type", "blue")
+            type_name = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}.get(card_type, "信息")
+            # 清理描述中的特殊字符
+            desc = desc.replace('@{', '').replace('}', '').replace('description=', '')
+            context_parts.append(f"{i}. 【{type_name}】{title}\n{desc[:200]}")
+        
+        context = "\n".join(context_parts)
+        
+        # 构建提示词 - 更简洁直接
+        prompt = f"""根据以下知识回答问题，用简洁的中文，不超过100字：
+
+{context}
+
+问：{query}
+答："""
+        
+        # NPU推理
+        raw_output = loader.infer(
+            prompt=prompt,
+            max_new_tokens=256,
+            temperature=0.7
+        )
+        
+        # 清理输出：移除特殊token
+        response = raw_output.strip()
+        # 移除常见的特殊token
+        special_tokens = [
+            '<|im_start|>', '<|im_end|>', '<|assistant|', '<|user|>',
+            '<|system|>', '<|endoftext|>', '|_|end|>', 'assistant', 'user', 'system'
+        ]
+        for token in special_tokens:
+            response = response.replace(token, '')
+        # 清理多余的空行
+        response = '\n'.join(line.strip() for line in response.split('\n') if line.strip())
+        response = response.strip()
+        
+        if response and len(response) > 10:
+            logger.info(f"[ChatRoutes] NPU生成回答成功")
+            return response
+        else:
+            return _generate_general_answer(query, cards)
+            
+    except Exception as e:
+        logger.error(f"NPU生成回答失败: {e}")
+        return _generate_general_answer(query, cards)
+
+
 def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
     """
     生成改进的自然语言回复
@@ -460,14 +544,9 @@ async def chat_query(request: ChatRequest):
     logger.info(f"[ChatRoutes] 收到查询: {request.query}")
 
     try:
-        # 使用混合搜索（如果可用）
-        import sys
-        if hasattr(sys.modules[__name__], '_hybrid_search'):
-            cards = _hybrid_search(request.query, limit=10)
-            logger.info(f"[ChatRoutes] 混合搜索找到 {len(cards)} 张卡片")
-        else:
-            cards = _search_cards_by_keyword(request.query, limit=10)
-            logger.info(f"[ChatRoutes] 关键词搜索找到 {len(cards)} 张卡片")
+        # 直接使用关键词搜索
+        cards = _search_cards_by_keyword(request.query, limit=10)
+        logger.info(f"[ChatRoutes] 关键词搜索找到 {len(cards)} 张卡片")
         print(f"[DEBUG] 搜索到 {len(cards)} 张卡片")
         
         if cards:
@@ -475,34 +554,23 @@ async def chat_query(request: ChatRequest):
         else:
             print(f"[DEBUG] 没有找到卡片，查询词: {request.query}")
 
-        # 生成带来源的回答（如果可用）
-        import sys
-        if hasattr(sys.modules[__name__], '_generate_response_with_sources'):
-            response_data = _generate_response_with_sources(request.query, cards)
-            response = response_data['text']
-            sources_data = response_data['sources']
-        else:
-            response = _generate_response(request.query, cards)
-            sources_data = []
+        # 使用NPU模型生成AI回答（真正的RAG）
+        response = _generate_ai_response(request.query, cards)
         print(f"[DEBUG] 生成回复长度: {len(response)}")
         
         # 生成推荐问题
         suggested_questions = _generate_suggested_questions(request.query, cards)
 
         # 构建响应
-        # 使用带溯源的sources（如果可用），否则从cards构建
-        if sources_data:
-            sources = [CardSource(**s) for s in sources_data]
-        else:
-            sources = [
-                CardSource(
-                    card_id=card.get("id", card.get("card_id", "")),
-                    card_type=card.get("card_type", "unknown"),
-                    title=card.get("title", ""),
-                    similarity=card.get("similarity", 0.8)
-                )
-                for card in cards[:5]
-            ]
+        sources = [
+            CardSource(
+                card_id=str(card.get("card_id", card.get("id", ""))),
+                card_type=card.get("card_type", "unknown"),
+                title=card.get("title", ""),
+                similarity=card.get("similarity", 0.8)
+            )
+            for card in cards[:5]
+        ]
         
         result = ChatResponse(
             response=response,

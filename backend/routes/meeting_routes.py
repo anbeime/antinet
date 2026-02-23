@@ -186,16 +186,21 @@ async def create_meeting(request: MeetingRequest):
     try:
         logger.info(f"[Meeting] 开始8-Agent会议: {request.topic}")
         
+        # 获取配置
+        from config import settings
+        genie_api_base_url = "http://127.0.0.1:8910"
+        model_path = settings.MODEL_PATH
+        
         # 初始化Agent实例
         agents = {
-            "orchestrator": OrchestratorAgent(),
+            "orchestrator": OrchestratorAgent(genie_api_base_url=genie_api_base_url, model_path=model_path),
             "memory": MemoryAgent(),
             "preprocessor": PreprocessorAgent(),
-            "fact_generator": FactGeneratorAgent(),
-            "interpreter": InterpreterAgent(),
-            "risk_detector": RiskDetectorAgent(),
-            "action_advisor": ActionAdvisorAgent(),
-            "messenger": MessengerAgent()
+            "fact_generator": FactGeneratorAgent(genie_api_base_url=genie_api_base_url, model_path=model_path),
+            "interpreter": InterpreterAgent(genie_api_base_url=genie_api_base_url, model_path=model_path),
+            "risk_detector": RiskDetectorAgent(genie_api_base_url=genie_api_base_url, model_path=model_path),
+            "action_advisor": ActionAdvisorAgent(genie_api_base_url=genie_api_base_url, model_path=model_path),
+            "messenger": MessengerAgent(genie_api_base_url=genie_api_base_url, model_path=model_path)
         }
         
         # 从太史阁获取相关卡片

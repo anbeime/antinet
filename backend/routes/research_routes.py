@@ -1,7 +1,14 @@
+# -*- coding: utf-8 -*-
 """
 专题研究 API 路由
 提供专题研究管理功能
 """
+
+import sys
+import io
+# 确保 UTF-8 编码
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -9,6 +16,12 @@ from typing import List, Optional
 from datetime import datetime
 import sqlite3
 from pathlib import Path
+import json
+
+# 自定义 JSON 编码器确保 UTF-8
+class UTF8Encoder(json.JSONEncoder):
+    def encode(self, obj):
+        return super().encode(obj).encode('utf-8').decode('utf-8')
 
 router = APIRouter(prefix="/api/research", tags=["专题研究"])
 
@@ -52,8 +65,10 @@ class ProjectTask(BaseModel):
 
 def get_db():
     """获取数据库连接"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    # 设置 UTF-8 编码
+    conn.execute("PRAGMA encoding='UTF-8'")
     return conn
 
 

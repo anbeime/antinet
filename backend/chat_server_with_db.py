@@ -238,6 +238,13 @@ async def health_check():
     }
 
 
+@app.post("/api/chat/query")
+async def chat_query(request: ChatRequest):
+    """聊天查询接口 - 兼容前端调用"""
+    result = await chat_with_db(request)
+    return result
+
+
 @app.post("/api/chat/simple/chat", response_model=ChatResponse)
 async def chat_with_db(request: ChatRequest):
     """聊天接口 - 连接真实数据库"""

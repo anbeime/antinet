@@ -10,6 +10,11 @@ backend_dir = os.path.dirname(os.path.abspath(__file__))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
+# 添加 site-packages 到 Python 路径
+site_packages_dir = os.path.join(backend_dir, 'site-packages')
+if os.path.exists(site_packages_dir) and site_packages_dir not in sys.path:
+    sys.path.insert(0, site_packages_dir)
+
 print("检查导入状态...")
 print(f"Python 路径: {sys.path}")
 print()

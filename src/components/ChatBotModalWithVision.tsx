@@ -145,7 +145,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
       
       if (selectedImage) {
         const formData = new FormData();
-        formData.append('image', selectedImage);
+        formData.append('file', selectedImage);
         if (input.trim()) {
           formData.append('question', input.trim());
         }
