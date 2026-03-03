@@ -24,8 +24,8 @@ router = APIRouter(prefix="/api/npu", tags=["NPU推理"])
 
 class AnalyzeRequest(BaseModel):
     """分析请求"""
-    query: str = Field(..., description="自然语言查询", min_length=1, max_length=2000)
-    max_tokens: Optional[int] = Field(128, description="最大生成token数", ge=32, le=512)
+    query: str = Field(..., description="自然语言查询", min_length=1, max_length=50000)
+    max_tokens: Optional[int] = Field(128, description="最大生成token数", ge=32, le=4096)
     temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
     model: Optional[str] = Field(None, description="指定模型（可选）")
 
@@ -102,9 +102,7 @@ async def analyze_data(request: AnalyzeRequest):
         # NPU 推理
         inference_start = time.time()
         raw_output = loader.infer(
-            prompt=request.query,
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature
+            prompt=request.query
         )
         inference_time = (time.time() - inference_start) * 1000
 
@@ -197,7 +195,7 @@ async def performance_benchmark():
 
         for prompt in test_prompts:
             start_time = time.time()
-            loader.infer(prompt, max_new_tokens=64)
+            loader.infer(prompt)
             latency = (time.time() - start_time) * 1000
             latencies.append(latency)
 

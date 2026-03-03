@@ -1,44 +1,47 @@
+#!/usr/bin/env python3
+"""
+测试PDF API功能
+"""
+
 import requests
+import os
 
-API_BASE = "http://localhost:8000"
+def test_pdf_extraction():
+    """测试PDF文本提取API"""
+    print("=== 测试PDF文本提取API ===")
+    
+    # 检查测试文件是否存在
+    if not os.path.exists("test.pdf"):
+        print("❌ test.pdf 文件不存在")
+        return
+    
+    try:
+        # 准备文件
+        with open("test.pdf", "rb") as f:
+            files = {"file": ("test.pdf", f, "application/pdf")}
+            
+            # 发送请求
+            response = requests.post(
+                "http://localhost:8000/api/pdf/extract/text",
+                files=files
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("success"):
+                    print("✅ PDF文本提取成功!")
+                    print(f"文件名: {result.get('filename')}")
+                    print(f"页数: {len(result.get('pages', []))}")
+                    print(f"完整文本长度: {len(result.get('full_text', ''))}")
+                    print(f"前200字符: {repr(result.get('full_text', '')[:200])}")
+                else:
+                    print(f"❌ 提取失败: {result.get('error')}")
+            else:
+                print(f"❌ HTTP错误: {response.status_code}")
+                print(f"响应: {response.text}")
+                
+    except Exception as e:
+        print(f"❌ 测试失败: {e}")
 
-# 测试 PDF 健康检查
-print("1. Testing PDF health...")
-try:
-    response = requests.get(f"{API_BASE}/api/pdf/health", timeout=5)
-    print(f"   Status: {response.status_code}")
-    if response.status_code == 200:
-        print(f"   Response: {response.json()}")
-    else:
-        print(f"   Error: {response.text}")
-except Exception as e:
-    print(f"   Exception: {e}")
-
-# 测试 PDF 状态
-print("\n2. Testing PDF status...")
-try:
-    response = requests.get(f"{API_BASE}/api/pdf/status", timeout=5)
-    print(f"   Status: {response.status_code}")
-    if response.status_code == 200:
-        print(f"   Response: {response.json()}")
-    else:
-        print(f"   Error: {response.text}")
-except Exception as e:
-    print(f"   Exception: {e}")
-
-# 测试 PDF 提取知识端点
-print("\n3. Testing PDF extract knowledge endpoint...")
-try:
-    response = requests.get(f"{API_BASE}/api/pdf/extract/knowledge", timeout=5)
-    print(f"   Status: {response.status_code}")
-    print(f"   Response: {response.text[:200]}")
-except Exception as e:
-    print(f"   Exception: {e}")
-
-# 列出所有 PDF 相关的路由
-print("\n4. Checking all routes...")
-try:
-    response = requests.get(f"{API_BASE}/docs", timeout=5)
-    print(f"   Docs available at: {API_BASE}/docs")
-except Exception as e:
-    print(f"   Exception: {e}")
+if __name__ == "__main__":
+    test_pdf_extraction()

@@ -1,0 +1,393 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>八府巡按 - 像素办公室</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+        }
+        #game-container {
+            border: 4px solid #e94560;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.3);
+            image-rendering: pixelated;
+        }
+        #status-panel {
+            margin-top: 20px;
+            background: rgba(0,0,0,0.85);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 2px solid #e94560;
+            max-width: 800px;
+            text-align: center;
+            color: #eee;
+        }
+        #status-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        #agent-info {
+            font-size: 14px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="status-panel">
+        <div id="status-text">八府巡按，各司其职</div>
+        <div id="agent-info">加载中...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <script>
+        // 8-AGENT 配置
+        const AGENTS = {
+            orchestrator: { name: '锦衣卫', cnName: '陆绎', color: '#e74c3c', x: 400, y: 130 },
+            mijuanfang: { name: '密卷房', cnName: '档案官', color: '#3498db', x: 120, y: 180 },
+            tongzhengsi: { name: '通政司', cnName: '通讯官', color: '#2ecc71', x: 680, y: 180 },
+            jianchayuan: { name: '监察院', cnName: '监察官', color: '#f39c12', x: 120, y: 320 },
+            xingyusi: { name: '刑狱司', cnName: '风险官', color: '#9b59b6', x: 680, y: 320 },
+            canmousi: { name: '参谋司', cnName: '参谋官', color: '#1abc9c', x: 200, y: 480 },
+            taishige: { name: '太史阁', cnName: '记忆官', color: '#e67e22', x: 600, y: 480 },
+            yichuansi: { name: '驿传司', cnName: '传令官', color: '#34495e', x: 400, y: 280 }
+        };
+
+        const STATE_COLORS = {
+            idle: '#95a5a6',
+            writing: '#3498db',
+            researching: '#9b59b6',
+            executing: '#e74c3c',
+            syncing: '#2ecc71',
+            error: '#f39c12'
+        };
+
+        const STATE_NAMES = {
+            idle: '待命',
+            writing: '整理文档',
+            researching: '搜索信息',
+            executing: '执行任务',
+            syncing: '同步备份',
+            error: '出错了'
+        };
+
+        class OfficeScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'OfficeScene' });
+                this.currentState = 'idle';
+                this.activeAgent = 'orchestrator';
+                this.agentSprites = {};
+                this.stateTexts = {};
+                this.bubble = null;
+                this.character = null;
+                this.targetX = 400;
+                this.targetY = 80;
+            }
+
+            preload() {
+                // 不需要预加载，使用程序生成图形
+            }
+
+            create() {
+                // 创建背景
+                this.createBackground();
+                
+                // 创建 8 个 AGENT 工位
+                this.createAgentStations();
+                
+                // 创建主角（像素小人）
+                this.createMainCharacter();
+                
+                // 创建气泡
+                this.createBubble();
+                
+                // 开始轮询状态
+                this.pollStatus();
+                this.time.addEvent({ delay: 2000, callback: this.pollStatus, callbackScope: this, loop: true });
+                
+                // 眨眼动画
+                this.time.addEvent({ delay: 3000, callback: this.blink, callbackScope: this, loop: true });
+            }
+
+            createBackground() {
+                // 深色背景
+                const graphics = this.add.graphics();
+                graphics.fillStyle(0x1a1a2e, 1);
+                graphics.fillRect(0, 0, 800, 600);
+                
+                // 地板网格
+                graphics.lineStyle(1, 0x2c3e50, 0.3);
+                for (let x = 0; x <= 800; x += 40) {
+                    graphics.moveTo(x, 0);
+                    graphics.lineTo(x, 600);
+                }
+                for (let y = 0; y <= 600; y += 40) {
+                    graphics.moveTo(0, y);
+                    graphics.lineTo(800, y);
+                }
+                graphics.strokePath();
+                
+                // 标题
+                const title = this.add.text(400, 30, '八府巡按 · 像素办公室', {
+                    fontSize: '24px',
+                    fontFamily: 'Microsoft YaHei',
+                    color: '#e94560',
+                    fontStyle: 'bold'
+                });
+                title.setOrigin(0.5);
+                
+                // 装饰线
+                graphics.lineStyle(2, 0xe94560, 0.5);
+                graphics.moveTo(200, 55);
+                graphics.lineTo(600, 55);
+                graphics.strokePath();
+            }
+
+            createAgentStations() {
+                Object.keys(AGENTS).forEach(key => {
+                    const agent = AGENTS[key];
+                    
+                    // 工位背景
+                    const graphics = this.add.graphics();
+                    graphics.fillStyle(0x2c3e50, 0.5);
+                    graphics.fillRect(agent.x - 60, agent.y - 40, 120, 80);
+                    graphics.lineStyle(2, parseInt(agent.color.replace('#', '0x')), 0.5);
+                    graphics.strokeRect(agent.x - 60, agent.y - 40, 120, 80);
+                    
+                    // AGENT 图标（小像素人）
+                    const iconGraphics = this.add.graphics();
+                    iconGraphics.fillStyle(parseInt(agent.color.replace('#', '0x')), 1);
+                    iconGraphics.fillRect(agent.x - 50, agent.y - 25, 20, 30);
+                    
+                    // AGENT 名称
+                    const nameText = this.add.text(agent.x, agent.y - 25, agent.name, {
+                        fontSize: '12px',
+                        fontFamily: 'Microsoft YaHei',
+                        color: '#ffffff'
+                    });
+                    nameText.setOrigin(0.5);
+                    
+                    // AGENT 中文名
+                    const cnText = this.add.text(agent.x, agent.y - 10, agent.cnName, {
+                        fontSize: '10px',
+                        fontFamily: 'Microsoft YaHei',
+                        color: '#aaaaaa'
+                    });
+                    cnText.setOrigin(0.5);
+                    
+                    // 状态文本
+                    const stateText = this.add.text(agent.x, agent.y + 15, '待命', {
+                        fontSize: '11px',
+                        fontFamily: 'Microsoft YaHei',
+                        color: '#95a5a6'
+                    });
+                    stateText.setOrigin(0.5);
+                    this.stateTexts[key] = stateText;
+                    
+                    // 状态指示点
+                    const statusDot = this.add.circle(agent.x + 50, agent.y - 25, 5, 0x95a5a6);
+                    this.agentSprites[key] = { statusDot };
+                });
+            }
+
+            createMainCharacter() {
+                this.character = this.add.container(400, 80);
+                
+                // 身体
+                const body = this.add.rectangle(0, 0, 30, 40, 0xe74c3c);
+                
+                // 头
+                const head = this.add.circle(0, -30, 15, 0xffdbac);
+                
+                // 眼睛
+                this.leftEye = this.add.circle(-5, -32, 3, 0x000000);
+                this.rightEye = this.add.circle(5, -32, 3, 0x000000);
+                
+                // 腿
+                const leftLeg = this.add.rectangle(-8, 25, 10, 20, 0x2c3e50);
+                const rightLeg = this.add.rectangle(8, 25, 10, 20, 0x2c3e50);
+                
+                this.character.add([leftLeg, rightLeg, body, head, this.leftEye, this.rightEye]);
+                
+                // 名字标签
+                this.nameTag = this.add.text(0, -55, '陆绎', {
+                    fontSize: '12px',
+                    fontFamily: 'Microsoft YaHei',
+                    color: '#ffffff',
+                    backgroundColor: '#e74c3c',
+                    padding: { x: 6, y: 2 }
+                });
+                this.nameTag.setOrigin(0.5);
+                this.character.add(this.nameTag);
+            }
+
+            createBubble() {
+                this.bubble = this.add.container(0, 0);
+                this.bubble.setVisible(false);
+                
+                // 气泡背景
+                const bg = this.add.rectangle(0, 0, 200, 60, 0xffffff, 0.95);
+                bg.setStrokeStyle(2, 0x333333);
+                
+                // 气泡文字
+                this.bubbleText = this.add.text(0, 0, '', {
+                    fontSize: '12px',
+                    fontFamily: 'Microsoft YaHei',
+                    color: '#333333',
+                    align: 'center',
+                    wordWrap: { width: 180 }
+                });
+                this.bubbleText.setOrigin(0.5);
+                
+                // 小三角
+                const triangle = this.add.triangle(0, 35, 0, 0, 10, 0, 5, 10, 0xffffff);
+                
+                this.bubble.add([bg, this.bubbleText, triangle]);
+            }
+
+            blink() {
+                if (this.leftEye && this.rightEye) {
+                    this.leftEye.setScale(1, 0.1);
+                    this.rightEye.setScale(1, 0.1);
+                    
+                    this.time.delayedCall(150, () => {
+                        this.leftEye.setScale(1, 1);
+                        this.rightEye.setScale(1, 1);
+                    });
+                }
+            }
+
+            async pollStatus() {
+                try {
+                    const response = await fetch('/status');
+                    const data = await response.json();
+                    this.updateScene(data);
+                } catch (e) {
+                    console.error('Failed to fetch status:', e);
+                }
+            }
+
+            updateScene(data) {
+                const activeAgent = data.active_agent || 'orchestrator';
+                const agentStates = data.agent_states || {};
+                const detail = data.detail || '等待任务中...';
+                
+                // 更新活跃 AGENT
+                if (activeAgent !== this.activeAgent) {
+                    this.activeAgent = activeAgent;
+                    this.moveToAgent(activeAgent);
+                }
+                
+                // 更新所有 AGENT 状态显示
+                Object.keys(agentStates).forEach(agentKey => {
+                    const state = agentStates[agentKey];
+                    const stateColor = STATE_COLORS[state] || '#95a5a6';
+                    const stateName = STATE_NAMES[state] || '待命';
+                    
+                    if (this.stateTexts[agentKey]) {
+                        this.stateTexts[agentKey].setText(stateName);
+                        this.stateTexts[agentKey].setColor(stateColor);
+                    }
+                    
+                    if (this.agentSprites[agentKey]) {
+                        this.agentSprites[agentKey].statusDot.setFillStyle(parseInt(stateColor.replace('#', '0x')));
+                    }
+                });
+                
+                // 更新气泡
+                if (this.bubble && detail) {
+                    this.bubbleText.setText(detail);
+                    this.bubble.setPosition(this.character.x, this.character.y - 80);
+                    this.bubble.setVisible(true);
+                    
+                    // 3秒后隐藏气泡
+                    this.time.delayedCall(3000, () => {
+                        this.bubble.setVisible(false);
+                    });
+                }
+                
+                // 更新 HTML UI
+                this.updateHtmlUI(data);
+            }
+
+            moveToAgent(agentKey) {
+                const agent = AGENTS[agentKey];
+                if (!agent) return;
+                
+                // 移动动画
+                this.tweens.add({
+                    targets: this.character,
+                    x: agent.x,
+                    y: agent.y - 60,
+                    duration: 800,
+                    ease: 'Power2'
+                });
+                
+                // 更新角色颜色
+                const characterParts = this.character.list;
+                if (characterParts[2]) {
+                    characterParts[2].setFillStyle(parseInt(agent.color.replace('#', '0x')));
+                }
+                
+                // 更新名字标签
+                this.nameTag.setText(agent.cnName);
+                this.nameTag.setBackgroundColor(agent.color);
+            }
+
+            updateHtmlUI(data) {
+                const statusText = document.getElementById('status-text');
+                const agentInfo = document.getElementById('agent-info');
+                
+                if (statusText) {
+                    const activeAgent = AGENTS[data.active_agent];
+                    const stateName = STATE_NAMES[data.agent_states?.[data.active_agent]] || '待命';
+                    statusText.innerHTML = `
+                        <span style="color: ${activeAgent?.color || '#e74c3c'}">
+                            ${activeAgent?.cnName || '陆绎'}
+                        </span> 
+                        正在 ${stateName}
+                    `;
+                }
+                
+                if (agentInfo) {
+                    const workingCount = Object.values(data.agent_states || {}).filter(
+                        s => s !== 'idle' && s !== 'error'
+                    ).length;
+                    agentInfo.innerHTML = `
+                        当前活跃: ${workingCount}/8 个 AGENT | 
+                        已完成任务: ${data.completed_tasks || 0} 个
+                    `;
+                }
+            }
+        }
+
+        // 游戏配置
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            parent: 'game-container',
+            pixelArt: true,
+            backgroundColor: '#1a1a2e',
+            scene: OfficeScene,
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            }
+        };
+
+        // 启动游戏
+        const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>

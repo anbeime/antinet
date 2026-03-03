@@ -1,53 +1,44 @@
 """
 多模型 API 路由
 提供多模型管理和切换功能
+统一使用 ModelConfig.MODELS 作为唯一模型配置源
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
+import os
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/multi", tags=["多模型API"])
 
-_available_models = {
-    "qwen2.0-7b": {
-        "name": "Qwen2.0-7B-SSD",
-        "description": "通用大语言模型，适合对话和文本生成",
-        "params": "7B",
-        "quantization": "INT8",
-        "max_tokens": 4096,
-        "recommended": True
-    },
-    "qwen2.5-vl": {
-        "name": "Qwen2.5-VL-3B",
-        "description": "视觉语言模型，支持图片理解",
-        "params": "3B",
-        "quantization": "INT8",
-        "max_tokens": 4096,
-        "recommended": False
-    },
-    "llama3.1-8b": {
-        "name": "Llama3.1-8B-SSD",
-        "description": "Meta Llama 模型，多语言支持",
-        "params": "8B",
-        "quantization": "INT8",
-        "max_tokens": 4096,
-        "recommended": False
-    },
-    "llama3.2-3b": {
-        "name": "Llama3.2-3B",
-        "description": "轻量级 Llama 模型",
-        "params": "3B",
-        "quantization": "INT8",
-        "max_tokens": 4096,
-        "recommended": False
-    }
-}
 
-_current_model = "qwen2.0-7b"
+# ==================== 统一模型配置源 ====================
 
+def _get_available_models() -> Dict[str, Dict]:
+    """从 ModelConfig.MODELS 获取可用模型列表"""
+    try:
+        from models.model_loader import ModelConfig
+        return ModelConfig.MODELS
+    except Exception as e:
+        logger.error(f"无法加载 ModelConfig: {e}")
+        return {}
+
+
+def _get_default_model() -> str:
+    """从 ModelConfig 获取默认模型"""
+    try:
+        from models.model_loader import ModelConfig
+        return ModelConfig.DEFAULT_MODEL
+    except Exception:
+        return "llama3.2-3b"
+
+
+_current_model = _get_default_model()
+
+
+# ==================== 数据模型 ====================
 
 class ModelInfo(BaseModel):
     """模型信息"""
@@ -59,6 +50,8 @@ class ModelInfo(BaseModel):
     max_tokens: int
     recommended: bool
     loaded: bool = False
+    path: str = ""
+    path_exists: bool = False
 
 
 class SwitchModelRequest(BaseModel):
@@ -74,31 +67,38 @@ class InferenceRequest(BaseModel):
     temperature: float = Field(default=0.7, description="温度参数")
 
 
+# ==================== 路由 ====================
+
 @router.get("/health")
 async def health_check():
     """健康检查"""
+    models = _get_available_models()
     return {
         "status": "healthy",
         "service": "multi-model-api",
         "current_model": _current_model,
-        "available_models": len(_available_models)
+        "available_models": len(models)
     }
 
 
 @router.get("/models", response_model=List[ModelInfo])
 async def list_models():
-    """列出所有可用模型"""
+    """列出所有可用模型，包含路径是否存在的检测"""
     models = []
-    for model_id, info in _available_models.items():
+    available = _get_available_models()
+    for model_id, info in available.items():
+        model_path = info.get("path", "")
         models.append(ModelInfo(
             id=model_id,
-            name=info["name"],
-            description=info["description"],
-            params=info["params"],
-            quantization=info["quantization"],
-            max_tokens=info["max_tokens"],
-            recommended=info["recommended"],
-            loaded=(model_id == _current_model)
+            name=info.get("name", model_id),
+            description=info.get("description", ""),
+            params=info.get("params", ""),
+            quantization=info.get("quantization", ""),
+            max_tokens=info.get("max_tokens", 2048),
+            recommended=info.get("recommended", False),
+            loaded=(model_id == _current_model),
+            path=model_path,
+            path_exists=os.path.exists(model_path) if model_path else False
         ))
     return models
 
@@ -106,65 +106,123 @@ async def list_models():
 @router.get("/current")
 async def get_current_model():
     """获取当前模型"""
-    info = _available_models.get(_current_model, {})
+    available = _get_available_models()
+    info = available.get(_current_model, {})
+    model_path = info.get("path", "")
     return {
         "current_model": _current_model,
-        "model_info": info
+        "model_info": {
+            "name": info.get("name", _current_model),
+            "description": info.get("description", ""),
+            "params": info.get("params", ""),
+            "quantization": info.get("quantization", ""),
+            "path": model_path,
+            "path_exists": os.path.exists(model_path) if model_path else False
+        }
     }
 
 
 @router.post("/switch")
 async def switch_model(request: SwitchModelRequest):
-    """切换模型"""
+    """切换模型 —— 真正卸载旧模型、加载新模型"""
     global _current_model
-    
-    if request.model_id not in _available_models:
+
+    available = _get_available_models()
+    if request.model_id not in available:
         raise HTTPException(
             status_code=404,
-            detail=f"模型不存在: {request.model_id}。可用模型: {', '.join(_available_models.keys())}"
+            detail=f"模型不存在: {request.model_id}。可用模型: {', '.join(available.keys())}"
         )
-    
+
+    model_path = available[request.model_id].get("path", "")
+    if not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"模型路径不存在: {model_path}"
+        )
+
     old_model = _current_model
-    _current_model = request.model_id
-    
-    return {
-        "message": f"模型已切换",
-        "old_model": old_model,
-        "new_model": _current_model
-    }
+
+    # 真正执行模型切换（使用全局单例，确保卸载的是真正加载的模型）
+    try:
+        from models.model_loader import NPUModelLoader, _global_model_loader
+        import models.model_loader as ml_module
+
+        # 卸载旧模型（使用全局实例，它才持有真正加载的模型）
+        try:
+            if ml_module._global_model_loader is not None:
+                ml_module._global_model_loader.unload()
+                logger.info(f"已卸载旧模型: {old_model}")
+                ml_module._global_model_loader = None
+        except Exception as e:
+            logger.warning(f"卸载旧模型失败（可忽略）: {e}")
+
+        # 加载新模型并更新全局实例
+        new_loader = NPUModelLoader(request.model_id)
+        new_loader.load()
+        ml_module._global_model_loader = new_loader
+        logger.info(f"已加载新模型: {request.model_id}")
+
+        _current_model = request.model_id
+
+        return {
+            "success": True,
+            "message": f"模型已切换: {old_model} → {_current_model}",
+            "old_model": old_model,
+            "new_model": _current_model
+        }
+    except Exception as e:
+        logger.error(f"模型切换失败: {e}")
+        raise HTTPException(status_code=500, detail=f"模型切换失败: {str(e)}")
 
 
 @router.post("/inference")
 async def multi_model_inference(request: InferenceRequest):
-    """使用指定模型进行推理"""
+    """使用指定模型进行真实 NPU 推理"""
     model_id = request.model_id or _current_model
-    
-    if model_id not in _available_models:
+
+    available = _get_available_models()
+    if model_id not in available:
         raise HTTPException(
             status_code=404,
-            detail=f"模型不存在: {model_id}"
+            detail=f"模型不存在: {model_id}。可用模型: {', '.join(available.keys())}"
         )
-    
+
+    model_path = available[model_id].get("path", "")
+    if not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=400,
+            detail=f"模型路径不存在: {model_path}，请检查 model_loader.py 中的 MODELS 配置"
+        )
+
     try:
-        from models.model_loader import get_model_loader
-        loader = get_model_loader()
-        
+        from models.model_loader import NPUModelLoader
+        import models.model_loader as ml_module
+
+        # 优先使用全局 loader（如果模型匹配）
+        loader = ml_module._global_model_loader
+        if loader is None or loader.model_key != model_id:
+            loader = NPUModelLoader(model_id)
+            ml_module._global_model_loader = loader
+
         if not loader.is_loaded:
             loader.load()
-        
+
         response = loader.infer(
             prompt=request.prompt,
             max_new_tokens=request.max_tokens,
             temperature=request.temperature
         )
-        
+
         return {
+            "success": True,
             "model": model_id,
+            "model_name": available[model_id].get("name", model_id),
             "prompt": request.prompt[:100] + "..." if len(request.prompt) > 100 else request.prompt,
             "response": response,
-            "tokens_generated": len(response.split())
+            "tokens_generated": len(response.split()) if response else 0
         }
-    
+
     except Exception as e:
         logger.error(f"推理失败: {e}")
         raise HTTPException(status_code=500, detail=f"推理失败: {str(e)}")

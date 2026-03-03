@@ -10,11 +10,9 @@ import os
 import tempfile
 from pathlib import Path
 import shutil
-import zipfile
 
 from tools.pdf_processor import PDFProcessor, PDF_AVAILABLE
 
-# 使用稳定的四色卡片处理器来处理所有PDF操作
 try:
     from tools.pdf_four_color_processor import PDFourColorProcessor
     FOUR_COLOR_AVAILABLE = True
@@ -78,8 +76,7 @@ async def extract_text(
         return {
             "success": True,
             "filename": file.filename,
-            "pages": len(result["pages"]),
-            "text": result["full_text"],
+            "pages": result["pages"],
             "full_text": result["full_text"],
             "metadata": result["metadata"]
         }
@@ -100,7 +97,7 @@ async def extract_tables(
     
     Args:
         file: PDF 文件
-        page_numbers: 页码列表 (逗号分隔, 如 "1,2,3")
+        page_numbers: 页码列表（逗号分隔，如 "1,2,3"）
         
     Returns:
         提取的表格数据
@@ -123,7 +120,7 @@ async def extract_tables(
                 raise HTTPException(status_code=400, detail="页码格式错误")
         
         # 提取表格
-        result = pdf_processor.extract_tables(tmp_path)
+        result = pdf_processor.extract_tables(tmp_path, pages)
         
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result["error"])
@@ -265,46 +262,23 @@ async def batch_process(
             with open(file_path, "wb") as f:
                 shutil.copyfileobj(file.file, f)
         
-        # 批量处理（简化版本）
-        processed_results = []
-        failed_results = []
+        # 批量处理
+        result = pdf_processor.batch_process(
+            input_dir,
+            output_dir,
+            extract_text,
+            extract_tables
+        )
         
-        for filename in os.listdir(input_dir):
-            file_path = os.path.join(input_dir, filename)
-            try:
-                if extract_text:
-                    result = pdf_processor.extract_text(file_path, True)
-                    if result.get("success"):
-                        processed_results.append({
-                            "filename": filename,
-                            "status": "success",
-                            "text_extracted": True
-                        })
-                    else:
-                        failed_results.append({
-                            "filename": filename,
-                            "status": "failed",
-                            "error": result.get("error", "无法提取文本")
-                        })
-                else:
-                    processed_results.append({
-                        "filename": filename,
-                        "status": "success",
-                        "text_extracted": False
-                    })
-            except Exception as e:
-                failed_results.append({
-                    "filename": filename,
-                    "status": "failed",
-                    "error": str(e)
-                })
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
         
         return {
             "success": True,
-            "total": len(files),
-            "processed": len(processed_results),
-            "failed": len(failed_results),
-            "results": processed_results + failed_results
+            "total": result["total"],
+            "processed": len(result["processed"]),
+            "failed": len(result["failed"]),
+            "results": result["processed"] + result["failed"]
         }
 
 

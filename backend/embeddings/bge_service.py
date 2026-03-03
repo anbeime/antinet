@@ -58,7 +58,7 @@ class BGEEmbeddingService:
         
         # 尝试使用QNN Runtime
         try:
-            sys.path.insert(0, 'C:/ai-engine-direct-helper/samples/qai_libs')
+            sys.path.insert(0, 'C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc')
             import QAiRuntimeOmni as qai
             
             self.qnn_context = qai.QnnContext()

@@ -11,6 +11,7 @@ import AgentSystem from "@/pages/AgentSystem";
 import SkillCenter from "@/pages/SkillCenter";
 import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
+import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
 import { useState } from "react";
 import { AuthContext } from '@/contexts/authContext';
 
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/skill-center" element={<SkillCenter />} />
           <Route path="/multi-model" element={<MultiModel />} />
           <Route path="/format-converter" element={<FormatConverter />} />
+          <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
         </Routes>
       </AuthContext.Provider>
   );

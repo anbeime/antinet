@@ -21,7 +21,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
-lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
+lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 
 # 确保两个目录都在 PATH 中

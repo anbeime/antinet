@@ -49,6 +49,10 @@ __pycache__/
 *$py.class
 *.egg-info/
 
+# 大型服务/模型目录（太大，不推送）
+genie-vl-service/
+bge-base-zh-v1.5-qnn-8380/
+
 # 模型文件（太大，不推送）
 *.bin
 *.onnx
@@ -60,6 +64,7 @@ backend/models/onnx/
 backend/models/qnn/*.bin
 
 # 数据库（允许推送）
+data/
 backend/data/
 !backend/data/demo/
 
@@ -106,3 +111,51 @@ install_ppt_preview_deps.bat
 # 文档文件（不需要推送）
 *.md
 !README.md
+
+# Large model and service directories
+genie-vl-service/
+bge-base-zh-v1.5-qnn-8380/
+
+# Database files
+backend/data/
+*.db
+
+# Backup files
+*.backup
+*(*).tsx
+*(*).ts
+
+# Test output files
+test_output.xlsx
+
+# Virtual environment
+venv/
+venv_arm64/
+
+# Node modules
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc

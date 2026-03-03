@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
@@ -39,13 +39,13 @@ import ExcelAnalysis from '@/pages/ExcelAnalysis';
 import DataManagement from '@/pages/DataManagement';
 import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
-import PDFAnalysis from '@/pages/PDFAnalysisEnhanced';
+import PDFAnalysis from '@/pages/PDFAnalysis';
 import BatchProcess from '@/pages/BatchProcess';
 import MultiModel from '@/pages/MultiModel';
 import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
-import ChatBotModalWithVision from '@/components/ChatBotModalWithVision';
-import { WorkingChatBot } from '@/components/WorkingChatBot';
+import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
+
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -118,7 +118,7 @@ const cardTypeMap = {
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -591,11 +591,11 @@ const Home: React.FC = () => {
 
             {/* 团队协作 */}
             <button
-              onClick={() => setActiveTab('team-collaboration')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'team-collaboration' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              onClick={() => setActiveTab('virtual-office-meeting')}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
               <Users size={18} />
-              <span>团队协作</span>
+              <span>八府巡按 · 虚拟会议</span>
             </button>
 
             {/* 文档中心下拉菜单 */}
@@ -642,7 +642,7 @@ const Home: React.FC = () => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'virtual-office-meeting'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -672,10 +672,17 @@ const Home: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setActiveTab('multi-model')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Layers size={16} />
                   <span>多模型</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('virtual-office-meeting')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Users size={16} />
+                  <span>八府巡按会议</span>
                 </button>
               </div>
             </div>
@@ -1533,6 +1540,11 @@ const Home: React.FC = () => {
         {activeTab === 'team-collaboration' && (
           <TeamCollaboration />
         )}
+
+        {/* 虚拟办公室会议视图 */}
+        {activeTab === 'virtual-office-meeting' && (
+          <VirtualOfficeMeeting />
+        )}
        </main>
 
       {/* 页脚 */}
@@ -1645,24 +1657,7 @@ const Home: React.FC = () => {
            </div>
          )}
 
-         {/* 聊天机器人模态框 */}
-        <ChatBotModalWithVision
-          isOpen={showChatModal}
-          onClose={() => setShowChatModal(false)}
-        />
 
-        {/* 聊天机器人浮动按钮 */}
-        <motion.button
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-          onClick={() => setShowChatModal(true)}
-          className="fixed bottom-6 right-6 w-16 h-16 bg-white/80 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center text-white z-50 overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors"
-          title="AI助手"
-        >
-          <img src="/src/pages/logo.png" alt="AI助手" className="w-14 h-14 object-contain" />
-        </motion.button>
 
       </div>
   );

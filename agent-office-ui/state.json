@@ -1,0 +1,56 @@
+{
+  "active_agent": "yichuansi",
+  "agent_states": {
+    "orchestrator": "executing",
+    "mijuanfang": "researching",
+    "tongzhengsi": "writing",
+    "jianchayuan": "researching",
+    "xingyusi": "researching",
+    "canmousi": "writing",
+    "taishige": "syncing",
+    "yichuansi": "idle"
+  },
+  "detail": "✅ 八府巡按会议完成，等待新指令",
+  "progress": 100,
+  "updated_at": "2026-03-01T18:05:53.688553",
+  "task_count": 0,
+  "completed_tasks": 3,
+  "meeting_status": "completed",
+  "meeting_result": {
+    "topic": "test",
+    "summary": "关于\"test\"的八府巡按协作会议已完成。锦衣卫总指挥使陆绎统筹协调，密卷房解析资料、通政司提取事实、监察院分析原因、刑狱司评估风险、参谋司制定策略、太史阁归档记忆、驿传司传达指令，八府各司其职，形成了完整的分析方案。",
+    "cards": [
+      {
+        "type": "blue",
+        "title": "核心事实",
+        "content": "hello"
+      },
+      {
+        "type": "green",
+        "title": "原因分析",
+        "content": "深度剖析问题产生的根本原因：通过监察院和参谋司的联合分析，已识别出主要影响因素和关键节点。"
+      },
+      {
+        "type": "yellow",
+        "title": "风险评估",
+        "content": "刑狱司风险判官已完成评估：识别出潜在执行风险3项，建议采取预防措施，确保方案顺利实施。"
+      },
+      {
+        "type": "red",
+        "title": "行动建议",
+        "content": "参谋司智囊军师制定执行方案：建议分阶段实施，优先处理高优先级任务，预计完成时间2-3个工作日。"
+      }
+    ],
+    "participants": [
+      "orchestrator",
+      "mijuanfang",
+      "tongzhengsi",
+      "jianchayuan",
+      "xingyusi",
+      "canmousi",
+      "taishige",
+      "yichuansi"
+    ],
+    "completed_at": "2026-03-01T18:05:53.688553"
+  }
+}

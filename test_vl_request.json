@@ -1,0 +1,6 @@
+{
+  "model": "qwen2.5vl3b-8380-2.42",
+  "messages": [
+    {"role": "user", "content": "hello, what can you do?"}
+  ]
+}

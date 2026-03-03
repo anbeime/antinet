@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head><title>前端功能完整测试</title>
+<style>
+body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; }
+.section { border: 2px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 8px; }
+.section h2 { margin-top: 0; }
+.success { color: green; font-weight: bold; }
+.error { color: red; font-weight: bold; }
+.info { color: blue; }
+pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; max-height: 200px; }
+button { padding: 8px 16px; margin: 5px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; }
+button:hover { background: #eee; }
+.download-btn { background: #4CAF50; color: white; border: none; }
+</style>
+</head>
+<body>
+<h1>PDF功能完整测试（带自动下载）</h1>
+<p>测试文件: <code>C:\test\antinet\backend\test_four_color.pdf</code></p>
+<p><input type="file" id="testFile" accept=".pdf"> <span id="fileStatus"></span></p>
+
+<div class="section">
+  <h2>1. 文本提取</h2>
+  <button onclick="testExtract()">测试文本提取</button>
+  <pre id="extractResult">等待测试...</pre>
+</div>
+
+<div class="section">
+  <h2>2. 知识卡片（四色卡片）</h2>
+  <button onclick="testCards()">测试知识卡片</button>
+  <pre id="cardsResult">等待测试...</pre>
+</div>
+
+<div class="section">
+  <h2>3. 转Word</h2>
+  <button onclick="testWord()">测试转Word</button>
+  <pre id="wordResult">等待测试...</pre>
+</div>
+
+<div class="section">
+  <h2>4. 转Excel</h2>
+  <button onclick="testExcel()">测试转Excel</button>
+  <pre id="excelResult">等待测试...</pre>
+</div>
+
+<div class="section">
+  <h2>5. 一键测试全部</h2>
+  <button onclick="testAll()" style="background:#2196F3;color:white;font-size:16px;padding:12px 24px;">一键测试全部功能</button>
+  <pre id="allResult">等待测试...</pre>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+function getFile() {
+  const f = document.getElementById('testFile').files[0];
+  if (!f) { alert('请先选择PDF文件！'); return null; }
+  return f;
+}
+
+document.getElementById('testFile').addEventListener('change', function() {
+  document.getElementById('fileStatus').textContent = '✅ 已选择: ' + this.files[0].name + ' (' + (this.files[0].size/1024).toFixed(1) + 'KB)';
+});
+
+async function testExtract() {
+  const file = getFile(); if (!file) return;
+  const el = document.getElementById('extractResult');
+  el.textContent = '⏳ 正在提取文本...';
+  try {
+    const fd = new FormData(); fd.append('file', file);
+    const r = await fetch(API + '/api/pdf/extract/text', { method: 'POST', body: fd });
+    const data = await r.json();
+    el.innerHTML = '<span class="success">✅ 状态: ' + r.status + '</span>\n' +
+      '页数: ' + data.pages + '\n' +
+      '文本长度: ' + (data.text||'').length + ' 字符\n' +
+      '文本预览: ' + (data.text||'').substring(0, 200) + '...';
+    return true;
+  } catch(e) {
+    el.innerHTML = '<span class="error">❌ 失败: ' + e.message + '</span>';
+    return false;
+  }
+}
+
+async function testCards() {
+  const file = getFile(); if (!file) return;
+  const el = document.getElementById('cardsResult');
+  el.textContent = '⏳ 正在生成知识卡片...';
+  try {
+    const fd = new FormData(); fd.append('file', file);
+    const r = await fetch(API + '/api/pdf/generate/four-color-cards', { method: 'POST', body: fd });
+    const data = await r.json();
+    const cards = data.cards || [];
+    const colorMap = {fact:'蓝色(事实)', explanation:'绿色(解释)', risk:'黄色(风险)'};
+    let cardInfo = cards.map((c,i) => 
+      '  卡片' + (i+1) + ': type=' + c.type + ' → ' + (colorMap[c.type]||'红色(行动)') + ', 标题=' + (c.title||'').substring(0,30)
+    ).join('\n');
+    el.innerHTML = '<span class="success">✅ 状态: ' + r.status + '</span>\n' +
+      '卡片数量: ' + cards.length + '\n' + cardInfo;
+    return cards;
+  } catch(e) {
+    el.innerHTML = '<span class="error">❌ 失败: ' + e.message + '</span>';
+    return null;
+  }
+}
+
+async function testWord() {
+  const file = getFile(); if (!file) return;
+  const el = document.getElementById('wordResult');
+  el.textContent = '⏳ Step1: 生成四色卡片...';
+  try {
+    // Step 1
+    const fd = new FormData(); fd.append('file', file);
+    const r1 = await fetch(API + '/api/pdf/generate/four-color-cards', { method: 'POST', body: fd });
+    if (!r1.ok) throw new Error('Step1失败: ' + r1.status);
+    const data = await r1.json();
+    el.textContent = '⏳ Step1完成，得到 ' + (data.cards||[]).length + ' 张卡片\n⏳ Step2: 导出Word...';
+    
+    // Step 2
+    const r2 = await fetch(API + '/api/pdf/export/cards-docx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cards: data.cards || [], title: file.name.replace('.pdf','') + '_报告', author: 'Antinet' })
+    });
+    if (!r2.ok) {
+      const errText = await r2.text();
+      throw new Error('Step2失败: ' + r2.status + ' ' + errText);
+    }
+    const blob = await r2.blob();
+    el.innerHTML = '<span class="success">✅ Word生成成功!</span>\n' +
+      'Content-Type: ' + r2.headers.get('content-type') + '\n' +
+      '文件大小: ' + (blob.size/1024).toFixed(1) + ' KB\n' +
+      '<button class="download-btn" onclick="downloadBlob(\'' + URL.createObjectURL(blob) + '\', \'' + file.name.replace('.pdf','.docx') + '\')">📥 下载Word文件</button>';
+    return true;
+  } catch(e) {
+    el.innerHTML = '<span class="error">❌ 失败: ' + e.message + '</span>';
+    return false;
+  }
+}
+
+async function testExcel() {
+  const file = getFile(); if (!file) return;
+  const el = document.getElementById('excelResult');
+  el.textContent = '⏳ 正在转换为Excel...';
+  try {
+    const fd = new FormData(); fd.append('file', file);
+    const r = await fetch(API + '/api/pdf/export/four-color-excel', { method: 'POST', body: fd });
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error('失败: ' + r.status + ' ' + errText);
+    }
+    const blob = await r.blob();
+    el.innerHTML = '<span class="success">✅ Excel生成成功!</span>\n' +
+      'Content-Type: ' + r.headers.get('content-type') + '\n' +
+      '文件大小: ' + (blob.size/1024).toFixed(1) + ' KB\n' +
+      '<button class="download-btn" onclick="downloadBlob(\'' + URL.createObjectURL(blob) + '\', \'' + file.name.replace('.pdf','.xlsx') + '\')">📥 下载Excel文件</button>';
+    return true;
+  } catch(e) {
+    el.innerHTML = '<span class="error">❌ 失败: ' + e.message + '</span>';
+    return false;
+  }
+}
+
+function downloadBlob(url, filename) {
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+async function testAll() {
+  const file = getFile(); if (!file) return;
+  const el = document.getElementById('allResult');
+  el.textContent = '⏳ 开始测试全部功能...\n';
+  
+  el.textContent += '\n[1/4] 文本提取...\n';
+  const r1 = await testExtract();
+  el.textContent += r1 ? '  ✅ 通过\n' : '  ❌ 失败\n';
+  
+  el.textContent += '\n[2/4] 知识卡片...\n';
+  const r2 = await testCards();
+  el.textContent += r2 ? '  ✅ 通过\n' : '  ❌ 失败\n';
+  
+  el.textContent += '\n[3/4] 转Word...\n';
+  const r3 = await testWord();
+  el.textContent += r3 ? '  ✅ 通过\n' : '  ❌ 失败\n';
+  
+  el.textContent += '\n[4/4] 转Excel...\n';
+  const r4 = await testExcel();
+  el.textContent += r4 ? '  ✅ 通过\n' : '  ❌ 失败\n';
+  
+  el.textContent += '\n========== 测试完成 ==========\n';
+  el.textContent += '通过: ' + [r1,r2,r3,r4].filter(Boolean).length + '/4\n';
+}
+</script>
+</body>
+</html>

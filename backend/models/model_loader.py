@@ -22,32 +22,83 @@ GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
+# 尝试从 config 导入 QNN 版本路径映射
+try:
+    from backend.config import QNN_SDK_PATHS
+except ImportError:
+    QNN_SDK_PATHS = {
+        "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
+        "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
+        "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
+        "2.42": "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc",
+    }
+
+# 提取 QNN 版本号的辅助函数
+def extract_qnn_version(quantization_str: str) -> str:
+    """从 quantization 字符串中提取版本号，如 'QNN 2.37' -> '2.37'"""
+    if not quantization_str:
+        return "2.38"
+    import re
+    match = re.search(r'(\d+\.\d+)', quantization_str)
+    return match.group(1) if match else "2.38"
+
 # 初始化logger
 logger = logging.getLogger(__name__)
 
-# 设置必要的环境变量，确保导入 GenieContext 前 NPU 库路径在 PATH 中
-# QNN 2.42 已安装到 Python 环境，无需额外配置 lib_path
-lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
-# QNN 2.42 库路径（如果需要）
-# bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc"
+def get_qai_libs_path() -> str:
+    """
+    动态获取 qai_appbuilder 的库路径
+    """
+    try:
+        import qai_appbuilder
+        qai_libs = os.path.join(os.path.dirname(qai_appbuilder.__file__), 'libs')
+        if qai_libs and os.path.exists(qai_libs):
+            return qai_libs
+    except (ImportError, TypeError):
+        pass
+    return QNN_SDK_PATHS.get("2.38", "")
 
-# 确保库目录都在 PATH 中
-paths_to_add = [lib_path]
-current_path = os.environ.get('PATH', '')
-for p in paths_to_add:
-    if p not in current_path:
-        current_path = p + ';' + current_path
-os.environ['PATH'] = current_path
-os.environ['QAI_LIBS_PATH'] = lib_path
+# AIPC 预装的额外 DLL 目录
+EXTRA_QAI_LIBS = "C:/ai-engine-direct-helper/samples/qai_libs"
 
-# 添加DLL目录（Python 3.8+），按特定顺序添加
-for p in paths_to_add:
-    if os.path.exists(p):
-        try:
-            os.add_dll_directory(p)
-            logger.info(f"[OK] 已添加DLL目录到加载路径: {p}")
-        except Exception as e:
-            logger.warning(f"[WARNING] 添加DLL目录失败 {p}: {e}")
+def setup_qnn_paths(qnn_version: str = None):
+    """
+    根据 QNN 版本动态设置库路径
+    同时添加 qai_appbuilder libs 和 AIPC 预装目录
+    """
+    lib_path = get_qai_libs_path()
+    
+    if qnn_version and qnn_version in QNN_SDK_PATHS:
+        version_path = QNN_SDK_PATHS[qnn_version]
+        if os.path.exists(version_path):
+            lib_path = version_path
+    
+    # 需要添加的路径列表（按顺序）
+    paths_to_add = []
+    if lib_path and os.path.exists(lib_path):
+        paths_to_add.append(lib_path)
+    if os.path.exists(EXTRA_QAI_LIBS):
+        paths_to_add.append(EXTRA_QAI_LIBS)
+    
+    # 添加所有路径到 PATH 和 DLL 目录
+    current_path = os.environ.get('PATH', '')
+    for p in paths_to_add:
+        if p not in current_path:
+            os.environ['PATH'] = p + ';' + current_path
+            try:
+                os.add_dll_directory(p)
+                logger.info(f"[OK] 已添加QNN库路径: {p}")
+            except Exception as e:
+                logger.warning(f"[WARNING] 添加DLL目录失败: {e}")
+    
+    # 设置 QAI_LIBS_PATH
+    if lib_path:
+        os.environ['QAI_LIBS_PATH'] = lib_path
+    
+    return lib_path
+
+# 初始化默认路径
+lib_path = setup_qnn_paths("2.38")
 
 # 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
 try:
@@ -137,7 +188,7 @@ class ModelConfig:
         },
         "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
-            "path": "C:/model/Qwen2.0-7B-SSD-8380-2.34",
+            "path": "C:/model/models_2.34/Qwen2.0-7B-SSD-8380-2.34",
             "params": "7B",
             "quantization": "QNN 2.34",
             "description": "对话/分析，速度快，中文支持好（需要KV缓存）",
@@ -164,7 +215,7 @@ class ModelConfig:
         },
         "llama3.1-8b": {
             "name": "Llama3.1-8B",
-            "path": "C:/model/llama3.1-8b-8380-qnn2.38",
+            "path": "C:/model/models_2.38/llama3.1-8b-8380-qnn2.38",
             "params": "8B",
             "quantization": "QNN 2.38",
             "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",

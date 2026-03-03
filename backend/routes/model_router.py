@@ -98,7 +98,7 @@ def select_model(query: str) -> str:
     策略：
     - simple (<30分): llama3.2-3b (<1秒)
     - medium (30-59分): llama3.1-8b (3-5秒)
-    - complex (>=60分): qwen2-7b-ssd (20秒，中文最佳)
+    - complex (>=60分): qwen2.0-7b (20秒，中文最佳)
     """
     try:
         # 估算复杂度
@@ -117,7 +117,7 @@ def select_model(query: str) -> str:
             model_key = 'llama3.1-8b'
             model_reason = '中等复杂度，选择平衡模型'
         else:  # complex
-            model_key = 'qwen2-7b-ssd'
+            model_key = 'qwen2.0-7b'
             model_reason = '复杂查询，选择高质量中文模型'
 
         logger.info(f"[ModelRouter] 选择的模型: {model_key}")
@@ -128,7 +128,7 @@ def select_model(query: str) -> str:
     except Exception as e:
         logger.error(f"[ModelRouter] 模型选择失败: {e}", exc_info=True)
         # 出错时使用默认模型
-        return 'qwen2-7b-ssd'
+        return 'qwen2.0-7b'
 
 
 def get_model_info(model_key: str) -> Dict[str, str]:

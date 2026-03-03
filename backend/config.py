@@ -56,23 +56,15 @@ class Settings(BaseSettings):
 # 多模型注册表
 # ============================================================
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
-    # === 纯文本模型 ===
-    "llama3.1-8b": {
-        "path": "C:/model/models_2.38/llama3.1-8b-8380-qnn2.38",
-        "qnn_version": "2.38",
-        "type": "chat",
-        "context_length": 8192,
-        "description": "Llama 3.1 8B - 强大的聊天模型",
-        "performance": "high",
-        "recommended": True  # 默认推荐
-    },
+    # === 纯文本模型（已移除 llama3.1-8b，NPU加载失败）===
     "llama3.2-3b": {
         "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
         "qnn_version": "2.37",
         "type": "chat",
         "context_length": 8192,
         "description": "Llama 3.2 3B - 轻量级聊天模型，速度快",
-        "performance": "fast"
+        "performance": "fast",
+        "recommended": True
     },
     "qwen2.0-7b": {
         "path": "C:/model/models_2.34/Qwen2.0-7B-SSD-8380-2.34",
@@ -107,14 +99,14 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
 
 # QNN SDK 版本路径映射
 QNN_SDK_PATHS: Dict[str, str] = {
-    "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0/lib/arm64x-windows-msvc",
+    "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
     "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
     "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
     "2.42": "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc"
 }
 
 # 默认模型配置
-DEFAULT_CHAT_MODEL: str = "llama3.1-8b"  # 默认使用最强的文本模型
+DEFAULT_CHAT_MODEL: str = "llama3.2-3b"  # 默认使用轻量快速的3B模型
 DEFAULT_VISION_MODEL: str = "qwen2.5-vl-3b"  # 视觉模型
 DEFAULT_EMBEDDING_MODEL: str = "bge-base-zh"  # 嵌入模型
 

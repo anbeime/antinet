@@ -16,7 +16,7 @@ if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
 # 设置必要的环境变量
-lib_path = "C:/ai-engine-direct-helper/samples/qai_libs"
+lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 
 paths_to_add = [lib_path, bridge_lib_path]

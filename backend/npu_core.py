@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class NPUInferenceCore:
     """NPU推理核心类 - 使用 GenieContext"""
 
-    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\ai-engine-direct-helper\samples\qai_libs"):
+    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\Qualcomm\AIStack\QAIRT\2.38.0.250901\lib\arm64x-windows-msvc"):
         """
         初始化NPU推理核心
 

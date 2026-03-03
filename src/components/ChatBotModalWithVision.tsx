@@ -144,6 +144,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
       let result: string;
       
       if (selectedImage) {
+        // For image queries, always use vision analysis (AI inference required)
         const formData = new FormData();
         formData.append('file', selectedImage);
         if (input.trim()) {
@@ -162,18 +163,60 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
         const data = await response.json();
         result = data.result || data.analysis || JSON.stringify(data);
       } else {
-        const response = await fetch('http://localhost:8000/api/chat/query', {
+        // For text queries, first try searching existing knowledge cards
+        // This is faster than AI inference and should be used when possible
+        const searchResponse = await fetch('http://localhost:8000/api/chat/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
+          body: JSON.stringify({ 
+            query: input.trim(), 
+            limit: 5 
+          }),
         });
 
-        if (!response.ok) {
-          throw new Error('聊天请求失败');
-        }
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          const cards = searchData.cards || [];
+          
+          // If we found relevant cards, use them instead of AI inference
+          if (cards.length > 0) {
+            // Format the search results as a readable response
+            let formattedResult = '根据您的查询，找到以下相关知识：\n\n';
+            cards.forEach((card: any, index: number) => {
+              formattedResult += `${index + 1}. ${card.title}\n   ${card.content}\n\n`;
+            });
+            formattedResult += '如需更深入的分析，请提供更多详细信息。';
+            result = formattedResult;
+          } else {
+            // No relevant cards found, fall back to AI inference
+            const chatResponse = await fetch('http://localhost:8000/api/chat/query', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
+            });
 
-        const data = await response.json();
-        result = data.response || data.result || JSON.stringify(data);
+            if (!chatResponse.ok) {
+              throw new Error('聊天请求失败');
+            }
+
+            const chatData = await chatResponse.json();
+            result = chatData.response || chatData.result || JSON.stringify(chatData);
+          }
+        } else {
+          // Search failed, fall back to AI inference
+          const chatResponse = await fetch('http://localhost:8000/api/chat/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
+          });
+
+          if (!chatResponse.ok) {
+            throw new Error('聊天请求失败');
+          }
+
+          const chatData = await chatResponse.json();
+          result = chatData.response || chatData.result || JSON.stringify(chatData);
+        }
       }
 
       const assistantMessage: Message = {
@@ -251,75 +294,79 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
                   <Bot className="w-4 h-4 text-white" />
                 )}
               </div>
-              <div className={`flex-1 max-w-[70%] ${
-                msg.role === 'user' ? 'text-right' : ''
-              }`}>
-                <div className={`inline-block p-3 rounded-lg ${
+              <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                <div className={`inline-block p-3 rounded-lg max-w-[80%] ${
                   msg.role === 'user'
                     ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'bg-gray-100 dark:bg-gray-700'
                 }`}>
+                  {msg.content}
                   {msg.imageUrl && (
                     <img 
                       src={msg.imageUrl} 
-                      alt="上传的图片" 
-                      className="max-w-full h-auto rounded mb-2"
+                      alt="Uploaded" 
+                      className="mt-2 max-w-full rounded-lg max-h-48 object-cover"
                     />
                   )}
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
+                <div className={`text-xs text-gray-500 mt-1 ${
+                  msg.role === 'user' ? 'text-right' : 'text-left'
+                }`}>
                   {msg.timestamp.toLocaleTimeString()}
-                </p>
+                </div>
               </div>
             </div>
           ))}
-          
           {isLoading && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-purple-500 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-white" />
-              </div>
-              <div className="inline-block p-3 rounded-lg bg-gray-100 dark:bg-gray-700">
-                <Loader className="w-5 h-5 animate-spin text-gray-400" />
-              </div>
+            <div className="flex items-center gap-2 text-gray-500">
+              <Loader className="w-4 h-4 animate-spin" />
+              <span className="text-sm">处理中...</span>
             </div>
           )}
-          
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-          {previewUrl && (
-            <div className="mb-3 relative inline-block">
+        {/* 图片预览 */}
+        {previewUrl && (
+          <div className="px-4 py-2 border-t bg-gray-50 dark:bg-gray-800">
+            <div className="flex items-center gap-3">
               <img 
                 src={previewUrl} 
-                alt="预览" 
-                className="max-h-24 rounded-lg border border-gray-300"
+                alt="Preview" 
+                className="w-16 h-16 object-cover rounded-lg border"
               />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{selectedImage?.name}</p>
+                <p className="text-xs text-gray-500">
+                  {selectedImage ? (selectedImage.size / 1024).toFixed(1) : 0} KB
+                </p>
+              </div>
               <button
                 onClick={handleRemoveImage}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                className="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4" />
               </button>
             </div>
-          )}
-          
-          <div className="flex gap-2 items-end">
+          </div>
+        )}
+
+        <div className="p-4 border-t bg-white dark:bg-gray-800 flex-shrink-0">
+          <div className="flex gap-2">
             <input
-              ref={fileInputRef}
               type="file"
+              ref={fileInputRef}
+              className="hidden"
               accept="image/*"
               onChange={handleImageSelect}
-              className="hidden"
             />
+            
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              title="上传图片"
+              className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              disabled={isLoading}
             >
-              <Image className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              <Upload className="w-5 h-5" />
             </button>
             
             <textarea
@@ -327,18 +374,23 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息... (支持上传图片分析)"
-              className="flex-1 min-h-[44px] max-h-32 p-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-              rows={1}
+              placeholder="输入消息... (Enter发送, Shift+Enter换行)"
+              className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={2}
+              disabled={isLoading}
             />
             
             <button
               onClick={handleSend}
               disabled={isLoading || (!input.trim() && !selectedImage)}
-              className="p-2 rounded-lg bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              className="p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg transition-colors"
             >
-              <Send className="w-5 h-5 text-white" />
+              {isLoading ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
+          </div>
+          
+          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            [提示] 支持文本和图片分析 · 基于本地 NPU 模型
           </div>
         </div>
       </motion.div>
