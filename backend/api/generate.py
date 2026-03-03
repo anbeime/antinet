@@ -43,7 +43,7 @@ async def generate_cards(request: GenerateRequest):
         start_time = time.time()
 
         # 检查模型是否加载
-        loader = get_model_loader()
+        loader = get_model_loader("qwen2.0-7b")
         if not loader.is_loaded:
             logger.warning("模型未加载，尝试加载...")
             try:

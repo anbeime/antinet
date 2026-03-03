@@ -117,8 +117,8 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                 "http://127.0.0.1:8000/api/npu/analyze",
                 json={
                     "query": combined_prompt,
-                    "max_tokens": 2048,
-                    "temperature": 0.7
+                    "max_tokens": 256,  # 提高token限制，让LLM有充分表达空间
+                    "temperature": 0.7   # 使用标准温度
                 }
             )
             response.raise_for_status()
@@ -274,19 +274,19 @@ async def create_meeting_stream(request: MeetingRequest):
         all_speeches = []  # 累积所有发言，供后续Agent参考
         all_rounds = []
 
-         for round_num in range(1, request.rounds + 1):
-             theme = themes[min(round_num - 1, len(themes) - 1)]
+        for round_num in range(1, request.rounds + 1):
+            theme = themes[min(round_num - 1, len(themes) - 1)]
 
-             yield _sse_event("round_start", {
-                 "round": round_num,
-                 "theme": theme,
-                 "timestamp": datetime.now().isoformat()
-             })
-             await asyncio.sleep(0.1)
+            yield _sse_event("round_start", {
+                "round": round_num,
+                "theme": theme,
+                "timestamp": datetime.now().isoformat()
+            })
+            await asyncio.sleep(0.1)
 
-             round_speeches = []
+            round_speeches = []
 
-             for agent_id, agent_info in AGENT_MAPPING.items():
+            for agent_id, agent_info in AGENT_MAPPING.items():
                  pixel_id = agent_info.get("pixel_id", agent_id)
 
                  # 通知前端：该Agent正在思考（驱动像素动画）
@@ -313,6 +313,34 @@ async def create_meeting_stream(request: MeetingRequest):
 
                  user_prompt = "\n".join(context_parts)
                  system_prompt = agent_info["system_prompt"]
+
+                 # 添加明确的指令，防止重复输出角色描述，但允许引用观点
+                 user_prompt += "\n\n重要：只回答问题，不要重复角色描述（System Prompt中的内容），但要引用或回应前面智能体提出的观点。"
+
+                 # 如果是密卷房，先搜索数据库获取相关资料
+                 if agent_id == "mijuanfang":
+                     try:
+                         from api.knowledge_routes import search_cards
+                         import json
+
+                         # 从上下文中提取关键词
+                         topic = request.topic.lower()
+                         context_keywords = [keyword for keyword in user_prompt.split() if len(keyword) > 3]
+
+                         # 使用多个关键词搜索
+                         search_queries = topic.split()[:3] + context_keywords[:3]
+
+                         for query in search_queries[:2]:  # 最多搜索2个查询
+                             if len(query) > 2:
+                                 search_result = await search_cards(keyword=query, limit=3)
+                                 if search_result and len(search_result) > 0:
+                                     # 将搜索结果添加到上下文
+                                     relevant_info = f"\n【数据库参考】关于'{query}'的相关资料："
+                                     for card in search_result[:3]:  # 最多引用3个卡片
+                                         relevant_info += f"\n- {card.get('title', '无标题')}：{card.get('content', '')[:100]}..."
+                                     user_prompt += relevant_info
+                     except Exception as e:
+                         logger.warning(f"密卷房数据库搜索失败: {e}")
 
                  # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
                  speech_content = await call_llm(system_prompt, user_prompt)

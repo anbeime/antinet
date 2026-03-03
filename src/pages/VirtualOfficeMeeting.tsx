@@ -68,16 +68,16 @@ const MEETING_STEPS = [
   { agent: 'yichuansi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
 ];
 
-// 8-Agent 角色定义
+ // 8-Agent 角色定义
 const AGENT_ROLES = [
-  { id: 'taishige', name: '太史阁', title: '历史记录与反思官', avatar: '📚', color: 'from-blue-500 to-blue-600', description: '负责记录所有操作、决策和结果' },
-  { id: 'jinjiyu', name: '锦衣卫', title: '安全与情报收集官', avatar: '🛡️', color: 'from-red-500 to-red-600', description: '监控系统安全状态,识别潜在威胁' },
-  { id: 'tongzhengsi', name: '通政司', title: '信息与通讯中枢', avatar: '📡', color: 'from-green-500 to-green-600', description: '管理所有信息流,确保通讯畅通' },
-  { id: 'jianchayuan', name: '监察院', title: '监督与审计官', avatar: '🔍', color: 'from-purple-500 to-purple-600', description: '监督各项操作和流程的执行情况' },
-  { id: 'mijuanfang', name: '密卷房', title: '知识库与档案管理员', avatar: '📂', color: 'from-indigo-500 to-indigo-600', description: '负责非结构化知识的整理、归档' },
-  { id: 'chengxiangfu', name: '丞相府', title: '战略规划与决策支持官', avatar: '🏛️', color: 'from-yellow-500 to-yellow-600', description: '制定战略规划和决策方案' },
-  { id: 'junjichu', name: '军机处', title: '任务执行与调度官', avatar: '⚔️', color: 'from-orange-500 to-orange-600', description: '负责任务分配、执行和进度跟踪' },
-  { id: 'zhihuishi', name: '指挥使', title: '协调与沟通官', avatar: '🎯', color: 'from-teal-500 to-teal-600', description: '协调各部门工作,确保高效协作' }
+  { id: 'taishige', name: '太史阁', title: '历史记录与反思官', avatar: '📚', color: 'from-blue-500 to-blue-600', description: '负责记录所有操作、决策和结果，构建组织的集体记忆与经验库' },
+  { id: 'jinjiyu', name: '锦衣卫', title: '安全与情报收集官', avatar: '🛡️', color: 'from-red-500 to-red-600', description: '监控系统安全状态，识别潜在威胁和风险，收集内外部情报' },
+  { id: 'tongzhengsi', name: '通政司', title: '信息与通讯中枢', avatar: '📡', color: 'from-green-500 to-green-600', description: '管理所有信息流，确保内外部通讯畅通，促进跨部门协作' },
+  { id: 'jianchayuan', name: '监察院', title: '监督与审计官', avatar: '🔍', color: 'from-purple-500 to-purple-600', description: '监督各项操作和流程的执行情况，进行合规性审计' },
+  { id: 'mijuanfang', name: '密卷房', title: '知识库与档案管理员', avatar: '📂', color: 'from-indigo-500 to-indigo-600', description: '专门负责非结构化知识的整理、归档、索引和检索' },
+  { id: 'chengxiangfu', name: '丞相府', title: '战略规划与决策官', avatar: '🏛️', color: 'from-yellow-500 to-yellow-600', description: '制定战略规划，提供高层决策建议，协调各方资源' },
+  { id: 'junjichu', name: '军机处', title: '执行与协调官', avatar: '⚔️', color: 'from-orange-500 to-orange-600', description: '负责任务执行、跨部门协调和进度跟踪' },
+  { id: 'zhihuishi', name: '指挥使', title: '总指挥与裁决官', avatar: '👑', color: 'from-teal-500 to-teal-600', description: '统筹全局，做出最终裁决，确保各方协同高效运转' }
 ];
 
 // 卡片类型映射

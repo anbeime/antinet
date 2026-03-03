@@ -15,49 +15,45 @@ from models.model_loader import (
 )
 from routes.model_router import select_model, get_model_info, estimate_complexity
 
-# 从main.py导入所需的类型
-try:
-    from main import FourColorCard, AnalyzeRequest, AnalyzeResponse, ModelInfo, BenchmarkResponse
-except ImportError:
-    # 如果从main导入失败，定义本地类型
-    class FourColorCard(BaseModel):
-        """四色卡片"""
-        color: str = Field(..., description="卡片颜色: blue|green|yellow|red")
-        title: str = Field(..., description="卡片标题")
-        content: str = Field(..., description="卡片内容")
-        category: str = Field(..., description="类别: 事实|解释|风险|行动")
+# 定义本地类型，避免循环导入
+class FourColorCard(BaseModel):
+    """四色卡片"""
+    color: str = Field(..., description="卡片颜色: blue|green|yellow|red")
+    title: str = Field(..., description="卡片标题")
+    content: str = Field(..., description="卡片内容")
+    category: str = Field(..., description="类别: 事实|解释|风险|行动")
 
-    class AnalyzeRequest(BaseModel):
-        query: str = Field(..., description="自然语言查询")
-        max_tokens: int = Field(128, description="最大生成token数")
-        temperature: float = Field(0.7, description="温度参数")
-        model: Optional[str] = Field(None, description="指定模型键名")
+class AnalyzeRequest(BaseModel):
+    query: str = Field(..., description="自然语言查询")
+    max_tokens: int = Field(128, description="最大生成token数")
+    temperature: float = Field(0.7, description="温度参数")
+    model: Optional[str] = Field(None, description="指定模型键名")
 
-    class AnalyzeResponse(BaseModel):
-        success: bool = Field(..., description="是否成功")
-        query: str = Field(..., description="原始查询")
-        cards: List[FourColorCard] = Field(..., description="四色卡片列表")
-        raw_output: str = Field(..., description="原始输出")
-        performance: Dict[str, Any] = Field(..., description="性能数据")
+class AnalyzeResponse(BaseModel):
+    success: bool = Field(..., description="是否成功")
+    query: str = Field(..., description="原始查询")
+    cards: List[FourColorCard] = Field(..., description="四色卡片列表")
+    raw_output: str = Field(..., description="原始输出")
+    performance: Dict[str, Any] = Field(..., description="性能数据")
 
-    class ModelInfo(BaseModel):
-        key: str = Field(..., description="模型键名")
-        name: str = Field(..., description="模型名称")
-        params: str = Field(..., description="参数规模")
-        quantization: str = Field(..., description="量化类型")
-        description: str = Field(..., description="描述")
-        path: str = Field(..., description="模型路径")
-        recommended: bool = Field(False, description="是否推荐")
+class ModelInfo(BaseModel):
+    key: str = Field(..., description="模型键名")
+    name: str = Field(..., description="模型名称")
+    params: str = Field(..., description="参数规模")
+    quantization: str = Field(..., description="量化类型")
+    description: str = Field(..., description="描述")
+    path: str = Field(..., description="模型路径")
+    recommended: bool = Field(False, description="是否推荐")
 
-    class BenchmarkResponse(BaseModel):
-        model_name: str = Field(..., description="模型名称")
-        avg_latency_ms: float = Field(..., description="平均延迟(ms)")
-        min_latency_ms: float = Field(..., description="最小延迟(ms)")
-        max_latency_ms: float = Field(..., description="最大延迟(ms)")
-        cpu_vs_npu_speedup: float = Field(..., description="CPU vs NPU加速比")
-        memory_usage_mb: float = Field(..., description="内存使用(MB)")
-        test_count: int = Field(..., description="测试次数")
-        status: str = Field(..., description="状态")
+class BenchmarkResponse(BaseModel):
+    model_name: str = Field(..., description="模型名称")
+    avg_latency_ms: float = Field(..., description="平均延迟(ms)")
+    min_latency_ms: float = Field(..., description="最小延迟(ms)")
+    max_latency_ms: float = Field(..., description="最大延迟(ms)")
+    cpu_vs_npu_speedup: float = Field(..., description="CPU vs NPU加速比")
+    memory_usage_mb: float = Field(..., description="内存使用(MB)")
+    test_count: int = Field(..., description="测试次数")
+    status: str = Field(..., description="状态")
 
 logger = logging.getLogger(__name__)
 

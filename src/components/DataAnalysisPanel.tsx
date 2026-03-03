@@ -1,5 +1,5 @@
 // src/components/DataAnalysisPanel.tsx - 数据分析面板
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -7,7 +7,11 @@ import {
   TrendingUp,
   Database,
   Zap,
-  CheckCircle
+  CheckCircle,
+  BookOpen,
+  Lightbulb,
+  AlertTriangle,
+  Target
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,183 +27,180 @@ interface FourColorCard {
 }
 
 interface AnalysisResult {
+  success: boolean;
   query: string;
   cards: Record<string, FourColorCard>;
   facts: Record<string, FourColorCard>;
   explanations: Record<string, FourColorCard>;
   risks: Record<string, FourColorCard>;
   actions: Record<string, FourColorCard>;
-  execution_time: number;
+  execution_time?: number;
+  generated_at?: string;
+  raw_output?: string;
   performance: {
-    inference_time_ms: number;
     total_time_ms: number;
-    model: string;
-    device: string;
-    tokens_generated: number;
-    meets_target: boolean;
+    inference_time_ms: number;
+    meets_target: number;
+    device?: string;
   };
-  visualizations?: any[];
 }
 
-interface HealthStatus {
-  status: string;
-  model: string;
-  model_loaded: boolean;
-  device: string;
-  data_stays_local: boolean;
+// 知识卡片类型
+interface KnowledgeCard {
+  id: number;
+  type: string;
+  title: string;
+  content: string;
+  source?: string;
+  url?: string;
+  category?: string;
+  created_at?: string;
 }
+
+// 颜色配置
+const colorConfig = {
+  blue: {
+    bg: 'bg-blue-50 dark:bg-blue-900/30',
+    border: 'border-blue-200 dark:border-blue-800',
+    text: 'text-blue-800 dark:text-blue-200',
+    icon: <BookOpen className="text-blue-600 dark:text-blue-400" size={24} />
+  },
+  green: {
+    bg: 'bg-green-50 dark:bg-green-900/30',
+    border: 'border-green-200 dark:border-green-800',
+    text: 'text-green-800 dark:text-green-200',
+    icon: <Lightbulb className="text-green-600 dark:text-green-400" size={24} />
+  },
+  yellow: {
+    bg: 'bg-yellow-50 dark:bg-yellow-900/30',
+    border: 'border-yellow-200 dark:border-yellow-800',
+    text: 'text-yellow-800 dark:text-yellow-200',
+    icon: <AlertTriangle className="text-yellow-600 dark:text-yellow-400" size={24} />
+  },
+  red: {
+    bg: 'bg-red-50 dark:bg-red-900/30',
+    border: 'border-red-200 dark:border-red-800',
+    text: 'text-red-800 dark:text-red-200',
+    icon: <Target className="text-red-600 dark:text-red-400" size={24} />
+  }
+};
 
 const DataAnalysisPanel: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
+  const [knowledgeCards, setKnowledgeCards] = useState<KnowledgeCard[]>([]);
+  const [showingKnowledge, setShowingKnowledge] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<{ model_loaded: boolean; device: string; model: string } | null>(null);
   const [checkingHealth, setCheckingHealth] = useState(false);
 
-  // 检查后端健康状态
+  // 示例查询 - TODO: 从API加载示例查询或用户自定义
+  const [exampleQueries] = useState<string[]>([]);
+
+  // 检查服务健康状态
   const checkHealth = async () => {
     setCheckingHealth(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/health`);
-      if (!response.ok) {
-        throw new Error('后端服务未响应');
+      if (response.ok) {
+        const data = await response.json();
+        setHealthStatus({
+          model_loaded: data.model_loaded,
+          device: data.device,
+          model: data.model
+        });
       }
-      const data = await response.json();
-      setHealthStatus(data);
-
-      toast(data.model_loaded ? '[OK] 后端服务正常,NPU模型已加载' : '[!] 后端服务运行中,但模型未加载', {
-        className: data.model_loaded
-          ? 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-          : 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
-      });
     } catch (error) {
-      toast('✗ 后端服务连接失败,请检查服务是否启动', {
-        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
-      });
-      setHealthStatus(null);
+      console.error('健康检查失败:', error);
+      toast.error('服务健康检查失败');
     } finally {
       setCheckingHealth(false);
     }
   };
 
-  // 执行数据分析（8-Agent协作）
+  // 初始化时检查健康状态
+  useEffect(() => {
+    checkHealth();
+  }, []);
+
+  // 处理分析请求
   const handleAnalyze = async () => {
-    if (!query.trim()) {
-      toast('请输入查询内容', {
-        className: 'bg-amber-50 text-amber-800'
-      });
-      return;
-    }
+    if (!query.trim() || loading) return;
 
     setLoading(true);
+    setResult(null);
+    setKnowledgeCards([]);
+    setShowingKnowledge(false);
+
     try {
-      // 调用8-Agent后端API（增加60秒超时）
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
-      
-      const response = await fetch(`${API_BASE_URL}/api/generate/cards`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: query,
-          data_source: null,  // 可选：数据源路径
-          analysis_type: null  // 可选：分析类型
-        }),
-        signal: controller.signal
-      });
+      // 第一阶段：立即进行知识搜索（秒级响应）
+      const knowledgeSearch = async () => {
+        try {
+          // 使用查询关键词进行模糊搜索
+          const searchResponse = await fetch(
+            `${API_BASE_URL}/api/knowledge/cards?limit=5`
+          );
+          
+          if (searchResponse.ok) {
+            const cards: KnowledgeCard[] = await searchResponse.json();
+            // 筛选与查询相关的卡片（简单的关键词匹配）
+            const relevantCards = cards.filter(card => 
+              card.title.toLowerCase().includes(query.toLowerCase()) ||
+              card.content.toLowerCase().includes(query.toLowerCase())
+            );
+            
+            if (relevantCards.length > 0) {
+              setKnowledgeCards(relevantCards.slice(0, 3)); // 最多显示3张相关卡片
+              setShowingKnowledge(true);
+            }
+          }
+        } catch (error) {
+          console.warn('知识搜索失败，继续进行大模型分析:', error);
+        }
+      };
 
-      clearTimeout(timeoutId);
+      // 第二阶段：后台进行NPU大模型分析
+      const npuAnalysis = async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/generate/cards`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query: query.trim() })
+          });
 
-      if (response.status === 503) {
-        // 模型未加载
-        const errorData = await response.json();
-        toast(`模型加载失败: ${errorData.detail}`, {
-          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100',
-          duration: 5000
-        });
-        return;
-      }
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+          }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || '分析请求失败');
-      }
+          const data: AnalysisResult = await response.json();
+          if (data.success) {
+            setResult(data);
+            setShowingKnowledge(false); // 分析完成后隐藏知识卡片
+          } else {
+            throw new Error('分析失败');
+          }
+        } catch (error) {
+          console.error('NPU分析失败:', error);
+          toast.error('分析失败，请稍后重试');
+          setLoading(false);
+          throw error;
+        }
+      };
 
-      const data: AnalysisResult = await response.json();
-      setResult(data);
-
-      // 显示性能指标
-      const perfMsg = `8-Agent协作: ${(data.execution_time * 1000).toFixed(0)}ms`;
-
-      toast(`✓ 8-Agent分析完成! ${perfMsg}`, {
-        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-      });
-
-      // 自动滚动到结果区域
-      setTimeout(() => {
-        document.getElementById('analysis-result')?.scrollIntoView({
-          behavior: 'smooth'
-        });
-      }, 300);
+      // 并行执行两个阶段
+      await Promise.all([
+        knowledgeSearch(),
+        npuAnalysis()
+      ]);
 
     } catch (error) {
-      console.error('分析失败:', error);
-      
-      // 区分不同类型的错误
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          toast('[超时] 分析超时（60秒），NPU推理时间过长。建议：1) 缩短查询内容 2) 检查NPU状态', {
-            className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100',
-            duration: 8000
-          });
-        } else {
-          toast(`✗ 分析失败: ${error.message}`, {
-            className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100',
-            duration: 5000
-          });
-        }
-      } else {
-        toast('✗ 分析失败,请检查后端服务', {
-          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
-        });
-      }
+      console.error('分析过程出错:', error);
     } finally {
       setLoading(false);
     }
   };
-
-  // 卡片颜色配置
-  const colorConfig = {
-    blue: {
-      bg: 'bg-blue-50 dark:bg-blue-950/40',
-      border: 'border-blue-200 dark:border-blue-800',
-      text: 'text-blue-800 dark:text-blue-200',
-      icon: '[数]'
-    },
-    green: {
-      bg: 'bg-green-50 dark:bg-green-950/40',
-      border: 'border-green-200 dark:border-green-800',
-      text: 'text-green-800 dark:text-green-200',
-      icon: ''
-    },
-    yellow: {
-      bg: 'bg-yellow-50 dark:bg-yellow-950/40',
-      border: 'border-yellow-200 dark:border-yellow-800',
-      text: 'text-yellow-800 dark:text-yellow-200',
-      icon: ''
-    },
-    red: {
-      bg: 'bg-red-50 dark:bg-red-950/40',
-      border: 'border-red-200 dark:border-red-800',
-      text: 'text-red-800 dark:text-red-200',
-      icon: '[动]'
-    }
-  };
-
-  // 示例查询 - TODO: 从API加载示例查询或用户自定义
-  const [exampleQueries] = useState<string[]>([]);
 
   return (
     <div className="space-y-6">
@@ -288,7 +289,69 @@ const DataAnalysisPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 分析结果 */}
+      {/* 流式知识卡片展示（第一阶段） */}
+      {showingKnowledge && knowledgeCards.length > 0 && !result && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-4"
+        >
+          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl p-4 text-white">
+            <div className="flex items-center gap-2">
+              <BookOpen size={20} />
+              <div>
+                <div className="text-sm opacity-90">相关知识</div>
+                <div className="text-lg font-bold">找到 {knowledgeCards.length} 条相关信息</div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {knowledgeCards.map((card, idx) => {
+              const config = colorConfig[card.type as keyof typeof colorConfig] || colorConfig.blue;
+              return (
+                <motion.div
+                  key={card.id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: idx * 0.1 }}
+                  className={`p-4 rounded-xl border-2 ${config.bg} ${config.border}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-2xl">{config.icon}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className={`font-semibold ${config.text}`}>
+                          {card.title}
+                        </h3>
+                        {card.category && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${config.bg} ${config.text} border ${config.border}`}>
+                            {card.category}
+                          </span>
+                        )}
+                      </div>
+                      <p className={`text-sm ${config.text} opacity-90 line-clamp-3`}>
+                        {card.content}
+                      </p>
+                      {card.source && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                          来源: {card.source}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+          
+          <div className="text-center text-gray-500 dark:text-gray-400 text-sm">
+            正在进行深度分析...
+          </div>
+        </motion.div>
+      )}
+
+      {/* 四色卡片展示（第二阶段） */}
       {result && (
         <motion.div
           id="analysis-result"
@@ -354,7 +417,7 @@ const DataAnalysisPanel: React.FC = () => {
       )}
 
       {/* 无结果提示 */}
-      {!result && !loading && (
+      {!result && !loading && !showingKnowledge && (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-12 border border-gray-200 dark:border-gray-700 text-center">
           <Database className="mx-auto text-gray-300 dark:text-gray-600 mb-4" size={48} />
           <h3 className="text-lg font-semibold mb-2">开始您的数据分析</h3>

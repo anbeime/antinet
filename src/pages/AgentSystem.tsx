@@ -61,33 +61,33 @@ const AgentSystem: React.FC = () => {
       icon: Database,
       color: 'from-indigo-500 to-indigo-600'
     },
-    {
-      id: 'chengxiangfu',
-      name: '丞相府',
-      role: '战略规划与决策支持官',
-      description: '基于全局数据进行战略分析，提供决策支持，协调各Agent的工作方向。',
-      capabilities: ['战略分析', '决策建模', '资源配置', '趋势预测', '多目标优化'],
-      icon: Crown,
-      color: 'from-yellow-500 to-yellow-600'
-    },
-    {
-      id: 'junjichu',
-      name: '军机处',
-      role: '任务执行与结果官',
-      description: '执行具体任务，生成分析结果和四色卡片，确保任务高质量完成。',
-      capabilities: ['任务执行', '结果生成', '质量控制', '进度报告', '异常处理'],
-      icon: Target,
-      color: 'from-orange-500 to-orange-600'
-    },
-    {
-      id: 'zhihuishi',
-      name: '指挥使',
-      role: '任务协调官',
-      description: '协调锦衣卫总指挥使与各部门的工作，确保任务高效流转和沟通顺畅。',
-      capabilities: ['任务协调', '流程优化', '沟通管理', '冲突解决', '效率提升'],
-      icon: Users,
-      color: 'from-teal-500 to-teal-600'
-    }
+     {
+       id: 'chengxiangfu',
+       name: '丞相府',
+       role: '战略规划与决策官',
+       description: '制定战略规划，提供高层决策建议，协调各方资源',
+       capabilities: ['战略规划', '决策建议', '资源协调'],
+       icon: Crown,
+       color: 'from-yellow-500 to-yellow-600'
+     },
+     {
+       id: 'junjichu',
+       name: '军机处',
+       role: '执行与协调官',
+       description: '负责任务执行、跨部门协调和进度跟踪',
+       capabilities: ['任务执行', '跨部门协调', '进度跟踪'],
+       icon: Target,
+       color: 'from-orange-500 to-orange-600'
+     },
+     {
+       id: 'zhihuishi',
+       name: '指挥使',
+       role: '总指挥与裁决官',
+       description: '统筹全局，做出最终裁决，确保各方协同高效运转',
+       capabilities: ['综合决策', '最终裁决', '协同管理'],
+       icon: Users,
+       color: 'from-teal-500 to-teal-600'
+     }
   ];
 
   const selectedAgentData = agents.find(a => a.id === selectedAgent)!;
