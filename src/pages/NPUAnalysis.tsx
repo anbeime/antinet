@@ -1,22 +1,57 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { npuService, AnalyzeResponse } from '@/services/npuService';
 import FourColorCards from '@/components/FourColorCards';
-import { Brain, Clock, Gauge, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Brain, Clock, Gauge, CheckCircle2, AlertTriangle, Search, BookOpen } from 'lucide-react';
+import { API_BASE_URL, API_ENDPOINTS } from '@/config/api';
 
 export default function NPUAnalysis() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [knowledgeResults, setKnowledgeResults] = useState<any[]>([]);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+
+  // 知识搜索函数
+  const searchKnowledge = async (searchQuery: string) => {
+    try {
+      setKnowledgeLoading(true);
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.KNOWLEDGE_SEARCH}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          keyword: searchQuery,
+          limit: 5
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setKnowledgeResults(data || []);
+      }
+    } catch (err) {
+      console.error('知识搜索失败:', err);
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  };
 
   const handleAnalyze = async () => {
     if (!query.trim()) return;
 
     setLoading(true);
     setError(null);
+    setResult(null);
+    setKnowledgeResults([]);
 
     try {
+      // 第一阶段：立即搜索知识库（并行执行）
+      searchKnowledge(query);
+      
+      // 第二阶段：后台大模型分析
       const response = await npuService.analyze({
         query,
       });
@@ -92,6 +127,42 @@ export default function NPUAnalysis() {
           )}
         </div>
       </div>
+
+      {/* 知识搜索结果（立即显示） */}
+      {(knowledgeLoading || knowledgeResults.length > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white dark:bg-gray-800 rounded-lg p-6 mb-8 border border-gray-200 dark:border-gray-700"
+        >
+          <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Search size={20} />
+            相关知识卡片
+          </h3>
+          {knowledgeLoading ? (
+            <div className="text-center py-4 text-gray-500">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2"></div>
+              正在搜索相关知识...
+            </div>
+          ) : knowledgeResults.length > 0 ? (
+            <div className="space-y-3">
+              {knowledgeResults.map((card, index) => (
+                <div key={card.id || index} className="p-3 bg-gray-50 dark:bg-gray-700 rounded border border-gray-200 dark:border-gray-600">
+                  <h4 className="font-semibold text-gray-900 dark:text-white mb-1">{card.title}</h4>
+                  <p className="text-gray-700 dark:text-gray-300 text-sm">{card.content}</p>
+                  <div className="mt-2 text-xs text-gray-500">
+                    类型: {card.card_type} | {new Date(card.created_at).toLocaleDateString('zh-CN')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-gray-500">
+              未找到相关知识卡片
+            </div>
+          )}
+        </motion.div>
+      )}
 
       {/* 错误提示 */}
       {error && (
@@ -182,43 +253,50 @@ export default function NPUAnalysis() {
           </h2>
 
           {/* 四色卡片展示 */}
-          {result.cards && result.cards.length > 0 ? (
+          {result.cards && Object.keys(result.cards).length > 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="font-bold text-gray-900 dark:text-white mb-4">四色卡片分析结果</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {result.cards.map((card: any, index: number) => {
+                {Object.entries(result.cards).map(([color, cardData]) => {
+                  // cardData 是单个卡片对象，不是数组
+                  const card = typeof cardData === 'object' && cardData !== null ? cardData : {};
+                  
+                  // 安全获取颜色值
+                  const cardColor = color || 'blue';
+                  const validColor = ['blue', 'green', 'yellow', 'red'].includes(cardColor) ? cardColor : 'blue';
+                  
                   const colorStyles = {
                     blue: 'bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-700',
                     green: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-700',
                     yellow: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-700',
                     red: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-700',
-                  }[card.card_type] || 'bg-gray-50 border-gray-200';
+                  }[validColor] || 'bg-gray-50 border-gray-200';
                   
                   const titleColors = {
                     blue: 'text-blue-800 dark:text-blue-200',
                     green: 'text-green-800 dark:text-green-200',
                     yellow: 'text-yellow-800 dark:text-yellow-200',
                     red: 'text-red-800 dark:text-red-200',
-                  }[card.card_type] || 'text-gray-800';
+                  }[validColor] || 'text-gray-800';
 
                   return (
                     <motion.div
-                      key={card.card_id || index}
+                      key={color}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
+                      transition={{ delay: 0.1 }}
                       className={`p-4 rounded-lg border ${colorStyles}`}
                     >
                       <h4 className={`font-bold mb-2 ${titleColors}`}>
-                        {card.title || '无标题'}
+                        {(card as any).title || '无标题'}
                       </h4>
                       <p className="text-gray-700 dark:text-gray-300 text-sm">
-                        {typeof card.content === 'string' 
-                          ? card.content 
-                          : JSON.stringify(card.content)}
+                        {typeof (card as any).content === 'string' 
+                          ? (card as any).content 
+                          : JSON.stringify((card as any).content)}
                       </p>
                       <div className="mt-2 text-xs text-gray-500">
-                        类型: {card.category || card.card_type}
+                        类型: {(card as any).category || (card as any).card_type || color}
                       </div>
                     </motion.div>
                   );

@@ -482,6 +482,66 @@ async def import_file(file: UploadFile = File(...)):
         filename = file.filename or ""
         ext = os.path.splitext(filename)[1].lower()
         
+        # 如果没有文件扩展名，尝试从content_type推断
+        if not ext and file.content_type:
+            content_type = file.content_type.lower()
+            if 'pdf' in content_type:
+                ext = '.pdf'
+            elif 'text' in content_type or 'markdown' in content_type:
+                ext = '.txt'
+            elif 'word' in content_type or 'document' in content_type:
+                ext = '.docx'
+            elif 'excel' in content_type or 'spreadsheet' in content_type:
+                ext = '.xlsx'
+            elif 'image' in content_type:
+                # Try to determine specific image format from content
+                ext = '.jpg'  # default to jpg for images
+        
+        # 如果仍然没有扩展名，尝试从文件内容检测（读取前几个字节）
+        if not ext:
+            # 保存上传的文件到临时目录以检测类型
+            with tempfile.NamedTemporaryFile(delete=False) as tmp_check:
+                content_preview = await file.read(1024)  # Read first 1024 bytes
+                tmp_check.write(content_preview)
+                tmp_check_path = tmp_check.name
+            
+            try:
+                # Check file magic numbers
+                with open(tmp_check_path, 'rb') as f:
+                    header = f.read(8)
+                
+                if header.startswith(b'%PDF'):
+                    ext = '.pdf'
+                elif header.startswith((b'\xff\xd8\xff', b'\x89PNG', b'GIF8', b'BM')):
+                    # Image formats
+                    if header.startswith(b'\xff\xd8\xff'):
+                        ext = '.jpg'
+                    elif header.startswith(b'\x89PNG'):
+                        ext = '.png'
+                    elif header.startswith(b'GIF8'):
+                        ext = '.gif'
+                    elif header.startswith(b'BM'):
+                        ext = '.bmp'
+                elif b'\x00\x00\x00\x0c' in header[:4] or b'ftyp' in header:
+                    # Could be various formats, but without extension hard to tell
+                    pass
+                else:
+                    # Assume text file if no binary signature
+                    ext = '.txt'
+            except Exception as e:
+                logger.warning(f"无法检测文件类型: {e}")
+                ext = '.txt'  # fallback to text
+            finally:
+                os.unlink(tmp_check_path)
+                # Reset file pointer since we read some content
+                await file.seek(0)
+        
+        # 验证支持的文件格式
+        supported_extensions = {'.pdf', '.txt', '.md', '.docx', '.doc', '.xlsx', '.xls', 
+                              '.jpg', '.jpeg', '.png', '.bmp', '.gif'}
+        if ext not in supported_extensions:
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}. 支持的格式: {', '.join(supported_extensions)}")
+        
         # 保存上传的文件到临时目录
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             content = await file.read()

@@ -117,7 +117,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                 "http://127.0.0.1:8000/api/npu/analyze",
                 json={
                     "query": combined_prompt,
-                    "max_tokens": 300,
+                    "max_tokens": 2048,
                     "temperature": 0.7
                 }
             )
@@ -163,6 +163,7 @@ class AgentSpeech(BaseModel):
     agent_name: str
     agent_title: str
     avatar: str
+    system_prompt: Optional[str] = None
     speech: str
     timestamp: str
     cards_referenced: List[str] = []
@@ -273,74 +274,73 @@ async def create_meeting_stream(request: MeetingRequest):
         all_speeches = []  # 累积所有发言，供后续Agent参考
         all_rounds = []
 
-        for round_num in range(1, request.rounds + 1):
-            theme = themes[min(round_num - 1, len(themes) - 1)]
+         for round_num in range(1, request.rounds + 1):
+             theme = themes[min(round_num - 1, len(themes) - 1)]
 
-            yield _sse_event("round_start", {
-                "round": round_num,
-                "theme": theme,
-                "timestamp": datetime.now().isoformat()
-            })
-            await asyncio.sleep(0.1)
+             yield _sse_event("round_start", {
+                 "round": round_num,
+                 "theme": theme,
+                 "timestamp": datetime.now().isoformat()
+             })
+             await asyncio.sleep(0.1)
 
-            round_speeches = []
+             round_speeches = []
 
-            for agent_id, agent_info in AGENT_MAPPING.items():
-                pixel_id = agent_info.get("pixel_id", agent_id)
+             for agent_id, agent_info in AGENT_MAPPING.items():
+                 pixel_id = agent_info.get("pixel_id", agent_id)
 
-                # 通知前端：该Agent正在思考（驱动像素动画）
-                yield _sse_event("agent_speaking", {
-                    "agent_id": agent_id,
-                    "pixel_id": pixel_id,
-                    "agent_name": agent_info["name"],
-                    "round": round_num,
-                    "timestamp": datetime.now().isoformat()
-                })
-                await asyncio.sleep(0.1)
+                 # 通知前端：该Agent正在思考（驱动像素动画）
+                 yield _sse_event("agent_speaking", {
+                     "agent_id": agent_id,
+                     "pixel_id": pixel_id,
+                     "agent_name": agent_info["name"],
+                     "round": round_num,
+                     "timestamp": datetime.now().isoformat()
+                 })
+                 await asyncio.sleep(0.1)
 
-                # 构建上下文：包含前面所有Agent的发言
-                context_parts = [f"会议主题：{request.topic}"]
-                if request.context:
-                    context_parts.append(f"背景信息：{request.context}")
-                context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
+                 # 构建上下文：包含前面所有Agent的发言
+                 context_parts = [f"会议主题：{request.topic}"]
+                 if request.context:
+                     context_parts.append(f"背景信息：{request.context}")
+                 context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
 
-                if all_speeches:
-                    context_parts.append("\n--- 此前的讨论记录 ---")
-                    for prev in all_speeches[-16:]:  # 最多保留最近16条，避免上下文过长
-                        context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
-                    context_parts.append("--- 讨论记录结束 ---\n")
+                 if all_speeches:
+                     context_parts.append("\n--- 此前的讨论记录 ---")
+                     for prev in all_speeches[-16:]:  # 最多保留最近16条，避免上下文过长
+                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
+                     context_parts.append("--- 讨论记录结束 ---\n")
 
-                context_parts.append(f"请你以「{agent_info['name']}」的身份，针对当前议题发表你的观点。")
+                 user_prompt = "\n".join(context_parts)
+                 system_prompt = agent_info["system_prompt"]
 
-                user_prompt = "\n".join(context_parts)
-                system_prompt = agent_info["system_prompt"]
+                 # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
+                 speech_content = await call_llm(system_prompt, user_prompt)
 
-                # 调用LLM
-                speech_content = await call_llm(system_prompt, user_prompt)
+                 if not speech_content:
+                     # LLM不可用时的智能降级：基于角色生成有意义的回复
+                     speech_content = _generate_role_based_fallback(
+                         agent_info, request.topic, theme, round_num, round_speeches
+                     )
 
-                if not speech_content:
-                    # LLM不可用时的智能降级：基于角色生成有意义的回复
-                    speech_content = _generate_role_based_fallback(
-                        agent_info, request.topic, theme, round_num, round_speeches
-                    )
+                 speech_data = {
+                     "agent_id": agent_id,
+                     "agent_name": agent_info["name"],
+                     "agent_title": agent_info["title"],
+                     "avatar": agent_info["avatar"],
+                     "system_prompt": agent_info["system_prompt"],
+                     "speech": speech_content,
+                     "timestamp": datetime.now().isoformat(),
+                     "cards_referenced": [],
+                     "pixel_id": pixel_id,
+                     "round": round_num
+                 }
 
-                speech_data = {
-                    "agent_id": agent_id,
-                    "agent_name": agent_info["name"],
-                    "agent_title": agent_info["title"],
-                    "avatar": agent_info["avatar"],
-                    "speech": speech_content,
-                    "timestamp": datetime.now().isoformat(),
-                    "cards_referenced": [],
-                    "pixel_id": pixel_id,
-                    "round": round_num
-                }
+                 all_speeches.append(speech_data)
+                 round_speeches.append(speech_data)
 
-                all_speeches.append(speech_data)
-                round_speeches.append(speech_data)
-
-                yield _sse_event("agent_speech", speech_data)
-                await asyncio.sleep(0.3)  # 给前端一点时间渲染动画
+                 yield _sse_event("agent_speech", speech_data)
+                 await asyncio.sleep(0.3)  # 给前端一点时间渲染动画
 
             all_rounds.append({
                 "round": round_num,
@@ -468,6 +468,7 @@ async def create_meeting(request: MeetingRequest):
                 agent_name=agent_info["name"],
                 agent_title=agent_info["title"],
                 avatar=agent_info["avatar"],
+                system_prompt=agent_info["system_prompt"],
                 speech=speech_content,
                 timestamp=datetime.now().isoformat(),
                 cards_referenced=[]
@@ -475,6 +476,7 @@ async def create_meeting(request: MeetingRequest):
             all_speeches.append({
                 "agent_name": agent_info["name"],
                 "agent_title": agent_info["title"],
+                "system_prompt": agent_info["system_prompt"],
                 "speech": speech_content
             })
             round_speeches.append(speech_obj)

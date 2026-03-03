@@ -38,6 +38,7 @@ async def generate_cards(request: GenerateRequest):
     try:
         import time
         from models.model_loader import get_model_loader
+        from routes.knowledge_routes import db_manager  # 添加知识库依赖
 
         start_time = time.time()
 
@@ -50,8 +51,36 @@ async def generate_cards(request: GenerateRequest):
             except Exception as e:
                 raise HTTPException(status_code=503, detail=f"模型加载失败: {str(e)}")
 
-        # 构造简化的分析提示词（减少token数量）
-        analysis_prompt = f"""请简要分析：{request.query}
+        # 第一步：搜索知识库获取相关信息（秒级响应）
+        try:
+            conn = db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 使用用户查询作为搜索关键词
+            keyword = request.query[:100]  # 限制关键词长度
+            cursor.execute('''
+                SELECT * FROM knowledge_cards
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY created_at DESC
+                LIMIT 5
+            ''', (f'%{keyword}%', f'%{keyword}%'))
+            
+            relevant_cards = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            
+            # 构建知识上下文
+            knowledge_context = ""
+            if relevant_cards:
+                knowledge_context = "基于以下相关知识：\n"
+                for card in relevant_cards[:3]:  # 只取前3个最相关的
+                    knowledge_context += f"- {card['title']}: {card['content'][:200]}\n"
+                knowledge_context += "\n"
+        except Exception as e:
+            logger.warning(f"知识库搜索失败，使用空上下文: {e}")
+            knowledge_context = ""
+
+        # 第二步：构造分析提示词（包含知识上下文）
+        analysis_prompt = f"""{knowledge_context}请基于以上信息简要分析：{request.query}
 
 输出格式：
 1. 事实：[1-2句话]
@@ -59,12 +88,12 @@ async def generate_cards(request: GenerateRequest):
 3. 风险：[1-2句话]
 4. 行动：[1-2句话]"""
 
-        # NPU推理（减少max_tokens以加快速度）
+        # NPU推理（使用上下文进行快速分析）
         inference_start = time.time()
         try:
             raw_output = loader.infer(
                 prompt=analysis_prompt,
-                max_new_tokens=128,  # 从512减少到128
+                max_new_tokens=128,
                 temperature=0.7
             )
         except Exception as e:
@@ -75,6 +104,37 @@ async def generate_cards(request: GenerateRequest):
 
         # 解析输出生成四色卡片
         cards = generate_four_color_cards(raw_output, request.query)
+
+        # 修复卡片格式，确保包含color和category字段
+        fixed_cards = {}
+        for color_key, card_data in cards.items():
+            if isinstance(card_data, dict):
+                # 确保每个卡片都有必要的字段
+                fixed_card = {
+                    'color': color_key,
+                    'title': card_data.get('title', f'{color_key}卡片'),
+                    'content': card_data.get('content', ''),
+                    'category': {
+                        'blue': '事实',
+                        'green': '解释', 
+                        'yellow': '风险',
+                        'red': '行动'
+                    }.get(color_key, '事实')
+                }
+                fixed_cards[color_key] = fixed_card
+            else:
+                # 如果不是字典，创建默认卡片
+                fixed_cards[color_key] = {
+                    'color': color_key,
+                    'title': f'{color_key}分析结果',
+                    'content': str(card_data) if card_data else '分析完成',
+                    'category': {
+                        'blue': '事实',
+                        'green': '解释',
+                        'yellow': '风险', 
+                        'red': '行动'
+                    }.get(color_key, '事实')
+                }
 
         total_time = time.time() - start_time
 
@@ -89,16 +149,19 @@ async def generate_cards(request: GenerateRequest):
         # 记录日志
         logger.info(f"[INFO] NPU推理延迟: {inference_time:.2f}ms, 总时间: {total_time:.2f}s")
 
+        # 返回符合前端期望的数据格式
         return {
-            "cards": cards,
-            "report": {
-                "summary": {
-                    "title": "NPU分析结果",
-                    "description": f"使用NPU模型完成分析，推理时间{inference_time:.2f}ms"
-                },
-                "performance": performance
-            },
-            "execution_time": total_time
+            "success": True,
+            "query": request.query,
+            "cards": fixed_cards,
+            "facts": fixed_cards.get("blue", {}),
+            "explanations": fixed_cards.get("green", {}),
+            "risks": fixed_cards.get("yellow", {}),
+            "actions": fixed_cards.get("red", {}),
+            "execution_time": total_time,
+            "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "raw_output": raw_output,
+            "performance": performance
         }
     
     except Exception as e:
@@ -311,10 +374,10 @@ def generate_four_color_cards(raw_output: str, query: str) -> dict:
     }
 
     cards = {
-        "blue": {"card_type": "blue", "title": "数据事实", "content": "", "confidence": 0.0},
-        "green": {"card_type": "green", "title": "原因分析", "content": "", "confidence": 0.0},
-        "yellow": {"card_type": "yellow", "title": "风险预警", "content": "", "confidence": 0.0},
-        "red": {"card_type": "red", "title": "行动建议", "content": "", "confidence": 0.0}
+        "blue": {"card_type": "blue", "title": "数据事实", "content": "", "confidence": 0.0, "color": "blue", "category": "事实"},
+        "green": {"card_type": "green", "title": "原因分析", "content": "", "confidence": 0.0, "color": "green", "category": "解释"},
+        "yellow": {"card_type": "yellow", "title": "风险预警", "content": "", "confidence": 0.0, "color": "yellow", "category": "风险"},
+        "red": {"card_type": "red", "title": "行动建议", "content": "", "confidence": 0.0, "color": "red", "category": "行动"}
     }
 
     # 解析输出到对应的卡片

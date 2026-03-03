@@ -175,17 +175,17 @@ except ImportError as e:
 class ModelConfig:
     """模型配置类"""
 
-    # 预装模型配置
+    # 预装模型配置（注意：qwen2.5-vl-3b 不在此列表，它需要独立 VL 服务）
     MODELS = {
-        "qwen2.5-vl-3b": {
-            "name": "Qwen2.5-VL-3B",
-            "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
-            "params": "3B",
-            "quantization": "QNN 2.42",
-            "description": "最新模型，支持视觉+语言，QNN 2.42优化，2个分片",
-            "max_tokens": 2048,
-            "recommended": True
-        },
+        # "qwen2.5-vl-3b": {  # VL 模型，走独立服务，不在此列表
+        #     "name": "Qwen2.5-VL-3B",
+        #     "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
+        #     "params": "3B",
+        #     "quantization": "QNN 2.42",
+        #     "description": "最新模型，支持视觉+语言，QNN 2.42优化，2个分片",
+        #     "max_tokens": 2048,
+        #     "recommended": True
+        # },
         "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
             "path": "C:/model/models_2.34/Qwen2.0-7B-SSD-8380-2.34",
@@ -213,15 +213,15 @@ class ModelConfig:
             "max_tokens": 512,
             "recommended": True
         },
-        "llama3.1-8b": {
-            "name": "Llama3.1-8B",
-            "path": "C:/model/models_2.38/llama3.1-8b-8380-qnn2.38",
-            "params": "8B",
-            "quantization": "QNN 2.38",
-            "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",
-            "max_tokens": 2048,
-            "recommended": False
-        },
+        # "llama3.1-8b": {  # 已禁用，NPU加载失败
+        #     "name": "Llama3.1-8B",
+        #     "path": "C:/model/models_2.38/llama3.1-8b-8380-qnn2.38",
+        #     "params": "8B",
+        #     "quantization": "QNN 2.38",
+        #     "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",
+        #     "max_tokens": 2048,
+        #     "recommended": False
+        # },
         "llama3.2-3b": {
             "name": "Llama3.2-3B",
             "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
@@ -379,8 +379,8 @@ class NPUModelLoader:
         格式化用户输入为模型期望的提示格式
         
         根据prompt.conf文件格式：
-        prompt_tags_1: <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n
-        prompt_tags_2: <|im_end|>\n<|im_start|>assistant\n
+        prompt_tags_1: system\nYou are a helpful assistant.\nuser\n
+        prompt_tags_2: \nassistant\n
         
         Args:
             user_input: 用户输入文本
@@ -389,8 +389,8 @@ class NPUModelLoader:
             格式化后的完整提示
         """
         # 硬编码的提示格式（从prompt.conf解析）
-        prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
-        prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
+        prompt_tags_1 = "system\nYou are a helpful assistant.\nuser\n"
+        prompt_tags_2 = "\nassistant\n"
         
         # 构建完整提示
         formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
@@ -398,7 +398,7 @@ class NPUModelLoader:
         
         return formatted_prompt
 
-    def infer(self, prompt: str, max_new_tokens: int = 32, temperature: float = 0.7) -> str:
+    def infer(self, prompt: str, max_new_tokens: int = 128, temperature: float = 0.7) -> str:
         """
         执行推理
 

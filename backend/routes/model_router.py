@@ -114,7 +114,7 @@ def select_model(query: str) -> str:
             model_key = 'llama3.2-3b'
             model_reason = '简单查询，选择极速模型'
         elif estimation['complexity'] == 'medium':
-            model_key = 'llama3.1-8b'
+            model_key = 'llama3.2-3b'  # 改用 llama3.2-3b，llama3.1-8b 加载失败
             model_reason = '中等复杂度，选择平衡模型'
         else:  # complex
             model_key = 'qwen2.0-7b'

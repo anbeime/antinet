@@ -58,13 +58,13 @@ const PIXEL_TO_MEETING: Record<string, string> = {
 
 // 会议流程步骤
 const MEETING_STEPS = [
-  { agent: 'orchestrator', state: 'executing', detail: '锦衣卫总指挥使正在分解任务...' },
-  { agent: 'mijuanfang', state: 'researching', detail: '密卷房正在解析用户素材...' },
-  { agent: 'tongzhengsi', state: 'writing', detail: '通政司正在提取核心事实...' },
-  { agent: 'jianchayuan', state: 'researching', detail: '监察院正在分析原因逻辑...' },
-  { agent: 'xingyusi', state: 'researching', detail: '刑狱司正在检测潜在风险...' },
-  { agent: 'canmousi', state: 'writing', detail: '参谋司正在生成行动建议...' },
-  { agent: 'taishige', state: 'syncing', detail: '太史阁正在存储知识成果...' },
+  { agent: 'orchestrator', state: 'executing', detail: '总指挥使正在分解任务...' },
+  { agent: 'mijuanfang', state: 'researching', detail: '档案官正在解析用户素材...' },
+  { agent: 'tongzhengsi', state: 'writing', detail: '通讯官正在提取核心事实...' },
+  { agent: 'jianchayuan', state: 'researching', detail: '监察官正在分析原因逻辑...' },
+  { agent: 'xingyusi', state: 'researching', detail: '风险官正在检测潜在风险...' },
+  { agent: 'canmousi', state: 'writing', detail: '参谋官正在生成行动建议...' },
+  { agent: 'taishige', state: 'syncing', detail: '记忆官正在存储知识成果...' },
   { agent: 'yichuansi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
 ];
 
@@ -337,7 +337,7 @@ const VirtualOfficeMeeting: React.FC = () => {
     type: 'round_header' | 'speech';
     round?: number;
     theme?: string;
-    agent?: { name: string; title: string; avatar: string; color: string };
+    agent?: { name: string; title: string; avatar: string; color: string; systemPrompt?: string };
     message?: string;
     timestamp: string;
   }>>([]);
@@ -508,7 +508,8 @@ const VirtualOfficeMeeting: React.FC = () => {
                     name: evt.data.agent_name,
                     title: evt.data.agent_title,
                     avatar: evt.data.avatar,
-                    color: AGENT_MAPPING[evt.data.agent_id]?.color || 'from-gray-500 to-gray-600'
+                    color: AGENT_MAPPING[evt.data.agent_id]?.color || 'from-gray-500 to-gray-600',
+                    systemPrompt: evt.data.system_prompt
                   },
                   message: evt.data.speech,
                   timestamp: evt.data.timestamp
@@ -521,7 +522,8 @@ const VirtualOfficeMeeting: React.FC = () => {
                   name: evt.data.agent_name,
                   title: evt.data.agent_title,
                   avatar: evt.data.avatar,
-                  color: AGENT_MAPPING[evt.data.agent_id]?.color || 'from-gray-500 to-gray-600'
+                  color: AGENT_MAPPING[evt.data.agent_id]?.color || 'from-gray-500 to-gray-600',
+                  systemPrompt: evt.data.system_prompt
                 },
                 message: evt.data.speech,
                 timestamp: evt.data.timestamp || new Date().toISOString()
@@ -977,7 +979,7 @@ const VirtualOfficeMeeting: React.FC = () => {
                       </div>
                     );
                   }
-                  return (
+                   return (
                     <motion.div
                       key={idx}
                       initial={{ opacity: 0, x: -10 }}
@@ -993,6 +995,11 @@ const VirtualOfficeMeeting: React.FC = () => {
                           <span className="text-white text-xs font-medium">{item.agent?.name}</span>
                           <span className="text-gray-500 text-[10px]">{item.agent?.title}</span>
                         </div>
+                        {item.agent?.systemPrompt && (
+                          <div className="text-gray-500 text-[10px] mb-0.5 truncate">
+                            {item.agent.systemPrompt}
+                          </div>
+                        )}
                         <p className="text-gray-300 text-xs leading-relaxed">{item.message}</p>
                       </div>
                     </motion.div>
@@ -1075,21 +1082,26 @@ const VirtualOfficeMeeting: React.FC = () => {
                             transition={{ duration: 0.2 }}
                             className="overflow-hidden"
                           >
-                            <div className="p-4 space-y-3">
-                              {round.discussions.map((disc: any, idx: number) => (
-                                <div key={idx} className="flex gap-3">
-                                  <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent.color} flex items-center justify-center text-lg flex-shrink-0`}>
-                                    {disc.agent.avatar}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-white text-sm font-medium">{disc.agent.name}</span>
-                                      <span className="text-gray-500 text-xs">{disc.agent.title}</span>
-                                    </div>
-                                    <p className="text-gray-300 text-sm leading-relaxed">{disc.message}</p>
-                                  </div>
-                                </div>
-                              ))}
+                              <div className="p-4 space-y-3">
+                               {round.discussions.map((disc: any, idx: number) => (
+                                 <div key={idx} className="flex gap-3">
+                                   <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent.color} flex items-center justify-center text-lg flex-shrink-0`}>
+                                     {disc.agent.avatar}
+                                   </div>
+                                   <div className="flex-1 min-w-0">
+                                     <div className="flex items-center gap-2 mb-1">
+                                       <span className="text-white text-sm font-medium">{disc.agent.name}</span>
+                                       <span className="text-gray-500 text-xs">{disc.agent.title}</span>
+                                     </div>
+                                     {disc.agent.systemPrompt && (
+                                       <div className="text-gray-500 text-[10px] mb-0.5 truncate">
+                                         {disc.agent.systemPrompt}
+                                       </div>
+                                     )}
+                                     <p className="text-gray-300 text-sm leading-relaxed">{disc.message}</p>
+                                   </div>
+                                 </div>
+                               ))}
                             </div>
 
                             {/* 卡片 */}
