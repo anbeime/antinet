@@ -93,7 +93,7 @@ async def generate_cards(request: GenerateRequest):
         try:
             raw_output = loader.infer(
                 prompt=analysis_prompt,
-                max_new_tokens=128,
+                max_new_tokens=64,  # 减少到64以提高性能
                 temperature=0.7
             )
         except Exception as e:

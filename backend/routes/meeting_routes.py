@@ -320,7 +320,7 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 如果是密卷房，先搜索数据库获取相关资料
                  if agent_id == "mijuanfang":
                      try:
-                         from api.knowledge_routes import search_cards
+                         from routes.knowledge_routes import search_cards
                          import json
 
                          # 从上下文中提取关键词
