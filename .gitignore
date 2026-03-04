@@ -1,59 +1,130 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# ============================================================
+#  antinet .gitignore — 补全版
+#  整合所有应忽略的规则，消除重复
+# ============================================================
 
-node_modules
-dist
-dist-ssr
-*.local
+# =========================
+#  操作系统
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+nul
 
-# AI 助手配置（不推送）
-.claude/
-.cursor/
-.windsurf/
-.codebuddy/
-
-# Editor directories and files
+# =========================
+#  编辑器 / IDE
+# =========================
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.swo
 
-# 参考资料和测试文档（不推送）
-资料参考/
-测试文档/
-*.pdf
-*.docx
-*.pptx
+# =========================
+#  AI 助手配置
+# =========================
+.claude/
+.cursor/
+.windsurf/
+.codebuddy/
+.roomodes
 
-# Python
-backend/venv/
+# =========================
+#  Node.js
+# =========================
+node_modules/
+dist/
+dist-ssr/
+build/
+*.local
+pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# =========================
+#  Python 虚拟环境 & 缓存
+# =========================
+venv/
 venv_arm64/
 venv_x64/
-backend/__pycache__/
-*.pyc
-*.pyo
-*.pyd
+backend/venv/
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+*.pyo
+*.pyd
 
-# 大型服务/模型目录（太大，不推送）
-genie-vl-service/
-bge-base-zh-v1.5-qnn-8380/
+# =========================
+#  第三方库（不应提交到仓库）
+# =========================
+backend/site-packages/
 
-# 模型文件（太大，不推送）
+# =========================
+#  环境变量
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+#  日志
+# =========================
+logs/
+*.log
+
+# =========================
+#  临时文件
+# =========================
+*.tmp
+*.temp
+.cache/
+tmpclaude-*
+
+# =========================
+#  备份文件
+# =========================
+*.bak
+*.backup
+*.before_merge*
+*.before_recovery*
+backup_*/
+
+# =========================
+#  文件副本 / 旧版本变体
+# =========================
+*副本*
+* copy.*
+* copy *
+*_original.*
+*_cleaned.*
+*_fixed.*
+*(*).tsx
+*(*).ts
+
+# =========================
+#  数据库文件
+# =========================
+*.db
+backend/data/
+data/
+!backend/data/demo/
+
+# =========================
+#  用户上传 / 导出数据
+# =========================
+# (已被 data/ 规则覆盖)
+
+# =========================
+#  模型文件（太大）
+# =========================
 *.bin
 *.onnx
 *.pt
@@ -63,99 +134,129 @@ backend/models/pytorch/
 backend/models/onnx/
 backend/models/qnn/*.bin
 
-# 数据库（允许推送）
-data/
-backend/data/
-!backend/data/demo/
-
-# 环境变量
-.env
-.env.local
-.env.*.local
-
-# 临时文件
-*.tmp
-*.temp
-.cache/
-tmpclaude-*
-nul
-
-# 本地笔记（不需要推送）
-rooroo-prompt-clean.md
-
-# 备份目录（临时文件，不推送）
-backup_20260129/
-backup_*/
-
-# 自动化脚本输出
-auto/
-
-# 临时调试文件
-debug_export.html
-diagnose_export.py
-check_db_schema.py
-skill_installer.py
-
-# 测试脚本
-test_*.py
-
-# 启动脚本（可选，根据需求）
-start_antinet.bat
-start_antinet.ps1
-start_services.bat
-start_services.ps1
-stop_antinet.bat
-stop_antinet.ps1
-install_ppt_preview_deps.bat
-
-# 文档文件（不需要推送）
-*.md
-!README.md
-
-# Large model and service directories
+# =========================
+#  大型服务 / 模型目录
+# =========================
 genie-vl-service/
 bge-base-zh-v1.5-qnn-8380/
 
-# Database files
-backend/data/
-*.db
+# =========================
+#  参考资料 / 文档文件
+# =========================
+资料参考/
+测试文档/
+*.pdf
+*.docx
+*.pptx
 
-# Backup files
-*.backup
-*(*).tsx
-*(*).ts
+# =========================
+#  Markdown（仅保留 README）
+# =========================
+*.md
+!README.md
+!backend/data/demo/README.md
+!data-analysis/assets/data-analysis-report-template.md
+!data-analysis/SKILL.md
+!data-analysis/references/*.md
+!backend/skills/xlsx/SKILL.md
+!backend/skills/xlsx/QUICKSTART.md
+!backend/skills/xlsx/DATA_INTEGRATION_GUIDE.md
 
-# Test output files
+# =========================
+#  根目录一次性脚本 (.bat / .ps1)
+# =========================
+/*.bat
+/*.ps1
+
+# =========================
+#  根目录调试/修复/测试 Python 脚本
+# =========================
+/add_*.py
+/apply_*.py
+/check_*.py
+/compare_*.py
+/comprehensive_*.py
+/diagnose_*.py
+/find_*.py
+/fix_*.py
+/menu_*.py
+/merge_*.py
+/recover_*.py
+/remove_*.py
+/replace_*.py
+/restore_*.py
+/test_*.py
+/verify_*.py
+/auto_title_helper.py
+
+# =========================
+#  根目录调试 HTML 页面
+# =========================
+/*.html
+
+# =========================
+#  根目录临时输出文件
+# =========================
+/*.txt
+/*.json
+!package.json
+!pnpm-lock.yaml
+!tsconfig.json
+!tsconfig.*.json
+
+# =========================
+#  src 内调试脚本
+# =========================
+src/debug_*.js
+src/test_*.js
+src/test_*.html
+
+# =========================
+#  backend 内调试/测试脚本
+# =========================
+backend/test_*.py
+backend/check_*.py
+backend/diagnose_*.py
+backend/fix_*.py
+backend/verify_*.py
+backend/create_test_*.py
+backend/add_sample_*.py
+backend/chat_server.py
+backend/chat_server_with_db.py
+
+# =========================
+#  backend 冗余路由/工具变体
+# =========================
+backend/routes/*_fixed.py
+backend/routes/*_simple.py
+backend/routes/*_improved.py
+backend/routes/enhanced_*.py
+backend/routes/pdf_routes-0.py
+backend/tools/*_backup.py
+backend/tools/*_simple.py
+
+# =========================
+#  auto / agent-office-ui（临时目录）
+# =========================
+auto/
+agent-office-ui/
+
+# =========================
+#  skill_extracted 压缩包
+# =========================
+skill_extracted/
+
+# =========================
+#  本地笔记
+# =========================
+rooroo-prompt-clean.md
+
+# =========================
+#  测试输出
+# =========================
 test_output.xlsx
 
-# Virtual environment
-venv/
-venv_arm64/
-
-# Node modules
-node_modules/
-
-# Build outputs
-dist/
-build/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Log files
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Python cache
-__pycache__/
-*.pyc
+# =========================
+#  清理脚本自身（不需要推送）
+# =========================
+cleanup_git_tracked.ps1
