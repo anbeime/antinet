@@ -1,32 +1,59 @@
 /**
  * 聊天按钮组件 - 触发增强版聊天机器人
+ * 支持拖拽
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, X, Sparkles } from 'lucide-react';
+import { Shield, X, Sparkles, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EnhancedChatBot } from './EnhancedChatBot';
 import { cn } from '@/lib/utils';
 
 interface ChatButtonProps {
   className?: string;
-  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  initialPosition?: { x: number; y: number };
 }
 
 export const ChatButton: React.FC<ChatButtonProps> = ({ 
   className,
-  position = 'bottom-right'
+  initialPosition = { x: 0, y: 0 }
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasNotification, setHasNotification] = useState(false);
+  const [position, setPosition] = useState(initialPosition);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<HTMLDivElement>(null);
+  const dragStartPos = useRef({ x: 0, y: 0 });
 
-  const positionClasses = {
-    'bottom-right': 'bottom-6 right-6',
-    'bottom-left': 'bottom-6 left-6',
-    'top-right': 'top-6 right-6',
-    'top-left': 'top-6 left-6'
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    setIsDragging(true);
+    dragStartPos.current = { x: e.clientX - position.x, y: e.clientY - position.y };
   };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStartPos.current.x,
+      y: e.clientY - dragStartPos.current.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  React.useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
 
   return (
     <>
@@ -37,9 +64,11 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
+            ref={dragRef}
+            onMouseDown={handleMouseDown}
+            style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             className={cn(
-              "fixed z-40",
-              positionClasses[position],
+              "fixed z-40 cursor-move bottom-6 right-6",
               className
             )}
           >
@@ -47,7 +76,7 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
               onClick={() => setIsOpen(true)}
               className="w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
-              <MessageCircle className="w-6 h-6" />
+              <Shield className="w-6 h-6" />
               
               {/* 通知红点 */}
               {hasNotification && (
@@ -69,14 +98,16 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
               />
             </Button>
 
+            {/* 拖拽手柄 */}
+            <div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
+              <GripVertical className="w-3 h-3 text-white" />
+            </div>
+
             {/* 提示文字 */}
             <motion.div
-              initial={{ opacity: 0, x: position.includes('right') ? 10 : -10 }}
+              initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
-              className={cn(
-                "absolute top-1/2 -translate-y-1/2 whitespace-nowrap",
-                position.includes('right') ? "right-full mr-3" : "left-full ml-3"
-              )}
+              className="absolute top-1/2 -translate-y-1/2 right-full mr-3"
             >
               <div className="bg-background border rounded-lg px-3 py-2 shadow-lg flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-500" />

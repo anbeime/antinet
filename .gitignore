@@ -108,6 +108,7 @@ backup_*/
 *_fixed.*
 *(*).tsx
 *(*).ts
+*(*).py
 
 # =========================
 #  数据库文件
@@ -181,10 +182,14 @@ bge-base-zh-v1.5-qnn-8380/
 /fix_*.py
 /menu_*.py
 /merge_*.py
+/patch_*.py
+/quick_*.py
 /recover_*.py
 /remove_*.py
 /replace_*.py
 /restore_*.py
+/run_*.py
+/start_*.py
 /test_*.py
 /verify_*.py
 /auto_title_helper.py
@@ -210,6 +215,7 @@ bge-base-zh-v1.5-qnn-8380/
 src/debug_*.js
 src/test_*.js
 src/test_*.html
+src/main_test.tsx
 
 # =========================
 #  backend 内调试/测试脚本

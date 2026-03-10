@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class NPUInferenceCore:
     """NPU推理核心类 - 使用 GenieContext"""
 
-    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\Qualcomm\AIStack\QAIRT\2.38.0.250901\lib\arm64x-windows-msvc"):
+    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\Qualcomm\AIStack\QAIRT\v2.44.0.260225\lib\arm64x-windows-msvc"):
         """
         初始化NPU推理核心
 
@@ -42,7 +42,7 @@ class NPUInferenceCore:
         self.is_loaded = False
 
         # QAIRT 库路径（包含 QnnSystem.dll 等核心库）
-        qairt_libs_path = r"C:\\Qualcomm\\AIStack\\QAIRT\\2.38.0.250901\\lib\\arm64x-windows-msvc"
+        qairt_libs_path = r"C:\\Qualcomm\\AIStack\\QAIRT\\v2.44.0.260225\\lib\\arm64x-windows-msvc"
 
         # 设置PATH环境变量（添加两个库路径）
         path = os.getenv('PATH', '')

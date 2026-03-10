@@ -4,13 +4,13 @@
  * 参考: https://github.com/anbeime/skill/tree/main/projects
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, Send, Bot, User, Image as ImageIcon, 
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2, Paperclip,
-  HelpCircle, Trash2, RefreshCw
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -21,12 +21,9 @@ import {
   ImageAnalysisResult,
   SceneType
 } from '@/services/enhancedChatService';
+import { analyzeImage } from '@/services/visionService';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
 interface EnhancedChatBotProps {
@@ -64,7 +61,7 @@ const MessageBubble: React.FC<{
         ) : isSkill ? (
           <Sparkles className="w-4 h-4 text-white" />
         ) : (
-          <Bot className="w-4 h-4 text-white" />
+          <img src="/src/pages/chat.png" alt="bot" className="w-6 h-6 rounded-full" />
         )}
       </div>
 
@@ -75,9 +72,9 @@ const MessageBubble: React.FC<{
       )}>
         {/* 场景标签 */}
         {sceneType && sceneType !== 'general' && !isUser && (
-          <Badge variant="secondary" className="text-xs">
+          <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
             {enhancedChatService.getSceneIcon(sceneType)} {enhancedChatService.getSceneName(sceneType)}
-          </Badge>
+          </span>
         )}
 
         {/* 文本内容 */}
@@ -93,17 +90,13 @@ const MessageBubble: React.FC<{
         {/* 卡片展示 */}
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
-            {cards.slice(0, 3).map((card, index) => (
-              <Card key={card.card_id} className="border-l-4" style={{
-                borderLeftColor: card.color === 'blue' ? '#3b82f6' : 
-                                card.color === 'green' ? '#22c55e' :
-                                card.color === 'yellow' ? '#eab308' : '#ef4444'
-              }}>
+            {cards.slice(0, 3).map((card, idx) => (
+              <Card key={card.card_id} className="border-l-4 border-l-blue-500">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="text-xs">
+                    <span className="text-xs px-2 py-0.5 border rounded">
                       {enhancedChatService.formatCardType(card.card_type)}
-                    </Badge>
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {enhancedChatService.formatSimilarity(card.similarity)}
                     </span>
@@ -130,9 +123,9 @@ const MessageBubble: React.FC<{
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="w-4 h-4 text-purple-500" />
                 <span className="font-medium text-sm">技能执行结果</span>
-                <Badge variant={skillResult.success ? "default" : "destructive"} className="text-xs">
+                <span className={`text-xs px-2 py-0.5 rounded ${skillResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                   {skillResult.success ? '成功' : '失败'}
-                </Badge>
+                </span>
               </div>
               {skillResult.result && (
                 <p className="text-sm text-muted-foreground">{skillResult.result}</p>
@@ -154,9 +147,9 @@ const MessageBubble: React.FC<{
               <div className="flex items-center gap-2 mb-2">
                 <ImageIcon className="w-4 h-4 text-blue-500" />
                 <span className="font-medium text-sm">图片分析</span>
-                <Badge variant="secondary" className="text-xs">
+                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
                   置信度 {Math.round(imageAnalysis.confidence * 100)}%
-                </Badge>
+                </span>
               </div>
               <p className="text-sm mb-2">{imageAnalysis.description}</p>
               {imageAnalysis.facts.length > 0 && (
@@ -247,40 +240,84 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     setIsLoading(true);
 
     try {
-      let imageData: string | undefined;
-      
-      // 如果有选中的图片，转换为base64
+      // 如果有选中的图片，先进行图片分析
       if (selectedImage) {
-        imageData = await enhancedChatService.fileToBase64(selectedImage);
-      }
+        // 添加用户消息（包含图片）
+        const userMessage: ChatMessage = {
+          role: 'user',
+          content: query || '[图片]',
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, userMessage]);
 
-      // 添加用户消息
-      const userMessage: ChatMessage = {
-        role: 'user',
-        content: query || '[图片]',
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, userMessage]);
-
-      // 发送到后端
-      const response = await enhancedChatService.sendMessage(query, { imageData });
-
-      // 添加助手回复
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: response.response,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          scene_type: response.scene_type,
-          cards: response.cards,
-          skill_result: response.skill_result,
-          image_analysis: response.image_analysis
+        // 分析图片
+        const analysisResult = await analyzeImage(selectedImage, query || '请详细描述这张图片的内容');
+        
+        if (analysisResult.success) {
+          // 添加助手回复（图片分析结果）
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: analysisResult.analysis?.description || '图片分析完成',
+            timestamp: new Date().toISOString(),
+            metadata: {
+              scene_type: 'image_analysis',
+              image_analysis: analysisResult.analysis,
+              cards: [],
+              skill_result: null
+            }
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          
+          // 设置建议问题
+          setSuggestedQuestions([
+            "基于分析结果生成知识卡片",
+            "这张图片的关键点是什么？",
+            "图片中的数据趋势如何？"
+          ]);
+          setCurrentScene('image_analysis');
+        } else {
+          // 分析失败，使用普通聊天
+          const response = await enhancedChatService.sendMessage(query);
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: response.response,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              scene_type: response.scene_type,
+              cards: response.cards,
+              skill_result: response.skill_result,
+              image_analysis: null
+            }
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setSuggestedQuestions(response.suggested_questions);
+          setCurrentScene(response.scene_type);
         }
-      };
+      } else {
+        // 没有图片，使用普通聊天
+        const userMessage: ChatMessage = {
+          role: 'user',
+          content: query,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, userMessage]);
 
-      setMessages(prev => [...prev, assistantMessage]);
-      setSuggestedQuestions(response.suggested_questions);
-      setCurrentScene(response.scene_type);
+        const response = await enhancedChatService.sendMessage(query);
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: response.response,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            scene_type: response.scene_type,
+            cards: response.cards,
+            skill_result: response.skill_result,
+            image_analysis: response.image_analysis
+          }
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        setSuggestedQuestions(response.suggested_questions);
+        setCurrentScene(response.scene_type);
+      }
 
       // 清空图片
       setSelectedImage(null);
@@ -362,7 +399,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClick={onClose}
       >
         <motion.div
-          className="w-full max-w-2xl h-[80vh] bg-background rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          className="w-full max-w-2xl h-[80vh] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
@@ -402,7 +439,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           </CardHeader>
 
           {/* 消息区域 */}
-          <ScrollArea className="flex-1 p-4">
+          <div className="flex-1 p-4 overflow-y-auto">
             <div className="space-y-4">
               {messages.map((message, index) => (
                 <MessageBubble
@@ -428,7 +465,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <div ref={messagesEndRef} />
             </div>
-          </ScrollArea>
+          </div>
 
           {/* 建议问题 */}
           {suggestedQuestions.length > 0 && (

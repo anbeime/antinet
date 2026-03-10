@@ -25,7 +25,7 @@ class FourColorCard(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     query: str = Field(..., description="自然语言查询")
-    max_tokens: int = Field(128, description="最大生成token数")
+    max_tokens: int = Field(256, description="最大生成token数")
     temperature: float = Field(0.7, description="温度参数")
     model: Optional[str] = Field(None, description="指定模型键名")
 
@@ -71,11 +71,11 @@ def get_max_tokens_by_complexity(complexity: str) -> int:
         max_tokens: 对应的token限制
     """
     if complexity == 'simple':
-        return 64  # 简单任务：分类、提取、简短回答
+        return 128  # 简单任务：分类、提取、简短回答
     elif complexity == 'medium':
-        return 128  # 中等任务：分析、解释、建议
+        return 256  # 中等任务：分析、解释、建议
     else:  # complex
-        return 256  # 复杂任务：讨论、总结、决策、详细分析
+        return 512  # 复杂任务：讨论、总结、决策、详细分析
 
 
 # ==================== API 路由 ====================

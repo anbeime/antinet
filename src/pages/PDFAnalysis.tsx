@@ -89,7 +89,16 @@ const PDFAnalysis: React.FC = () => {
 
   // 格式转换相关状态
   const [conversionTasks, setConversionTasks] = useState<ConversionTask[]>([]);
-  const [conversionRecords, setConversionRecords] = useState<ConversionRecord[]>([]);
+  const [conversionRecords, setConversionRecords] = useState<ConversionRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('antinet_conversion_records');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((r: any) => ({ ...r, createdAt: new Date(r.createdAt) }));
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  });
   const conversionFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -539,7 +548,11 @@ const PDFAnalysis: React.FC = () => {
       createdAt: new Date(),
       fileSize,
     };
-    setConversionRecords(prev => [record, ...prev]);
+    setConversionRecords(prev => {
+      const next = [record, ...prev];
+      try { localStorage.setItem('antinet_conversion_records', JSON.stringify(next)); } catch (e) { /* ignore */ }
+      return next;
+    });
   };
 
   const handleDownloadResult = (task: ConversionTask) => {
@@ -560,6 +573,7 @@ const PDFAnalysis: React.FC = () => {
 
   const clearConversionRecords = () => {
     setConversionRecords([]);
+    try { localStorage.removeItem('antinet_conversion_records'); } catch (e) { /* ignore */ }
     toast.success('转换记录已清空');
   };
 
@@ -579,6 +593,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <FileText size={20} />,
       description: '提取 PDF 文本内容',
       color: 'from-blue-500 to-cyan-500',
+      inactiveBg: 'bg-blue-50 dark:bg-blue-900/20',
+      inactiveBorder: 'border-blue-200 dark:border-blue-800',
+      inactiveText: 'text-blue-600 dark:text-blue-400',
+      hoverBg: 'hover:bg-blue-100 dark:hover:bg-blue-900/30',
     },
     {
       id: 'generate' as const,
@@ -586,6 +604,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <Layers size={20} />,
       description: '生成四色知识卡片',
       color: 'from-purple-500 to-pink-500',
+      inactiveBg: 'bg-purple-50 dark:bg-purple-900/20',
+      inactiveBorder: 'border-purple-200 dark:border-purple-800',
+      inactiveText: 'text-purple-600 dark:text-purple-400',
+      hoverBg: 'hover:bg-purple-100 dark:hover:bg-purple-900/30',
     },
     {
       id: 'merge' as const,
@@ -593,6 +615,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <Combine size={20} />,
       description: '合并多个 PDF',
       color: 'from-green-500 to-emerald-500',
+      inactiveBg: 'bg-green-50 dark:bg-green-900/20',
+      inactiveBorder: 'border-green-200 dark:border-green-800',
+      inactiveText: 'text-green-600 dark:text-green-400',
+      hoverBg: 'hover:bg-green-100 dark:hover:bg-green-900/30',
     },
     {
       id: 'split' as const,
@@ -600,6 +626,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <Scissors size={20} />,
       description: '拆分 PDF 页面',
       color: 'from-orange-500 to-red-500',
+      inactiveBg: 'bg-orange-50 dark:bg-orange-900/20',
+      inactiveBorder: 'border-orange-200 dark:border-orange-800',
+      inactiveText: 'text-orange-600 dark:text-orange-400',
+      hoverBg: 'hover:bg-orange-100 dark:hover:bg-orange-900/30',
     },
     {
       id: 'fromImages' as const,
@@ -607,6 +637,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <FileImage size={20} />,
       description: '将图片合并为 PDF',
       color: 'from-teal-500 to-cyan-500',
+      inactiveBg: 'bg-teal-50 dark:bg-teal-900/20',
+      inactiveBorder: 'border-teal-200 dark:border-teal-800',
+      inactiveText: 'text-teal-600 dark:text-teal-400',
+      hoverBg: 'hover:bg-teal-100 dark:hover:bg-teal-900/30',
     },
     {
       id: 'convertWord' as const,
@@ -614,6 +648,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <FileType size={20} />,
       description: 'PDF 转 Word 文档',
       color: 'from-blue-600 to-indigo-500',
+      inactiveBg: 'bg-indigo-50 dark:bg-indigo-900/20',
+      inactiveBorder: 'border-indigo-200 dark:border-indigo-800',
+      inactiveText: 'text-indigo-600 dark:text-indigo-400',
+      hoverBg: 'hover:bg-indigo-100 dark:hover:bg-indigo-900/30',
     },
     {
       id: 'convertExcel' as const,
@@ -621,6 +659,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <FileSpreadsheet size={20} />,
       description: 'PDF 转 Excel 表格',
       color: 'from-green-600 to-emerald-500',
+      inactiveBg: 'bg-emerald-50 dark:bg-emerald-900/20',
+      inactiveBorder: 'border-emerald-200 dark:border-emerald-800',
+      inactiveText: 'text-emerald-600 dark:text-emerald-400',
+      hoverBg: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30',
     },
     {
       id: 'history' as const,
@@ -628,6 +670,10 @@ const PDFAnalysis: React.FC = () => {
       icon: <History size={20} />,
       description: '查看转换历史',
       color: 'from-gray-500 to-slate-500',
+      inactiveBg: 'bg-slate-50 dark:bg-slate-900/20',
+      inactiveBorder: 'border-slate-200 dark:border-slate-700',
+      inactiveText: 'text-slate-600 dark:text-slate-400',
+      hoverBg: 'hover:bg-slate-100 dark:hover:bg-slate-800/30',
     },
   ];
 
@@ -848,10 +894,10 @@ const PDFAnalysis: React.FC = () => {
                 setGeneratedCards([]);
                 setProcessingStatus(null);
               }}
-              className={`p-3 rounded-xl text-center transition-all ${
+              className={`p-3 rounded-xl text-center transition-all border ${
                 activeFeature === feature.id
-                  ? `bg-gradient-to-r ${feature.color} text-white shadow-lg`
-                  : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+                  ? `bg-gradient-to-r ${feature.color} text-white shadow-lg border-transparent`
+                  : `${feature.inactiveBg} ${feature.inactiveText} ${feature.inactiveBorder} ${feature.hoverBg}`
               }`}
             >
               <div className="flex flex-col items-center space-y-1">

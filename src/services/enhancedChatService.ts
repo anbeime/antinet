@@ -4,11 +4,32 @@
  * 参考: https://github.com/anbeime/skill/tree/main/projects
  */
 
-import { api } from '@/lib/api';
 import { toast } from 'sonner';
 
 // API 基础路径
-const API_BASE = '/api/chat/enhanced';
+const API_BASE = 'http://localhost:8000/api/chat/enhanced';
+
+// 简单的 fetch wrapper
+const api = {
+  async get<T>(url: string): Promise<T> {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    return response.json();
+  },
+  async post<T>(url: string, data?: any, options?: RequestInit): Promise<T> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+      },
+      body: data instanceof FormData ? data : JSON.stringify(data),
+      ...options
+    });
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    return response.json();
+  }
+};
 
 // 消息角色类型
 export type MessageRole = 'user' | 'assistant' | 'system' | 'skill';

@@ -336,24 +336,26 @@ const GTDSystem: React.FC = () => {
       return false;
     }
     
-    // 时间过滤
-    if (timeFilter !== 'all' && task.due_date) {
-      const dueDate = new Date(task.due_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (timeFilter === 'today') {
-        const todayEnd = new Date(today);
-        todayEnd.setHours(23, 59, 59, 999);
-        if (dueDate < today || dueDate > todayEnd) return false;
-      } else if (timeFilter === 'week') {
-        const weekEnd = new Date(today);
-        weekEnd.setDate(weekEnd.getDate() + 7);
-        if (dueDate < today || dueDate > weekEnd) return false;
-      } else if (timeFilter === 'month') {
-        const monthEnd = new Date(today);
-        monthEnd.setMonth(monthEnd.getMonth() + 1);
-        if (dueDate < today || dueDate > monthEnd) return false;
+    // 时间过滤 - 使用创建日期
+    if (timeFilter !== 'all') {
+      if (task.created_at) {
+        const createDate = new Date(task.created_at);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (timeFilter === 'today') {
+          const todayEnd = new Date(today);
+          todayEnd.setHours(23, 59, 59, 999);
+          if (createDate < today || createDate > todayEnd) return false;
+        } else if (timeFilter === 'week') {
+          const weekEnd = new Date(today);
+          weekEnd.setDate(weekEnd.getDate() + 7);
+          if (createDate < today || createDate > weekEnd) return false;
+        } else if (timeFilter === 'month') {
+          const monthEnd = new Date(today);
+          monthEnd.setMonth(monthEnd.getMonth() + 1);
+          if (createDate < today || createDate > monthEnd) return false;
+        }
       }
     }
     

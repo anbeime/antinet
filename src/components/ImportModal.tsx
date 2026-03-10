@@ -14,7 +14,12 @@ import {
   Search,
   AlertCircle,
   Clipboard,
-  Loader2
+  Loader2,
+  Inbox,
+  Clock,
+  Calendar,
+  Archive,
+  Book
 } from 'lucide-react';
 
 // 定义卡片类型
@@ -48,7 +53,7 @@ interface ImportModalProps {
     content: string;
     color: CardColor;
     address: string;
-  }>) => void;
+  }>, syncToGTD?: boolean) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({ 
@@ -70,8 +75,9 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [showResults, setShowResults] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [syncToGTD, setSyncToGTD] = useState(false);
 
-  // 智能分析内容 - 调用后端8智能体系统
+  // 智能分析内容 - 使用本地智能分类算法（快速且功能完整）
   const autoClassifyContent = async (content: string): Promise<Array<{
     title: string;
     content: string;
@@ -80,43 +86,15 @@ const ImportModal: React.FC<ImportModalProps> = ({
     address: string;
   }>> => {
     try {
-      // 调用后端智能分析API
-      const response = await fetch('http://localhost:8000/api/knowledge/import/analyze', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          content: content,
-          auto_save: false
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`API调用失败: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      // 转换API返回格式为组件需要的格式
-      return result.cards.map((card: any, index: number) => ({
-        title: card.title,
-        content: card.content,
-        color: card.card_type as CardColor,
-        confidence: card.confidence,
-        address: card.address || `${card.card_type.toUpperCase()}${index + 1}`,
-        relatedCards: card.related_cards || []
-      }));
-      
-    } catch (error) {
-      console.error('智能分析失败，降级到本地分类:', error);
-      
-      // 降级到本地分类算法
+      // 直接使用本地分类算法，避免后端API调用的延迟
       return localClassifyContent(content);
+    } catch (error) {
+      console.error('本地分类失败:', error);
+      throw error;
     }
   };
   
-  // 本地分类算法（作为降级方案）
+  // 本地分类算法（完整的四色卡片分类逻辑）
   const localClassifyContent = (content: string): Array<{
     title: string;
     content: string;
@@ -138,10 +116,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
       const lowerText = text.toLowerCase();
       
       // 定义各类型的关键词
-      const conceptKeywords = ['定义', '概念', '理论', '原理', '思想', '观点', '主要', '核心', '基础', '本质', '什么是', '是指', '含义', '意思'];
-      const linkKeywords = ['关联', '联系', '相关', '连接', '关系', '对比', '区别', '类似', '参见', '参考', '与', '和', '比较', '相似'];
-      const sourceKeywords = ['来源', '出处', '引用', '参考文献', '资料', '文档', 'http', 'www', '链接', '网址', '书籍', '论文', '作者', '出版'];
-      const indexKeywords = ['关键词', '标签', '索引', '分类', '术语', '名词', '概念词', 'tag', 'keyword'];
+      // 蓝色: 核心概念 + 事实
+      const blueKeywords = ['定义', '概念', '理论', '原理', '思想', '观点', '主要', '核心', '基础', '本质', '什么是', '是指', '含义', '意思', '事实', '数据', '统计', '研究表明', '结果显示'];
+      // 绿色: 关联链接 + 解释
+      const greenKeywords = ['关联', '联系', '相关', '连接', '关系', '对比', '区别', '类似', '参见', '参考', '与', '和', '比较', '相似', '解释', '原因', '因为', '所以', '导致', '由于'];
+      // 黄色: 参考来源 + 推断风险
+      const yellowKeywords = ['来源', '出处', '引用', '参考文献', '资料', '文档', 'http', 'www', '链接', '网址', '书籍', '论文', '作者', '出版', '风险', '隐患', '注意', '谨慎', '可能', '潜在'];
+      // 红色: 索引关键词 + 行动
+      const redKeywords = ['关键词', '标签', '索引', '分类', '术语', '名词', '概念词', 'tag', 'keyword', '行动', '建议', '必须', '需要', '应该', '要去做', '待办', '执行', '完成', '开始', '继续', '停止'];
       
       let scores = {
         blue: 0,
@@ -151,19 +133,19 @@ const ImportModal: React.FC<ImportModalProps> = ({
       };
       
       // 计算各类型得分
-      conceptKeywords.forEach(keyword => {
+      blueKeywords.forEach(keyword => {
         if (lowerText.includes(keyword)) scores.blue += 1;
       });
       
-      linkKeywords.forEach(keyword => {
+      greenKeywords.forEach(keyword => {
         if (lowerText.includes(keyword)) scores.green += 1;
       });
       
-      sourceKeywords.forEach(keyword => {
+      yellowKeywords.forEach(keyword => {
         if (lowerText.includes(keyword)) scores.yellow += 1;
       });
       
-      indexKeywords.forEach(keyword => {
+      redKeywords.forEach(keyword => {
         if (lowerText.includes(keyword)) scores.red += 1;
       });
       
@@ -173,7 +155,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         scores.yellow += 3;
       }
       
-      // 如果文本很短(少于50字),可能是索引关键词
+      // 如果文本很短(少于50字),可能是索引关键词或行动
       if (text.length < 50) {
         scores.red += 2;
       }
@@ -183,41 +165,25 @@ const ImportModal: React.FC<ImportModalProps> = ({
         scores.blue += 1;
       }
       
-      // 如果包含问号,可能是核心概念
-      if (text.includes('?') || text.includes('？')) {
-        scores.blue += 1;
+      // 如果包含行动词，优先判定为红色
+      const actionWords = ['建议', '应该', '必须', '需要', '要去做', '待办', '执行', '完成', '开始', '继续', '停止'];
+      if (actionWords.some(word => lowerText.includes(word))) {
+        scores.red += 3;
       }
       
-      // 如果包含冒号,可能是定义
-      if (text.includes(':') || text.includes('：')) {
-        scores.blue += 0.5;
-      }
-      
-      // 找出得分最高的类型
+      // 找出最高分
       const maxScore = Math.max(scores.blue, scores.green, scores.yellow, scores.red);
+      const colorMap: Record<string, CardColor> = {
+        blue: 'blue',
+        green: 'green',
+        yellow: 'yellow',
+        red: 'red'
+      };
       
-      let selectedColor: CardColor = 'blue'; // 默认为核心概念
-      if (maxScore === 0) {
-        // 如果没有匹配任何关键词,根据长度判断
-        if (text.length < 50) {
-          selectedColor = 'red';
-        } else if (text.length > 200) {
-          selectedColor = 'blue';
-        } else {
-          selectedColor = 'blue';
-        }
-      } else {
-        if (scores.yellow === maxScore && scores.yellow > 0) selectedColor = 'yellow';
-        else if (scores.blue === maxScore) selectedColor = 'blue';
-        else if (scores.green === maxScore) selectedColor = 'green';
-        else if (scores.red === maxScore) selectedColor = 'red';
-      }
+      const color = colorMap[Object.entries(scores).find(([_, s]) => s === maxScore)?.[0] || 'blue'] || 'blue';
+      const confidence = maxScore > 0 ? Math.min(maxScore / 5, 1) : 0.3;
       
-      // 计算置信度(0.5-0.95之间)
-      const totalScore = scores.blue + scores.green + scores.yellow + scores.red;
-      const confidence = totalScore === 0 ? 0.6 : Math.min(0.95, 0.5 + (maxScore / (totalScore + 1)) * 0.45);
-      
-      return { color: selectedColor, confidence };
+      return { color, confidence };
     };
 
     // 生成地址
@@ -415,68 +381,94 @@ const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
-  // 处理导入
-  const handleImport = async () => {
-    setErrors([]);
-    setIsProcessing(true);
-    
+  // 处理粘贴内容导入
+  const handlePasteImport = async () => {
+    if (!importContent.trim()) {
+      setErrors(['请输入要导入的内容']);
+      return;
+    }
+
     try {
-      const content = importContent.trim();
+      setIsProcessing(true);
+      setErrors([]);
       
-      if (!content) {
-        throw new Error('请输入或上传要导入的知识内容');
-      }
-      
-      toast.loading('正在使用8智能体系统分析...', { id: 'analyzing' });
-      
-      // ✅ 调用智能分析（带await）
-      const classifiedResults = await autoClassifyContent(content);
-      
-      setImportResults(classifiedResults);
+      const results = await autoClassifyContent(importContent);
+      setImportResults(results);
       setShowResults(true);
-      
-      toast.success(`成功识别并分类了 ${classifiedResults.length} 条知识记录`, {
-        id: 'analyzing',
-        icon: <Check size={16} />,
-        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-      });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '导入过程中发生错误';
-      setErrors([errorMessage]);
-      toast.error(errorMessage, {
-        id: 'analyzing',
-        icon: <AlertCircle size={16} />,
-        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
-      });
+      console.error('导入失败:', error);
+      setErrors(['导入失败，请稍后重试']);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 处理最终确认导入
+  // 处理文件上传导入
+  const handleFileImport = async () => {
+    if (!selectedFile) {
+      setErrors(['请选择要导入的文件']);
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setErrors([]);
+      
+      // 读取文件内容
+      const content = await selectedFile.text();
+      const results = await autoClassifyContent(content);
+      setImportResults(results);
+      setShowResults(true);
+    } catch (error) {
+      console.error('文件导入失败:', error);
+      setErrors(['文件导入失败，请检查文件格式']);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 确认导入
   const handleConfirmImport = () => {
-    onImport(importResults.map(result => ({
-      title: result.title,
-      content: result.content,
-      color: result.color,
-      address: result.address
-    })));
+    if (importResults.length === 0) {
+      setErrors(['没有可导入的内容']);
+      return;
+    }
+
+    // 调用父组件的导入回调
+    onImport(
+      importResults.map(result => ({
+        title: result.title,
+        content: result.content,
+        color: result.color,
+        address: result.address
+      })),
+      syncToGTD
+    );
     
+    // 重置表单并关闭模态框
+    resetForm();
     onClose();
     
-    toast(`${importResults.length} 条知识记录已成功导入并分类`, {
+    toast(`${importResults.length} 条知识记录已成功导入并分类${syncToGTD ? '，并同步到任务管理' : ''}`, {
       icon: <Check size={16} />,
       className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
     });
+  };
+
+  // 取消导入
+  const handleCancelImport = () => {
+    setShowConfirmDialog(false);
+    onClose();
   };
 
   // 重置表单
   const resetForm = () => {
     setImportContent('');
     setSelectedFile(null);
-    setShowResults(false);
     setImportResults([]);
+    setShowResults(false);
     setErrors([]);
+    setSyncToGTD(false);
   };
 
   // 放弃更改并关闭
@@ -489,7 +481,12 @@ const ImportModal: React.FC<ImportModalProps> = ({
   // 保存并关闭
   const handleSaveAndClose = async () => {
     if (importResults.length > 0) {
-      await onImport(importResults);
+      await onImport(importResults.map(result => ({
+        title: result.title,
+        content: result.content,
+        color: result.color,
+        address: result.address
+      })));
     }
     resetForm();
     setShowConfirmDialog(false);
@@ -524,7 +521,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         exit={{ scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
         className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold">导入知识记录</h2>
@@ -722,7 +719,7 @@ https://example.com/knowledge-management
               </button>
               <button 
                 type="button"
-                onClick={handleImport}
+                onClick={importType === 'paste' ? handlePasteImport : handleFileImport}
                 disabled={isProcessing || !importContent.trim()}
                 className={`px-6 py-2 rounded-lg transition-colors flex items-center ${
                   isProcessing || !importContent.trim()
@@ -826,14 +823,25 @@ https://example.com/knowledge-management
               >
                 返回编辑
               </button>
-              <button 
-                type="button"
-                onClick={handleConfirmImport}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center"
-              >
-                <Check size={16} className="mr-2" />
-                确认导入 {importResults.length} 条记录
-              </button>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={syncToGTD}
+                    onChange={(e) => setSyncToGTD(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">同步到任务管理</span>
+                </label>
+                <button 
+                  type="button"
+                  onClick={() => setShowConfirmDialog(true)}
+                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center"
+                >
+                  <Check size={16} className="mr-2" />
+                  确认导入 {importResults.length} 条记录
+                </button>
+              </div>
             </div>
           </div>
         )}

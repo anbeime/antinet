@@ -30,7 +30,8 @@ except ImportError:
         "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
         "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
         "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
-        "2.42": "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc",
+        "2.42": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
+        "2.44": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
     }
 
 # 提取 QNN 版本号的辅助函数
@@ -379,8 +380,8 @@ class NPUModelLoader:
         格式化用户输入为模型期望的提示格式
         
         根据prompt.conf文件格式：
-        prompt_tags_1: system\nYou are a helpful assistant.\nuser\n
-        prompt_tags_2: \nassistant\n
+        prompt_tags_1: <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n
+        prompt_tags_2: <|im_end|>\n<|im_start|>assistant\n
         
         Args:
             user_input: 用户输入文本
@@ -389,8 +390,8 @@ class NPUModelLoader:
             格式化后的完整提示
         """
         # 硬编码的提示格式（从prompt.conf解析）
-        prompt_tags_1 = "system\nYou are a helpful assistant.\nuser\n"
-        prompt_tags_2 = "\nassistant\n"
+        prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
         
         # 构建完整提示
         formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
@@ -398,7 +399,7 @@ class NPUModelLoader:
         
         return formatted_prompt
 
-    def infer(self, prompt: str, max_new_tokens: int = 256, temperature: float = 0.7) -> str:
+    def infer(self, prompt: str, max_new_tokens: int = 32, temperature: float = 0.7) -> str:
         """
         执行推理
 
@@ -417,18 +418,9 @@ class NPUModelLoader:
         if self.model is not None and not self.is_loaded:
             logger.warning(f"模型实例存在但 is_loaded=False，在 infer() 中修正状态")
             self.is_loaded = True
-
+        
         if not self.is_loaded:
             self.load()
-
-        # 🔑 关键修复：确保在每次推理前，NPU设备资源是活跃的
-        try:
-            if self.model and hasattr(self.model, 'Query'):
-                # 验证模型处于可用状态
-                pass
-        except Exception as e:
-            logger.error(f"[ERROR] 模型状态验证失败: {e}")
-            raise
 
         try:
             # 🔑 分段计时1: 整体开始
@@ -458,28 +450,17 @@ class NPUModelLoader:
             burst_enabled = False
             burst_start = time.time()
             try:
-                # 首先尝试使用环境变量
-                burst_env = os.environ.get('QNN_PERFORMANCE_MODE', '').upper()
-
                 if PerfProfile is not None:
-                    try:
-                        PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
-                        burst_enabled = True
-                        logger.info(f"[PERF] ✅ BURST模式已启用 (via PerfProfile, env={burst_env})")
-                    except Exception as e:
-                        logger.warning(f"[PERF] ⚠️ PerfProfile启用BURST失败: {e}")
-                        # 尝试环境变量方式
-                        if burst_env == 'BURST':
-                            burst_enabled = True
-                            logger.info(f"[PERF] ✅ BURST模式已启用 (via 环境变量: QNN_PERFORMANCE_MODE={burst_env})")
-                elif burst_env == 'BURST':
+                    PerfProfile.SetPerfProfileGlobal(PerfProfile.BURST)
                     burst_enabled = True
-                    logger.info(f"[PERF] ✅ BURST模式已启用 (via 环境变量: QNN_PERFORMANCE_MODE={burst_env})")
-
-                if not burst_enabled:
-                    logger.warning(f"[PERF] ⚠️ BURST模式未启用 (env={burst_env}, PerfProfile={PerfProfile is not None})")
+                    logger.info("[PERF] ✅ BURST模式已启用 (via PerfProfile)")
+                elif os.environ.get('QNN_PERFORMANCE_MODE') == 'BURST':
+                    burst_enabled = True
+                    logger.info("[PERF] ✅ BURST模式已启用 (via 环境变量)")
+                else:
+                    logger.info("[PERF] INFO: 未检测到BURST模式配置")
             except Exception as e:
-                logger.warning(f"[PERF] ⚠️ 启用BURST模式时出错: {e}")
+                logger.warning(f"[PERF] ⚠️ 启用BURST模式失败: {e}")
             burst_set_time = (time.time() - burst_start) * 1000
             logger.info(f"[PERF] BURST模式设置耗时: {burst_set_time:.2f}ms")
 
@@ -517,37 +498,6 @@ class NPUModelLoader:
                 except Exception as e:
                     logger.warning(f"[PERF] ⚠️ 释放BURST模式失败: {e}")
 
-            # 🔑 关键修复：推理后验证NPU状态
-            try:
-                # 简单的内存检查
-                import psutil
-                process = psutil.Process()
-                memory_info = process.memory_info()
-                logger.debug(f"[DEBUG] 内存使用: RSS={memory_info.rss/1024/1024:.2f}MB, VMS={memory_info.vms/1024/1024:.2f}MB")
-            except ImportError:
-                # psutil未安装，跳过
-                pass
-
-            # 检查是否有异常状态
-            if token_count > 0 and inference_time > 1000:
-                logger.warning(f"[WARNING] 推理时间过长: {inference_time:.2f}ms (生成{token_count}个token)")
-                logger.warning(f"[WARNING] 每Token延迟: {inference_time/token_count:.2f}ms")
-
-                # 建议检查
-                suggestions = []
-                if burst_enabled:
-                    suggestions.append("BURST模式已启用，但性能仍然不佳，可能是驱动问题")
-                else:
-                    suggestions.append("BURST模式未启用，性能可能受限")
-
-                suggestions.append("检查NPU驱动是否正确安装")
-                suggestions.append("检查是否有其他进程占用NPU资源")
-                suggestions.append("考虑使用更轻量的模型如llama3.2-3b")
-
-                logger.warning(f"[WARNING] 建议检查:")
-                for suggestion in suggestions:
-                    logger.warning(f"  - {suggestion}")
-
             # 🔑 分段计时5: 总耗时
             total_time = (time.time() - total_start) * 1000
 
@@ -571,7 +521,7 @@ class NPUModelLoader:
             # 🔑 关键优化3: 性能检查（高通赛道要求：每Token延迟 < 200ms）
             avg_token_time = inference_time / token_count if token_count > 0 else 0
             throughput = token_count / inference_time * 1000 if token_count > 0 else 0
-
+            
             if avg_token_time > 200:
                 warning_msg = (
                     f"[PERF] ⚠️ 每Token延迟 {avg_token_time:.2f}ms > 200ms（性能不佳）\n"
@@ -594,25 +544,7 @@ class NPUModelLoader:
             else:
                 logger.info(f"[PERF] ✅ 性能正常: {throughput:.1f} tokens/sec, 每Token {avg_token_time:.1f}ms")
 
-            # 🔑 关键修复：推理后进行资源检查和清理
-            logger.debug(f"[DEBUG] 推理完成，准备释放资源...")
-
             return result
-
-        except Exception as e:
-            logger.error(f"[ERROR] 推理失败: {e}")
-            import traceback
-            logger.error(f"详细堆栈:\n{traceback.format_exc()}")
-
-            # 🔑 关键修复：推理失败时也尝试清理资源
-            try:
-                if hasattr(self.model, 'release'):
-                    logger.warning(f"[WARNING] 推理失败，尝试释放 GenieContext...")
-                    self.model.release()
-            except Exception as cleanup_error:
-                logger.error(f"[ERROR] 释放资源时出错: {cleanup_error}")
-
-            raise
 
         except Exception as e:
             logger.error(f"[ERROR] 推理失败: {e}")
@@ -640,11 +572,7 @@ class NPUModelLoader:
     def unload(self):
         """卸载模型释放资源"""
         if self.model and hasattr(self.model, 'release'):
-            try:
-                self.model.release()
-                logger.info(f"[OK] GenieContext 已释放")
-            except Exception as e:
-                logger.warning(f"[WARNING] 释放 GenieContext 失败: {e}")
+            self.model.release()
 
         self.model = None
         self.is_loaded = False
@@ -659,50 +587,6 @@ class NPUModelLoader:
             模型配置字典
         """
         return ModelConfig.MODELS
-
-    @staticmethod
-    def check_and_clean_npu_resources():
-        """
-        检查并清理NPU资源
-
-        这个方法用于在长时间运行后清理可能的资源泄漏
-        """
-        try:
-            logger.info(f"[RESOURCE] 开始检查NPU资源...")
-
-            # 检查全局模型加载器
-            if _global_model_loader is not None:
-                loader = _global_model_loader
-                logger.info(f"[RESOURCE] 检测到活跃的模型加载器: {loader.model_config['name']}")
-
-                # 卸载模型释放资源
-                loader.unload()
-                logger.info(f"[RESOURCE] 已执行资源清理")
-
-            # 检查Python进程的内存使用
-            try:
-                import psutil
-                process = psutil.Process()
-                memory_info = process.memory_info()
-
-                rss_mb = memory_info.rss / 1024 / 1024
-                vms_mb = memory_info.vms / 1024 / 1024
-
-                logger.info(f"[RESOURCE] 当前内存使用: RSS={rss_mb:.2f}MB, VMS={vms_mb:.2f}MB")
-
-                # 如果RSS超过1GB，发出警告
-                if rss_mb > 1024:
-                    logger.warning(f"[RESOURCE] ⚠️ 内存使用过高: {rss_mb:.2f}MB")
-                    logger.warning(f"[RESOURCE] 建议重启后端服务释放内存")
-            except ImportError:
-                logger.debug(f"[RESOURCE] psutil未安装，跳过内存检查")
-
-            return True
-        except Exception as e:
-            logger.error(f"[RESOURCE] 清理资源时出错: {e}")
-            import traceback
-            logger.error(f"详细堆栈:\n{traceback.format_exc()}")
-            return False
 
     @staticmethod
     def get_recommended_model() -> str:

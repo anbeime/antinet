@@ -8,6 +8,7 @@ from typing import List, Optional
 import logging
 import tempfile
 import os
+import re
 
 from config import settings
 from database import DatabaseManager

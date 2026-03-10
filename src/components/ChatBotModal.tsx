@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Bot, User } from 'lucide-react';
+import { X, Send, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
+import chatAvatar from '../pages/chat.png';
 
 interface Message {
   id: string;
@@ -23,7 +24,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是知易智能知识管家的知识库助手。\n\n[提示] 使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
+      content: '你好！我是知易智能知识管家的知识库助手。\n\n使用提示：\n1. 我基于本地 NPU 模型运行\n2. 使用四色卡片知识库提供答案\n3. 支持自然语言查询\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -33,7 +34,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const modalRef = React.useRef<HTMLDivElement>(null);
-  const [transform, setTransform] = React.useState({ x: 0, y: 0 });
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = React.useState(false);
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
   const [startPos, setStartPos] = React.useState({ x: 0, y: 0 });
@@ -61,11 +62,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     setIsDragging(true);
     const startMouseX = e.clientX;
     const startMouseY = e.clientY;
-    const startTransformX = transform.x;
-    const startTransformY = transform.y;
-    
+    const startPosX = position.x;
+    const startPosY = position.y;
+
     setDragStart({ x: startMouseX, y: startMouseY });
-    setStartPos({ x: startTransformX, y: startTransformY });
+    setStartPos({ x: startPosX, y: startPosY });
     e.preventDefault();
   };
 
@@ -76,16 +77,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       const newX = startPos.x + dx;
       const newY = startPos.y + dy;
 
-      // 边界检查
-      const modalWidth = modalRef.current?.offsetWidth || 0;
-      const modalHeight = modalRef.current?.offsetHeight || 0;
-      const maxX = window.innerWidth - modalWidth;
-      const maxY = window.innerHeight - modalHeight;
-
-      const clampedX = Math.max(0, Math.min(newX, maxX));
-      const clampedY = Math.max(0, Math.min(newY, maxY));
-
-      setTransform({ x: clampedX, y: clampedY });
+      setPosition({ x: newX, y: newY });
     }
   }, [isDragging, dragStart, startPos]);
 
@@ -142,7 +134,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     } catch (error) {
       console.error('查询失败:', error);
       toast.error('查询失败，请重试');
-      
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -170,7 +162,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     return (
       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
         <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-          [知识] 知识来源 ({sources.length} 张卡片)
+          知识来源 ({sources.length} 张卡片)
         </div>
         <div className="space-y-2">
           {sources.map((source, index) => (
@@ -208,14 +200,14 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
       >
         {/* 头像 */}
-        <div
-          className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-            isUser
-              ? 'bg-blue-500 text-white'
-              : 'bg-gradient-to-br from-purple-500 to-pink-500 text-white'
-          }`}
-        >
-          {isUser ? <User size={18} /> : <Bot size={18} />}
+        <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center overflow-hidden">
+          {isUser ? (
+            <div className="w-full h-full bg-blue-500 text-white flex items-center justify-center">
+              <User size={18} />
+            </div>
+          ) : (
+            <img src={chatAvatar} alt="助手" className="w-full h-full object-cover" />
+          )}
         </div>
 
         {/* 消息内容 */}
@@ -228,7 +220,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
             }`}
           >
             <div className="whitespace-pre-wrap break-words">{message.content}</div>
-            
+
             {/* 显示来源卡片 */}
             {!isUser && renderSources(message.sources || [])}
           </div>
@@ -256,10 +248,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       <motion.div
         ref={modalRef}
         initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ 
-          opacity: 1, 
+        animate={{
+          opacity: 1,
           scale: 1,
-          transform: `translate(${transform.x}px, ${transform.y}px)`
+          x: position.x,
+          y: position.y
         }}
         exit={{ opacity: 0, scale: 0.95 }}
         className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-2xl h-[600px] flex flex-col"
@@ -272,8 +265,8 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white">
-              <Bot size={20} />
+            <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center">
+              <img src={chatAvatar} alt="知识库助手" className="w-full h-full object-cover" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -296,12 +289,12 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         {/* 消息列表 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.map(renderMessage)}
-          
+
           {/* 加载指示器 */}
           {isLoading && (
             <div className="flex gap-3">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white">
-                <Bot size={18} />
+              <div className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden">
+                <img src={chatAvatar} alt="助手" className="w-full h-full object-cover" />
               </div>
               <div className="flex-1">
                 <div className="inline-block bg-gray-100 dark:bg-gray-800 rounded-lg p-3">
@@ -314,7 +307,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
 
@@ -325,6 +318,8 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               onKeyDown={handleKeyDown}
               placeholder="输入您的问题... (Enter 发送，Shift+Enter 换行)"
               className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
@@ -339,10 +334,10 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               <Send size={20} />
             </button>
           </div>
-          
+
           {/* 提示信息 */}
           <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            [提示] 基于本地知识库回答，支持四色卡片查询
+            提示：基于本地知识库回答，支持四色卡片查询。拖拽标题栏可移动对话框。
           </div>
         </div>
       </motion.div>

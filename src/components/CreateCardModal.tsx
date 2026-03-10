@@ -279,7 +279,14 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         className="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden"
       >
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-bold">创建新卡片</h2>
+          <div>
+            <h2 className="text-xl font-bold">创建新卡片</h2>
+            {projectName && (
+              <p className="text-sm text-purple-600 dark:text-purple-400 mt-1">
+                关联专题: {projectName}
+              </p>
+            )}
+          </div>
           <button 
             onClick={onClose}
             className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
