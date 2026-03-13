@@ -6,6 +6,7 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, X, Sparkles, GripVertical } from 'lucide-react';
+import chatAvatar from '../pages/chat.png';
 import { Button } from '@/components/ui/button';
 import { EnhancedChatBot } from './EnhancedChatBot';
 import { cn } from '@/lib/utils';
@@ -72,31 +73,17 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
               className
             )}
           >
-            <Button
+            <div
               onClick={() => setIsOpen(true)}
-              className="w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              className="w-14 h-14 cursor-pointer relative"
             >
-              <Shield className="w-6 h-6" />
+              <img src={chatAvatar} alt="智能助手" className="w-14 h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
               
               {/* 通知红点 */}
               {hasNotification && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-background" />
               )}
-
-              {/* 闪烁效果 */}
-              <motion.div
-                className="absolute inset-0 rounded-full bg-white/20"
-                animate={{
-                  scale: [1, 1.2, 1],
-                  opacity: [0.5, 0, 0.5]
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: "easeInOut"
-                }}
-              />
-            </Button>
+            </div>
 
             {/* 拖拽手柄 */}
             <div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">

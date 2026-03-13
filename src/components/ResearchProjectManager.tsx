@@ -10,7 +10,6 @@ import {
   ChevronRight,
   ChevronLeft,
   CheckSquare,
-  FileText,
   ArrowRight,
   Clock,
   Tag,
@@ -263,7 +262,7 @@ const ProjectDetailPanel: React.FC<{
     try {
       const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
       if (response.ok) {
-        toast.success('已转换为任务');
+        toast.success('已转换为任务，可在「任务管理 → 收集箱」中查看');
         loadData();
         onConvertCardToTask(cardId);
       }

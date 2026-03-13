@@ -7,9 +7,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Send, Bot, User, Image as ImageIcon, 
+  X, Send, Bot, User,
   FileText, Table, Presentation, Search,
-  Sparkles, ChevronRight, Loader2, Paperclip,
+  Sparkles, ChevronRight, Loader2,
   Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,10 +18,9 @@ import {
   ChatMessage, 
   CardReference, 
   SkillResult,
-  ImageAnalysisResult,
   SceneType
 } from '@/services/enhancedChatService';
-import { analyzeImage } from '@/services/visionService';
+// visionService 已移除（视觉模型暂不可用）
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -36,9 +35,8 @@ const MessageBubble: React.FC<{
   message: ChatMessage;
   cards?: CardReference[];
   skillResult?: SkillResult;
-  imageAnalysis?: ImageAnalysisResult;
   sceneType?: SceneType;
-}> = ({ message, cards, skillResult, imageAnalysis, sceneType }) => {
+}> = ({ message, cards, skillResult, sceneType }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
 
@@ -54,14 +52,14 @@ const MessageBubble: React.FC<{
       {/* 头像 */}
       <div className={cn(
         "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-        isUser ? "bg-primary" : isSkill ? "bg-purple-500" : "bg-gradient-to-br from-blue-500 to-purple-600"
+        isUser ? "bg-primary" : isSkill ? "bg-purple-500" : "bg-transparent"
       )}>
         {isUser ? (
           <User className="w-4 h-4 text-white" />
         ) : isSkill ? (
           <Sparkles className="w-4 h-4 text-white" />
         ) : (
-          <img src="/src/pages/chat.png" alt="bot" className="w-6 h-6 rounded-full" />
+          <img src="/src/pages/chat.png" alt="bot" className="w-8 h-8 rounded-full object-contain" />
         )}
       </div>
 
@@ -140,30 +138,7 @@ const MessageBubble: React.FC<{
           </Card>
         )}
 
-        {/* 图片分析结果 */}
-        {imageAnalysis && (
-          <Card className="mt-2 border-blue-200 bg-blue-50/50 dark:bg-blue-900/10">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <ImageIcon className="w-4 h-4 text-blue-500" />
-                <span className="font-medium text-sm">图片分析</span>
-                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
-                  置信度 {Math.round(imageAnalysis.confidence * 100)}%
-                </span>
               </div>
-              <p className="text-sm mb-2">{imageAnalysis.description}</p>
-              {imageAnalysis.facts.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium">识别到的事实：</p>
-                  {imageAnalysis.facts.slice(0, 3).map((fact, i) => (
-                    <p key={i} className="text-xs text-muted-foreground pl-2">• {fact}</p>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
     </motion.div>
   );
 };
@@ -190,28 +165,24 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [currentScene, setCurrentScene] = useState<SceneType>('general');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 初始化欢迎消息
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       setMessages([{
         role: 'assistant',
-        content: `👋 你好！我是知易智能知识管家助手。
+        content: `你好！我是知易智能知识管家助手。
 
 我可以帮您：
-📚 **查询知识库卡片** - 搜索事实、解释、风险、行动卡片
-🖼️ **分析图片内容** - 上传图片进行智能分析
-📊 **生成PPT演示** - 快速创建专业演示文稿
-📈 **分析Excel数据** - 数据分析和可视化
-📝 **生成Word文档** - 创建专业文档
+查询知识库卡片 - 搜索事实、解释、风险、行动卡片
+生成PPT演示 - 快速创建专业演示文稿
+分析Excel数据 - 数据分析和可视化
+生成Word文档 - 创建专业文档
 
 有什么可以帮您的吗？`,
         timestamp: new Date().toISOString()
@@ -233,115 +204,39 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
   // 发送消息
   const handleSend = async () => {
-    if (!input.trim() && !selectedImage) return;
+    if (!input.trim()) return;
 
     const query = input.trim();
     setInput('');
     setIsLoading(true);
 
     try {
-      // 如果有选中的图片，先进行图片分析
-      if (selectedImage) {
-        // 添加用户消息（包含图片）
-        const userMessage: ChatMessage = {
-          role: 'user',
-          content: query || '[图片]',
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, userMessage]);
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content: query,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, userMessage]);
 
-        // 分析图片
-        const analysisResult = await analyzeImage(selectedImage, query || '请详细描述这张图片的内容');
-        
-        if (analysisResult.success) {
-          // 添加助手回复（图片分析结果）
-          const assistantMessage: ChatMessage = {
-            role: 'assistant',
-            content: analysisResult.analysis?.description || '图片分析完成',
-            timestamp: new Date().toISOString(),
-            metadata: {
-              scene_type: 'image_analysis',
-              image_analysis: analysisResult.analysis,
-              cards: [],
-              skill_result: null
-            }
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          
-          // 设置建议问题
-          setSuggestedQuestions([
-            "基于分析结果生成知识卡片",
-            "这张图片的关键点是什么？",
-            "图片中的数据趋势如何？"
-          ]);
-          setCurrentScene('image_analysis');
-        } else {
-          // 分析失败，使用普通聊天
-          const response = await enhancedChatService.sendMessage(query);
-          const assistantMessage: ChatMessage = {
-            role: 'assistant',
-            content: response.response,
-            timestamp: new Date().toISOString(),
-            metadata: {
-              scene_type: response.scene_type,
-              cards: response.cards,
-              skill_result: response.skill_result,
-              image_analysis: null
-            }
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          setSuggestedQuestions(response.suggested_questions);
-          setCurrentScene(response.scene_type);
+      const response = await enhancedChatService.sendMessage(query);
+      const assistantMessage: ChatMessage = {
+        role: 'assistant',
+        content: response.response,
+        timestamp: new Date().toISOString(),
+        metadata: {
+          scene_type: response.scene_type,
+          cards: response.cards,
+          skill_result: response.skill_result
         }
-      } else {
-        // 没有图片，使用普通聊天
-        const userMessage: ChatMessage = {
-          role: 'user',
-          content: query,
-          timestamp: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, userMessage]);
-
-        const response = await enhancedChatService.sendMessage(query);
-        const assistantMessage: ChatMessage = {
-          role: 'assistant',
-          content: response.response,
-          timestamp: new Date().toISOString(),
-          metadata: {
-            scene_type: response.scene_type,
-            cards: response.cards,
-            skill_result: response.skill_result,
-            image_analysis: response.image_analysis
-          }
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setSuggestedQuestions(response.suggested_questions);
-        setCurrentScene(response.scene_type);
-      }
-
-      // 清空图片
-      setSelectedImage(null);
-      setImagePreview(null);
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+      setSuggestedQuestions(response.suggested_questions);
+      setCurrentScene(response.scene_type);
 
     } catch (error) {
       toast.error('发送失败，请重试');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // 处理图片选择
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('图片大小不能超过10MB');
-        return;
-      }
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onload = (e) => setImagePreview(e.target?.result as string);
-      reader.readAsDataURL(file);
     }
   };
 
@@ -366,12 +261,6 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       label: "查卡片",
       onClick: () => handleSuggestedQuestion("搜索知识库卡片"),
       color: "bg-blue-100 text-blue-600"
-    },
-    {
-      icon: <ImageIcon className="w-3 h-3" />,
-      label: "分析图片",
-      onClick: () => fileInputRef.current?.click(),
-      color: "bg-green-100 text-green-600"
     },
     {
       icon: <Presentation className="w-3 h-3" />,
@@ -412,7 +301,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 <div>
                   <CardTitle className="text-lg">知易智能助手</CardTitle>
                   <p className="text-xs text-white/80">
-                    支持知识库查询 · 图片分析 · 技能调用
+                    支持知识库查询 · 技能调用
                   </p>
                 </div>
               </div>
@@ -447,7 +336,6 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   message={message}
                   cards={message.metadata?.cards}
                   skillResult={message.metadata?.skill_result}
-                  imageAnalysis={message.metadata?.image_analysis}
                   sceneType={message.metadata?.scene_type}
                 />
               ))}
@@ -503,54 +391,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          {/* 图片预览 */}
-          {imagePreview && (
-            <div className="px-4 py-2 border-t bg-muted/30">
-              <div className="flex items-center gap-2">
-                <img 
-                  src={imagePreview} 
-                  alt="Preview" 
-                  className="w-16 h-16 object-cover rounded"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{selectedImage?.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(selectedImage!.size / 1024).toFixed(1)} KB
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedImage(null);
-                    setImagePreview(null);
-                  }}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* 输入区域 */}
           <div className="p-4 border-t">
             <div className="flex gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/*"
-                onChange={handleImageSelect}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-shrink-0"
-              >
-                <Paperclip className="w-4 h-4" />
-              </Button>
-              
               <div className="flex-1 relative">
                 <textarea
                   ref={textareaRef}
@@ -576,7 +419,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <Button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && !selectedImage)}
+                disabled={isLoading || !input.trim()}
                 className="flex-shrink-0"
               >
                 {isLoading ? (

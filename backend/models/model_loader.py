@@ -399,7 +399,7 @@ class NPUModelLoader:
         
         return formatted_prompt
 
-    def infer(self, prompt: str, max_new_tokens: int = 32, temperature: float = 0.7) -> str:
+    def infer(self, prompt: str, max_new_tokens: int = 256, temperature: float = 0.7) -> str:
         """
         执行推理
 

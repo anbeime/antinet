@@ -206,7 +206,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
               <User size={18} />
             </div>
           ) : (
-            <img src={chatAvatar} alt="助手" className="w-full h-full object-cover" />
+            <img src={chatAvatar} alt="助手" className="w-full h-full object-contain" />
           )}
         </div>
 
@@ -266,7 +266,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center">
-              <img src={chatAvatar} alt="知识库助手" className="w-full h-full object-cover" />
+              <img src={chatAvatar} alt="知识库助手" className="w-full h-full object-contain" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">

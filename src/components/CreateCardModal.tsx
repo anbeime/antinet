@@ -61,6 +61,7 @@ interface CardFormData {
   color: CardColor;
   address: string;
   relatedCards: string[];
+  projectId?: number;
 }
 
 interface CreateCardModalProps {
@@ -69,6 +70,8 @@ interface CreateCardModalProps {
   onSave: (cardData: CardFormData) => void;
   initialColor?: CardColor;
   existingCards: { id: string; title: string }[];
+  projectId?: number;
+  projectName?: string;
 }
 
 const CreateCardModal: React.FC<CreateCardModalProps> = ({ 
@@ -76,7 +79,9 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
   onClose, 
   onSave,
   initialColor = 'blue',
-  existingCards
+  existingCards,
+  projectId,
+  projectName
 }) => {
   const [formData, setFormData] = useState<CardFormData>({
     title: '',
@@ -202,7 +207,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     e.preventDefault();
     
     if (validateForm()) {
-      onSave(formData);
+      onSave({ ...formData, projectId });
       onClose();
       toast('卡片创建成功！', {
         icon: <CheckCircle size={16} />,

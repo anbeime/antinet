@@ -136,7 +136,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                 "http://127.0.0.1:8000/api/npu/analyze",
                 json={
                     "query": combined_prompt,
-                    "max_tokens": 256,  # 提高token限制，让LLM有充分表达空间
+                    "max_tokens": 512,  # 会议讨论需要充分表达
                     "temperature": 0.7   # 使用标准温度
                 }
             )
@@ -379,25 +379,33 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 如果是密卷房，先搜索数据库获取相关资料
                  if agent_id == "mijuanfang":
                      try:
-                         from routes.knowledge_routes import search_cards
-                         import json
+                         from database import DatabaseManager
+                         from config import settings
 
-                         # 从上下文中提取关键词
-                         topic = request.topic.lower()
-                         context_keywords = [keyword for keyword in user_prompt.split() if len(keyword) > 3]
+                         db_mgr = DatabaseManager(settings.DB_PATH)
+                         conn = db_mgr.get_connection()
+                         cursor = conn.cursor()
 
-                         # 使用多个关键词搜索
-                         search_queries = topic.split()[:3] + context_keywords[:3]
+                         # 从主题中提取关键词搜索
+                         search_queries = request.topic.split()[:3]
 
-                         for query in search_queries[:2]:  # 最多搜索2个查询
-                             if len(query) > 2:
-                                 search_result = await search_cards(keyword=query, limit=3)
-                                 if search_result and len(search_result) > 0:
-                                     # 将搜索结果添加到上下文
+                         for query in search_queries[:2]:
+                             if len(query) > 1:
+                                 cursor.execute('''
+                                     SELECT title, content FROM knowledge_cards
+                                     WHERE title LIKE ? OR content LIKE ?
+                                     LIMIT 3
+                                 ''', (f'%{query}%', f'%{query}%'))
+                                 rows = cursor.fetchall()
+                                 if rows:
                                      relevant_info = f"\n【数据库参考】关于'{query}'的相关资料："
-                                     for card in search_result[:3]:  # 最多引用3个卡片
-                                         relevant_info += f"\n- {card.get('title', '无标题')}：{card.get('content', '')[:100]}..."
+                                     for row in rows:
+                                         title = row[0] or '无标题'
+                                         content = (row[1] or '')[:100]
+                                         relevant_info += f"\n- {title}：{content}..."
                                      user_prompt += relevant_info
+
+                         conn.close()
                      except Exception as e:
                          logger.warning(f"密卷房数据库搜索失败: {e}")
 

@@ -252,6 +252,16 @@ try:
 except Exception as e:
     logger.warning(f"无法导入8-Agent会议路由: {e}")
 
+# 注册增强版聊天路由
+try:
+    from routes.enhanced_chat_routes import router as enhanced_chat_router
+    app.include_router(enhanced_chat_router)
+    import routes.enhanced_chat_routes as enhanced_chat_module
+    enhanced_chat_module.db_manager = db_manager
+    logger.info("[OK] 增强版聊天路由已注册，数据库管理器已注入")
+except Exception as e:
+    logger.warning(f"无法导入增强版聊天路由: {e}")
+
 
 # 初始化 8-Agent 系统
 @app.on_event("startup")

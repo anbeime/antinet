@@ -604,7 +604,7 @@ const GTDSystem: React.FC = () => {
                           {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{task.description || '无描述'}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-3">{task.description || '无描述'}</p>
                       <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
                         <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
                         {task.due_date && (
