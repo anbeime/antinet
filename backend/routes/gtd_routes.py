@@ -6,7 +6,7 @@ GTD 任务管理 API 路由
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 from pathlib import Path
 
@@ -26,6 +26,13 @@ class GTDTask(BaseModel):
     due_date: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    remind_at: Optional[str] = None
+    remind_before_minutes: Optional[int] = 0
+    reminder_enabled: Optional[bool] = False
+    recurrence: Optional[str] = "none"
+    recurrence_end_date: Optional[str] = None
+    is_completed: Optional[bool] = False
+    completed_at: Optional[str] = None
 
 
 class GTDTaskCreate(BaseModel):
@@ -35,6 +42,11 @@ class GTDTaskCreate(BaseModel):
     category: str = "inbox"
     priority: Optional[str] = "medium"
     due_date: Optional[str] = None
+    remind_at: Optional[str] = None
+    remind_before_minutes: Optional[int] = 0
+    reminder_enabled: Optional[bool] = False
+    recurrence: Optional[str] = "none"
+    recurrence_end_date: Optional[str] = None
 
 
 class GTDTaskUpdate(BaseModel):
@@ -44,6 +56,12 @@ class GTDTaskUpdate(BaseModel):
     category: Optional[str] = None
     priority: Optional[str] = None
     due_date: Optional[str] = None
+    remind_at: Optional[str] = None
+    remind_before_minutes: Optional[int] = None
+    reminder_enabled: Optional[bool] = None
+    recurrence: Optional[str] = None
+    recurrence_end_date: Optional[str] = None
+    is_completed: Optional[bool] = None
 
 
 def get_db():
@@ -62,9 +80,13 @@ async def get_all_tasks():
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date, 
-                   created_at, updated_at
+                   created_at, updated_at, remind_at, remind_before_minutes,
+                   reminder_enabled, recurrence, recurrence_end_date,
+                   is_completed, completed_at
             FROM gtd_tasks
-            ORDER BY created_at DESC
+            ORDER BY is_completed ASC, 
+                     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                     due_date ASC
         """)
         
         tasks = []
@@ -77,7 +99,14 @@ async def get_all_tasks():
                 "priority": row["priority"],
                 "due_date": row["due_date"],
                 "created_at": row["created_at"],
-                "updated_at": row["updated_at"]
+                "updated_at": row["updated_at"],
+                "remind_at": row["remind_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "recurrence": row["recurrence"] or "none",
+                "recurrence_end_date": row["recurrence_end_date"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "completed_at": row["completed_at"]
             })
         
         conn.close()
@@ -96,10 +125,14 @@ async def get_tasks_by_category(category: str):
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at
+                   created_at, updated_at, remind_at, remind_before_minutes,
+                   reminder_enabled, recurrence, recurrence_end_date,
+                   is_completed, completed_at
             FROM gtd_tasks
             WHERE category = ?
-            ORDER BY created_at DESC
+            ORDER BY is_completed ASC, 
+                     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                     due_date ASC
         """, (category,))
         
         tasks = []
@@ -112,7 +145,14 @@ async def get_tasks_by_category(category: str):
                 "priority": row["priority"],
                 "due_date": row["due_date"],
                 "created_at": row["created_at"],
-                "updated_at": row["updated_at"]
+                "updated_at": row["updated_at"],
+                "remind_at": row["remind_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "recurrence": row["recurrence"] or "none",
+                "recurrence_end_date": row["recurrence_end_date"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "completed_at": row["completed_at"]
             })
         
         conn.close()
@@ -122,19 +162,26 @@ async def get_tasks_by_category(category: str):
         raise HTTPException(status_code=500, detail=f"获取任务失败: {str(e)}")
 
 
-@router.get("/tasks/{task_id}", response_model=GTDTask)
+@router.get("/tasks/{task_id:int}", response_model=GTDTask)
 async def get_task(task_id: int):
     """获取单个任务"""
+    try:
+        task_id_int = int(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="任务ID必须是整数")
+    
     try:
         conn = get_db()
         cursor = conn.cursor()
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at
+                   created_at, updated_at, remind_at, remind_before_minutes,
+                   reminder_enabled, recurrence, recurrence_end_date,
+                   is_completed, completed_at
             FROM gtd_tasks
             WHERE id = ?
-        """, (task_id,))
+        """, (task_id_int,))
         
         row = cursor.fetchone()
         conn.close()
@@ -150,7 +197,14 @@ async def get_task(task_id: int):
             "priority": row["priority"],
             "due_date": row["due_date"],
             "created_at": row["created_at"],
-            "updated_at": row["updated_at"]
+            "updated_at": row["updated_at"],
+            "remind_at": row["remind_at"],
+            "remind_before_minutes": row["remind_before_minutes"],
+            "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+            "recurrence": row["recurrence"] or "none",
+            "recurrence_end_date": row["recurrence_end_date"],
+            "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+            "completed_at": row["completed_at"]
         }
     
     except HTTPException:
@@ -167,14 +221,22 @@ async def create_task(task: GTDTaskCreate):
         cursor = conn.cursor()
         
         cursor.execute("""
-            INSERT INTO gtd_tasks (title, description, category, priority, due_date, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            INSERT INTO gtd_tasks (title, description, category, priority, due_date, 
+                                 remind_at, remind_before_minutes, reminder_enabled,
+                                 recurrence, recurrence_end_date, is_completed,
+                                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
         """, (
             task.title,
             task.description,
             task.category,
             task.priority,
-            task.due_date
+            task.due_date,
+            task.remind_at,
+            task.remind_before_minutes,
+            1 if task.reminder_enabled else 0,
+            task.recurrence or "none",
+            task.recurrence_end_date
         ))
         
         task_id = cursor.lastrowid
@@ -183,7 +245,9 @@ async def create_task(task: GTDTaskCreate):
         # 获取创建的任务
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at
+                   created_at, updated_at, remind_at, remind_before_minutes,
+                   reminder_enabled, recurrence, recurrence_end_date,
+                   is_completed, completed_at
             FROM gtd_tasks
             WHERE id = ?
         """, (task_id,))
@@ -199,7 +263,14 @@ async def create_task(task: GTDTaskCreate):
             "priority": row["priority"],
             "due_date": row["due_date"],
             "created_at": row["created_at"],
-            "updated_at": row["updated_at"]
+            "updated_at": row["updated_at"],
+            "remind_at": row["remind_at"],
+            "remind_before_minutes": row["remind_before_minutes"],
+            "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+            "recurrence": row["recurrence"] or "none",
+            "recurrence_end_date": row["recurrence_end_date"],
+            "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+            "completed_at": row["completed_at"]
         }
     
     except Exception as e:
@@ -243,6 +314,34 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
             update_fields.append("due_date = ?")
             update_values.append(task.due_date)
         
+        if task.remind_at is not None:
+            update_fields.append("remind_at = ?")
+            update_values.append(task.remind_at)
+        
+        if task.remind_before_minutes is not None:
+            update_fields.append("remind_before_minutes = ?")
+            update_values.append(task.remind_before_minutes)
+        
+        if task.reminder_enabled is not None:
+            update_fields.append("reminder_enabled = ?")
+            update_values.append(1 if task.reminder_enabled else 0)
+        
+        if task.recurrence is not None:
+            update_fields.append("recurrence = ?")
+            update_values.append(task.recurrence)
+        
+        if task.recurrence_end_date is not None:
+            update_fields.append("recurrence_end_date = ?")
+            update_values.append(task.recurrence_end_date)
+        
+        if task.is_completed is not None:
+            update_fields.append("is_completed = ?")
+            update_values.append(1 if task.is_completed else 0)
+            if task.is_completed:
+                update_fields.append("completed_at = datetime('now')")
+            else:
+                update_fields.append("completed_at = NULL")
+        
         update_fields.append("updated_at = datetime('now')")
         update_values.append(task_id)
         
@@ -254,7 +353,9 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
         # 获取更新后的任务
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at
+                   created_at, updated_at, remind_at, remind_before_minutes,
+                   reminder_enabled, recurrence, recurrence_end_date,
+                   is_completed, completed_at
             FROM gtd_tasks
             WHERE id = ?
         """, (task_id,))
@@ -270,7 +371,14 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
             "priority": row["priority"],
             "due_date": row["due_date"],
             "created_at": row["created_at"],
-            "updated_at": row["updated_at"]
+            "updated_at": row["updated_at"],
+            "remind_at": row["remind_at"],
+            "remind_before_minutes": row["remind_before_minutes"],
+            "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+            "recurrence": row["recurrence"] or "none",
+            "recurrence_end_date": row["recurrence_end_date"],
+            "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+            "completed_at": row["completed_at"]
         }
     
     except HTTPException:
@@ -286,7 +394,6 @@ async def delete_task(task_id: int):
         conn = get_db()
         cursor = conn.cursor()
         
-        # 检查任务是否存在
         cursor.execute("SELECT id FROM gtd_tasks WHERE id = ?", (task_id,))
         if not cursor.fetchone():
             conn.close()
@@ -370,3 +477,279 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e)
         }
+
+
+@router.get("/tasks/calendar")
+async def get_tasks_by_date_range(start_date: str, end_date: str):
+    """获取指定日期范围内的任务（用于日历视图）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, title, description, category, priority, due_date,
+                   remind_at, reminder_enabled, is_completed,
+                   created_at, updated_at, remind_before_minutes,
+                   recurrence, completed_at
+            FROM gtd_tasks
+            WHERE (due_date BETWEEN ? AND ?)
+               OR (remind_at BETWEEN ? AND ?)
+               OR (due_date IS NULL AND remind_at IS NULL)
+            ORDER BY 
+                CASE WHEN due_date IS NOT NULL THEN due_date ELSE remind_at END ASC,
+                CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+        """, (start_date, end_date, start_date, end_date))
+        
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "category": row["category"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "remind_at": row["remind_at"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "recurrence": row["recurrence"] or "none",
+                "completed_at": row["completed_at"]
+            })
+        
+        conn.close()
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "tasks": tasks,
+            "total": len(tasks)
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取日历任务失败: {str(e)}")
+
+
+@router.get("/tasks/today")
+async def get_today_tasks():
+    """获取今日任务"""
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, title, description, category, priority, due_date,
+                   remind_at, reminder_enabled, is_completed,
+                   created_at, updated_at, remind_before_minutes,
+                   recurrence, completed_at
+            FROM gtd_tasks
+            WHERE is_completed = 0
+              AND (due_date = ? OR category = 'today'
+                   OR (reminder_enabled = 1 
+                       AND DATE(remind_at) = ?))
+            ORDER BY 
+                CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                due_date ASC
+        """, (today, today))
+        
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "category": row["category"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "remind_at": row["remind_at"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "recurrence": row["recurrence"] or "none",
+                "completed_at": row["completed_at"]
+            })
+        
+        conn.close()
+        return {"date": today, "tasks": tasks, "total": len(tasks)}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取今日任务失败: {str(e)}")
+
+
+@router.get("/tasks/upcoming")
+async def get_upcoming_tasks(days: int = 7):
+    """获取即将到期的任务"""
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        end_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, title, description, category, priority, due_date,
+                   remind_at, reminder_enabled, is_completed,
+                   created_at, updated_at, remind_before_minutes,
+                   recurrence, completed_at
+            FROM gtd_tasks
+            WHERE is_completed = 0
+              AND due_date BETWEEN ? AND ?
+            ORDER BY due_date ASC,
+                CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+        """, (today, end_date))
+        
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "category": row["category"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "remind_at": row["remind_at"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "recurrence": row["recurrence"] or "none",
+                "completed_at": row["completed_at"]
+            })
+        
+        conn.close()
+        return {"days": days, "tasks": tasks, "total": len(tasks)}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取即将到期任务失败: {str(e)}")
+
+
+@router.get("/tasks/overdue")
+async def get_overdue_tasks():
+    """获取已逾期任务"""
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, title, description, category, priority, due_date,
+                   remind_at, reminder_enabled, is_completed,
+                   created_at, updated_at, remind_before_minutes,
+                   recurrence, completed_at
+            FROM gtd_tasks
+            WHERE is_completed = 0
+              AND due_date < ?
+            ORDER BY due_date ASC,
+                CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+        """, (today,))
+        
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "category": row["category"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "remind_at": row["remind_at"],
+                "reminder_enabled": bool(row["reminder_enabled"]) if row["reminder_enabled"] else False,
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "remind_before_minutes": row["remind_before_minutes"],
+                "recurrence": row["recurrence"] or "none",
+                "completed_at": row["completed_at"]
+            })
+        
+        conn.close()
+        return {"tasks": tasks, "total": len(tasks)}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取逾期任务失败: {str(e)}")
+
+
+@router.put("/tasks/{task_id}/complete")
+async def toggle_task_complete(task_id: int, is_completed: bool = True):
+    """标记任务完成状态"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        completed_at = datetime.now().isoformat() if is_completed else None
+        
+        cursor.execute("""
+            UPDATE gtd_tasks
+            SET is_completed = ?, completed_at = ?, updated_at = datetime('now')
+            WHERE id = ?
+        """, (1 if is_completed else 0, completed_at, task_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "task_id": task_id, "is_completed": is_completed}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新任务状态失败: {str(e)}")
+
+
+@router.post("/tasks/{task_id}/reminder")
+async def set_task_reminder(task_id: int, remind_at: str, remind_before_minutes: int = 0):
+    """设置任务提醒"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE gtd_tasks
+            SET remind_at = ?, remind_before_minutes = ?, reminder_enabled = 1, 
+                updated_at = datetime('now')
+            WHERE id = ?
+        """, (remind_at, remind_before_minutes, task_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "task_id": task_id, "remind_at": remind_at, "remind_before_minutes": remind_before_minutes}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"设置提醒失败: {str(e)}")
+
+
+@router.get("/reminders/pending")
+async def get_pending_reminders():
+    """获取待提醒的任务"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, title, description, remind_at, due_date, remind_before_minutes
+            FROM gtd_tasks
+            WHERE reminder_enabled = 1
+              AND is_completed = 0
+              AND remind_at > datetime('now')
+            ORDER BY remind_at ASC
+            LIMIT 20
+        """)
+        
+        reminders = []
+        for row in cursor.fetchall():
+            reminders.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "remind_at": row["remind_at"],
+                "due_date": row["due_date"],
+                "remind_before_minutes": row["remind_before_minutes"]
+            })
+        
+        conn.close()
+        return {"reminders": reminders, "total": len(reminders)}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取提醒失败: {str(e)}")

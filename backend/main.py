@@ -501,6 +501,14 @@ async def startup_event():
         logger.info("[startup_event] 模型将在首次使用时按需加载")
         # 不再吞掉异常，让问题暴露出来
 
+    # 启动任务提醒服务
+    try:
+        from services.reminder_service import start_reminder_service
+        start_reminder_service()
+        logger.info("[OK] 任务提醒服务已启动")
+    except Exception as e:
+        logger.warning(f"任务提醒服务启动失败: {e}")
+
 
 @app.get("/")
 async def root():

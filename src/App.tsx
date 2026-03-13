@@ -12,6 +12,7 @@ import SkillCenter from "@/pages/SkillCenter";
 import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
 import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
+import GTDTaskManager from "@/pages/GTDTaskManager";
 import { useState } from "react";
 import { AuthContext } from '@/contexts/authContext';
 
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/multi-model" element={<MultiModel />} />
           <Route path="/format-converter" element={<FormatConverter />} />
           <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
+          <Route path="/gtd-tasks" element={<GTDTaskManager />} />
         </Routes>
       </AuthContext.Provider>
   );

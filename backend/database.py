@@ -137,17 +137,52 @@ class DatabaseManager:
                     source_type TEXT,
                     source_id INTEGER,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    remind_at TEXT,
+                    remind_before_minutes INTEGER DEFAULT 0,
+                    reminder_enabled BOOLEAN DEFAULT 0,
+                    recurrence TEXT DEFAULT 'none',
+                    recurrence_end_date TEXT,
+                    is_completed BOOLEAN DEFAULT 0,
+                    completed_at TEXT
                 )
             """)
             
-            # 迁移：为旧表添加 source_type 和 source_id 字段
+            # 迁移：为旧表添加新字段
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_type TEXT")
             except:
                 pass
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_id INTEGER")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN remind_at TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN remind_before_minutes INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN recurrence TEXT DEFAULT 'none'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN recurrence_end_date TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN is_completed BOOLEAN DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN completed_at TEXT")
             except:
                 pass
 

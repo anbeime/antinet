@@ -32,6 +32,9 @@ sqlalchemy==2.0.25
 # 日志
 loguru==0.7.2
 
+# 任务调度
+apscheduler>=3.10.0
+
 # ===== QAI AppBuilder（必需，手动安装） =====
 #
 # 在AIPC上运行以下命令：
