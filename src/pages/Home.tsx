@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
@@ -25,8 +25,7 @@ import {
   Layers,
   ListTodo,
   Bot,
-  Users,
-  Calendar
+  Users
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -46,7 +45,6 @@ import MultiModel from '@/pages/MultiModel';
 import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
-import GTDTaskManager from '@/pages/GTDTaskManager';
 import ChatButton from '@/components/ChatButton';
 
 
@@ -589,15 +587,6 @@ const Home: React.FC = () => {
             >
             <ListTodo size={18} />
               <span>任务管理</span>
-            </button>
-
-            {/* 任务日历 */}
-            <button
-              onClick={() => setActiveTab('gtd-tasks')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'gtd-tasks' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
-            >
-              <Calendar size={18} />
-              <span>任务日历</span>
             </button>
 
             {/* 团队协作 */}
@@ -1565,11 +1554,6 @@ const Home: React.FC = () => {
         {/* 虚拟办公室会议视图 */}
         {activeTab === 'virtual-office-meeting' && (
           <VirtualOfficeMeeting />
-        )}
-
-        {/* 任务日历视图 */}
-        {activeTab === 'gtd-tasks' && (
-          <GTDTaskManager />
         )}
         </main>
 

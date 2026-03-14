@@ -220,6 +220,8 @@ export interface GtdTask {
   due_date?: string;
   created_at?: string;
   updated_at?: string;
+  is_completed?: boolean;
+  reminder_enabled?: boolean;
 }
 
 export const gtdTaskService = {

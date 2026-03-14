@@ -7,6 +7,7 @@ interface GTDTask {
   title: string;
   description?: string;
   due_date?: string;
+  created_at?: string;
   remind_at?: string;
   priority: 'low' | 'medium' | 'high';
   category: string;
@@ -15,17 +16,29 @@ interface GTDTask {
 }
 
 interface CalendarViewProps {
-  onTaskClick?: (task: GTDTask) => void;
-  onDateClick?: (date: Date) => void;
+  onRefresh?: () => void;
 }
 
-const CalendarView: React.FC<CalendarViewProps> = ({ onTaskClick, onDateClick }) => {
+const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [tasks, setTasks] = useState<GTDTask[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showTaskPanel, setShowTaskPanel] = useState(false);
 
+  useEffect(() => {
+    const fetchTasks = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/data/gtd/tasks');
+        if (response.ok) {
+          const data = await response.json();
+          setTasks(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('获取任务失败:', error);
+      }
+    };
+    fetchTasks();
+  }, [onRefresh]);
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
@@ -33,28 +46,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onTaskClick, onDateClick })
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
 
-  const fetchTasks = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch('http://localhost:8000/api/data/gtd/tasks');
-      if (response.ok) {
-        const data = await response.json();
-        setTasks(Array.isArray(data) ? data : []);
-      }
-    } catch (error) {
-      console.error('获取任务失败:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTasks();
-  }, [year, month]);
-
   const getTasksForDate = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return tasks.filter(t => t.due_date === dateStr);
+    return tasks.filter(t => {
+      if (t.due_date === dateStr) return true;
+      if (!t.due_date && t.created_at && t.created_at.startsWith(dateStr)) return true;
+      return false;
+    });
   };
 
   const getSelectedDateTasks = () => {
@@ -108,10 +106,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onTaskClick, onDateClick })
         { method: 'PUT' }
       );
       if (response.ok) {
-        setTasks(tasks.map(t => 
-          t.id === taskId ? { ...t, is_completed: !isCompleted } : t
-        ));
         toast.success(isCompleted ? '任务已取消完成' : '任务已完成');
+        if (onRefresh) onRefresh();
       }
     } catch (error) {
       toast.error('操作失败');
@@ -124,8 +120,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onTaskClick, onDateClick })
         method: 'DELETE'
       });
       if (response.ok) {
-        setTasks(tasks.filter(t => t.id !== taskId));
         toast.success('任务已删除');
+        if (onRefresh) onRefresh();
       }
     } catch (error) {
       toast.error('删除失败');
@@ -216,13 +212,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onTaskClick, onDateClick })
         </div>
         
         <div className="flex-1 grid grid-cols-7 overflow-auto">
-          {loading ? (
-            <div className="col-span-7 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
-            days
-          )}
+            {days}
         </div>
       </div>
 

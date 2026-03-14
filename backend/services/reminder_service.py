@@ -27,7 +27,7 @@ class ReminderService:
             self.scheduler = AsyncIOScheduler()
             self.scheduler.add_job(
                 self.check_reminders,
-                trigger=IntervalTrigger(seconds=30),
+                trigger=IntervalTrigger(hours=1),
                 id='check_reminders',
                 replace_existing=True
             )

@@ -30,6 +30,51 @@ interface EnhancedChatBotProps {
   onClose: () => void;
 }
 
+// 渲染消息内容 - 支持 [点击跳转:url] 格式的链接
+const renderMessageContent = (content: string): React.ReactNode => {
+  if (!content) return null;
+  
+  // 匹配 [点击跳转:url] 格式
+  const linkRegex = /\[点击跳转:([^\]]+)\]/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = linkRegex.exec(content)) !== null) {
+    const [fullMatch, url] = match;
+    const beforeText = content.slice(lastIndex, match.index);
+    
+    // 添加链接前的文本
+    if (beforeText) {
+      parts.push(<span key={`text-${lastIndex}`}>{beforeText}</span>);
+    }
+    
+    // 添加可点击的链接按钮
+    parts.push(
+      <a
+        key={`link-${match.index}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 px-3 py-1 mt-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors"
+      >
+        <span>点击打开页面</span>
+        <ChevronRight className="w-4 h-4" />
+      </a>
+    );
+    
+    lastIndex = match.index + fullMatch.length;
+  }
+  
+  // 添加剩余的文本
+  const remainingText = content.slice(lastIndex);
+  if (remainingText) {
+    parts.push(<span key={`text-end`}>{remainingText}</span>);
+  }
+  
+  return parts.length > 0 ? <>{parts}</> : content;
+};
+
 // 消息组件
 const MessageBubble: React.FC<{
   message: ChatMessage;
@@ -82,7 +127,7 @@ const MessageBubble: React.FC<{
             ? "bg-primary text-primary-foreground rounded-br-md" 
             : "bg-muted rounded-bl-md"
         )}>
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
         </div>
 
         {/* 卡片展示 */}
