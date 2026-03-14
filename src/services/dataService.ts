@@ -222,6 +222,7 @@ export interface GtdTask {
   updated_at?: string;
   is_completed?: boolean;
   reminder_enabled?: boolean;
+  remind_at?: string;
 }
 
 export const gtdTaskService = {

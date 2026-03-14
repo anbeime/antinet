@@ -43,10 +43,15 @@ const GTDSystem: React.FC = () => {
     description: string;
     priority: 'low' | 'medium' | 'high';
     due_date?: string;
+    remind_at?: string;
+    reminder_enabled: boolean;
   }>({
     title: '',
     description: '',
-    priority: 'medium'
+    priority: 'medium',
+    due_date: '',
+    remind_at: '',
+    reminder_enabled: false
   })
   // 自动从描述提取标题
   const extractTitleFromDesc = (description: string): string => {
@@ -176,7 +181,9 @@ const GTDSystem: React.FC = () => {
         description: newTask.description,
         priority: newTask.priority as 'low' | 'medium' | 'high',
         category: 'inbox',
-        due_date: newTask.due_date
+        due_date: newTask.due_date,
+        remind_at: newTask.remind_at || undefined,
+        reminder_enabled: newTask.reminder_enabled
       });
 
       // 重新加载数据确保同步
@@ -194,7 +201,10 @@ const GTDSystem: React.FC = () => {
       setNewTask({
         title: '',
         description: '',
-        priority: 'medium'
+        priority: 'medium',
+        due_date: '',
+        remind_at: '',
+        reminder_enabled: false
       });
       
       setShowCreateModal(false);
@@ -279,7 +289,9 @@ const GTDSystem: React.FC = () => {
       title: task.title,
       description: task.description || '',
       priority: task.priority as 'low' | 'medium' | 'high',
-      due_date: task.due_date
+      due_date: task.due_date || '',
+      remind_at: (task as any).remind_at || '',
+      reminder_enabled: (task as any).reminder_enabled || false
     });
     setShowEditModal(true);
     setShowActionMenu(null);
@@ -310,7 +322,7 @@ const GTDSystem: React.FC = () => {
       
       setShowEditModal(false);
       setEditingTask(null);
-      setNewTask({ title: '', description: '', priority: 'medium' });
+      setNewTask({ title: '', description: '', priority: 'medium', due_date: '', remind_at: '', reminder_enabled: false });
       
       toast('任务已更新！', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -848,6 +860,17 @@ const GTDSystem: React.FC = () => {
                   type="date"
                   value={newTask.due_date || ''}
                   onChange={(e) => setNewTask(prev => ({ ...prev, due_date: e.target.value }))}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="remind_at" className="block text-sm font-medium mb-2">提醒时间</label>
+                <input
+                  id="remind_at"
+                  type="datetime-local"
+                  value={newTask.remind_at || ''}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, remind_at: e.target.value, reminder_enabled: !!e.target.value }))}
                   className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                 />
               </div>
