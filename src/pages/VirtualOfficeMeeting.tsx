@@ -571,6 +571,14 @@ const VirtualOfficeMeeting: React.FC = () => {
               break;
 
             case 'meeting_decision':
+              // 保存决策结果
+              allRounds.push({
+                summary: evt.data.summary,
+                decision: evt.data.decision,
+                actionItems: evt.data.action_items,
+                round: allRounds.length + 1,
+                theme: '最终决策'
+              });
               setPixelState(prev => ({ ...prev, detail: '指挥使正在做最终裁决...', progress: 95 }));
               setMessengerInfo(prev => ({ ...prev, agentName: '指挥使', agentTitle: '总指挥', message: '正在生成最终决策...', progress: 95 }));
               break;

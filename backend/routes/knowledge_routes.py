@@ -94,6 +94,20 @@ class KnowledgeCard(BaseModel):
     category: Optional[str] = None
     project_id: Optional[int] = None  # 关联的专题ID
 
+    def get_valid_category(self) -> str:
+        """获取有效的 category"""
+        valid_categories = {'事实', '解释', '风险', '行动'}
+        if self.category and self.category in valid_categories:
+            return self.category
+        # 根据卡片类型推断 category
+        type_to_category = {
+            'blue': '事实',
+            'green': '解释',
+            'yellow': '风险',
+            'red': '行动'
+        }
+        return type_to_category.get(self.type, '事实')
+
 
 class KnowledgeSource(BaseModel):
     """知识来源模型"""
@@ -190,6 +204,9 @@ async def create_card(card: KnowledgeCard):
     try:
         logger.info(f"[CREATE_CARD] 准备插入数据库，type={card.type}")
 
+        # 使用有效的 category
+        valid_category = card.get_valid_category()
+        
         # 使用正确的字段名 card_type（与数据库表结构一致）
         cursor.execute('''
             INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
@@ -198,7 +215,7 @@ async def create_card(card: KnowledgeCard):
             card.type,
             card.title,
             card.content,
-            card.category,
+            valid_category,
             card.project_id
         ))
 
@@ -658,6 +675,13 @@ async def import_file(file: UploadFile = File(...)):
                 conn = db_manager.get_connection()
                 cursor = conn.cursor()
                 for card in cards:
+                    category_map = {
+                        'blue': '事实',
+                        'green': '解释',
+                        'yellow': '风险',
+                        'red': '行动'
+                    }
+                    category = category_map.get(card['card_type'], '事实')
                     cursor.execute('''
                         INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
                         VALUES (?, ?, ?, ?, ?)
@@ -665,7 +689,7 @@ async def import_file(file: UploadFile = File(...)):
                         card['card_type'],
                         card['title'],
                         card['content'],
-                        'imported',
+                        category,
                         None
                     ))
                     saved_count += 1

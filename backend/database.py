@@ -20,7 +20,8 @@ class DatabaseManager:
 
     def get_connection(self):
         """获取数据库连接"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -195,6 +196,24 @@ class DatabaseManager:
                     color TEXT DEFAULT 'blue',
                     icon TEXT DEFAULT '📚',
                     status TEXT DEFAULT 'active',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 10. 团队协作项目管理表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS team_projects (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in-progress', 'completed')),
+                    priority TEXT DEFAULT 'medium' CHECK(priority IN ('low', 'medium', 'high')),
+                    start_date TEXT,
+                    end_date TEXT,
+                    progress INTEGER DEFAULT 0,
+                    assigned_members TEXT,
+                    tasks_json TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
@@ -626,7 +645,7 @@ class DatabaseManager:
             return spaces
 
     def add_knowledge_space(self, name: str, description: str, owner: str,
-                            members: List[str] = None, is_public: bool = True) -> Dict[str, Any]:
+                            members: Optional[List[str]] = None, is_public: bool = True) -> Dict[str, Any]:
         """添加知识空间"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -637,6 +656,10 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (name, description, json.dumps(members or []), owner,
                   now, now, 0, is_public))
+            space_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM knowledge_spaces WHERE id = ?", (space_id,))
+            return dict(cursor.fetchone())
             space_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM knowledge_spaces WHERE id = ?", (space_id,))
@@ -663,7 +686,7 @@ class DatabaseManager:
             return [dict(row) for row in rows]
 
     def add_activity(self, user_name: str, action: str, content: str,
-                    space_id: Optional[int] = None, metadata: Dict = None) -> Dict[str, Any]:
+                    space_id: Optional[int] = None, metadata: Optional[Dict] = None) -> Dict[str, Any]:
         """添加协作活动"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -786,7 +809,7 @@ class DatabaseManager:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_gtd_task(self, title: str, description: str, priority: str, category: str, due_date: Optional[str] = None, source_type: Optional[str] = None, source_id: Optional[int] = None) -> Dict[str, Any]:
+    def add_gtd_task(self, title: str, description: Optional[str], priority: str, category: str, due_date: Optional[str] = None, source_type: Optional[str] = None, source_id: Optional[int] = None) -> Dict[str, Any]:
         """添加GTD任务"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -924,7 +947,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             return dict(row) if row else None
 
-    def add_research_project(self, name: str, description: str = None, 
+    def add_research_project(self, name: str, description: Optional[str] = None, 
                              color: str = 'blue', icon: str = '📚') -> Dict[str, Any]:
         """添加专题研究"""
         with self.get_connection() as conn:
@@ -971,7 +994,7 @@ class DatabaseManager:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_task_to_project(self, project_id: int, title: str, description: str = None,
+    def add_task_to_project(self, project_id: int, title: str, description: Optional[str] = None,
                            priority: str = 'medium', category: str = 'inbox') -> Dict[str, Any]:
         """添加任务到专题"""
         return self.add_gtd_task(
@@ -999,6 +1022,116 @@ class DatabaseManager:
                     SET source_type = NULL, source_id = NULL
                     WHERE id = ?
                 """, (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 团队协作项目管理 ==========
+    def get_all_team_projects(self) -> List[Dict[str, Any]]:
+        """获取所有团队项目"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM team_projects
+                ORDER BY updated_at DESC
+            """)
+            rows = cursor.fetchall()
+            projects = []
+            for row in rows:
+                project = dict(row)
+                # 解析 JSON 字段
+                if project.get('assigned_members'):
+                    try:
+                        project['assigned_members'] = json.loads(project['assigned_members'])
+                    except:
+                        project['assigned_members'] = []
+                if project.get('tasks_json'):
+                    try:
+                        project['tasks'] = json.loads(project['tasks_json'])
+                    except:
+                        project['tasks'] = []
+                else:
+                    project['tasks'] = []
+                projects.append(project)
+            return projects
+
+    def get_team_project(self, project_id: int) -> Optional[Dict[str, Any]]:
+        """获取单个项目详情"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM team_projects WHERE id = ?", (project_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            project = dict(row)
+            if project.get('assigned_members'):
+                try:
+                    project['assigned_members'] = json.loads(project['assigned_members'])
+                except:
+                    project['assigned_members'] = []
+            if project.get('tasks_json'):
+                try:
+                    project['tasks'] = json.loads(project['tasks_json'])
+                except:
+                    project['tasks'] = []
+            else:
+                project['tasks'] = []
+            return project
+
+    def add_team_project(self, name: str, description: str = '', status: str = 'pending',
+                        priority: str = 'medium', start_date: Optional[str] = None, end_date: Optional[str] = None,
+                        progress: int = 0, assigned_members: Optional[List[int]] = None,
+                        tasks: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        """添加团队项目"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            if assigned_members is None:
+                assigned_members = []
+            if tasks is None:
+                tasks = []
+            cursor.execute("""
+                INSERT INTO team_projects (name, description, status, priority, start_date, 
+                end_date, progress, assigned_members, tasks_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (name, description, status, priority, start_date, end_date, progress,
+                  json.dumps(assigned_members), json.dumps(tasks), now, now))
+            project_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM team_projects WHERE id = ?", (project_id,))
+            row = cursor.fetchone()
+            project = dict(row)
+            project['assigned_members'] = assigned_members
+            project['tasks'] = tasks
+            return project
+
+    def update_team_project(self, project_id: int, **kwargs) -> bool:
+        """更新团队项目"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            values = []
+            for key, value in kwargs.items():
+                if key == 'assigned_members':
+                    updates.append('assigned_members = ?')
+                    values.append(json.dumps(value) if value else '[]')
+                elif key == 'tasks':
+                    updates.append('tasks_json = ?')
+                    values.append(json.dumps(value) if value else '[]')
+                else:
+                    updates.append(f'{key} = ?')
+                    values.append(value)
+            values.append(datetime.now().isoformat())
+            values.append(project_id)
+            cursor.execute(f"UPDATE team_projects SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
+                          values)
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_team_project(self, project_id: int) -> bool:
+        """删除团队项目"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM team_projects WHERE id = ?", (project_id,))
             conn.commit()
             return cursor.rowcount > 0
 

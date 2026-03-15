@@ -1294,67 +1294,49 @@ const Home: React.FC = () => {
 
             {/* 卡片列表 */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {(() => {
+                const now = new Date();
+                const filtered = cards.filter(card => {
+                  const cardDate = new Date(card.createdAt);
+                  const matchTime = timeFilter === 'all' ? true :
+                    timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
+                    timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
+                    timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
+                    cardDate.getFullYear() === now.getFullYear();
+                  const matchType = typeFilter === 'all' || card.color === typeFilter;
+                  const matchSearch = !managementSearchQuery || 
+                    card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                    card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                  return matchTime && matchType && matchSearch;
+                });
+                
+                const startIndex = (currentPage - 1) * pageSize;
+                const paginatedCards = filtered.slice(startIndex, startIndex + pageSize);
+                const selectedOnPage = paginatedCards.filter(c => selectedCardIds.has(c.id)).length;
+                const allSelectedOnPage = paginatedCards.length > 0 && selectedOnPage === paginatedCards.length;
+                
+                return (
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                 <div className="flex items-center space-x-3">
                   <input
                     type="checkbox"
-                    checked={selectedCardIds.size === (() => {
-                      const now = new Date();
-                      return cards.filter(card => {
-                        const cardDate = new Date(card.createdAt);
-                        const matchTime = timeFilter === 'all' ? true :
-                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
-                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
-                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
-                          cardDate.getFullYear() === now.getFullYear();
-                        const matchType = typeFilter === 'all' || card.color === typeFilter;
-                        const matchSearch = !managementSearchQuery || 
-                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
-                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
-                        return matchTime && matchType && matchSearch;
-                      }).length;
-                    })()}
+                    checked={allSelectedOnPage}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedOnPage > 0 && selectedOnPage < paginatedCards.length;
+                    }}
                     onChange={(e) => {
-                      const now = new Date();
-                      const filteredIds = cards.filter(card => {
-                        const cardDate = new Date(card.createdAt);
-                        const matchTime = timeFilter === 'all' ? true :
-                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
-                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
-                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
-                          cardDate.getFullYear() === now.getFullYear();
-                        const matchType = typeFilter === 'all' || card.color === typeFilter;
-                        const matchSearch = !managementSearchQuery || 
-                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
-                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
-                        return matchTime && matchType && matchSearch;
-                      }).map(c => c.id);
+                      const newSet = new Set(selectedCardIds);
                       if (e.target.checked) {
-                        setSelectedCardIds(new Set(filteredIds));
+                        paginatedCards.forEach((card: any) => newSet.add(card.id));
                       } else {
-                        setSelectedCardIds(new Set());
+                        paginatedCards.forEach((card: any) => newSet.delete(card.id));
                       }
+                      setSelectedCardIds(newSet);
                     }}
                     className="w-4 h-4 rounded border-gray-300"
                   />
-                  <h2 className="text-lg font-semibold">卡片列表</h2>
                   <span className="text-sm text-gray-500">
-                    共 {(() => {
-                      const now = new Date();
-                      return cards.filter(card => {
-                        const cardDate = new Date(card.createdAt);
-                        const matchTime = timeFilter === 'all' ? true :
-                          timeFilter === 'today' ? cardDate.toDateString() === now.toDateString() :
-                          timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
-                          timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
-                          cardDate.getFullYear() === now.getFullYear();
-                        const matchType = typeFilter === 'all' || card.color === typeFilter;
-                        const matchSearch = !managementSearchQuery || 
-                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
-                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
-                        return matchTime && matchType && matchSearch;
-                      }).length;
-                    })()} 张
+                    当前页 {selectedOnPage}/{paginatedCards.length}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
