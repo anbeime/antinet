@@ -37,472 +37,58 @@ jobs:
           
           FOUND_COUNT=0
           TOTAL_SIZE=0
-          ALL_FILES=""
           
-          # Define patterns to scan
-          declare -a FILE_PATTERNS=(
-            "test_*.py"
-            "*_test.py"
-            "*_tests.py"
-            "test-*.py"
-            "*-test.py"
-            "*.spec.js"
-            "*.spec.ts"
-            "*.test.js"
-            "*.test.ts"
-            "*.spec.jsx"
-            "*.spec.tsx"
-            "*.test.jsx"
-            "*.test.tsx"
-            "*.pyc"
-            "*.pyo"
-            "*.pyd"
-            "*.so"
-            "*.dylib"
-            "*.dll"
-            "*.class"
-            "*.o"
-            "*.obj"
-            "*.exe"
-            "*.log"
-            "*.tmp"
-            "*.temp"
-            "*.swp"
-            "*.swo"
-            "*~"
-            "*.bak"
-            "*.orig"
-            "*.rej"
-            ".DS_Store"
-            "Thumbs.db"
-            "desktop.ini"
-            "*.min.js"
-            "*.min.css"
-            "*.map"
-            "bundle.js"
-            "bundle.css"
-            "*.bundle.js"
-            "*.bundle.css"
-            "node_modules/"
-            "vendor/"
-            ".idea/"
-            ".vscode/"
-            "*.sublime-*"
-            "*.code-workspace"
-            ".env.local"
-            ".env.development"
-            ".env.test"
-            ".env.production"
-            ".env.*.local"
-            "*.local"
-            "*.development"
-            "*.production"
-            "docker-compose.override.yml"
-            "docker-compose.*.yml"
-            "Dockerfile.*"
-            ".dockerignore"
-            "Makefile.local"
-            "*.mk"
-            "*.gradle"
-            "gradlew"
-            "gradlew.bat"
-            "mvnw"
-            "mvnw.cmd"
-            "*.iml"
-            "*.ipr"
-            "*.iws"
-            ".project"
-            ".classpath"
-            ".settings/"
-            "target/"
-            "out/"
-            "bin/"
-            "obj/"
-            "Debug/"
-            "Release/"
-            "x64/"
-            "x86/"
-            "ARM/"
-            "ARM64/"
-            "*.user"
-            "*.suo"
-            "*.cache"
-            "*.ilk"
-            "*.pdb"
-            "*.idb"
-            "*.ncb"
-            "*.sdf"
-            "*.opensdf"
-            "*.VC.db"
-            "*.VC.opendb"
-            "ipch/"
-            "*.aps"
-            "*.pch"
-            "*.res"
-            "*.resources"
-            "*.tlb"
-            "*.tli"
-            "*.tlh"
-            "*.tmp_proj"
-            "*.vspscc"
-            "*.vssscc"
-            "*_i.c"
-            "*_p.c"
-            "*_h.h"
-            "*.meta"
-            "*.manifest"
-            "*.dep"
-            "*.rsp"
-            "*.sbr"
-            "*.tlh"
-            "*.tli"
-            "*.unsuccessfulbuild"
-            "*.lastbuildstate"
-            ".terraform/"
-            "*.tfstate"
-            "*.tfstate.*"
-            ".terraform.lock.hcl"
-            "crash.log"
-            "override.tf"
-            "override.tf.json"
-            "*_override.tf"
-            "*_override.tf.json"
-            ".terraformrc"
-            "terraform.rc"
-            ".vagrant/"
-            "*.box"
-            "Vagrantfile.local"
-            "ansible/*.retry"
-            "*.retry"
-            "*.vault"
-            "*.vault_pass"
-            "inventory/local"
-            "inventory/*_local"
-            "*.pkrvars.hcl"
-            "*.auto.pkrvars.hcl"
-            "packer_cache/"
-            "output-*/"
-            "*.pem"
-            "*.key"
-            "*.crt"
-            "*.cer"
-            "*.der"
-            "*.priv"
-            "*.pub"
-            "id_rsa"
-            "id_rsa.pub"
-            "id_dsa"
-            "id_dsa.pub"
-            "id_ecdsa"
-            "id_ecdsa.pub"
-            "id_ed25519"
-            "id_ed25519.pub"
-            "known_hosts"
-            "authorized_keys"
-            ".netrc"
-            ".npmrc"
-            ".pypirc"
-            "pip.conf"
-            "pip.ini"
-            "requirements*.txt"
-            "Pipfile*"
-            "poetry.lock"
-            "setup.py"
-            "setup.cfg"
-            "MANIFEST.in"
-            "pyproject.toml"
-            "tox.ini"
-            ".tox/"
-            ".nox/"
-            ".coverage"
-            ".coverage.*"
-            "coverage.xml"
-            "*.cover"
-            "*.py,cover"
-            ".hypothesis/"
-            ".pytest_cache/"
-            "htmlcov/"
-            "cover/"
-            "*.mo"
-            "*.pot"
-            "*.egg"
-            "*.egg-info/"
-            "dist/"
-            "build/"
-            "develop-eggs/"
-            "downloads/"
-            "eggs/"
-            ".eggs/"
-            "lib/"
-            "lib64/"
-            "parts/"
-            "sdist/"
-            "var/"
-            "wheels/"
-            "share/python-wheels/"
-            "*.manifest"
-            "*.spec"
-            "pip-log.txt"
-            "pip-delete-this-directory.txt"
-            "instance/"
-            ".webassets-cache"
-            ".scrapy"
-            "docs/_build/"
-            "site/"
-            ".pybuilder/"
-            "target/"
-            ".ipynb_checkpoints"
-            "profile_default/"
-            "ipython_config.py"
-            ".python-version"
-            "__pypackages__/"
-            "celerybeat-schedule"
-            "celerybeat.pid"
-            "*.sage.py"
-            ".env"
-            ".venv"
-            "env/"
-            "venv/"
-            "ENV/"
-            "env.bak/"
-            "venv.bak/"
-            ".spyderproject"
-            ".spyproject"
-            ".ropeproject"
-            "*.sublime-project"
-            "*.sublime-workspace"
-            "nbproject/"
-            "*.komodoproject"
-            ".komodotools/"
-            ".tm_properties"
-            ".idea_modules/"
-            "atlassian-ide-plugin.xml"
-            "com_crashlytics_export_strings.xml"
-            "crashlytics.properties"
-            "crashlytics-build.properties"
-            "fabric.properties"
-            ".history/"
-            "*.vsix"
-            ".ionide"
-            ".nyc_output/"
-            "*.lcov"
-            ".grunt"
-            "bower_components/"
-            "*.tsbuildinfo"
-            ".rpt_cache/"
-            "*.css.map"
-            "*.js.map"
-            ".eslintcache"
-            ".stylelintcache"
-            ".node_repl_history"
-            "*.tgz"
-            ".yarn-integrity"
-            ".yarn/cache/"
-            ".yarn/unplugged/"
-            ".yarn/build-state.yml"
-            ".yarn/install-state.gz"
-            ".pnp.*"
-            ".npm"
-            ".next/"
-            ".nuxt/"
-            ".vuepress/dist"
-            ".temp/"
-            ".cache/"
-            "*.docusaurus"
-            ".serverless/"
-            ".fusebox/"
-            ".dynamodb/"
-            ".tern-port"
-            ".vscode-test"
-            ".vscode-test-container/"
-            ".devcontainer/"
-            ".devcontainer.json"
-            "*.code-snippets"
-            "*.suo"
-            "*.user"
-            "*.userosscache"
-            "*.sln.docstates"
-            "*.userprefs"
-            "mono_crash.*"
-            "[Dd]ebug/"
-            "[Dd]ebugPublic/"
-            "[Rr]elease/"
-            "[Rr]eleases/"
-            "x64/"
-            "x86/"
-            "[Ww][Ii][Nn]32/"
-            "[Aa][Rr][Mm]/"
-            "[Aa][Rr][Mm]64/"
-            "bld/"
-            "[Bb]in/"
-            "[Oo]bj/"
-            "[Ll]og/"
-            "[Ll]ogs/"
-            ".vs/"
-            "Generated\ Files/"
-            "[Tt]est[Rr]esult*/"
-            "[Bb]uild[Ll]og.*"
-            "*.VisualState.xml"
-            "TestResult.xml"
-            "nunit-*.xml"
-            "[Dd]ebugPS/"
-            "[Rr]eleasePS/"
-            "dlldata.c"
-            "BenchmarkDotNet.Artifacts/"
-            "project.lock.json"
-            "project.fragment.lock.json"
-            "artifacts/"
-            "ScaffoldingReadMe.txt"
-            "StyleCopReport.xml"
-            "*_h.h"
-            "*.iobj"
-            "*.ipdb"
-            "*_wpftmp.csproj"
-            "*.tlog"
-            "*.svclog"
-            "*.scc"
-            "_Chutzpah*"
-            "ipch/"
-            "$tf/"
-            "*.gpState"
-            "_ReSharper*/"
-            "*.[Rr]e[Ss]harper"
-            "_TeamCity*"
-            "*.dotCover"
-            "_NCrunch_*"
-            ".*crunch*.local.xml"
-            "nCrunchTemp_*"
-            "*.mm.*"
-            "AutoTest.Net/"
-            ".sass-cache/"
-            "[Ee]xpress/"
-            "DocProject/buildhelp/"
-            "DocProject/Help/*.HxT"
-            "DocProject/Help/*.HxC"
-            "DocProject/Help/*.hhc"
-            "DocProject/Help/*.hhk"
-            "DocProject/Help/*.hhp"
-            "DocProject/Help/Html2"
-            "DocProject/Help/html"
-            "publish/"
-            "*.[Pp]ublish.xml"
-            "*.azurePubxml"
-            "*.pubxml"
-            "*.publishproj"
-            "PublishScripts/"
-            "*.nupkg"
-            "*.snupkg"
-          )
-          
-          declare -a DIR_PATTERNS=(
-            "tests/"
-            "test/"
-            "__tests__/"
-            "__test__/"
-            "spec/"
-            "specs/"
-            "__pycache__/"
-            ".pytest_cache/"
-            "htmlcov/"
-            "cover/"
-            ".tox/"
-            ".nox/"
-            ".hypothesis/"
-            ".eggs/"
-            "*.egg-info/"
-            "dist/"
-            "build/"
-            "develop-eggs/"
-            "downloads/"
-            "eggs/"
-            "lib/"
-            "lib64/"
-            "parts/"
-            "sdist/"
-            "var/"
-            "wheels/"
-            "share/python-wheels/"
-            "instance/"
-            ".webassets-cache"
-            ".scrapy"
-            "docs/_build/"
-            "site/"
-            ".pybuilder/"
-            "target/"
-            ".ipynb_checkpoints"
-            "profile_default/"
-            "__pypackages__/"
-            ".venv/"
-            "venv/"
-            "env/"
-            "ENV/"
-            "env.bak/"
-            "venv.bak/"
-            ".ropeproject"
-            ".spyderproject"
-            ".spyproject"
-            "nbproject/"
-            ".komodotools/"
-            ".idea_modules/"
-            ".history/"
-            ".nyc_output/"
-            ".grunt"
-            "bower_components/"
-            ".rpt_cache/"
-            ".next/"
-            ".nuxt/"
-            ".vuepress/dist"
-            ".temp/"
-            ".cache/"
-            ".serverless/"
-            ".fusebox/"
-            ".dynamodb/"
-            ".vscode-test/"
-            ".vscode-test-container/"
-            ".devcontainer/"
-            ".vs/"
-            "Generated\ Files/"
-            "[Tt]est[Rr]esult*/"
-            "BenchmarkDotNet.Artifacts/"
-            "artifacts/"
-            "_ReSharper*/"
-            "_TeamCity*"
-            "_NCrunch_*"
-            "AutoTest.Net/"
-            ".sass-cache/"
-            "[Ee]xpress/"
-            "DocProject/buildhelp/"
-            "DocProject/Help/Html2"
-            "DocProject/Help/html"
-            "publish/"
-            "PublishScripts/"
-            "node_modules/"
-            ".terraform/"
-            ".vagrant/"
-            "packer_cache/"
-            "output-*/"
-            ".idea/"
-            ".vscode/"
-          )
+          # Create temp file with all patterns
+          cat > /tmp/patterns.txt << 'PATTERNS_EOF'
+          test_*.py
+          *_test.py
+          *_tests.py
+          *.pyc
+          *.pyo
+          *.pyd
+          *.so
+          *.dylib
+          *.dll
+          *.class
+          *.o
+          *.obj
+          *.exe
+          *.log
+          *.tmp
+          *.temp
+          *.swp
+          *.swo
+          *.bak
+          *.orig
+          *.rej
+          .DS_Store
+          Thumbs.db
+          desktop.ini
+          *.min.js
+          *.min.css
+          *.map
+          bundle.js
+          bundle.css
+          PATTERNS_EOF
           
           # Scan file patterns
-          for pattern in "${FILE_PATTERNS[@]}"; do
+          while IFS= read -r pattern; do
+            pattern=$(echo "$pattern" | xargs)
+            [ -z "$pattern" ] && continue
             files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$files" ]; then
               count=$(echo "$files" | wc -l)
               FOUND_COUNT=$((FOUND_COUNT + count))
-              ALL_FILES="$ALL_FILES
-$files"
               for f in $files; do
                 s=$(stat -c%s "$f" 2>/dev/null || echo 0)
                 TOTAL_SIZE=$((TOTAL_SIZE + s))
               done
             fi
-          done
+          done < /tmp/patterns.txt
           
           # Scan directory patterns
-          for pattern in "${DIR_PATTERNS[@]}"; do
-            dirs=$(find . -type d -name "${pattern%/}" 2>/dev/null | grep -v ".git" || true)
+          for pattern in "tests" "test" "__pycache__" ".pytest_cache" "htmlcov" "cover" ".tox" ".nox" ".hypothesis" ".eggs" "dist" "build" "develop-eggs" "downloads" "eggs" "lib" "lib64" "parts" "sdist" "var" "wheels" "instance" ".webassets-cache" ".scrapy" "site" ".pybuilder" "target" ".ipynb_checkpoints" "profile_default" "__pypackages__" ".venv" "venv" "env" "ENV" "env.bak" "venv.bak" ".ropeproject" ".spyderproject" ".spyproject" "nbproject" ".komodotools" ".idea_modules" ".history" ".nyc_output" ".grunt" "bower_components" ".rpt_cache" ".next" ".nuxt" ".temp" ".cache" ".serverless" ".fusebox" ".dynamodb" ".vscode-test" ".vscode-test-container" ".devcontainer" ".vs" "BenchmarkDotNet.Artifacts" "artifacts" "_ReSharper" "_TeamCity" "_NCrunch_" "AutoTest.Net" ".sass-cache" "node_modules" ".terraform" ".vagrant" "packer_cache" ".idea" ".vscode"; do
+            dirs=$(find . -type d -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$dirs" ]; then
               count=$(echo "$dirs" | wc -l)
               FOUND_COUNT=$((FOUND_COUNT + count))
@@ -567,16 +153,6 @@ $files"
             -name "test_*.py" -o \
             -name "*_test.py" -o \
             -name "*_tests.py" -o \
-            -name "test-*.py" -o \
-            -name "*-test.py" -o \
-            -name "*.spec.js" -o \
-            -name "*.spec.ts" -o \
-            -name "*.test.js" -o \
-            -name "*.test.ts" -o \
-            -name "*.spec.jsx" -o \
-            -name "*.spec.tsx" -o \
-            -name "*.test.jsx" -o \
-            -name "*.test.tsx" -o \
             -name "*.pyc" -o \
             -name "*.pyo" -o \
             -name "*.pyd" -o \
@@ -592,94 +168,23 @@ $files"
             -name "*.temp" -o \
             -name "*.swp" -o \
             -name "*.swo" -o \
-            -name "*~" -o \
             -name "*.bak" -o \
             -name "*.orig" -o \
             -name "*.rej" -o \
             -name ".DS_Store" -o \
             -name "Thumbs.db" -o \
-            -name "desktop.ini" \
+            -name "desktop.ini" -o \
+            -name "*.min.js" -o \
+            -name "*.min.css" -o \
+            -name "*.map" -o \
+            -name "bundle.js" -o \
+            -name "bundle.css" \
           \) -not -path "./.git/*" -delete 2>/dev/null
           
           # Delete directory patterns
-          find . -type d \( \
-            -name "tests" -o \
-            -name "test" -o \
-            -name "__tests__" -o \
-            -name "__test__" -o \
-            -name "spec" -o \
-            -name "specs" -o \
-            -name "__pycache__" -o \
-            -name ".pytest_cache" -o \
-            -name "htmlcov" -o \
-            -name "cover" -o \
-            -name ".tox" -o \
-            -name ".nox" -o \
-            -name ".hypothesis" -o \
-            -name ".eggs" -o \
-            -name "*.egg-info" -o \
-            -name "dist" -o \
-            -name "build" -o \
-            -name "develop-eggs" -o \
-            -name "downloads" -o \
-            -name "eggs" -o \
-            -name "lib" -o \
-            -name "lib64" -o \
-            -name "parts" -o \
-            -name "sdist" -o \
-            -name "var" -o \
-            -name "wheels" -o \
-            -name "instance" -o \
-            -name ".webassets-cache" -o \
-            -name ".scrapy" -o \
-            -name "site" -o \
-            -name ".pybuilder" -o \
-            -name "target" -o \
-            -name ".ipynb_checkpoints" -o \
-            -name "profile_default" -o \
-            -name "__pypackages__" -o \
-            -name ".venv" -o \
-            -name "venv" -o \
-            -name "env" -o \
-            -name "ENV" -o \
-            -name "env.bak" -o \
-            -name "venv.bak" -o \
-            -name ".ropeproject" -o \
-            -name ".spyderproject" -o \
-            -name ".spyproject" -o \
-            -name "nbproject" -o \
-            -name ".komodotools" -o \
-            -name ".idea_modules" -o \
-            -name ".history" -o \
-            -name ".nyc_output" -o \
-            -name ".grunt" -o \
-            -name "bower_components" -o \
-            -name ".rpt_cache" -o \
-            -name ".next" -o \
-            -name ".nuxt" -o \
-            -name ".temp" -o \
-            -name ".cache" -o \
-            -name ".serverless" -o \
-            -name ".fusebox" -o \
-            -name ".dynamodb" -o \
-            -name ".vscode-test" -o \
-            -name ".vscode-test-container" -o \
-            -name ".devcontainer" -o \
-            -name ".vs" -o \
-            -name "BenchmarkDotNet.Artifacts" -o \
-            -name "artifacts" -o \
-            -name "_ReSharper*" -o \
-            -name "_TeamCity*" -o \
-            -name "_NCrunch_*" -o \
-            -name "AutoTest.Net" -o \
-            -name ".sass-cache" -o \
-            -name "node_modules" -o \
-            -name ".terraform" -o \
-            -name ".vagrant" -o \
-            -name "packer_cache" -o \
-            -name ".idea" -o \
-            -name ".vscode" \
-          \) -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
+          for dir in tests test __pycache__ .pytest_cache htmlcov cover .tox .nox .hypothesis .eggs dist build develop-eggs downloads eggs lib lib64 parts sdist var wheels instance .webassets-cache .scrapy site .pybuilder target .ipynb_checkpoints profile_default __pypackages__ .venv venv env ENV env.bak venv.bak .ropeproject .spyderproject .spyproject nbproject .komodotools .idea_modules .history .nyc_output .grunt bower_components .rpt_cache .next .nuxt .temp .cache .serverless .fusebox .dynamodb .vscode-test .vscode-test-container .devcontainer .vs BenchmarkDotNet.Artifacts artifacts _ReSharper _TeamCity _NCrunch_ AutoTest.Net .sass-cache node_modules .terraform .vagrant packer_cache .idea .vscode; do
+            find . -type d -name "$dir" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
+          done
           
           echo "Files deleted successfully" >> "$GITHUB_STEP_SUMMARY"
           echo "Freed space: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
