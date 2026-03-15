@@ -885,6 +885,24 @@ class DatabaseManager:
             
             return {'synced': synced, 'skipped': skipped, 'total': len(cards)}
 
+    def search_cards(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """根据关键词搜索知识卡片"""
+        if not query or not query.strip():
+            return []
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            search_term = f"%{query}%"
+            cursor.execute("""
+                SELECT id, title, content, card_type, category, created_at
+                FROM knowledge_cards
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+            """, (search_term, search_term, limit))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
     # ========== 专题研究管理 ==========
     def get_all_research_projects(self) -> List[Dict[str, Any]]:
         """获取所有专题研究"""

@@ -11,7 +11,11 @@ import {
   ChevronUp,
   Settings,
   Monitor,
-  Square
+  Square,
+  History,
+  Calendar,
+  Clock,
+  FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
@@ -330,6 +334,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
+  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
+  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const meetingTimerRef = useRef<any>(null);
   const pollTimerRef = useRef<any>(null);
 
@@ -386,6 +393,24 @@ const VirtualOfficeMeeting: React.FC = () => {
     }
     return events;
   };
+
+  const fetchMeetingHistory = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/history`);
+      const data = await response.json();
+      if (data.success) {
+        setMeetingHistory(data.meetings || []);
+      }
+    } catch (error) {
+      console.error('获取历史会议失败:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      fetchMeetingHistory();
+    }
+  }, [activeTab]);
 
   // Agent ID → 像素办公室 key 的反向映射
   const MEETING_TO_PIXEL: Record<string, string> = Object.fromEntries(
@@ -928,13 +953,113 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
         {/* ========== 右侧栏 65% ========== */}
         <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
 
-          {/* 模块1: 像素办公室 */}
-          <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
-            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/50">
-              <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">像素办公室</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setActiveTab('new')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'new' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              新建会议
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === 'history' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              <History className="w-4 h-4" />
+              历史会议
+            </button>
+          </div>
+
+          {activeTab === 'history' && (
+            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+                <History className="w-4 h-4 text-gray-400" />
+                <span className="text-white font-medium text-sm">历史会议记录</span>
+                <span className="text-gray-500 text-xs ml-auto">{meetingHistory.length} 条</span>
               </div>
+              <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+                {meetingHistory.length === 0 ? (
+                  <div className="text-gray-500 text-sm text-center py-8">暂无历史会议记录</div>
+                ) : (
+                  meetingHistory.map((meeting: any) => (
+                    <div
+                      key={meeting.meeting_id}
+                      onClick={() => setSelectedMeeting(selectedMeeting?.meeting_id === meeting.meeting_id ? null : meeting)}
+                      className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                        selectedMeeting?.meeting_id === meeting.meeting_id ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700/50 hover:border-gray-600'
+                      }`}
+                      style={{ background: '#0f1729' }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white font-medium text-sm truncate">{meeting.topic}</div>
+                          <div className="flex items-center gap-3 mt-1.5 text-gray-500 text-xs">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {meeting.start_time ? new Date(meeting.start_time).toLocaleDateString('zh-CN') : '-'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {meeting.duration_seconds ? `${Math.round(meeting.duration_seconds / 60)}分钟` : '-'}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <FileText className="w-3 h-3" />
+                              {meeting.rounds}轮
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {selectedMeeting?.meeting_id === meeting.meeting_id && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          className="mt-4 pt-4 border-t border-gray-700/50"
+                        >
+                          {meeting.summary && (
+                            <div className="mb-3">
+                              <div className="text-gray-400 text-xs mb-1">会议总结</div>
+                              <div className="text-gray-300 text-sm">{meeting.summary}</div>
+                            </div>
+                          )}
+                          {meeting.decision && (
+                            <div className="mb-3">
+                              <div className="text-gray-400 text-xs mb-1">决策</div>
+                              <div className="text-green-400 text-sm">{meeting.decision}</div>
+                            </div>
+                          )}
+                          {meeting.action_items && meeting.action_items.length > 0 && (
+                            <div>
+                              <div className="text-gray-400 text-xs mb-1">行动项</div>
+                              <ul className="space-y-1">
+                                {meeting.action_items.map((item: string, idx: number) => (
+                                  <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
+                                    <span className="text-blue-400">•</span>
+                                    {item}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'new' && (
+            <>
+              <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/50">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="w-4 h-4 text-gray-400" />
+                    <span className="text-white font-medium text-sm">像素办公室</span>
+                  </div>
               <div className="flex items-center gap-3">
                 <span className="text-white text-xs">进度: {pixelState.progress}%</span>
                 <div className="w-32 h-1.5 rounded-full overflow-hidden" style={{ background: '#0f1729' }}>
@@ -1153,6 +1278,8 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
               </motion.div>
             )}
           </AnimatePresence>
+          </>
+          )}
         </div>
       </div>
     </div>
