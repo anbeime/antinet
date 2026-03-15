@@ -5,6 +5,7 @@
 八府巡按，各司其职。数据不出域，推理不等待。
 
 ---
+<iframe width="560" height="315" src="https://youtu.be/mxE-aNMxX8w" frameborder="0" allowfullscreen></iframe>  
 
 ## 🎭 核心创意：朝廷式 Agent 架构
 
