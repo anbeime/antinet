@@ -90,9 +90,19 @@ class HTMLKnowledgeParser:
         html_dir_path = Path(html_dir)
         results = []
 
-        for html_file in html_dir_path.glob('*.htm'):
-            result = self.parse_html_file(str(html_file))
-            results.append(result)
+        supported_extensions = {'.html', '.htm'}
+        
+        for ext in supported_extensions:
+            for html_file in html_dir_path.glob(f'*{ext}'):
+                result = self.parse_html_file(str(html_file))
+                results.append(result)
+
+        all_files = list(html_dir_path.iterdir())
+        unsupported = [f for f in all_files if f.suffix.lower() not in supported_extensions]
+        if unsupported:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"跳过 {len(unsupported)} 个不支持的文件: {[f.name for f in unsupported[:10]]}{'...' if len(unsupported) > 10 else ''}")
 
         return results
 

@@ -478,6 +478,7 @@ async def import_file(file: UploadFile = File(...)):
 
     支持格式：PDF, TXT, MD, DOCX, XLSX, 图片
     """
+    tmp_path = None
     try:
         # 获取文件扩展名
         filename = file.filename or ""
@@ -548,6 +549,8 @@ async def import_file(file: UploadFile = File(...)):
         # 保存上传的文件到临时目录
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
             content = await file.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="上传的文件为空")
             tmp.write(content)
             tmp_path = tmp.name
 
@@ -649,20 +652,49 @@ async def import_file(file: UploadFile = File(...)):
                 'address': f"{card_type.upper()}{idx + 1}"
             })
 
+        saved_count = 0
+        if cards:
+            try:
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                for card in cards:
+                    cursor.execute('''
+                        INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (
+                        card['card_type'],
+                        card['title'],
+                        card['content'],
+                        'imported',
+                        None
+                    ))
+                    saved_count += 1
+                conn.commit()
+                conn.close()
+                logger.info(f"成功保存 {saved_count} 张知识卡片")
+            except Exception as e:
+                logger.error(f"保存知识卡片失败: {e}")
+
         return {
             'success': True,
             'filename': filename,
             'file_type': file_ext,
             'extracted_length': len(extracted_text),
             'cards': cards,
-            'total': len(cards)
+            'total': len(cards),
+            'saved': saved_count
         }
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"文件导入失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @router.post("/import")

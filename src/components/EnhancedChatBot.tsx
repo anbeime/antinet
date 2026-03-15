@@ -6,11 +6,12 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { 
   X, Send, Bot, User,
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
-  Trash2
+  Trash2, FileType, FileSpreadsheet
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -30,8 +31,10 @@ interface EnhancedChatBotProps {
   onClose: () => void;
 }
 
-// 渲染消息内容 - 支持 [点击跳转:url] 格式的链接
-const renderMessageContent = (content: string): React.ReactNode => {
+// 渲染消息内容组件 - 支持 [点击跳转:url] 格式的链接
+const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ content, onClose }) => {
+  const navigate = useNavigate();
+  
   if (!content) return null;
   
   // 匹配 [点击跳转:url] 格式
@@ -39,6 +42,11 @@ const renderMessageContent = (content: string): React.ReactNode => {
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
+  
+  const handleNavigate = (url: string) => {
+    onClose(); // 关闭聊天框
+    navigate(url); // 跳转到对应页面
+  };
   
   while ((match = linkRegex.exec(content)) !== null) {
     const [fullMatch, url] = match;
@@ -49,18 +57,16 @@ const renderMessageContent = (content: string): React.ReactNode => {
       parts.push(<span key={`text-${lastIndex}`}>{beforeText}</span>);
     }
     
-    // 添加可点击的链接按钮
+    // 添加可点击的按钮（使用navigate跳转）
     parts.push(
-      <a
+      <button
         key={`link-${match.index}`}
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 px-3 py-1 mt-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors"
+        onClick={() => handleNavigate(url)}
+        className="inline-flex items-center gap-1 px-3 py-1.5 mt-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors cursor-pointer border-none"
       >
         <span>点击打开页面</span>
         <ChevronRight className="w-4 h-4" />
-      </a>
+      </button>
     );
     
     lastIndex = match.index + fullMatch.length;
@@ -72,7 +78,7 @@ const renderMessageContent = (content: string): React.ReactNode => {
     parts.push(<span key={`text-end`}>{remainingText}</span>);
   }
   
-  return parts.length > 0 ? <>{parts}</> : content;
+  return <>{parts}</>;
 };
 
 // 消息组件
@@ -81,7 +87,8 @@ const MessageBubble: React.FC<{
   cards?: CardReference[];
   skillResult?: SkillResult;
   sceneType?: SceneType;
-}> = ({ message, cards, skillResult, sceneType }) => {
+  onClose?: () => void;
+}> = ({ message, cards, skillResult, sceneType, onClose }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
 
@@ -127,7 +134,7 @@ const MessageBubble: React.FC<{
             ? "bg-primary text-primary-foreground rounded-br-md" 
             : "bg-muted rounded-bl-md"
         )}>
-          <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
+          <div className="whitespace-pre-wrap"><MessageContent content={message.content} onClose={onClose || (() => {})} /></div>
         </div>
 
         {/* 卡片展示 */}
@@ -207,6 +214,7 @@ const QuickAction: React.FC<{
 );
 
 export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose }) => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -247,11 +255,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
   }, [isOpen]);
 
+  // 路由导航
+
   // 发送消息
   const handleSend = async () => {
     if (!input.trim()) return;
+    await handleSendWithText(input.trim());
+  };
 
-    const query = input.trim();
+  const handleSendWithText = async (text: string) => {
+    if (!text.trim()) return;
+
+    const query = text.trim();
     setInput('');
     setIsLoading(true);
 
@@ -299,25 +314,69 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     textareaRef.current?.focus();
   };
 
-  // 快捷操作
+  // 快捷操作 - 直接跳转到对应页面
   const quickActions = [
     {
       icon: <Search className="w-3 h-3" />,
       label: "查卡片",
-      onClick: () => handleSuggestedQuestion("搜索知识库卡片"),
+      onClick: () => {
+        onClose();
+        navigate('/');
+        // 触发知识库搜索
+        setTimeout(() => {
+          const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.value = '';
+          }
+        }, 100);
+      },
       color: "bg-blue-100 text-blue-600"
     },
     {
       icon: <Presentation className="w-3 h-3" />,
       label: "生成PPT",
-      onClick: () => handleSuggestedQuestion("生成一个工作总结PPT"),
+      onClick: () => {
+        onClose();
+        navigate('/ppt-analysis');
+      },
       color: "bg-purple-100 text-purple-600"
     },
     {
       icon: <Table className="w-3 h-3" />,
       label: "分析Excel",
-      onClick: () => handleSuggestedQuestion("分析Excel数据"),
+      onClick: () => {
+        onClose();
+        navigate('/excel-analysis');
+      },
       color: "bg-orange-100 text-orange-600"
+    },
+    {
+      icon: <FileType className="w-3 h-3" />,
+      label: "PDF分析",
+      onClick: () => {
+        onClose();
+        navigate('/pdf-analysis');
+      },
+      color: "bg-red-100 text-red-600"
+    },
+    {
+      icon: <FileSpreadsheet className="w-3 h-3" />,
+      label: "格式转换",
+      onClick: () => {
+        onClose();
+        navigate('/pdf-analysis');
+      },
+      color: "bg-red-100 text-red-600"
+    },
+    {
+      icon: <Sparkles className="w-3 h-3" />,
+      label: "NPU分析",
+      onClick: () => {
+        onClose();
+        navigate('/npu-analysis');
+      },
+      color: "bg-cyan-100 text-cyan-600"
     }
   ];
 
@@ -382,6 +441,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   cards={message.metadata?.cards}
                   skillResult={message.metadata?.skill_result}
                   sceneType={message.metadata?.scene_type}
+                  onClose={onClose}
                 />
               ))}
               

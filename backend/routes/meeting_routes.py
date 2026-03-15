@@ -31,7 +31,6 @@ def get_db_manager():
     """获取数据库管理器"""
     if _db_manager is None:
         from database import DatabaseManager
-        settings = Settings()
         return DatabaseManager(settings.DB_PATH)
     return _db_manager
 

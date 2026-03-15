@@ -360,23 +360,26 @@ const GTDSystem: React.FC = () => {
     // 时间过滤 - 使用创建日期
     if (timeFilter !== 'all') {
       if (task.created_at) {
-        const createDate = new Date(task.created_at);
+        const taskDate = new Date(task.created_at);
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        
+        // 获取今天的日期字符串（只比较日期部分）
+        const todayStr = today.toISOString().split('T')[0];
+        const taskDateStr = taskDate.toISOString().split('T')[0];
         
         if (timeFilter === 'today') {
-          const todayEnd = new Date(today);
-          todayEnd.setHours(23, 59, 59, 999);
-          if (createDate < today || createDate > todayEnd) return false;
+          if (taskDateStr !== todayStr) return false;
         } else if (timeFilter === 'week') {
-          const weekEnd = new Date(today);
-          weekEnd.setDate(weekEnd.getDate() + 7);
-          if (createDate < today || createDate > weekEnd) return false;
+          const weekAgo = new Date(today);
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          if (taskDate < weekAgo) return false;
         } else if (timeFilter === 'month') {
-          const monthEnd = new Date(today);
-          monthEnd.setMonth(monthEnd.getMonth() + 1);
-          if (createDate < today || createDate > monthEnd) return false;
+          const monthAgo = new Date(today);
+          monthAgo.setMonth(monthAgo.getMonth() - 1);
+          if (taskDate < monthAgo) return false;
         }
+      } else {
+        return false;
       }
     }
     
