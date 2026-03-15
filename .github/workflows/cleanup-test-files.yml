@@ -23,11 +23,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: Find All Redundant Files
         id: find_files
         run: |
@@ -38,45 +33,15 @@ jobs:
           FOUND_COUNT=0
           TOTAL_SIZE=0
           
-          # Create temp file with all patterns
-          cat > /tmp/patterns.txt << 'PATTERNS_EOF'
-          test_*.py
-          *_test.py
-          *_tests.py
-          *.pyc
-          *.pyo
-          *.pyd
-          *.so
-          *.dylib
-          *.dll
-          *.class
-          *.o
-          *.obj
-          *.exe
-          *.log
-          *.tmp
-          *.temp
-          *.swp
-          *.swo
-          *.bak
-          *.orig
-          *.rej
-          .DS_Store
-          Thumbs.db
-          desktop.ini
-          *.min.js
-          *.min.css
-          *.map
-          bundle.js
-          bundle.css
-          PATTERNS_EOF
+          # Create temp file to store found items
+          touch /tmp/found_items.txt
+          touch /tmp/found_dirs.txt
           
           # Scan file patterns
-          while IFS= read -r pattern; do
-            pattern=$(echo "$pattern" | xargs)
-            [ -z "$pattern" ] && continue
+          for pattern in "test_*.py" "*_test.py" "*_tests.py" "*.pyc" "*.pyo" "*.pyd" "*.so" "*.dylib" "*.dll" "*.class" "*.o" "*.obj" "*.exe" "*.log" "*.tmp" "*.temp" "*.swp" "*.swo" "*.bak" "*.orig" "*.rej" ".DS_Store" "Thumbs.db" "desktop.ini" "*.min.js" "*.min.css" "*.map" "bundle.js" "bundle.css"; do
             files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$files" ]; then
+              echo "$files" >> /tmp/found_items.txt
               count=$(echo "$files" | wc -l)
               FOUND_COUNT=$((FOUND_COUNT + count))
               for f in $files; do
@@ -84,12 +49,13 @@ jobs:
                 TOTAL_SIZE=$((TOTAL_SIZE + s))
               done
             fi
-          done < /tmp/patterns.txt
+          done
           
           # Scan directory patterns
           for pattern in "tests" "test" "__pycache__" ".pytest_cache" "htmlcov" "cover" ".tox" ".nox" ".hypothesis" ".eggs" "dist" "build" "develop-eggs" "downloads" "eggs" "lib" "lib64" "parts" "sdist" "var" "wheels" "instance" ".webassets-cache" ".scrapy" "site" ".pybuilder" "target" ".ipynb_checkpoints" "profile_default" "__pypackages__" ".venv" "venv" "env" "ENV" "env.bak" "venv.bak" ".ropeproject" ".spyderproject" ".spyproject" "nbproject" ".komodotools" ".idea_modules" ".history" ".nyc_output" ".grunt" "bower_components" ".rpt_cache" ".next" ".nuxt" ".temp" ".cache" ".serverless" ".fusebox" ".dynamodb" ".vscode-test" ".vscode-test-container" ".devcontainer" ".vs" "BenchmarkDotNet.Artifacts" "artifacts" "_ReSharper" "_TeamCity" "_NCrunch_" "AutoTest.Net" ".sass-cache" "node_modules" ".terraform" ".vagrant" "packer_cache" ".idea" ".vscode"; do
             dirs=$(find . -type d -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$dirs" ]; then
+              echo "$dirs" >> /tmp/found_dirs.txt
               count=$(echo "$dirs" | wc -l)
               FOUND_COUNT=$((FOUND_COUNT + count))
               for d in $dirs; do
@@ -98,6 +64,28 @@ jobs:
               done
             fi
           done
+          
+          # Save to env for later steps
+          cat /tmp/found_items.txt > /tmp/all_found.txt
+          cat /tmp/found_dirs.txt >> /tmp/all_found.txt
+          
+          # List found files in summary
+          if [ -s /tmp/found_items.txt ]; then
+            echo "### Files to be deleted" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/found_items.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          
+          # List found directories in summary
+          if [ -s /tmp/found_dirs.txt ]; then
+            echo "### Directories to be deleted" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/found_dirs.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
           
           # Convert size to human readable
           if [ $TOTAL_SIZE -gt 1073741824 ]; then
