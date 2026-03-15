@@ -4,15 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: '预览模式 (不实际删除)'
+        description: 'Preview mode (no actual deletion)'
         required: false
         default: true
         type: boolean
-      file_patterns:
-        description: '要删除的文件模式 (用逗号分隔)'
-        required: false
-        default: 'test_*.py,*_test.py,tests/,__pycache__/,*.pyc,.pytest_cache/,*.tmp,*.temp,*.log'
-        type: string
 
 permissions:
   contents: write
@@ -37,20 +32,17 @@ jobs:
         id: find_files
         run: |
           set +e
-          echo "## 扫描冗余文件" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Scanning for redundant files" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          
-          PATTERNS='${{ github.event.inputs.file_patterns }}'
-          echo "扫描模式: $PATTERNS"
           
           FOUND_COUNT=0
           TOTAL_SIZE=0
           
-          # 处理 test_*.py
-          echo "### 扫描 test_*.py" >> "$GITHUB_STEP_SUMMARY"
+          # Scan test_*.py
+          echo "### Scanning test_*.py" >> "$GITHUB_STEP_SUMMARY"
           files=$(find . -type f -name "test_*.py" 2>/dev/null | grep -v ".git")
           if [ -n "$files" ]; then
-            echo '找到文件:' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Found files:' >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "$files" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -60,15 +52,15 @@ jobs:
               TOTAL_SIZE=$((TOTAL_SIZE + s))
             done
           else
-            echo "未找到" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not found" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 处理 *_test.py
-          echo "### 扫描 *_test.py" >> "$GITHUB_STEP_SUMMARY"
+          # Scan *_test.py
+          echo "### Scanning *_test.py" >> "$GITHUB_STEP_SUMMARY"
           files=$(find . -type f -name "*_test.py" 2>/dev/null | grep -v ".git")
           if [ -n "$files" ]; then
-            echo '找到文件:' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Found files:' >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "$files" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -78,15 +70,15 @@ jobs:
               TOTAL_SIZE=$((TOTAL_SIZE + s))
             done
           else
-            echo "未找到" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not found" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 处理 tests/ 目录
-          echo "### 扫描 tests/ 目录" >> "$GITHUB_STEP_SUMMARY"
+          # Scan tests/ directories
+          echo "### Scanning tests/ directories" >> "$GITHUB_STEP_SUMMARY"
           dirs=$(find . -type d -name "tests" 2>/dev/null | grep -v ".git")
           if [ -n "$dirs" ]; then
-            echo '找到目录:' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Found directories:' >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "$dirs" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -96,15 +88,15 @@ jobs:
               TOTAL_SIZE=$((TOTAL_SIZE + s))
             done
           else
-            echo "未找到" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not found" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 处理 __pycache__/ 目录
-          echo "### 扫描 __pycache__/ 目录" >> "$GITHUB_STEP_SUMMARY"
+          # Scan __pycache__/ directories
+          echo "### Scanning __pycache__/ directories" >> "$GITHUB_STEP_SUMMARY"
           dirs=$(find . -type d -name "__pycache__" 2>/dev/null | grep -v ".git")
           if [ -n "$dirs" ]; then
-            echo '找到目录:' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Found directories:' >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "$dirs" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -114,15 +106,15 @@ jobs:
               TOTAL_SIZE=$((TOTAL_SIZE + s))
             done
           else
-            echo "未找到" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not found" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 处理 *.pyc
-          echo "### 扫描 *.pyc" >> "$GITHUB_STEP_SUMMARY"
+          # Scan *.pyc files
+          echo "### Scanning *.pyc files" >> "$GITHUB_STEP_SUMMARY"
           files=$(find . -type f -name "*.pyc" 2>/dev/null | grep -v ".git")
           if [ -n "$files" ]; then
-            echo '找到文件:' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Found files:' >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "$files" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -132,11 +124,11 @@ jobs:
               TOTAL_SIZE=$((TOTAL_SIZE + s))
             done
           else
-            echo "未找到" >> "$GITHUB_STEP_SUMMARY"
+            echo "Not found" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 转换大小为人类可读格式
+          # Convert size to human readable
           if [ $TOTAL_SIZE -gt 1073741824 ]; then
             SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1073741824}") GB"
           elif [ $TOTAL_SIZE -gt 1048576 ]; then
@@ -150,7 +142,7 @@ jobs:
           echo "TOTAL_SIZE_HUMAN=$SIZE_HUMAN" >> "$GITHUB_ENV"
           echo "FOUND_COUNT=$FOUND_COUNT" >> "$GITHUB_ENV"
           
-          echo "找到 $FOUND_COUNT 个文件/目录，总大小: $SIZE_HUMAN"
+          echo "Found $FOUND_COUNT items, total size: $SIZE_HUMAN"
           
           if [ $FOUND_COUNT -eq 0 ]; then
             echo "found_files=false" >> "$GITHUB_OUTPUT"
@@ -161,39 +153,39 @@ jobs:
       - name: Delete Files (Dry Run)
         if: github.event.inputs.dry_run == 'true' && steps.find_files.outputs.found_files == 'true'
         run: |
-          echo "## 预览模式" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Preview Mode" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "⚠️ 这是预览模式，文件未被实际删除" >> "$GITHUB_STEP_SUMMARY"
+          echo "Preview mode - no files were deleted" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "找到 ${{ env.FOUND_COUNT }} 个项目，总大小: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Found ${{ env.FOUND_COUNT }} items, total size: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "要实际删除，请重新运行并取消勾选 '预览模式'" >> "$GITHUB_STEP_SUMMARY"
+          echo "To actually delete, run again and uncheck 'Preview mode'" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Delete Files (Actual)
         if: github.event.inputs.dry_run == 'false' && steps.find_files.outputs.found_files == 'true'
         run: |
           set +e
-          echo "## 删除冗余文件" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deleting redundant files" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
-          # 删除 test_*.py
+          # Delete test_*.py
           find . -type f -name "test_*.py" -not -path "./.git/*" -delete 2>/dev/null
           
-          # 删除 *_test.py
+          # Delete *_test.py
           find . -type f -name "*_test.py" -not -path "./.git/*" -delete 2>/dev/null
           
-          # 删除 tests/ 目录
+          # Delete tests/ directories
           find . -type d -name "tests" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
           
-          # 删除 __pycache__/ 目录
+          # Delete __pycache__/ directories
           find . -type d -name "__pycache__" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
           
-          # 删除 *.pyc
+          # Delete *.pyc
           find . -type f -name "*.pyc" -not -path "./.git/*" -delete 2>/dev/null
           
-          echo "✅ 已删除冗余文件" >> "$GITHUB_STEP_SUMMARY"
+          echo "Files deleted successfully" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "释放空间: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Freed space: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check for Changes
         if: github.event.inputs.dry_run == 'false' && steps.find_files.outputs.found_files == 'true'
@@ -211,19 +203,18 @@ jobs:
           git add -A
           git commit -m "chore: cleanup redundant test files
 
-- Removed test files and directories
-- Cleaned up cache files
-- Freed up ${{ env.TOTAL_SIZE_HUMAN }} of space
+          - Removed test files and directories
+          - Cleaned up cache files
+          - Freed up ${{ env.TOTAL_SIZE_HUMAN }} of space
 
-Auto-generated by GitHub Actions"
+          Auto-generated by GitHub Actions"
           git push origin main
-          
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "✅ 更改已提交并推送" >> "$GITHUB_STEP_SUMMARY"
+          echo "Changes committed and pushed" >> "$GITHUB_STEP_SUMMARY"
 
       - name: No Changes Summary
         if: steps.find_files.outputs.found_files == 'false'
         run: |
-          echo "## 清理结果" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Cleanup Result" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "ℹ️ 未找到任何冗余文件，无需清理" >> "$GITHUB_STEP_SUMMARY"
+          echo "No redundant files found, nothing to clean up" >> "$GITHUB_STEP_SUMMARY"
