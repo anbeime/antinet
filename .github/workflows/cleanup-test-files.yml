@@ -42,29 +42,32 @@ jobs:
           
           # 定义要清理的文件模式
           PATTERNS="${{ github.event.inputs.file_patterns }}"
-          IFS=',' read -ra PATTERN_ARRAY <<< "$PATTERNS"
           
+          # 使用更简单的方式分割字符串
           FOUND_FILES=""
           TOTAL_SIZE=0
           
-          for pattern in "${PATTERN_ARRAY[@]}"; do
+          # 将逗号分隔的字符串转换为数组
+          echo "$PATTERNS" | tr ',' '\n' | while read -r pattern; do
             pattern=$(echo "$pattern" | xargs)  # 去除空格
+            [ -z "$pattern" ] && continue
+            
             echo "### 扫描模式: $pattern" >> $GITHUB_STEP_SUMMARY
             
             # 查找匹配的文件
             if [[ "$pattern" == */ ]]; then
               # 目录模式
-              dirs=$(find . -type d -name "${pattern%/}" 2>/dev/null | grep -v ".git")
+              dirs=$(find . -type d -name "${pattern%/}" 2>/dev/null | grep -v ".git" || true)
               if [ -n "$dirs" ]; then
                 echo "找到目录:" >> $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
                 echo "$dirs" >> $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
                 FOUND_FILES="$FOUND_FILES $dirs"
                 
                 # 计算目录大小
                 for dir in $dirs; do
-                  size=$(du -sb "$dir" 2>/dev/null | cut -f1)
+                  size=$(du -sb "$dir" 2>/dev/null | cut -f1 || echo 0)
                   TOTAL_SIZE=$((TOTAL_SIZE + size))
                 done
               else
@@ -72,17 +75,17 @@ jobs:
               fi
             else
               # 文件模式
-              files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git")
+              files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git" || true)
               if [ -n "$files" ]; then
                 echo "找到文件:" >> $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
                 echo "$files" >> $GITHUB_STEP_SUMMARY
-                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
                 FOUND_FILES="$FOUND_FILES $files"
                 
                 # 计算文件大小
                 for file in $files; do
-                  size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+                  size=$(stat -c%s "$file" 2>/dev/null || echo 0)
                   TOTAL_SIZE=$((TOTAL_SIZE + size))
                 done
               else
@@ -94,11 +97,11 @@ jobs:
           
           # 转换大小为人类可读格式
           if [ $TOTAL_SIZE -gt 1073741824 ]; then
-            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1073741824" | bc) GB"
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1073741824}") GB"
           elif [ $TOTAL_SIZE -gt 1048576 ]; then
-            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1048576" | bc) MB"
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1048576}") MB"
           elif [ $TOTAL_SIZE -gt 1024 ]; then
-            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1024" | bc) KB"
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1024}") KB"
           else
             SIZE_HUMAN="$TOTAL_SIZE bytes"
           fi
@@ -132,17 +135,17 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           PATTERNS="${{ github.event.inputs.file_patterns }}"
-          IFS=',' read -ra PATTERN_ARRAY <<< "$PATTERNS"
           
-          for pattern in "${PATTERN_ARRAY[@]}"; do
+          echo "$PATTERNS" | tr ',' '\n' | while read -r pattern; do
             pattern=$(echo "$pattern" | xargs)
+            [ -z "$pattern" ] && continue
             
             if [[ "$pattern" == */ ]]; then
               # 删除目录
-              find . -type d -name "${pattern%/}" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
+              find . -type d -name "${pattern%/}" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true
             else
               # 删除文件
-              find . -type f -name "$pattern" -not -path "./.git/*" -delete 2>/dev/null
+              find . -type f -name "$pattern" -not -path "./.git/*" -delete 2>/dev/null || true
             fi
           done
           
