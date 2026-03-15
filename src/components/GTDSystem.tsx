@@ -20,12 +20,14 @@ import {
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
 import ResearchProjectManager from './ResearchProjectManager';
+import CalendarView from './CalendarView';
 
 // 定义分类类型
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
 
 const GTDSystem: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>('inbox');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -41,10 +43,15 @@ const GTDSystem: React.FC = () => {
     description: string;
     priority: 'low' | 'medium' | 'high';
     due_date?: string;
+    remind_at?: string;
+    reminder_enabled: boolean;
   }>({
     title: '',
     description: '',
-    priority: 'medium'
+    priority: 'medium',
+    due_date: '',
+    remind_at: '',
+    reminder_enabled: false
   })
   // 自动从描述提取标题
   const extractTitleFromDesc = (description: string): string => {
@@ -174,7 +181,9 @@ const GTDSystem: React.FC = () => {
         description: newTask.description,
         priority: newTask.priority as 'low' | 'medium' | 'high',
         category: 'inbox',
-        due_date: newTask.due_date
+        due_date: newTask.due_date,
+        remind_at: newTask.remind_at || undefined,
+        reminder_enabled: newTask.reminder_enabled
       });
 
       // 重新加载数据确保同步
@@ -192,7 +201,10 @@ const GTDSystem: React.FC = () => {
       setNewTask({
         title: '',
         description: '',
-        priority: 'medium'
+        priority: 'medium',
+        due_date: '',
+        remind_at: '',
+        reminder_enabled: false
       });
       
       setShowCreateModal(false);
@@ -277,7 +289,9 @@ const GTDSystem: React.FC = () => {
       title: task.title,
       description: task.description || '',
       priority: task.priority as 'low' | 'medium' | 'high',
-      due_date: task.due_date
+      due_date: task.due_date || '',
+      remind_at: (task as any).remind_at || '',
+      reminder_enabled: (task as any).reminder_enabled || false
     });
     setShowEditModal(true);
     setShowActionMenu(null);
@@ -308,7 +322,7 @@ const GTDSystem: React.FC = () => {
       
       setShowEditModal(false);
       setEditingTask(null);
-      setNewTask({ title: '', description: '', priority: 'medium' });
+      setNewTask({ title: '', description: '', priority: 'medium', due_date: '', remind_at: '', reminder_enabled: false });
       
       toast('任务已更新！', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -320,8 +334,15 @@ const GTDSystem: React.FC = () => {
     }
   };
 
+  // 按创建时间倒序（最新的在最前面）
+  const sortedTasks = [...tasks[activeCategory]].sort((a, b) => {
+    if (!a.created_at) return 1;
+    if (!b.created_at) return -1;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
   // 过滤任务 - 包含时间、优先级筛选
-  const filteredTasks = tasks[activeCategory].filter(task => {
+  const filteredTasks = sortedTasks.filter(task => {
     // 搜索过滤
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -336,24 +357,26 @@ const GTDSystem: React.FC = () => {
       return false;
     }
     
-    // 时间过滤
-    if (timeFilter !== 'all' && task.due_date) {
-      const dueDate = new Date(task.due_date);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      if (timeFilter === 'today') {
-        const todayEnd = new Date(today);
-        todayEnd.setHours(23, 59, 59, 999);
-        if (dueDate < today || dueDate > todayEnd) return false;
-      } else if (timeFilter === 'week') {
-        const weekEnd = new Date(today);
-        weekEnd.setDate(weekEnd.getDate() + 7);
-        if (dueDate < today || dueDate > weekEnd) return false;
-      } else if (timeFilter === 'month') {
-        const monthEnd = new Date(today);
-        monthEnd.setMonth(monthEnd.getMonth() + 1);
-        if (dueDate < today || dueDate > monthEnd) return false;
+    // 时间过滤 - 使用创建日期
+    if (timeFilter !== 'all') {
+      if (task.created_at) {
+        const createDate = new Date(task.created_at);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (timeFilter === 'today') {
+          const todayEnd = new Date(today);
+          todayEnd.setHours(23, 59, 59, 999);
+          if (createDate < today || createDate > todayEnd) return false;
+        } else if (timeFilter === 'week') {
+          const weekEnd = new Date(today);
+          weekEnd.setDate(weekEnd.getDate() + 7);
+          if (createDate < today || createDate > weekEnd) return false;
+        } else if (timeFilter === 'month') {
+          const monthEnd = new Date(today);
+          monthEnd.setMonth(monthEnd.getMonth() + 1);
+          if (createDate < today || createDate > monthEnd) return false;
+        }
       }
     }
     
@@ -402,50 +425,77 @@ const GTDSystem: React.FC = () => {
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
       {/* 头部导航 */}
       <div className="border-b border-gray-200 dark:border-gray-700">
-        {/* GTD 流程提示 */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 px-6 py-3 text-sm text-blue-700 dark:text-blue-300">
-          <strong>GTD 流程：</strong>
-          收集箱 → 判断 → 等待处理/将来可能/专题研究 → 完成 → 归档
-        </div>
-        
-        <div className="flex overflow-x-auto">
-          {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => (
-          <button 
-            key={category}
-            onClick={() => setActiveCategory(category)}
-            className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-              activeCategory === category 
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-                : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-            }`}
-          >
-            <div className="flex items-center justify-center">
-              {getCategoryIcon(category)}
-              <span className="ml-2 capitalize">
+        {/* 分类标签 */}
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex overflow-x-auto">
+            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => (
+            <button 
+              key={category}
+              onClick={() => { setActiveCategory(category); setViewMode('list'); }}
+              className={`py-2 px-3 text-sm border-b-2 transition-colors ${
+                activeCategory === category && viewMode === 'list'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
+                  : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+              }`}
+            >
+              <span className="capitalize">
                 {category === 'inbox' ? '收集箱' : 
                  category === 'today' ? '等待处理' :
                  category === 'later' ? '将来可能' :
                  category === 'archive' ? '归档资料' : '专题研究'}
               </span>
-            </div>
-          </button>
-        ))}
+            </button>
+            ))}
+          </div>
+          
+          <div className="flex items-center space-x-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center px-2 py-1.5 text-xs rounded transition-colors ${
+                viewMode === 'list' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              列表
+            </button>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={`flex items-center px-2 py-1.5 text-xs rounded transition-colors ${
+                viewMode === 'calendar' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100'
+              }`}
+            >
+              日历
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center px-2 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 ml-2"
+            >
+              +新建
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 内容区域 */}
       <div className="p-6">
-        {/* 专题研究页面 - 特殊处理 */}
-        {activeCategory === 'projects' ? (
-          <ResearchProjectManager />
+        {viewMode === 'calendar' ? (
+          <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
         ) : (
           <>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold capitalize">
-                {activeCategory === 'inbox' ? '收集箱' : 
-                 activeCategory === 'today' ? '等待处理' :
-                 activeCategory === 'later' ? '将来可能' :
-                 activeCategory === 'archive' ? '归档资料' : '专题研究'}
+            {/* 专题研究页面 - 特殊处理 */}
+            {activeCategory === 'projects' ? (
+              <ResearchProjectManager />
+            ) : (
+              <>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold capitalize">
+                    {activeCategory === 'inbox' ? '收集箱' : 
+                     activeCategory === 'today' ? '等待处理' :
+                     activeCategory === 'later' ? '将来可能' :
+                     activeCategory === 'archive' ? '归档资料' : '专题研究'}
               </h2>
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -602,7 +652,7 @@ const GTDSystem: React.FC = () => {
                           {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{task.description || '无描述'}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{task.description || '无描述'}</p>
                       <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
                         <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
                         {task.due_date && (
@@ -750,7 +800,9 @@ const GTDSystem: React.FC = () => {
             )}
           </div>
         )}
-          </>
+        </>
+        )}
+        </>
         )}
       </div>
 
@@ -798,6 +850,28 @@ const GTDSystem: React.FC = () => {
                   placeholder="输入任务描述..."
                   rows={6}
                   className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="due_date" className="block text-sm font-medium mb-2">到期日期</label>
+                <input
+                  id="due_date"
+                  type="date"
+                  value={newTask.due_date || ''}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, due_date: e.target.value }))}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="remind_at" className="block text-sm font-medium mb-2">提醒时间</label>
+                <input
+                  id="remind_at"
+                  type="datetime-local"
+                  value={newTask.remind_at || ''}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, remind_at: e.target.value, reminder_enabled: !!e.target.value }))}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
                 />
               </div>
               

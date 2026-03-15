@@ -12,9 +12,28 @@ import logging
 import json
 import time
 import httpx
+from pathlib import Path
+from config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/meeting", tags=["8-Agent会议"])
+
+_db_manager = None
+
+
+def set_db_manager(db_manager):
+    """设置数据库管理器"""
+    global _db_manager
+    _db_manager = db_manager
+
+
+def get_db_manager():
+    """获取数据库管理器"""
+    if _db_manager is None:
+        from database import DatabaseManager
+        settings = Settings()
+        return DatabaseManager(settings.DB_PATH)
+    return _db_manager
 
 # ==================== Agent 映射 ====================
 AGENT_MAPPING = {
@@ -117,7 +136,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                 "http://127.0.0.1:8000/api/npu/analyze",
                 json={
                     "query": combined_prompt,
-                    "max_tokens": 256,  # 提高token限制，让LLM有充分表达空间
+                    "max_tokens": 512,  # 会议讨论需要充分表达
                     "temperature": 0.7   # 使用标准温度
                 }
             )
@@ -139,9 +158,11 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
         loader.load()
         # 使用默认参数 instead of custom ones to avoid SetParams failures
         # The model's config files already contain appropriate defaults
-        raw_output = loader.infer(
-            prompt=combined_prompt
-        )
+        # Also ensure we're not passing corrupted prompts by sanitizing the input
+        clean_prompt = combined_prompt.strip()
+        if not clean_prompt:
+            return ""
+        raw_output = loader.infer(prompt=clean_prompt)
         if raw_output and raw_output.strip():
             return raw_output.strip()
     except Exception as e:
@@ -235,6 +256,44 @@ async def meeting_health():
     }
 
 
+@router.get("/history")
+async def get_meeting_history(limit: int = 50):
+    """获取历史会议列表"""
+    db = get_db_manager()
+    meetings = db.get_all_meetings(limit=limit)
+    return {
+        "success": True,
+        "count": len(meetings),
+        "meetings": meetings
+    }
+
+
+@router.get("/history/{meeting_id}")
+async def get_meeting_detail(meeting_id: str):
+    """获取单个会议详情"""
+    db = get_db_manager()
+    meeting = db.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="会议不存在")
+    return {
+        "success": True,
+        "meeting": meeting
+    }
+
+
+@router.delete("/history/{meeting_id}")
+async def delete_meeting_record(meeting_id: str):
+    """删除会议记录"""
+    db = get_db_manager()
+    success = db.delete_meeting(meeting_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="会议不存在")
+    return {
+        "success": True,
+        "message": "会议记录已删除"
+    }
+
+
 @router.post("/discuss/stream")
 async def create_meeting_stream(request: MeetingRequest):
     """
@@ -320,25 +379,33 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 如果是密卷房，先搜索数据库获取相关资料
                  if agent_id == "mijuanfang":
                      try:
-                         from routes.knowledge_routes import search_cards
-                         import json
+                         from database import DatabaseManager
+                         from config import settings
 
-                         # 从上下文中提取关键词
-                         topic = request.topic.lower()
-                         context_keywords = [keyword for keyword in user_prompt.split() if len(keyword) > 3]
+                         db_mgr = DatabaseManager(settings.DB_PATH)
+                         conn = db_mgr.get_connection()
+                         cursor = conn.cursor()
 
-                         # 使用多个关键词搜索
-                         search_queries = topic.split()[:3] + context_keywords[:3]
+                         # 从主题中提取关键词搜索
+                         search_queries = request.topic.split()[:3]
 
-                         for query in search_queries[:2]:  # 最多搜索2个查询
-                             if len(query) > 2:
-                                 search_result = await search_cards(keyword=query, limit=3)
-                                 if search_result and len(search_result) > 0:
-                                     # 将搜索结果添加到上下文
+                         for query in search_queries[:2]:
+                             if len(query) > 1:
+                                 cursor.execute('''
+                                     SELECT title, content FROM knowledge_cards
+                                     WHERE title LIKE ? OR content LIKE ?
+                                     LIMIT 3
+                                 ''', (f'%{query}%', f'%{query}%'))
+                                 rows = cursor.fetchall()
+                                 if rows:
                                      relevant_info = f"\n【数据库参考】关于'{query}'的相关资料："
-                                     for card in search_result[:3]:  # 最多引用3个卡片
-                                         relevant_info += f"\n- {card.get('title', '无标题')}：{card.get('content', '')[:100]}..."
+                                     for row in rows:
+                                         title = row[0] or '无标题'
+                                         content = (row[1] or '')[:100]
+                                         relevant_info += f"\n- {title}：{content}..."
                                      user_prompt += relevant_info
+
+                         conn.close()
                      except Exception as e:
                          logger.warning(f"密卷房数据库搜索失败: {e}")
 
@@ -423,6 +490,29 @@ async def create_meeting_stream(request: MeetingRequest):
 
         end_time = time.time()
         duration = end_time - start_time
+
+        # 保存会议记录到数据库
+        try:
+            db = get_db_manager()
+            db.save_meeting(
+                meeting_id=meeting_id,
+                topic=request.topic,
+                context=request.context,
+                card_ids=request.card_ids,
+                rounds=request.rounds,
+                participants=[info["name"] for info in AGENT_MAPPING.values()],
+                summary=summary,
+                decision=decision,
+                action_items=action_items,
+                all_speeches=all_speeches,
+                all_rounds=all_rounds,
+                start_time=datetime.fromtimestamp(start_time).isoformat(),
+                end_time=datetime.fromtimestamp(end_time).isoformat(),
+                duration_seconds=round(duration, 2)
+            )
+            logger.info(f"会议记录已保存: {meeting_id}")
+        except Exception as e:
+            logger.error(f"保存会议记录失败: {e}")
 
         # 会议结束
         yield _sse_event("meeting_end", {
@@ -539,6 +629,43 @@ async def create_meeting(request: MeetingRequest):
     summary, decision, action_items = _parse_decision(decision_text, request.topic)
 
     end_time = time.time()
+
+    # 保存会议记录到数据库
+    try:
+        db = get_db_manager()
+        db.save_meeting(
+            meeting_id=meeting_id,
+            topic=request.topic,
+            context=request.context,
+            card_ids=request.card_ids,
+            rounds=request.rounds,
+            participants=[info["name"] for info in AGENT_MAPPING.values()],
+            summary=summary,
+            decision=decision,
+            action_items=action_items,
+            all_speeches=[{
+                "agent_name": s["agent_name"],
+                "agent_title": s["agent_title"],
+                "system_prompt": s.get("system_prompt", ""),
+                "speech": s["speech"]
+            } for s in all_speeches],
+            all_rounds=[{
+                "round": r.round,
+                "theme": r.theme,
+                "speeches": [{
+                    "agent_id": s.agent_id,
+                    "agent_name": s.agent_name,
+                    "agent_title": s.agent_title,
+                    "speech": s.speech
+                } for s in r.speeches]
+            } for r in all_rounds],
+            start_time=datetime.fromtimestamp(start_time).isoformat(),
+            end_time=datetime.fromtimestamp(end_time).isoformat(),
+            duration_seconds=round(end_time - start_time, 2)
+        )
+        logger.info(f"会议记录已保存: {meeting_id}")
+    except Exception as e:
+        logger.error(f"保存会议记录失败: {e}")
 
     return MeetingResponse(
         success=True,

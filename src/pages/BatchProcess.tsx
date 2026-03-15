@@ -170,18 +170,6 @@ const BatchProcess: React.FC = () => {
           }
           
           setSavedCardsCount(prev => prev + savedCount);
-          
-          // 同步风险/行动卡片到GTD
-          if (options.syncToGTD) {
-            const actionCards = extractedCards.filter(c => c.card_type === 'red' || c.card_type === 'yellow');
-            if (actionCards.length > 0) {
-              try {
-                await fetch('http://localhost:8000/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
-              } catch (e) {
-                console.log('同步GTD失败:', e);
-              }
-            }
-          }
         }
         
         setFiles(prev => prev.map(f => 

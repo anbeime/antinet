@@ -30,7 +30,8 @@ import {
   RotateCcw,
   Download,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Calendar
 } from 'lucide-react';
 import { teamMemberService, activityService, analyticsService } from '../services/dataService';
 import { toast } from 'sonner';
@@ -456,6 +457,32 @@ interface ReportConfig {
   knowledgeConnectivity: number;
 }
 
+  interface Project {
+  id: number;
+  name: string;
+  description: string;
+  status: 'planning' | 'active' | 'completed' | 'on-hold' | 'pending' | 'in-progress';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  startDate: string;
+  endDate: string;
+  progress: number;
+  assignedMembers: number[];
+  tasks: Task[];
+}
+
+interface Task {
+  id: number;
+  projectId?: number;
+  title: string;
+  description: string;
+  status: 'todo' | 'in-progress' | 'review' | 'completed' | 'pending';
+  priority: 'low' | 'medium' | 'high';
+  assignedTo: number;
+  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ========== 编辑弹窗组件 ==========
 interface EditModalProps {
   isOpen: boolean;
@@ -500,7 +527,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'jinyiwei'>('integration');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects'>('integration');
   
   // 数据状态
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -517,6 +544,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     participation: 85,
     knowledgeConnectivity: 68
   });
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   
   // 加载状态
   const [loading, setLoading] = useState(true);
@@ -531,6 +560,31 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState('');
+
+  // 项目管理状态
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  // 全局错误监听, 捕获运行时异常并提示
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      console.error('Global error', event.error || event.message, event);
+      toast.error('发生错误: ' + (event.error?.message || event.message));
+    };
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.error('Unhandled rejection', event.reason);
+      toast.error('未处理的Promise异常: ' + (event.reason?.message || event.reason));
+    };
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
   // 颜色配置
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -574,10 +628,239 @@ const TeamCollaborationEnhanced: React.FC = () => {
           { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
         ]);
 
+        // 初始化项目数据
+        setProjects([
+          {
+            id: 1,
+            name: 'AI助手系统开发',
+            description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
+            status: 'active',
+            priority: 'high',
+            startDate: '2026-01-15',
+            endDate: '2026-06-30',
+            progress: 65,
+            assignedMembers: [1, 2, 3],
+            tasks: [
+              {
+                id: 1,
+                title: '需求分析',
+                description: '分析用户需求和系统功能',
+                status: 'completed',
+                priority: 'high',
+                assignedTo: 1,
+                dueDate: '2026-02-15',
+                createdAt: '2026-01-15',
+                updatedAt: '2026-02-15'
+              },
+              {
+                id: 2,
+                title: 'UI设计',
+                description: '设计用户界面和交互流程',
+                status: 'in-progress',
+                priority: 'medium',
+                assignedTo: 2,
+                dueDate: '2026-03-15',
+                createdAt: '2026-02-01',
+                updatedAt: '2026-02-20'
+              }
+            ]
+          },
+          {
+            id: 2,
+            name: '知识库重构',
+            description: '重新设计和实现企业知识库系统，支持多模态内容管理',
+            status: 'planning',
+            priority: 'medium',
+            startDate: '2026-03-01',
+            endDate: '2026-08-15',
+            progress: 15,
+            assignedMembers: [2, 4],
+            tasks: [
+              {
+                id: 3,
+                title: '架构设计',
+                description: '设计新的知识库架构',
+                status: 'todo',
+                priority: 'high',
+                assignedTo: 2,
+                dueDate: '2026-03-30',
+                createdAt: '2026-02-25',
+                updatedAt: '2026-02-25'
+              }
+            ]
+          },
+          {
+            id: 3,
+            name: '用户体验优化',
+            description: '基于用户反馈优化产品界面和交互流程',
+            status: 'completed',
+            priority: 'medium',
+            startDate: '2025-11-01',
+            endDate: '2026-02-28',
+            progress: 100,
+            assignedMembers: [1, 3, 4],
+            tasks: [
+              {
+                id: 4,
+                title: '用户调研',
+                description: '收集用户反馈和使用数据',
+                status: 'completed',
+                priority: 'medium',
+                assignedTo: 3,
+                dueDate: '2026-01-15',
+                createdAt: '2025-11-01',
+                updatedAt: '2026-01-15'
+              },
+              {
+                id: 5,
+                title: '界面优化',
+                description: '根据反馈优化界面设计',
+                status: 'completed',
+                priority: 'medium',
+                assignedTo: 4,
+                dueDate: '2026-02-28',
+                createdAt: '2026-01-20',
+                updatedAt: '2026-02-28'
+              }
+            ]
+          }
+        ]);
+
+        // 初始化任务数据
+        setTasks([
+          { id: 1, title: '需求分析', description: '完成AI助手系统的需求分析文档', status: 'completed', priority: 'high', assignedTo: 1, dueDate: '2026-02-15', createdAt: '2026-01-15', updatedAt: '2026-02-10' },
+          { id: 2, title: 'UI设计', description: '设计AI助手系统的用户界面', status: 'in-progress', priority: 'medium', assignedTo: 3, dueDate: '2026-03-01', createdAt: '2026-01-20', updatedAt: '2026-02-25' },
+          { id: 3, title: '后端开发', description: '实现AI助手系统的后端API', status: 'in-progress', priority: 'high', assignedTo: 2, dueDate: '2026-04-15', createdAt: '2026-02-01', updatedAt: '2026-02-28' },
+          { id: 4, title: '测试计划', description: '制定系统测试计划和用例', status: 'todo', priority: 'medium', assignedTo: 4, dueDate: '2026-03-15', createdAt: '2026-02-15', updatedAt: '2026-02-15' }
+        ]);
+
       } catch (err) {
         setError('加载协作数据失败,请检查后端连接');
         console.error('Collaboration data load error:', err);
-        toast.error('加载协作数据失败');
+        toast.error('加载协作数据失败，使用模拟数据');
+        
+        // 使用模拟数据
+        setTeamMembers([
+          { id: 1, name: '张三', role: '产品经理', email: 'zhang@example.com', avatar: '👨‍💼', online: true, contribution: 85 },
+          { id: 2, name: '李四', role: '后端开发', email: 'li@example.com', avatar: '👩‍💻', online: true, contribution: 92 },
+          { id: 3, name: '王五', role: 'UI设计师', email: 'wang@example.com', avatar: '👨‍🎨', online: false, contribution: 78 },
+          { id: 4, name: '赵六', role: '测试工程师', email: 'zhao@example.com', avatar: '👩‍🔬', online: true, contribution: 71 }
+        ]);
+
+        // 初始化知识缺口数据
+        setKnowledgeGaps([
+          { id: 1, area: 'API设计', gapScore: 85, priority: '高', description: '团队缺乏系统性的API设计规范和最佳实践', suggestions: ['建立API设计规范文档', '开展API设计培训'] },
+          { id: 2, area: 'UI/UX', gapScore: 72, priority: '中', description: '用户体验设计能力需要提升', suggestions: ['引入设计系统', '增加用户研究环节'] },
+          { id: 3, area: '性能优化', gapScore: 68, priority: '中', description: '应用性能优化知识不够系统', suggestions: ['建立性能监控体系', '分享性能优化案例'] },
+          { id: 4, area: '测试覆盖', gapScore: 60, priority: '低', description: '测试覆盖率有待提高', suggestions: ['制定测试规范', '引入自动化测试'] }
+        ]);
+
+        // 初始化协作消息
+        setMessages([
+          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略,结合AI技术和用户体验研究的最新成果.', timestamp: '2026-02-20 10:30' },
+          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手,识别关键痛点和机会点,然后用AI技术来优化这些环节.', timestamp: '2026-02-20 10:35', replies: [
+            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研,收集一些初步反馈.', timestamp: '2026-02-20 10:40' }
+          ]},
+          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
+        ]);
+
+        // 初始化项目数据
+        setProjects([
+          {
+            id: 1,
+            name: 'AI助手系统开发',
+            description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
+            status: 'active',
+            priority: 'high',
+            startDate: '2026-01-15',
+            endDate: '2026-06-30',
+            progress: 65,
+            assignedMembers: [1, 2, 3],
+            tasks: [
+              {
+                id: 1,
+                title: '需求分析',
+                description: '分析用户需求和系统功能',
+                status: 'completed',
+                priority: 'high',
+                assignedTo: 1,
+                dueDate: '2026-02-15',
+                createdAt: '2026-01-15',
+                updatedAt: '2026-02-15'
+              },
+              {
+                id: 2,
+                title: 'UI设计',
+                description: '设计用户界面和交互流程',
+                status: 'in-progress',
+                priority: 'medium',
+                assignedTo: 2,
+                dueDate: '2026-03-15',
+                createdAt: '2026-02-01',
+                updatedAt: '2026-02-20'
+              }
+            ]
+          },
+          {
+            id: 2,
+            name: '知识库重构',
+            description: '重新设计和实现企业知识库系统，支持多模态内容管理',
+            status: 'planning',
+            priority: 'medium',
+            startDate: '2026-03-01',
+            endDate: '2026-08-15',
+            progress: 15,
+            assignedMembers: [2, 4],
+            tasks: [
+              {
+                id: 3,
+                title: '架构设计',
+                description: '设计新的知识库架构',
+                status: 'todo',
+                priority: 'high',
+                assignedTo: 2,
+                dueDate: '2026-03-30',
+                createdAt: '2026-02-25',
+                updatedAt: '2026-02-25'
+              }
+            ]
+          },
+          {
+            id: 3,
+            name: '用户体验优化',
+            description: '基于用户反馈优化产品界面和交互流程',
+            status: 'completed',
+            priority: 'medium',
+            startDate: '2025-11-01',
+            endDate: '2026-02-28',
+            progress: 100,
+            assignedMembers: [1, 3, 4],
+            tasks: [
+              {
+                id: 4,
+                title: '用户调研',
+                description: '收集用户反馈和使用数据',
+                status: 'completed',
+                priority: 'medium',
+                assignedTo: 3,
+                dueDate: '2026-01-15',
+                createdAt: '2025-11-01',
+                updatedAt: '2026-01-15'
+              },
+              {
+                id: 5,
+                title: '界面优化',
+                description: '根据反馈优化界面设计',
+                status: 'completed',
+                priority: 'medium',
+                assignedTo: 4,
+                dueDate: '2026-02-28',
+                createdAt: '2026-01-20',
+                updatedAt: '2026-02-28'
+              }
+            ]
+          }
+        ]);
       } finally {
         setLoading(false);
       }
@@ -715,6 +998,164 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setIsReportConfigOpen(false);
   };
 
+  // ========== 项目管理 ==========
+  const handleAddProject = () => {
+    setEditingProject({ 
+      id: 0, 
+      name: '', 
+      description: '', 
+      status: 'pending', 
+      priority: 'medium',
+      startDate: new Date().toISOString().split('T')[0], 
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], 
+      progress: 0, 
+      assignedMembers: [], 
+      tasks: [] 
+    });
+    setIsProjectModalOpen(true);
+  };
+
+  const handleEditProject = (project: Project) => {
+    setEditingProject({ ...project });
+    setIsProjectModalOpen(true);
+  };
+
+  const handleSaveProject = () => {
+    if (!editingProject) return;
+    
+    if (editingProject.id === 0) {
+      const newProject = { ...editingProject, id: Date.now() };
+      setProjects([...projects, newProject]);
+      setSelectedProject(newProject);
+      toast.success('项目创建成功');
+    } else {
+      setProjects(projects.map(p => p.id === editingProject.id ? editingProject : p));
+      setSelectedProject(editingProject);
+      toast.success('项目更新成功');
+    }
+    setIsProjectModalOpen(false);
+    setEditingProject(null);
+  };
+
+  const handleDeleteProject = (id: number) => {
+    if (!confirm('确定要删除这个项目吗？删除后所有相关任务也将被删除。')) return;
+    setProjects(projects.filter(p => p.id !== id));
+    if (selectedProject?.id === id) {
+      setSelectedProject(null);
+    }
+    toast.success('项目删除成功');
+  };
+
+  // ========== 任务管理 ==========
+  const handleAddTask = (projectId: number) => {
+    setEditingTask({ 
+      id: 0, 
+      projectId, 
+      title: '', 
+      description: '', 
+      status: 'todo', 
+      priority: 'medium', 
+      assignedTo: 0, 
+      dueDate: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    setIsTaskModalOpen(true);
+  };
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask({ ...task });
+    setIsTaskModalOpen(true);
+  };
+
+  const handleSaveTask = () => {
+    if (!editingTask) return;
+    
+    setProjects(projects.map(project => {
+      if (project.id === editingTask.projectId) {
+        let updatedTasks;
+        if (editingTask.id === 0) {
+          const newTask = { ...editingTask, id: Date.now() };
+          updatedTasks = [...project.tasks, newTask];
+        } else {
+          updatedTasks = project.tasks.map(t => t.id === editingTask.id ? editingTask : t);
+        }
+        
+        // 更新项目进度
+        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+        
+        return { ...project, tasks: updatedTasks, progress };
+      }
+      return project;
+    }));
+    
+    if (selectedProject) {
+      setSelectedProject({
+        ...selectedProject,
+        tasks: editingTask.id === 0 
+          ? [...selectedProject.tasks, { ...editingTask, id: Date.now() }]
+          : selectedProject.tasks.map(t => t.id === editingTask.id ? editingTask : t)
+      });
+    }
+    
+    setIsTaskModalOpen(false);
+    setEditingTask(null);
+    toast.success(editingTask.id === 0 ? '任务添加成功' : '任务更新成功');
+  };
+
+  const handleDeleteTask = (taskId: number) => {
+    if (!confirm('确定要删除这个任务吗？')) return;
+    
+    setProjects(projects.map(project => {
+      if (project.tasks.some(t => t.id === taskId)) {
+        const updatedTasks = project.tasks.filter(t => t.id !== taskId);
+        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+        
+        return { ...project, tasks: updatedTasks, progress };
+      }
+      return project;
+    }));
+    
+    if (selectedProject) {
+      setSelectedProject({
+        ...selectedProject,
+        tasks: selectedProject.tasks.filter(t => t.id !== taskId)
+      });
+    }
+    
+    toast.success('任务删除成功');
+  };
+
+  const handleToggleTask = (taskId: number) => {
+    setProjects(projects.map(project => {
+      if (project.tasks.some(t => t.id === taskId)) {
+        const updatedTasks = project.tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
+            : t
+        );
+        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+        
+        return { ...project, tasks: updatedTasks, progress };
+      }
+      return project;
+    }));
+    
+    if (selectedProject) {
+      setSelectedProject({
+        ...selectedProject,
+        tasks: selectedProject.tasks.map(t => 
+          t.id === taskId 
+            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
+            : t
+        )
+      });
+    }
+  };
+
   // 渲染加载状态
   if (loading) {
     return (
@@ -789,11 +1230,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <span>知识空白识别</span>
           </div>
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('reports')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'reports' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
+            activeTab === 'reports'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
               : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
           }`}
         >
@@ -802,20 +1243,17 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <span>协作分析报告</span>
           </div>
         </button>
-        <button 
-          onClick={() => setActiveTab('jinyiwei')}
+        <button
+          onClick={() => setActiveTab('projects')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'jinyiwei' 
-              ? 'border-amber-500 text-amber-600 dark:text-amber-400 font-medium' 
+            activeTab === 'projects'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
               : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
           }`}
         >
           <div className="flex items-center justify-center">
-            <Crown size={18} className="mr-2" />
-            <span>8-Agent会议</span>
-            <span className="ml-2 text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full">
-              AI
-            </span>
+            <FileCheck size={18} className="mr-2" />
+            <span>项目管理</span>
           </div>
         </button>
       </div>
@@ -1417,9 +1855,209 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-        {/* 8-Agent会议 */}
-        {activeTab === 'jinyiwei' && (
-          <AgentMeetingPanel />
+        {/* 项目管理 */}
+        {activeTab === 'projects' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-xl font-bold mb-2">项目管理</h2>
+                <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
+              </div>
+              <button 
+                onClick={handleAddProject}
+                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <Plus size={18} className="mr-2" />
+                新建项目
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 左侧:项目列表 */}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="lg:col-span-1 space-y-4"
+              >
+                <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <h3 className="font-semibold mb-3">项目列表</h3>
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                    {projects.map(project => (
+                      <div 
+                        key={project.id}
+                        onClick={() => setSelectedProject(project)}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selectedProject?.id === project.id 
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' 
+                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-medium text-sm">{project.name}</h4>
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${
+                            project.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                            project.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                            'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+                          }`}>
+                            {project.status === 'completed' ? '已完成' : 
+                             project.status === 'in-progress' ? '进行中' : '待开始'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <span>{project.tasks.length} 个任务</span>
+                          <span>{new Date(project.endDate).toLocaleDateString()}</span>
+                        </div>
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span>进度</span>
+                            <span>{project.progress}%</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-blue-500 rounded-full transition-all" 
+                              style={{ width: `${project.progress}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* 中间:项目详情和任务 */}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
+                className="lg:col-span-2 space-y-4"
+              >
+                {selectedProject ? (
+                  <>
+                    {/* 项目详情 */}
+                    <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold">{selectedProject.name}</h3>
+                          <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{selectedProject.description}</p>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button 
+                            onClick={() => handleEditProject(selectedProject)}
+                            className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteProject(selectedProject.id)}
+                            className="p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-blue-600">{selectedProject.progress}%</div>
+                          <div className="text-xs text-gray-500">完成进度</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
+                          <div className="text-xs text-gray-500">已完成任务</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
+                          <div className="text-xs text-gray-500">进行中任务</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
+                          <div className="text-xs text-gray-500">总任务数</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <Calendar size={16} className="text-gray-500" />
+                          <span>截止日期: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Users size={16} className="text-gray-500" />
+                          <span>{selectedProject.assignedMembers.length} 人参与</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 任务列表 */}
+                    <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-semibold">任务列表</h3>
+                        <button 
+                          onClick={() => handleAddTask(selectedProject.id)}
+                          className="flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
+                        >
+                          <Plus size={14} className="mr-1" />
+                          添加任务
+                        </button>
+                      </div>
+
+                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                        {selectedProject.tasks.map(task => (
+                          <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                            <div className="flex items-center space-x-3 flex-1">
+                              <input
+                                type="checkbox"
+                                checked={task.status === 'completed'}
+                                onChange={() => handleToggleTask(task.id)}
+                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                              />
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2">
+                                  <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
+                                    {task.title}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
+                                    task.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                    task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                    'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
+                                  }`}>
+                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
+                                  <span>分配给: {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
+                                  {task.dueDate && <span>• 截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex space-x-1">
+                              <button 
+                                onClick={() => handleEditTask(task)}
+                                className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteTask(task.id)}
+                                className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 text-center">
+                    <FileCheck size={48} className="mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-600 dark:text-gray-300 mb-2">选择项目查看详情</h3>
+                    <p className="text-gray-500 dark:text-gray-400">从左侧列表中选择一个项目来查看任务和进度详情</p>
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1655,6 +2293,203 @@ const TeamCollaborationEnhanced: React.FC = () => {
             >
               <Save size={16} className="mr-2" />
               保存配置
+            </button>
+          </div>
+        </div>
+      </EditModal>
+
+      {/* 项目编辑弹窗 */}
+      <EditModal 
+        isOpen={isProjectModalOpen} 
+        onClose={() => setIsProjectModalOpen(false)} 
+        title={editingProject?.id === 0 ? '新建项目' : '编辑项目'}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">项目名称</label>
+            <input
+              type="text"
+              value={editingProject?.name || ''}
+              onChange={(e) => setEditingProject(prev => prev ? { ...prev, name: e.target.value } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              placeholder="输入项目名称"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">项目描述</label>
+            <textarea
+              value={editingProject?.description || ''}
+              onChange={(e) => setEditingProject(prev => prev ? { ...prev, description: e.target.value } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              rows={3}
+              placeholder="输入项目描述"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">状态</label>
+            <select
+              value={editingProject?.status || 'pending'}
+              onChange={(e) => setEditingProject(prev => prev ? { ...prev, status: e.target.value as Project['status'] } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+            >
+              <option value="pending">待开始</option>
+              <option value="in-progress">进行中</option>
+              <option value="completed">已完成</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">开始日期</label>
+              <input
+                type="date"
+                value={editingProject?.startDate || ''}
+                onChange={(e) => setEditingProject(prev => prev ? { ...prev, startDate: e.target.value } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">结束日期</label>
+              <input
+                type="date"
+                value={editingProject?.endDate || ''}
+                onChange={(e) => setEditingProject(prev => prev ? { ...prev, endDate: e.target.value } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">分配成员</label>
+            <div className="max-h-32 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
+              {teamMembers.map(member => (
+                <label key={member.id} className="flex items-center space-x-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={editingProject?.assignedMembers?.includes(member.id) || false}
+                    onChange={(e) => {
+                      const isChecked = e.target.checked;
+                      setEditingProject(prev => {
+                        if (!prev) return null;
+                        const assignedMembers = prev.assignedMembers || [];
+                        if (isChecked) {
+                          return { ...prev, assignedMembers: [...assignedMembers, member.id] };
+                        } else {
+                          return { ...prev, assignedMembers: assignedMembers.filter(id => id !== member.id) };
+                        }
+                      });
+                    }}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm">{member.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2 pt-4">
+            <button 
+              onClick={() => setIsProjectModalOpen(false)}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            >
+              取消
+            </button>
+            <button 
+              onClick={handleSaveProject}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center"
+            >
+              <Save size={16} className="mr-2" />
+              保存
+            </button>
+          </div>
+        </div>
+      </EditModal>
+
+      {/* 任务编辑弹窗 */}
+      <EditModal 
+        isOpen={isTaskModalOpen} 
+        onClose={() => setIsTaskModalOpen(false)} 
+        title={editingTask?.id === 0 ? '新建任务' : '编辑任务'}
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">任务标题</label>
+            <input
+              type="text"
+              value={editingTask?.title || ''}
+              onChange={(e) => setEditingTask(prev => prev ? { ...prev, title: e.target.value } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              placeholder="输入任务标题"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">任务描述</label>
+            <textarea
+              value={editingTask?.description || ''}
+              onChange={(e) => setEditingTask(prev => prev ? { ...prev, description: e.target.value } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              rows={3}
+              placeholder="输入任务描述"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">状态</label>
+              <select
+                value={editingTask?.status || 'pending'}
+                onChange={(e) => setEditingTask(prev => prev ? { ...prev, status: e.target.value as Task['status'] } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              >
+                <option value="pending">待开始</option>
+                <option value="in-progress">进行中</option>
+                <option value="completed">已完成</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">优先级</label>
+              <select
+                value={editingTask?.priority || 'medium'}
+                onChange={(e) => setEditingTask(prev => prev ? { ...prev, priority: e.target.value as Task['priority'] } : null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+              >
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">截止日期</label>
+            <input
+              type="date"
+              value={editingTask?.dueDate || ''}
+              onChange={(e) => setEditingTask(prev => prev ? { ...prev, dueDate: e.target.value } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">分配成员</label>
+            <select
+              value={editingTask?.assignedTo || ''}
+              onChange={(e) => setEditingTask(prev => prev ? { ...prev, assignedTo: parseInt(e.target.value) || 0 } : null)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+            >
+              <option value="">未分配</option>
+              {teamMembers.map(member => (
+                <option key={member.id} value={member.id}>{member.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end space-x-2 pt-4">
+            <button 
+              onClick={() => setIsTaskModalOpen(false)}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+            >
+              取消
+            </button>
+            <button 
+              onClick={handleSaveTask}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center"
+            >
+              <Save size={16} className="mr-2" />
+              保存
             </button>
           </div>
         </div>

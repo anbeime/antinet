@@ -137,17 +137,52 @@ class DatabaseManager:
                     source_type TEXT,
                     source_id INTEGER,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    remind_at TEXT,
+                    remind_before_minutes INTEGER DEFAULT 0,
+                    reminder_enabled BOOLEAN DEFAULT 0,
+                    recurrence TEXT DEFAULT 'none',
+                    recurrence_end_date TEXT,
+                    is_completed BOOLEAN DEFAULT 0,
+                    completed_at TEXT
                 )
             """)
             
-            # 迁移：为旧表添加 source_type 和 source_id 字段
+            # 迁移：为旧表添加新字段
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_type TEXT")
             except:
                 pass
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_id INTEGER")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN remind_at TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN remind_before_minutes INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN recurrence TEXT DEFAULT 'none'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN recurrence_end_date TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN is_completed BOOLEAN DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN completed_at TEXT")
             except:
                 pass
 
@@ -178,10 +213,32 @@ class DatabaseManager:
                     title TEXT NOT NULL,
                     content TEXT NOT NULL,
                     type TEXT CHECK(type IN ('blue', 'green', 'yellow', 'red')),
-                    category TEXT CHECK(category IN ('事实', '解释', '风险', '行动')),
+                    category TEXT CHECK(category IS NULL OR category IN ('事实', '解释', '风险', '行动')),
                     similarity REAL DEFAULT 0.0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 11. 会议记录表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS meetings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    meeting_id TEXT NOT NULL UNIQUE,
+                    topic TEXT NOT NULL,
+                    context TEXT,
+                    card_ids TEXT,
+                    rounds INTEGER NOT NULL,
+                    participants TEXT NOT NULL,
+                    summary TEXT,
+                    decision TEXT,
+                    action_items TEXT,
+                    all_speeches TEXT,
+                    all_rounds TEXT,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    duration_seconds REAL NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
@@ -767,7 +824,7 @@ class DatabaseManager:
             return cursor.rowcount > 0
 
     def sync_card_to_gtd(self, card_id: int) -> Optional[Dict[str, Any]]:
-        """将风险/行动卡片同步到GTD任务"""
+        """将行动卡片同步到GTD任务"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -780,8 +837,8 @@ class DatabaseManager:
             card_dict = dict(card)
             card_type = card_dict.get('card_type', card_dict.get('type', ''))
             
-            # 只同步风险卡片和行动卡片
-            if card_type not in ['yellow', 'red']:
+            # 只同步行动卡片（红色）
+            if card_type != 'red':
                 return None
             
             # 检查是否已同步
@@ -790,8 +847,8 @@ class DatabaseManager:
             if existing:
                 return {'status': 'already_synced', 'task_id': existing[0]}
             
-            # 确定优先级
-            priority = 'high' if card_type == 'red' else 'medium'
+            # 确定优先级（行动卡片设为高优先级）
+            priority = 'high'
             category = 'inbox'
             
             # 创建GTD任务
@@ -806,14 +863,13 @@ class DatabaseManager:
             return {'status': 'synced', 'task_id': task_id, 'card_id': card_id}
 
     def sync_all_cards_to_gtd(self) -> Dict[str, Any]:
-        """同步所有风险/行动卡片到GTD"""
+        """同步所有卡片到GTD（导入时用户选择同步）"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # 获取所有风险和行动卡片
+            # 获取所有卡片（不再按类型过滤，导入时用户主动选择同步）
             cursor.execute("""
                 SELECT * FROM knowledge_cards 
-                WHERE card_type IN ('yellow', 'red')
             """)
             cards = cursor.fetchall()
             
@@ -925,5 +981,76 @@ class DatabaseManager:
                     SET source_type = NULL, source_id = NULL
                     WHERE id = ?
                 """, (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 会议记录管理 ==========
+    def save_meeting(self, meeting_id: str, topic: str, context: str, card_ids: List[str],
+                     rounds: int, participants: List[str], summary: str, decision: str,
+                     action_items: List[str], all_speeches: List[Dict], all_rounds: List[Dict],
+                     start_time: str, end_time: str, duration_seconds: float) -> Dict[str, Any]:
+        """保存会议记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO meetings (meeting_id, topic, context, card_ids, rounds, participants,
+                                      summary, decision, action_items, all_speeches, all_rounds,
+                                      start_time, end_time, duration_seconds)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (meeting_id, topic, context, json.dumps(card_ids), rounds, json.dumps(participants),
+                  summary, decision, json.dumps(action_items), json.dumps(all_speeches, ensure_ascii=False),
+                  json.dumps(all_rounds, ensure_ascii=False), start_time, end_time, duration_seconds))
+            meeting_db_id = cursor.lastrowid
+            conn.commit()
+            cursor.execute("SELECT * FROM meetings WHERE id = ?", (meeting_db_id,))
+            row = dict(cursor.fetchone())
+            row['card_ids'] = json.loads(row['card_ids'])
+            row['participants'] = json.loads(row['participants'])
+            row['action_items'] = json.loads(row['action_items'])
+            row['all_speeches'] = json.loads(row['all_speeches'])
+            row['all_rounds'] = json.loads(row['all_rounds'])
+            return row
+
+    def get_all_meetings(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取所有会议记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, meeting_id, topic, context, rounds, participants,
+                       summary, decision, action_items, start_time, end_time, duration_seconds, created_at
+                FROM meetings
+                ORDER BY start_time DESC
+                LIMIT ?
+            """, (limit,))
+            rows = cursor.fetchall()
+            meetings = []
+            for row in rows:
+                m = dict(row)
+                m['participants'] = json.loads(m['participants']) if isinstance(m['participants'], str) else m['participants']
+                m['action_items'] = json.loads(m['action_items']) if isinstance(m['action_items'], str) else m['action_items']
+                meetings.append(m)
+            return meetings
+
+    def get_meeting(self, meeting_id: str) -> Optional[Dict[str, Any]]:
+        """获取单个会议详情"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM meetings WHERE meeting_id = ?", (meeting_id,))
+            row = cursor.fetchone()
+            if row:
+                m = dict(row)
+                m['card_ids'] = json.loads(m['card_ids']) if m['card_ids'] else []
+                m['participants'] = json.loads(m['participants'])
+                m['action_items'] = json.loads(m['action_items'])
+                m['all_speeches'] = json.loads(m['all_speeches'])
+                m['all_rounds'] = json.loads(m['all_rounds'])
+                return m
+            return None
+
+    def delete_meeting(self, meeting_id: str) -> bool:
+        """删除会议记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
             conn.commit()
             return cursor.rowcount > 0

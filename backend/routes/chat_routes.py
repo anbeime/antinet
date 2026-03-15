@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -333,11 +334,9 @@ def _generate_ai_response(query: str, cards: List[Dict]) -> str:
         
         loader = get_model_loader()
         if not loader.is_loaded:
-            try:
-                loader.load()
-            except Exception as e:
-                logger.warning(f"模型加载失败，使用模板回答: {e}")
-                return _generate_general_answer(query, cards)
+            # NPU 模型未加载，直接使用模板回答（避免阻塞）
+            logger.info("NPU 模型未加载，使用模板回答")
+            return _generate_general_answer(query, cards)
         
         # 构建上下文：将搜索到的卡片内容作为参考
         context_parts = []
@@ -372,8 +371,8 @@ def _generate_ai_response(query: str, cards: List[Dict]) -> str:
         response = raw_output.strip()
         # 移除常见的特殊token
         special_tokens = [
-            '<|im_start|>', '<|im_end|>', '<|assistant|', '<|user|>',
-            '<|system|>', '<|endoftext|>', '|_|end|>', 'assistant', 'user', 'system'
+            '``', '````', '<|assistant|', '<|user|>',
+            '<|system|>', '``````', '|_|end|>', 'assistant', 'user', 'system'
         ]
         for token in special_tokens:
             response = response.replace(token, '')
@@ -544,9 +543,13 @@ async def chat_query(request: ChatRequest):
     logger.info(f"[ChatRoutes] 收到查询: {request.query}")
 
     try:
-        # 直接使用关键词搜索
-        cards = _search_cards_by_keyword(request.query, limit=10)
-        logger.info(f"[ChatRoutes] 关键词搜索找到 {len(cards)} 张卡片")
+        # 使用混合搜索（向量 + 关键词）
+        if hasattr(sys.modules[__name__], '_hybrid_search'):
+            cards = _hybrid_search(request.query, limit=10)
+        else:
+            # 回退到关键词搜索
+            cards = _search_cards_by_keyword(request.query, limit=10)
+        logger.info(f"[ChatRoutes] 混合搜索找到 {len(cards)} 张卡片")
         print(f"[DEBUG] 搜索到 {len(cards)} 张卡片")
         
         if cards:

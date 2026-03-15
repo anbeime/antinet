@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Brain,
@@ -45,6 +45,7 @@ import MultiModel from '@/pages/MultiModel';
 import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
+import ChatButton from '@/components/ChatButton';
 
 
 // 定义卡片类型
@@ -118,7 +119,7 @@ const cardTypeMap = {
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -222,23 +223,9 @@ const Home: React.FC = () => {
       
       setCards(prevCards => [formattedCard, ...prevCards]);
       
-      // 如果是风险或行动卡片，自动同步到GTD
-      if (newCard.card_type === 'yellow' || newCard.card_type === 'red' || cardData.color === 'yellow' || cardData.color === 'red') {
-        try {
-          await fetch(`http://localhost:8000/api/data/gtd-tasks/sync-card/${newCard.id}`, { method: 'POST' });
-          toast.success(`卡片创建成功！已自动添加到任务管理`, {
-            className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-          });
-        } catch {
-          toast.success('卡片创建成功！', {
-            className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-          });
-        }
-      } else {
-        toast.success('卡片创建成功！', {
-          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-        });
-      }
+      toast.success('卡片创建成功！', {
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
       
     } catch (error) {
       console.error('创建卡片失败:', error);
@@ -247,50 +234,61 @@ const Home: React.FC = () => {
       });
     }
   };
-  
-  // 处理导入卡片
+   
+  // 导入卡片处理函数
   const handleImportCards = async (importedCards: Array<{
     title: string;
     content: string;
     color: CardColor;
     address: string;
-  }>) => {
+  }>, syncToGTD: boolean = false) => {
     try {
-      let savedCount = 0;
-      let duplicateCount = 0;
+      if (importedCards.length === 0) {
+        toast('没有可导入的卡片', {
+          className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
+        });
+        return;
+      }
       
-      // 逐个保存到后端数据库
+      let savedCount = 0;
+      let errorCount = 0;
+      
+      // 逐个保存到后端数据库（移除重复检查以避免批量导入问题）
       for (const card of importedCards) {
-        // 检查是否重复
-        const isDuplicate = cards.some(
-          existingCard => 
-            existingCard.title.toLowerCase().trim() === card.title.toLowerCase().trim() && 
-            existingCard.content.toLowerCase().trim() === card.content.toLowerCase().trim()
-        );
-        
-        if (isDuplicate) {
-          duplicateCount++;
-          continue;
-        }
-        
         // 调用后端API保存
-        const response = await fetch('http://localhost:8000/api/knowledge/cards', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        try {
+          const requestBody = {
             type: card.color,
             title: card.title,
             content: card.content,
             category: card.color === 'blue' ? '事实' : 
                       card.color === 'green' ? '解释' : 
                       card.color === 'yellow' ? '风险' : '行动'
-          })
-        });
-        
-        if (response.ok) {
-          savedCount++;
+          };
+          console.log('[IMPORT] 发送请求:', requestBody);
+          
+          const response = await fetch('http://localhost:8000/api/knowledge/cards', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+          
+          console.log('[IMPORT] 响应状态:', response.status, 'ok:', response.ok);
+          
+          if (response.ok || response.status === 200) {
+            savedCount++;
+          } else {
+            const errorText = await response.text();
+            console.error(`保存卡片失败: ${card.title}`, response.status, errorText);
+            errorCount++;
+          }
+        } catch (apiError) {
+          console.error(`API调用失败: ${card.title}`, apiError);
+          errorCount++;
         }
       }
+      
+      console.log('[IMPORT] 保存结果: 成功=', savedCount, '失败=', errorCount);
       
       // 重新从后端加载卡片列表
       const cardsResponse = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
@@ -307,9 +305,8 @@ const Home: React.FC = () => {
         }));
         setCards(formattedCards);
         
-        // 自动同步风险和行动卡片到GTD
-        const actionCards = importedCards.filter(c => c.color === 'red' || c.color === 'yellow');
-        if (actionCards.length > 0) {
+        // 如果用户选择同步到GTD
+        if (syncToGTD && savedCount > 0) {
           try {
             await fetch('http://localhost:8000/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
           } catch (e) {
@@ -319,19 +316,22 @@ const Home: React.FC = () => {
       }
       
       // 显示结果
-      const actionCards = importedCards.filter(c => c.color === 'red' || c.color === 'yellow');
-      const actionMsg = actionCards.length > 0 ? `，${actionCards.length} 条已同步到任务管理` : '';
-      
-      if (savedCount > 0 && duplicateCount > 0) {
-        toast(`已跳过 ${duplicateCount} 条重复，成功导入 ${savedCount} 条新记录${actionMsg}！`, {
+      let message = '';
+      if (savedCount > 0) {
+        message = `${savedCount} 条知识记录已成功导入`;
+        if (errorCount > 0) {
+          message += `，${errorCount} 条失败`;
+        }
+        message += '！';
+        toast(message, {
           className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
         });
-      } else if (savedCount > 0) {
-        toast(`${savedCount} 条知识记录已成功导入并分类${actionMsg}！`, {
-          className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      } else if (errorCount > 0) {
+        toast(`导入失败：${errorCount} 条记录保存失败，请检查后端服务`, {
+          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
         });
-      } else if (duplicateCount > 0) {
-        toast(`导入的所有内容均已存在，未添加新卡片！`, {
+      } else {
+        toast('导入完成，但没有新卡片被保存', {
           className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
         });
       }
@@ -601,7 +601,7 @@ const Home: React.FC = () => {
             {/* 文档中心下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'batch-process'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <FileText size={18} />
                 <span>文档中心</span>
@@ -629,20 +629,22 @@ const Home: React.FC = () => {
                   <Table size={16} />
                   <span>Excel分析</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab('batch-process')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'batch-process' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <Upload size={16} />
-                  <span>批量处理</span>
-                </button>
               </div>
             </div>
+
+            {/* 团队协作 */}
+            <button
+              onClick={() => setActiveTab('team-collaboration')}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'team-collaboration' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+            >
+              <Users size={18} />
+              <span>团队协作</span>
+            </button>
 
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'virtual-office-meeting'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -672,17 +674,10 @@ const Home: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setActiveTab('multi-model')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Layers size={16} />
                   <span>多模型</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('virtual-office-meeting')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <Users size={16} />
-                  <span>八府巡按会议</span>
                 </button>
               </div>
             </div>
@@ -700,10 +695,10 @@ const Home: React.FC = () => {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full flex items-center space-x-1 text-sm font-medium transition-colors"
-                onClick={() => openCreateModal()}
+                onClick={() => setActiveTab('batch-process')}
               >
-                <PlusCircle size={16} />
-                <span>新建卡片</span>
+                <Upload size={16} />
+                <span>批量处理</span>
               </motion.button>
             </div>
           </div>
@@ -1186,25 +1181,40 @@ const Home: React.FC = () => {
 
             {/* 统计卡片 */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div 
+                onClick={() => { setTypeFilter('all'); setCurrentPage(1); }}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow ${typeFilter === 'all' ? 'ring-2 ring-blue-500' : ''}`}
+              >
                 <div className="text-2xl font-bold text-gray-900 dark:text-white">{cards.length}</div>
                 <div className="text-sm text-gray-500 dark:text-gray-400">总卡片数</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div 
+                onClick={() => { setTypeFilter('blue' as CardColor); setCurrentPage(1); }}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow ${typeFilter === 'blue' ? 'ring-2 ring-blue-500' : ''}`}
+              >
                 <div className="text-2xl font-bold text-blue-600">{cards.filter(c => c.color === 'blue').length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">事实类</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">核心概念</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div 
+                onClick={() => { setTypeFilter('green' as CardColor); setCurrentPage(1); }}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow ${typeFilter === 'green' ? 'ring-2 ring-green-500' : ''}`}
+              >
                 <div className="text-2xl font-bold text-green-600">{cards.filter(c => c.color === 'green').length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">解释类</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">关联链接</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div 
+                onClick={() => { setTypeFilter('yellow' as CardColor); setCurrentPage(1); }}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow ${typeFilter === 'yellow' ? 'ring-2 ring-yellow-500' : ''}`}
+              >
                 <div className="text-2xl font-bold text-yellow-600">{cards.filter(c => c.color === 'yellow').length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">风险类</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">参考来源</div>
               </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+              <div 
+                onClick={() => { setTypeFilter('red' as CardColor); setCurrentPage(1); }}
+                className={`bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:shadow-md transition-shadow ${typeFilter === 'red' ? 'ring-2 ring-red-500' : ''}`}
+              >
                 <div className="text-2xl font-bold text-red-600">{cards.filter(c => c.color === 'red').length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400">行动类</div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">索引关键词</div>
               </div>
             </div>
 
@@ -1545,7 +1555,10 @@ const Home: React.FC = () => {
         {activeTab === 'virtual-office-meeting' && (
           <VirtualOfficeMeeting />
         )}
-       </main>
+        </main>
+
+      {/* 聊天机器人按钮 - 可拖拽 */}
+      <ChatButton />
 
       {/* 页脚 */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 mt-auto">

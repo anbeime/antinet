@@ -102,7 +102,8 @@ QNN_SDK_PATHS: Dict[str, str] = {
     "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
     "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
     "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
-    "2.42": "C:/Qualcomm/AIStack/QAIRT/2.42.0/lib/arm64x-windows-msvc"
+    "2.42": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
+    "2.44": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
 }
 
 # 默认模型配置

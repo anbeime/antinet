@@ -4,13 +4,13 @@
  * 参考: https://github.com/anbeime/skill/tree/main/projects
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Send, Bot, User, Image as ImageIcon, 
+  X, Send, Bot, User,
   FileText, Table, Presentation, Search,
-  Sparkles, ChevronRight, Loader2, Paperclip,
-  HelpCircle, Trash2, RefreshCw
+  Sparkles, ChevronRight, Loader2,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -18,15 +18,11 @@ import {
   ChatMessage, 
   CardReference, 
   SkillResult,
-  ImageAnalysisResult,
   SceneType
 } from '@/services/enhancedChatService';
+// visionService 已移除（视觉模型暂不可用）
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
 interface EnhancedChatBotProps {
@@ -34,14 +30,58 @@ interface EnhancedChatBotProps {
   onClose: () => void;
 }
 
+// 渲染消息内容 - 支持 [点击跳转:url] 格式的链接
+const renderMessageContent = (content: string): React.ReactNode => {
+  if (!content) return null;
+  
+  // 匹配 [点击跳转:url] 格式
+  const linkRegex = /\[点击跳转:([^\]]+)\]/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = linkRegex.exec(content)) !== null) {
+    const [fullMatch, url] = match;
+    const beforeText = content.slice(lastIndex, match.index);
+    
+    // 添加链接前的文本
+    if (beforeText) {
+      parts.push(<span key={`text-${lastIndex}`}>{beforeText}</span>);
+    }
+    
+    // 添加可点击的链接按钮
+    parts.push(
+      <a
+        key={`link-${match.index}`}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 px-3 py-1 mt-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 transition-colors"
+      >
+        <span>点击打开页面</span>
+        <ChevronRight className="w-4 h-4" />
+      </a>
+    );
+    
+    lastIndex = match.index + fullMatch.length;
+  }
+  
+  // 添加剩余的文本
+  const remainingText = content.slice(lastIndex);
+  if (remainingText) {
+    parts.push(<span key={`text-end`}>{remainingText}</span>);
+  }
+  
+  return parts.length > 0 ? <>{parts}</> : content;
+};
+
 // 消息组件
 const MessageBubble: React.FC<{
   message: ChatMessage;
   cards?: CardReference[];
   skillResult?: SkillResult;
-  imageAnalysis?: ImageAnalysisResult;
   sceneType?: SceneType;
-}> = ({ message, cards, skillResult, imageAnalysis, sceneType }) => {
+}> = ({ message, cards, skillResult, sceneType }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
 
@@ -57,14 +97,14 @@ const MessageBubble: React.FC<{
       {/* 头像 */}
       <div className={cn(
         "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-        isUser ? "bg-primary" : isSkill ? "bg-purple-500" : "bg-gradient-to-br from-blue-500 to-purple-600"
+        isUser ? "bg-primary" : isSkill ? "bg-purple-500" : "bg-transparent"
       )}>
         {isUser ? (
           <User className="w-4 h-4 text-white" />
         ) : isSkill ? (
           <Sparkles className="w-4 h-4 text-white" />
         ) : (
-          <Bot className="w-4 h-4 text-white" />
+          <img src="/src/pages/chat.png" alt="bot" className="w-8 h-8 rounded-full object-contain" />
         )}
       </div>
 
@@ -75,9 +115,9 @@ const MessageBubble: React.FC<{
       )}>
         {/* 场景标签 */}
         {sceneType && sceneType !== 'general' && !isUser && (
-          <Badge variant="secondary" className="text-xs">
+          <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
             {enhancedChatService.getSceneIcon(sceneType)} {enhancedChatService.getSceneName(sceneType)}
-          </Badge>
+          </span>
         )}
 
         {/* 文本内容 */}
@@ -87,23 +127,19 @@ const MessageBubble: React.FC<{
             ? "bg-primary text-primary-foreground rounded-br-md" 
             : "bg-muted rounded-bl-md"
         )}>
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
         </div>
 
         {/* 卡片展示 */}
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
-            {cards.slice(0, 3).map((card, index) => (
-              <Card key={card.card_id} className="border-l-4" style={{
-                borderLeftColor: card.color === 'blue' ? '#3b82f6' : 
-                                card.color === 'green' ? '#22c55e' :
-                                card.color === 'yellow' ? '#eab308' : '#ef4444'
-              }}>
+            {cards.slice(0, 3).map((card, idx) => (
+              <Card key={card.card_id} className="border-l-4 border-l-blue-500">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="text-xs">
+                    <span className="text-xs px-2 py-0.5 border rounded">
                       {enhancedChatService.formatCardType(card.card_type)}
-                    </Badge>
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {enhancedChatService.formatSimilarity(card.similarity)}
                     </span>
@@ -130,9 +166,9 @@ const MessageBubble: React.FC<{
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles className="w-4 h-4 text-purple-500" />
                 <span className="font-medium text-sm">技能执行结果</span>
-                <Badge variant={skillResult.success ? "default" : "destructive"} className="text-xs">
+                <span className={`text-xs px-2 py-0.5 rounded ${skillResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                   {skillResult.success ? '成功' : '失败'}
-                </Badge>
+                </span>
               </div>
               {skillResult.result && (
                 <p className="text-sm text-muted-foreground">{skillResult.result}</p>
@@ -147,30 +183,7 @@ const MessageBubble: React.FC<{
           </Card>
         )}
 
-        {/* 图片分析结果 */}
-        {imageAnalysis && (
-          <Card className="mt-2 border-blue-200 bg-blue-50/50 dark:bg-blue-900/10">
-            <CardContent className="p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <ImageIcon className="w-4 h-4 text-blue-500" />
-                <span className="font-medium text-sm">图片分析</span>
-                <Badge variant="secondary" className="text-xs">
-                  置信度 {Math.round(imageAnalysis.confidence * 100)}%
-                </Badge>
               </div>
-              <p className="text-sm mb-2">{imageAnalysis.description}</p>
-              {imageAnalysis.facts.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium">识别到的事实：</p>
-                  {imageAnalysis.facts.slice(0, 3).map((fact, i) => (
-                    <p key={i} className="text-xs text-muted-foreground pl-2">• {fact}</p>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
     </motion.div>
   );
 };
@@ -197,28 +210,24 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [currentScene, setCurrentScene] = useState<SceneType>('general');
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 初始化欢迎消息
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       setMessages([{
         role: 'assistant',
-        content: `👋 你好！我是知易智能知识管家助手。
+        content: `你好！我是知易智能知识管家助手。
 
 我可以帮您：
-📚 **查询知识库卡片** - 搜索事实、解释、风险、行动卡片
-🖼️ **分析图片内容** - 上传图片进行智能分析
-📊 **生成PPT演示** - 快速创建专业演示文稿
-📈 **分析Excel数据** - 数据分析和可视化
-📝 **生成Word文档** - 创建专业文档
+查询知识库卡片 - 搜索事实、解释、风险、行动卡片
+生成PPT演示 - 快速创建专业演示文稿
+分析Excel数据 - 数据分析和可视化
+生成Word文档 - 创建专业文档
 
 有什么可以帮您的吗？`,
         timestamp: new Date().toISOString()
@@ -240,32 +249,21 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
   // 发送消息
   const handleSend = async () => {
-    if (!input.trim() && !selectedImage) return;
+    if (!input.trim()) return;
 
     const query = input.trim();
     setInput('');
     setIsLoading(true);
 
     try {
-      let imageData: string | undefined;
-      
-      // 如果有选中的图片，转换为base64
-      if (selectedImage) {
-        imageData = await enhancedChatService.fileToBase64(selectedImage);
-      }
-
-      // 添加用户消息
       const userMessage: ChatMessage = {
         role: 'user',
-        content: query || '[图片]',
+        content: query,
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, userMessage]);
 
-      // 发送到后端
-      const response = await enhancedChatService.sendMessage(query, { imageData });
-
-      // 添加助手回复
+      const response = await enhancedChatService.sendMessage(query);
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response.response,
@@ -273,38 +271,17 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         metadata: {
           scene_type: response.scene_type,
           cards: response.cards,
-          skill_result: response.skill_result,
-          image_analysis: response.image_analysis
+          skill_result: response.skill_result
         }
       };
-
       setMessages(prev => [...prev, assistantMessage]);
       setSuggestedQuestions(response.suggested_questions);
       setCurrentScene(response.scene_type);
-
-      // 清空图片
-      setSelectedImage(null);
-      setImagePreview(null);
 
     } catch (error) {
       toast.error('发送失败，请重试');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // 处理图片选择
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('图片大小不能超过10MB');
-        return;
-      }
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onload = (e) => setImagePreview(e.target?.result as string);
-      reader.readAsDataURL(file);
     }
   };
 
@@ -329,12 +306,6 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       label: "查卡片",
       onClick: () => handleSuggestedQuestion("搜索知识库卡片"),
       color: "bg-blue-100 text-blue-600"
-    },
-    {
-      icon: <ImageIcon className="w-3 h-3" />,
-      label: "分析图片",
-      onClick: () => fileInputRef.current?.click(),
-      color: "bg-green-100 text-green-600"
     },
     {
       icon: <Presentation className="w-3 h-3" />,
@@ -362,7 +333,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClick={onClose}
       >
         <motion.div
-          className="w-full max-w-2xl h-[80vh] bg-background rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          className="w-full max-w-2xl h-[80vh] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 */}
@@ -375,7 +346,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 <div>
                   <CardTitle className="text-lg">知易智能助手</CardTitle>
                   <p className="text-xs text-white/80">
-                    支持知识库查询 · 图片分析 · 技能调用
+                    支持知识库查询 · 技能调用
                   </p>
                 </div>
               </div>
@@ -402,7 +373,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           </CardHeader>
 
           {/* 消息区域 */}
-          <ScrollArea className="flex-1 p-4">
+          <div className="flex-1 p-4 overflow-y-auto">
             <div className="space-y-4">
               {messages.map((message, index) => (
                 <MessageBubble
@@ -410,7 +381,6 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   message={message}
                   cards={message.metadata?.cards}
                   skillResult={message.metadata?.skill_result}
-                  imageAnalysis={message.metadata?.image_analysis}
                   sceneType={message.metadata?.scene_type}
                 />
               ))}
@@ -428,7 +398,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <div ref={messagesEndRef} />
             </div>
-          </ScrollArea>
+          </div>
 
           {/* 建议问题 */}
           {suggestedQuestions.length > 0 && (
@@ -466,54 +436,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           </div>
 
-          {/* 图片预览 */}
-          {imagePreview && (
-            <div className="px-4 py-2 border-t bg-muted/30">
-              <div className="flex items-center gap-2">
-                <img 
-                  src={imagePreview} 
-                  alt="Preview" 
-                  className="w-16 h-16 object-cover rounded"
-                />
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{selectedImage?.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(selectedImage!.size / 1024).toFixed(1)} KB
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedImage(null);
-                    setImagePreview(null);
-                  }}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* 输入区域 */}
           <div className="p-4 border-t">
             <div className="flex gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept="image/*"
-                onChange={handleImageSelect}
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-shrink-0"
-              >
-                <Paperclip className="w-4 h-4" />
-              </Button>
-              
               <div className="flex-1 relative">
                 <textarea
                   ref={textareaRef}
@@ -539,7 +464,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <Button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && !selectedImage)}
+                disabled={isLoading || !input.trim()}
                 className="flex-shrink-0"
               >
                 {isLoading ? (

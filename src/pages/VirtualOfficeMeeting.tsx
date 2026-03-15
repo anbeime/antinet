@@ -14,6 +14,7 @@ import {
   Square
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { gtdTaskService } from '@/services/dataService';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
@@ -693,22 +694,44 @@ const VirtualOfficeMeeting: React.FC = () => {
     toast.info('会议已重置');
   };
 
-  // 导出结果
-  const exportResults = () => {
+  // 保存到任务归档
+  const saveToArchive = async () => {
     if (!meetingResult) return;
-    const exportData = {
-      topic, context, rounds: meetingResult.length,
-      discussions: meetingResult,
-      exportedAt: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `meeting-${topic}-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('会议记录已导出');
+    
+    const summary = meetingResult[meetingResult.length - 1]?.summary || '';
+    const decision = meetingResult[meetingResult.length - 1]?.decision || '';
+    const actionItems = meetingResult[meetingResult.length - 1]?.actionItems || [];
+    
+    const taskContent = `【会议主题】${topic}
+【背景】${context || '无'}
+【讨论轮数】${meetingResult.length}轮
+
+【总结】
+${summary}
+
+【决策】
+${decision}
+
+【行动项】
+${actionItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}
+
+【详细讨论】
+${meetingResult.slice(0, -1).map((round: any, i: number) => 
+  `--- 第${i + 1}轮 (${round.theme}) ---\n${round.speeches?.map((s: any) => `【${s.agent_name}】${s.speech}`).join('\n')}`
+).join('\n\n')}`;
+
+    try {
+      await gtdTaskService.add({
+        title: `会议纪要: ${topic}`,
+        description: taskContent,
+        category: 'archive',
+        priority: 'medium'
+      });
+      toast.success('会议记录已保存到任务归档');
+    } catch (error) {
+      console.error('保存归档失败:', error);
+      toast.error('保存归档失败，请重试');
+    }
   };
 
   const toggleRound = (round: number) => {
@@ -1029,12 +1052,12 @@ const VirtualOfficeMeeting: React.FC = () => {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={exportResults}
+                      onClick={saveToArchive}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      导出
+                      保存归档
                     </button>
                     <button
                       onClick={resetMeeting}

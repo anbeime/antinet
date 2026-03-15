@@ -220,6 +220,9 @@ export interface GtdTask {
   due_date?: string;
   created_at?: string;
   updated_at?: string;
+  is_completed?: boolean;
+  reminder_enabled?: boolean;
+  remind_at?: string;
 }
 
 export const gtdTaskService = {
@@ -366,5 +369,20 @@ export const researchProjectService = {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('从专题移除任务失败');
+  },
+
+  // 获取专题下的卡片
+  getCards: async (projectId: number): Promise<any[]> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards`);
+    if (!response.ok) throw new Error('获取专题卡片失败');
+    return response.json();
+  },
+
+  // 关联卡片到专题
+  linkCard: async (projectId: number, cardId: number): Promise<void> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards/${cardId}`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('关联卡片到专题失败');
   },
 };

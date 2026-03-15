@@ -21,8 +21,8 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
-lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
-bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+lib_path = "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc"
+bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc"
 
 # 确保两个目录都在 PATH 中
 paths_to_add = [lib_path, bridge_lib_path]
@@ -251,6 +251,16 @@ try:
     logger.info("[OK] 8-Agent会议路由已注册")
 except Exception as e:
     logger.warning(f"无法导入8-Agent会议路由: {e}")
+
+# 注册增强版聊天路由
+try:
+    from routes.enhanced_chat_routes import router as enhanced_chat_router
+    app.include_router(enhanced_chat_router)
+    import routes.enhanced_chat_routes as enhanced_chat_module
+    enhanced_chat_module.db_manager = db_manager
+    logger.info("[OK] 增强版聊天路由已注册，数据库管理器已注入")
+except Exception as e:
+    logger.warning(f"无法导入增强版聊天路由: {e}")
 
 
 # 初始化 8-Agent 系统
@@ -491,6 +501,14 @@ async def startup_event():
         logger.info("[startup_event] 模型将在首次使用时按需加载")
         # 不再吞掉异常，让问题暴露出来
 
+    # 启动任务提醒服务
+    try:
+        from services.reminder_service import start_reminder_service
+        start_reminder_service()
+        logger.info("[OK] 任务提醒服务已启动")
+    except Exception as e:
+        logger.warning(f"任务提醒服务启动失败: {e}")
+
 
 @app.get("/")
 async def root():
@@ -507,12 +525,7 @@ async def root():
         "description": "知易智能知识管家 - 后端API",
         "status": "running",
         "model_loaded": model_loaded,
-        "device": settings.QNN_DEVICE,
-        "endpoints": {
-            "health": "/api/health",
-            "cleanup": "/api/admin/cleanup",
-            "npu_status": "/api/npu/status"
-        }
+        "device": settings.QNN_DEVICE
     }
 
 
@@ -535,17 +548,17 @@ async def health_check():
             logger.warning("[/api/health] 无法导入模型加载器")
         except Exception as e:
             logger.warning(f"[/api/health] 检查模型状态时出错: {e}")
-
+        
         # 根据模型状态确定健康状态
         status = "healthy" if is_loaded else "degraded"
-
+        
         logger.info(f"[/api/health] 最终状态: {status}, model_loaded={is_loaded}")
-
+        
     except Exception as e:
         logger.error(f"[/api/health] 健康检查异常: {e}")
         is_loaded = False
         status = "degraded"
-
+    
     return {
         "status": status,
         "model": settings.MODEL_NAME,
@@ -554,35 +567,6 @@ async def health_check():
         "data_stays_local": settings.DATA_STAYS_LOCAL,
         "qai_libs_path": os.environ.get('QAI_LIBS_PATH', 'Not set')
     }
-
-
-@app.get("/api/admin/cleanup")
-async def cleanup_resources():
-    """管理员资源清理端点"""
-    logger.info("[ADMIN] 开始资源清理...")
-
-    try:
-        from models.model_loader import NPUModelLoader
-
-        # 清理NPU资源
-        success = NPUModelLoader.check_and_clean_npu_resources()
-
-        return {
-            "status": "success" if success else "failed",
-            "message": "资源清理完成" if success else "资源清理失败",
-            "timestamp": time.time()
-        }
-
-    except Exception as e:
-        logger.error(f"[ADMIN] 资源清理失败: {e}")
-        import traceback
-        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
-
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": time.time()
-        }
 
 
 @app.post("/api/analyze", response_model=AnalysisResult)
