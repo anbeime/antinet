@@ -37,8 +37,8 @@ jobs:
           touch /tmp/found_files.txt
           touch /tmp/found_dirs.txt
           
-          # File patterns - one per line for clarity
-          cat > /tmp/file_patterns.txt << 'EOF'
+          # File patterns
+          cat > /tmp/file_patterns.txt << 'ENDOFPATTERNS'
 test_*.py
 *_test.py
 *_tests.py
@@ -89,7 +89,7 @@ bundle.css
 requirements_*.txt
 问题诊断报告*.md
 诊断报告*.md
-EOF
+ENDOFPATTERNS
           
           # Scan file patterns
           while IFS= read -r pattern; do
@@ -107,7 +107,7 @@ EOF
           done < /tmp/file_patterns.txt
           
           # Directory patterns
-          cat > /tmp/dir_patterns.txt << 'EOF'
+          cat > /tmp/dir_patterns.txt << 'ENDOFDIRS'
 tests
 test
 __tests__
@@ -184,7 +184,7 @@ packer_cache
 .idea
 .vscode
 tools
-EOF
+ENDOFDIRS
           
           # Scan directory patterns
           while IFS= read -r pattern; do
