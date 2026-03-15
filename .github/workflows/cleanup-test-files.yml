@@ -33,15 +33,70 @@ jobs:
           FOUND_COUNT=0
           TOTAL_SIZE=0
           
-          # Create temp file to store found items
-          touch /tmp/found_items.txt
+          # Create temp files
+          touch /tmp/found_files.txt
           touch /tmp/found_dirs.txt
           
+          # File patterns - one per line for clarity
+          cat > /tmp/file_patterns.txt << 'EOF'
+test_*.py
+*_test.py
+*_tests.py
+test-*.py
+*-test.py
+*test*.py
+*test*.js
+*test*.ts
+quick_*_test.py
+*_api_test.py
+*_env_test.py
+validate_*.py
+generate_*.py
+reset_*.py
+temp_*.py
+simple_*.py
+run_*_test.py
+import_preset_*.py
+insert_sample_*.py
+inspect_*.py
+database_*.py
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.dll
+*.class
+*.o
+*.obj
+*.exe
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+desktop.ini
+*.min.js
+*.min.css
+*.map
+bundle.js
+bundle.css
+requirements_*.txt
+问题诊断报告*.md
+诊断报告*.md
+EOF
+          
           # Scan file patterns
-          for pattern in "test_*.py" "*_test.py" "*_tests.py" "*.pyc" "*.pyo" "*.pyd" "*.so" "*.dylib" "*.dll" "*.class" "*.o" "*.obj" "*.exe" "*.log" "*.tmp" "*.temp" "*.swp" "*.swo" "*.bak" "*.orig" "*.rej" ".DS_Store" "Thumbs.db" "desktop.ini" "*.min.js" "*.min.css" "*.map" "bundle.js" "bundle.css"; do
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
             files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$files" ]; then
-              echo "$files" >> /tmp/found_items.txt
+              echo "$files" >> /tmp/found_files.txt
               count=$(echo "$files" | wc -l)
               FOUND_COUNT=$((FOUND_COUNT + count))
               for f in $files; do
@@ -49,10 +104,91 @@ jobs:
                 TOTAL_SIZE=$((TOTAL_SIZE + s))
               done
             fi
-          done
+          done < /tmp/file_patterns.txt
+          
+          # Directory patterns
+          cat > /tmp/dir_patterns.txt << 'EOF'
+tests
+test
+__tests__
+__test__
+spec
+specs
+__pycache__
+.pytest_cache
+htmlcov
+cover
+.tox
+.nox
+.hypothesis
+.eggs
+dist
+build
+develop-eggs
+downloads
+eggs
+lib
+lib64
+parts
+sdist
+var
+wheels
+instance
+.webassets-cache
+.scrapy
+site
+.pybuilder
+target
+.ipynb_checkpoints
+profile_default
+__pypackages__
+.venv
+venv
+env
+ENV
+env.bak
+venv.bak
+.ropeproject
+.spyderproject
+.spyproject
+nbproject
+.komodotools
+.idea_modules
+.history
+.nyc_output
+.grunt
+bower_components
+.rpt_cache
+.next
+.nuxt
+.temp
+.cache
+.serverless
+.fusebox
+.dynamodb
+.vscode-test
+.vscode-test-container
+.devcontainer
+.vs
+BenchmarkDotNet.Artifacts
+artifacts
+_ReSharper
+_TeamCity
+_NCrunch_
+AutoTest.Net
+.sass-cache
+node_modules
+.terraform
+.vagrant
+packer_cache
+.idea
+.vscode
+tools
+EOF
           
           # Scan directory patterns
-          for pattern in "tests" "test" "__pycache__" ".pytest_cache" "htmlcov" "cover" ".tox" ".nox" ".hypothesis" ".eggs" "dist" "build" "develop-eggs" "downloads" "eggs" "lib" "lib64" "parts" "sdist" "var" "wheels" "instance" ".webassets-cache" ".scrapy" "site" ".pybuilder" "target" ".ipynb_checkpoints" "profile_default" "__pypackages__" ".venv" "venv" "env" "ENV" "env.bak" "venv.bak" ".ropeproject" ".spyderproject" ".spyproject" "nbproject" ".komodotools" ".idea_modules" ".history" ".nyc_output" ".grunt" "bower_components" ".rpt_cache" ".next" ".nuxt" ".temp" ".cache" ".serverless" ".fusebox" ".dynamodb" ".vscode-test" ".vscode-test-container" ".devcontainer" ".vs" "BenchmarkDotNet.Artifacts" "artifacts" "_ReSharper" "_TeamCity" "_NCrunch_" "AutoTest.Net" ".sass-cache" "node_modules" ".terraform" ".vagrant" "packer_cache" ".idea" ".vscode"; do
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
             dirs=$(find . -type d -name "$pattern" 2>/dev/null | grep -v ".git" || true)
             if [ -n "$dirs" ]; then
               echo "$dirs" >> /tmp/found_dirs.txt
@@ -63,31 +199,27 @@ jobs:
                 TOTAL_SIZE=$((TOTAL_SIZE + s))
               done
             fi
-          done
+          done < /tmp/dir_patterns.txt
           
-          # Save to env for later steps
-          cat /tmp/found_items.txt > /tmp/all_found.txt
-          cat /tmp/found_dirs.txt >> /tmp/all_found.txt
-          
-          # List found files in summary
-          if [ -s /tmp/found_items.txt ]; then
-            echo "### Files to be deleted" >> "$GITHUB_STEP_SUMMARY"
+          # List found files
+          if [ -s /tmp/found_files.txt ]; then
+            echo "### Files to be deleted ($(cat /tmp/found_files.txt | wc -l) files)" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            cat /tmp/found_items.txt >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/found_files.txt >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
           fi
           
-          # List found directories in summary
+          # List found directories
           if [ -s /tmp/found_dirs.txt ]; then
-            echo "### Directories to be deleted" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Directories to be deleted ($(cat /tmp/found_dirs.txt | wc -l) dirs)" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat /tmp/found_dirs.txt >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
           fi
           
-          # Convert size to human readable
+          # Convert size
           if [ $TOTAL_SIZE -gt 1073741824 ]; then
             SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1073741824}") GB"
           elif [ $TOTAL_SIZE -gt 1048576 ]; then
@@ -102,7 +234,7 @@ jobs:
           echo "FOUND_COUNT=$FOUND_COUNT" >> "$GITHUB_ENV"
           
           echo "### Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "Found $FOUND_COUNT items" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total items: $FOUND_COUNT" >> "$GITHUB_STEP_SUMMARY"
           echo "Total size: $SIZE_HUMAN" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           
@@ -115,13 +247,10 @@ jobs:
       - name: Preview or Delete
         id: action
         run: |
-          DRY_RUN="${{ github.event.inputs.dry_run }}"
-          
-          if [ "$DRY_RUN" = "true" ]; then
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             echo "## Preview Mode" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Found ${{ env.FOUND_COUNT }} items to delete" >> "$GITHUB_STEP_SUMMARY"
-            echo "Total size: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Found ${{ env.FOUND_COUNT }} items to delete (${{ env.TOTAL_SIZE_HUMAN }})" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "To delete, run again with Preview mode unchecked" >> "$GITHUB_STEP_SUMMARY"
             echo "will_delete=false" >> "$GITHUB_OUTPUT"
@@ -133,14 +262,29 @@ jobs:
         if: steps.action.outputs.will_delete == 'true'
         run: |
           set +e
-          echo "## Deleting redundant files" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Deleting files..." >> "$GITHUB_STEP_SUMMARY"
           
-          # Delete file patterns
+          # Delete all matching file patterns
           find . -type f \( \
             -name "test_*.py" -o \
             -name "*_test.py" -o \
             -name "*_tests.py" -o \
+            -name "quick_*_test.py" -o \
+            -name "*_api_test.py" -o \
+            -name "*_env_test.py" -o \
+            -name "validate_*.py" -o \
+            -name "generate_*.py" -o \
+            -name "reset_*.py" -o \
+            -name "temp_*.py" -o \
+            -name "simple_*.py" -o \
+            -name "run_*_test.py" -o \
+            -name "import_preset_*.py" -o \
+            -name "insert_sample_*.py" -o \
+            -name "inspect_*.py" -o \
+            -name "database_*.py" -o \
+            -name "requirements_*.txt" -o \
+            -name "问题诊断报告*.md" -o \
+            -name "诊断报告*.md" -o \
             -name "*.pyc" -o \
             -name "*.pyo" -o \
             -name "*.pyd" -o \
@@ -169,12 +313,12 @@ jobs:
             -name "bundle.css" \
           \) -not -path "./.git/*" -delete 2>/dev/null
           
-          # Delete directory patterns
-          for dir in tests test __pycache__ .pytest_cache htmlcov cover .tox .nox .hypothesis .eggs dist build develop-eggs downloads eggs lib lib64 parts sdist var wheels instance .webassets-cache .scrapy site .pybuilder target .ipynb_checkpoints profile_default __pypackages__ .venv venv env ENV env.bak venv.bak .ropeproject .spyderproject .spyproject nbproject .komodotools .idea_modules .history .nyc_output .grunt bower_components .rpt_cache .next .nuxt .temp .cache .serverless .fusebox .dynamodb .vscode-test .vscode-test-container .devcontainer .vs BenchmarkDotNet.Artifacts artifacts _ReSharper _TeamCity _NCrunch_ AutoTest.Net .sass-cache node_modules .terraform .vagrant packer_cache .idea .vscode; do
+          # Delete matching directories
+          for dir in tests test __tests__ __test__ spec specs __pycache__ .pytest_cache htmlcov cover .tox .nox .hypothesis .eggs dist build develop-eggs downloads eggs lib lib64 parts sdist var wheels instance .webassets-cache .scrapy site .pybuilder target .ipynb_checkpoints profile_default __pypackages__ .venv venv env ENV env.bak venv.bak .ropeproject .spyderproject .spyproject nbproject .komodotools .idea_modules .history .nyc_output .grunt bower_components .rpt_cache .next .nuxt .temp .cache .serverless .fusebox .dynamodb .vscode-test .vscode-test-container .devcontainer .vs BenchmarkDotNet.Artifacts artifacts _ReSharper _TeamCity _NCrunch_ AutoTest.Net .sass-cache node_modules .terraform .vagrant packer_cache .idea .vscode tools; do
             find . -type d -name "$dir" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
           done
           
-          echo "Files deleted successfully" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Freed space: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check for Changes
@@ -194,14 +338,14 @@ jobs:
           git commit -m "chore: cleanup redundant files
 
           - Removed test files and directories
-          - Cleaned up cache and build files
+          - Cleaned up cache, build, and temp files
           - Removed IDE and editor files
           - Freed up ${{ env.TOTAL_SIZE_HUMAN }} of space
 
           Auto-generated by GitHub Actions"
           git push origin main
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Changes committed and pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Changes committed and pushed to main" >> "$GITHUB_STEP_SUMMARY"
 
       - name: No Files Found
         if: steps.find_files.outputs.found_files == 'false'
