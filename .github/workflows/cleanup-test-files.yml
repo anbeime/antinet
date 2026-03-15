@@ -1,0 +1,184 @@
+name: Cleanup Redundant Test Files
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '预览模式 (不实际删除)'
+        required: false
+        default: true
+        type: boolean
+      file_patterns:
+        description: '要删除的文件模式 (用逗号分隔)'
+        required: false
+        default: 'test_*.py,*_test.py,tests/,__pycache__/,*.pyc,.pytest_cache/,*.tmp,*.temp,*.log'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Find and List Redundant Files
+        id: find_files
+        run: |
+          echo "## 扫描冗余文件" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 定义要清理的文件模式
+          PATTERNS="${{ github.event.inputs.file_patterns }}"
+          IFS=',' read -ra PATTERN_ARRAY <<< "$PATTERNS"
+          
+          FOUND_FILES=""
+          TOTAL_SIZE=0
+          
+          for pattern in "${PATTERN_ARRAY[@]}"; do
+            pattern=$(echo "$pattern" | xargs)  # 去除空格
+            echo "### 扫描模式: $pattern" >> $GITHUB_STEP_SUMMARY
+            
+            # 查找匹配的文件
+            if [[ "$pattern" == */ ]]; then
+              # 目录模式
+              dirs=$(find . -type d -name "${pattern%/}" 2>/dev/null | grep -v ".git")
+              if [ -n "$dirs" ]; then
+                echo "找到目录:" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo "$dirs" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                FOUND_FILES="$FOUND_FILES $dirs"
+                
+                # 计算目录大小
+                for dir in $dirs; do
+                  size=$(du -sb "$dir" 2>/dev/null | cut -f1)
+                  TOTAL_SIZE=$((TOTAL_SIZE + size))
+                done
+              else
+                echo "未找到匹配目录" >> $GITHUB_STEP_SUMMARY
+              fi
+            else
+              # 文件模式
+              files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git")
+              if [ -n "$files" ]; then
+                echo "找到文件:" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                echo "$files" >> $GITHUB_STEP_SUMMARY
+                echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+                FOUND_FILES="$FOUND_FILES $files"
+                
+                # 计算文件大小
+                for file in $files; do
+                  size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo 0)
+                  TOTAL_SIZE=$((TOTAL_SIZE + size))
+                done
+              else
+                echo "未找到匹配文件" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done
+          
+          # 转换大小为人类可读格式
+          if [ $TOTAL_SIZE -gt 1073741824 ]; then
+            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1073741824" | bc) GB"
+          elif [ $TOTAL_SIZE -gt 1048576 ]; then
+            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1048576" | bc) MB"
+          elif [ $TOTAL_SIZE -gt 1024 ]; then
+            SIZE_HUMAN="$(echo "scale=2; $TOTAL_SIZE/1024" | bc) KB"
+          else
+            SIZE_HUMAN="$TOTAL_SIZE bytes"
+          fi
+          
+          echo "TOTAL_SIZE_HUMAN=$SIZE_HUMAN" >> $GITHUB_ENV
+          echo "FOUND_FILES=$FOUND_FILES" >> $GITHUB_ENV
+          
+          if [ -z "$FOUND_FILES" ]; then
+            echo "未找到任何冗余文件"
+            echo "found_files=false" >> $GITHUB_OUTPUT
+          else
+            echo "找到冗余文件，总大小: $SIZE_HUMAN"
+            echo "found_files=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Delete Files (Dry Run)
+        if: github.event.inputs.dry_run == 'true' && steps.find_files.outputs.found_files == 'true'
+        run: |
+          echo "## 预览模式 - 以下文件将被删除" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **这是预览模式，文件未被实际删除**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "总大小: ${{ env.TOTAL_SIZE_HUMAN }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "要实际删除，请重新运行工作流并取消勾选 '预览模式'" >> $GITHUB_STEP_SUMMARY
+
+      - name: Delete Files (Actual)
+        if: github.event.inputs.dry_run == 'false' && steps.find_files.outputs.found_files == 'true'
+        run: |
+          echo "## 删除冗余文件" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          PATTERNS="${{ github.event.inputs.file_patterns }}"
+          IFS=',' read -ra PATTERN_ARRAY <<< "$PATTERNS"
+          
+          for pattern in "${PATTERN_ARRAY[@]}"; do
+            pattern=$(echo "$pattern" | xargs)
+            
+            if [[ "$pattern" == */ ]]; then
+              # 删除目录
+              find . -type d -name "${pattern%/}" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
+            else
+              # 删除文件
+              find . -type f -name "$pattern" -not -path "./.git/*" -delete 2>/dev/null
+            fi
+          done
+          
+          echo "✅ 已删除冗余文件" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "释放空间: ${{ env.TOTAL_SIZE_HUMAN }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check for Changes
+        if: github.event.inputs.dry_run == 'false' && steps.find_files.outputs.found_files == 'true'
+        id: check_changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and Push Changes
+        if: github.event.inputs.dry_run == 'false' && steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git add -A
+          git commit -m "chore: cleanup redundant test files
+          
+          - Removed test files and directories
+          - Cleaned up cache files
+          - Freed up ${{ env.TOTAL_SIZE_HUMAN }} of space
+          
+          Auto-generated by GitHub Actions"
+          git push origin main
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 更改已提交并推送" >> $GITHUB_STEP_SUMMARY
+
+      - name: No Changes Summary
+        if: steps.find_files.outputs.found_files == 'false'
+        run: |
+          echo "## 清理结果" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ 未找到任何冗余文件，无需清理" >> $GITHUB_STEP_SUMMARY
