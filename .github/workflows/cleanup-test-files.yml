@@ -1,0 +1,355 @@
+name: Cleanup All Redundant Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview mode (no actual deletion)'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find All Redundant Files
+        id: find_files
+        run: |
+          set +e
+          echo "## Scanning for all redundant files" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          
+          FOUND_COUNT=0
+          TOTAL_SIZE=0
+          
+          # Create temp files
+          touch /tmp/found_files.txt
+          touch /tmp/found_dirs.txt
+          
+          # File patterns
+          cat > /tmp/file_patterns.txt << 'ENDOFPATTERNS'
+test_*.py
+*_test.py
+*_tests.py
+test-*.py
+*-test.py
+*test*.py
+*test*.js
+*test*.ts
+quick_*_test.py
+*_api_test.py
+*_env_test.py
+validate_*.py
+generate_*.py
+reset_*.py
+temp_*.py
+simple_*.py
+run_*_test.py
+import_preset_*.py
+insert_sample_*.py
+inspect_*.py
+database_*.py
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.dll
+*.class
+*.o
+*.obj
+*.exe
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.DS_Store
+Thumbs.db
+desktop.ini
+*.min.js
+*.min.css
+*.map
+bundle.js
+bundle.css
+requirements_*.txt
+问题诊断报告*.md
+诊断报告*.md
+ENDOFPATTERNS
+          
+          # Scan file patterns
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            files=$(find . -type f -name "$pattern" 2>/dev/null | grep -v ".git" || true)
+            if [ -n "$files" ]; then
+              echo "$files" >> /tmp/found_files.txt
+              count=$(echo "$files" | wc -l)
+              FOUND_COUNT=$((FOUND_COUNT + count))
+              for f in $files; do
+                s=$(stat -c%s "$f" 2>/dev/null || echo 0)
+                TOTAL_SIZE=$((TOTAL_SIZE + s))
+              done
+            fi
+          done < /tmp/file_patterns.txt
+          
+          # Directory patterns
+          cat > /tmp/dir_patterns.txt << 'ENDOFDIRS'
+tests
+test
+__tests__
+__test__
+spec
+specs
+__pycache__
+.pytest_cache
+htmlcov
+cover
+.tox
+.nox
+.hypothesis
+.eggs
+dist
+build
+develop-eggs
+downloads
+eggs
+lib
+lib64
+parts
+sdist
+var
+wheels
+instance
+.webassets-cache
+.scrapy
+site
+.pybuilder
+target
+.ipynb_checkpoints
+profile_default
+__pypackages__
+.venv
+venv
+env
+ENV
+env.bak
+venv.bak
+.ropeproject
+.spyderproject
+.spyproject
+nbproject
+.komodotools
+.idea_modules
+.history
+.nyc_output
+.grunt
+bower_components
+.rpt_cache
+.next
+.nuxt
+.temp
+.cache
+.serverless
+.fusebox
+.dynamodb
+.vscode-test
+.vscode-test-container
+.devcontainer
+.vs
+BenchmarkDotNet.Artifacts
+artifacts
+_ReSharper
+_TeamCity
+_NCrunch_
+AutoTest.Net
+.sass-cache
+node_modules
+.terraform
+.vagrant
+packer_cache
+.idea
+.vscode
+tools
+ENDOFDIRS
+          
+          # Scan directory patterns
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            dirs=$(find . -type d -name "$pattern" 2>/dev/null | grep -v ".git" || true)
+            if [ -n "$dirs" ]; then
+              echo "$dirs" >> /tmp/found_dirs.txt
+              count=$(echo "$dirs" | wc -l)
+              FOUND_COUNT=$((FOUND_COUNT + count))
+              for d in $dirs; do
+                s=$(du -sb "$d" 2>/dev/null | cut -f1 || echo 0)
+                TOTAL_SIZE=$((TOTAL_SIZE + s))
+              done
+            fi
+          done < /tmp/dir_patterns.txt
+          
+          # List found files
+          if [ -s /tmp/found_files.txt ]; then
+            echo "### Files to be deleted ($(cat /tmp/found_files.txt | wc -l) files)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/found_files.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          
+          # List found directories
+          if [ -s /tmp/found_dirs.txt ]; then
+            echo "### Directories to be deleted ($(cat /tmp/found_dirs.txt | wc -l) dirs)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/found_dirs.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          
+          # Convert size
+          if [ $TOTAL_SIZE -gt 1073741824 ]; then
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1073741824}") GB"
+          elif [ $TOTAL_SIZE -gt 1048576 ]; then
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1048576}") MB"
+          elif [ $TOTAL_SIZE -gt 1024 ]; then
+            SIZE_HUMAN="$(awk "BEGIN {printf \"%.2f\", $TOTAL_SIZE/1024}") KB"
+          else
+            SIZE_HUMAN="$TOTAL_SIZE bytes"
+          fi
+          
+          echo "TOTAL_SIZE_HUMAN=$SIZE_HUMAN" >> "$GITHUB_ENV"
+          echo "FOUND_COUNT=$FOUND_COUNT" >> "$GITHUB_ENV"
+          
+          echo "### Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total items: $FOUND_COUNT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Total size: $SIZE_HUMAN" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          
+          if [ $FOUND_COUNT -eq 0 ]; then
+            echo "found_files=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found_files=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Preview or Delete
+        id: action
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "## Preview Mode" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Found ${{ env.FOUND_COUNT }} items to delete (${{ env.TOTAL_SIZE_HUMAN }})" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "To delete, run again with Preview mode unchecked" >> "$GITHUB_STEP_SUMMARY"
+            echo "will_delete=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "will_delete=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete All Redundant Files
+        if: steps.action.outputs.will_delete == 'true'
+        run: |
+          set +e
+          echo "## Deleting files..." >> "$GITHUB_STEP_SUMMARY"
+          
+          # Delete all matching file patterns
+          find . -type f \( \
+            -name "test_*.py" -o \
+            -name "*_test.py" -o \
+            -name "*_tests.py" -o \
+            -name "quick_*_test.py" -o \
+            -name "*_api_test.py" -o \
+            -name "*_env_test.py" -o \
+            -name "validate_*.py" -o \
+            -name "generate_*.py" -o \
+            -name "reset_*.py" -o \
+            -name "temp_*.py" -o \
+            -name "simple_*.py" -o \
+            -name "run_*_test.py" -o \
+            -name "import_preset_*.py" -o \
+            -name "insert_sample_*.py" -o \
+            -name "inspect_*.py" -o \
+            -name "database_*.py" -o \
+            -name "requirements_*.txt" -o \
+            -name "问题诊断报告*.md" -o \
+            -name "诊断报告*.md" -o \
+            -name "*.pyc" -o \
+            -name "*.pyo" -o \
+            -name "*.pyd" -o \
+            -name "*.so" -o \
+            -name "*.dylib" -o \
+            -name "*.dll" -o \
+            -name "*.class" -o \
+            -name "*.o" -o \
+            -name "*.obj" -o \
+            -name "*.exe" -o \
+            -name "*.log" -o \
+            -name "*.tmp" -o \
+            -name "*.temp" -o \
+            -name "*.swp" -o \
+            -name "*.swo" -o \
+            -name "*.bak" -o \
+            -name "*.orig" -o \
+            -name "*.rej" -o \
+            -name ".DS_Store" -o \
+            -name "Thumbs.db" -o \
+            -name "desktop.ini" -o \
+            -name "*.min.js" -o \
+            -name "*.min.css" -o \
+            -name "*.map" -o \
+            -name "bundle.js" -o \
+            -name "bundle.css" \
+          \) -not -path "./.git/*" -delete 2>/dev/null
+          
+          # Delete matching directories
+          for dir in tests test __tests__ __test__ spec specs __pycache__ .pytest_cache htmlcov cover .tox .nox .hypothesis .eggs dist build develop-eggs downloads eggs lib lib64 parts sdist var wheels instance .webassets-cache .scrapy site .pybuilder target .ipynb_checkpoints profile_default __pypackages__ .venv venv env ENV env.bak venv.bak .ropeproject .spyderproject .spyproject nbproject .komodotools .idea_modules .history .nyc_output .grunt bower_components .rpt_cache .next .nuxt .temp .cache .serverless .fusebox .dynamodb .vscode-test .vscode-test-container .devcontainer .vs BenchmarkDotNet.Artifacts artifacts _ReSharper _TeamCity _NCrunch_ AutoTest.Net .sass-cache node_modules .terraform .vagrant packer_cache .idea .vscode tools; do
+            find . -type d -name "$dir" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null
+          done
+          
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Freed space: ${{ env.TOTAL_SIZE_HUMAN }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check for Changes
+        if: steps.action.outputs.will_delete == 'true'
+        id: check_changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and Push Changes
+        if: steps.action.outputs.will_delete == 'true' && steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git add -A
+          git commit -m "chore: cleanup redundant files
+
+          - Removed test files and directories
+          - Cleaned up cache, build, and temp files
+          - Removed IDE and editor files
+          - Freed up ${{ env.TOTAL_SIZE_HUMAN }} of space
+
+          Auto-generated by GitHub Actions"
+          git push origin main
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Changes committed and pushed to main" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: No Files Found
+        if: steps.find_files.outputs.found_files == 'false'
+        run: |
+          echo "## Cleanup Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "No redundant files found" >> "$GITHUB_STEP_SUMMARY"

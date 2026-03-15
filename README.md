@@ -5,6 +5,8 @@
 八府巡按，各司其职。数据不出域，推理不等待。
 
 ---
+ ![https://youtu.be/mxE-aNMxX8w](https://github.com/anbeime/antinet/blob/main/315.gif )
+
 
 ## 🎭 核心创意：朝廷式 Agent 架构
 
