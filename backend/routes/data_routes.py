@@ -78,6 +78,32 @@ class GtdTask(BaseModel):
     updated_at: Optional[str] = None
 
 
+class TeamProject(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = ""
+    status: str = "pending"
+    priority: str = "medium"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    progress: int = 0
+    assigned_members: List[int] = []
+    tasks: List[Dict[str, Any]] = []
+
+
+class TeamProjectTask(BaseModel):
+    id: Optional[int] = None
+    project_id: int
+    title: str
+    description: Optional[str] = ""
+    status: str = "todo"
+    priority: str = "medium"
+    assigned_to: Optional[int] = None
+    due_date: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # ========== 全局数据库管理器（在main.py中初始化） ==========
 _db_manager = None
 
@@ -415,4 +441,87 @@ async def sync_all_cards_to_gtd():
         }
     except Exception as e:
         logger.error(f"批量同步卡片到GTD失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 团队项目管理API ==========
+@router.get("/team-projects", response_model=List[TeamProject])
+async def get_team_projects():
+    """获取所有团队项目"""
+    try:
+        db = get_db_manager()
+        projects = db.get_all_team_projects()
+        return projects
+    except Exception as e:
+        logger.error(f"获取团队项目失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/team-projects/{project_id}", response_model=TeamProject)
+async def get_team_project(project_id: int):
+    """获取单个项目详情"""
+    try:
+        db = get_db_manager()
+        project = db.get_team_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="项目不存在")
+        return project
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取项目详情失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/team-projects", response_model=TeamProject)
+async def add_team_project(project: TeamProject):
+    """添加团队项目"""
+    try:
+        db = get_db_manager()
+        new_project = db.add_team_project(
+            name=project.name,
+            description=project.description or '',
+            status=project.status or 'pending',
+            priority=project.priority or 'medium',
+            start_date=project.start_date,
+            end_date=project.end_date,
+            progress=project.progress or 0,
+            assigned_members=project.assigned_members or [],
+            tasks=project.tasks or []
+        )
+        return new_project
+    except Exception as e:
+        logger.error(f"添加团队项目失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/team-projects/{project_id}")
+async def update_team_project(project_id: int, project: Dict[str, Any]):
+    """更新团队项目"""
+    try:
+        db = get_db_manager()
+        success = db.update_team_project(project_id, **project)
+        if not success:
+            raise HTTPException(status_code=404, detail="项目不存在")
+        return {"success": True, "message": "更新成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新团队项目失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/team-projects/{project_id}")
+async def delete_team_project(project_id: int):
+    """删除团队项目"""
+    try:
+        db = get_db_manager()
+        success = db.delete_team_project(project_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="项目不存在")
+        return {"success": True, "message": "删除成功"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除团队项目失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

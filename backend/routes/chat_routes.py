@@ -169,16 +169,18 @@ def _generate_what_answer(query: str, cards: List[Dict]) -> str:
             title = card.get("title", "")
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
 
-            response.append(f"{idx}. **{title}**")
+            response.append(f"{idx}. {title}")
             response.append(f"   {desc}\n")
 
     # 补充解释
     if green_cards:
-        response.append("\n**补充说明：**")
+        response.append("\n补充说明：")
         for card in green_cards[:2]:
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
             response.append(f"• {desc}")
 
     # 总结
@@ -203,8 +205,9 @@ def _generate_how_answer(query: str, cards: List[Dict]) -> str:
             title = card.get("title", "")
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
 
-            response.append(f"**步骤 {idx}：{title}**")
+            response.append(f"步骤 {idx}：{title}")
             response.append(f"{desc}\n")
 
     # 补充背景知识
@@ -214,14 +217,16 @@ def _generate_how_answer(query: str, cards: List[Dict]) -> str:
             title = card.get("title", "")
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
-            response.append(f"• **{title}**：{desc}")
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
+            response.append(f"• {title}：{desc}")
 
     # 补充原理解释
     if green_cards:
-        response.append("\n**原理说明：**")
+        response.append("\n原理说明：")
         for card in green_cards[:1]:
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
             response.append(f"{desc}")
 
     return "\n".join(response)
@@ -242,17 +247,19 @@ def _generate_why_answer(query: str, cards: List[Dict]) -> str:
             title = card.get("title", "")
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
 
-            response.append(f"**{title}**")
+            response.append(f"{title}")
             response.append(f"{desc}\n")
 
     # 补充事实依据
     if blue_cards:
-        response.append("\n**相关事实：**")
+        response.append("\n相关事实：")
         for card in blue_cards[:2]:
             title = card.get("title", "")
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
             response.append(f"• {title}：{desc}")
 
     return "\n".join(response)
@@ -290,15 +297,18 @@ def _generate_general_answer(query: str, cards: List[Dict]) -> str:
             "red": "🎯"
         }.get(card_type, "•")
 
-        response.append(f"{icon} **{title}**")
-        response.append(f"   {desc}\n")
+        response.append(f"{icon} {title}")
+        # 清理内容中的markdown格式
+        clean_desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
+        response.append(f"   {clean_desc}\n")
 
     # 如果有风险提示
     if card_groups["yellow"]:
-        response.append("\n⚠️ **注意事项：**")
+        response.append("\n注意事项：")
         for card in card_groups["yellow"][:1]:
             content = card.get("content", {})
             desc = content.get("description", "") if isinstance(content, dict) else content
+            desc = desc.replace('**', '').replace('*', '').replace('#', '').replace('`', '')
             response.append(f"{desc}")
 
     return "\n".join(response)

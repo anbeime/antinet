@@ -486,7 +486,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
         content: result.content,
         color: result.color,
         address: result.address
-      })));
+      })), syncToGTD);
     }
     resetForm();
     setShowConfirmDialog(false);

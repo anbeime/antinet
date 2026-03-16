@@ -85,10 +85,18 @@ function convertApiCardToComponentCard(apiCard: any): CardType | null {
     else if (content.explanation) contentText = content.explanation;
     else if (content.risk) contentText = content.risk;
     else if (content.action) contentText = content.action;
-    else contentText = JSON.stringify(content);
+    else contentText = JSON.stringify(content, null, 2);
   } else if (typeof content === 'string') {
     contentText = content;
   }
+
+  // 清理markdown格式
+  contentText = contentText
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/`/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/\n{3,}/g, '\n\n');
 
   // 映射card_type到color
   const colorMapType: Record<string, 'blue' | 'green' | 'yellow' | 'red'> = {
