@@ -386,3 +386,84 @@ export const researchProjectService = {
     if (!response.ok) throw new Error('关联卡片到专题失败');
   },
 };
+
+// ========== 团队项目管理服务 ==========
+export interface TeamProject {
+  id?: number;
+  name: string;
+  description?: string;
+  status?: 'pending' | 'in-progress' | 'completed';
+  priority?: 'low' | 'medium' | 'high';
+  startDate?: string;
+  endDate?: string;
+  progress?: number;
+  assignedMembers?: number[];
+  tasks?: TeamProjectTask[];
+}
+
+export interface TeamProjectTask {
+  id?: number;
+  projectId?: number;
+  title: string;
+  description?: string;
+  status?: 'todo' | 'in-progress' | 'review' | 'completed' | 'pending';
+  priority?: 'low' | 'medium' | 'high';
+  assignedTo?: number;
+  dueDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export const projectService = {
+  // 获取所有项目
+  getAll: async (): Promise<TeamProject[]> => {
+    return apiCall<TeamProject[]>('/team-projects');
+  },
+
+  // 获取单个项目
+  getById: async (id: number): Promise<TeamProject> => {
+    return apiCall<TeamProject>(`/team-projects/${id}`);
+  },
+
+  // 创建项目
+  create: async (project: Omit<TeamProject, 'id'>): Promise<TeamProject> => {
+    return apiCall<TeamProject>('/team-projects', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...project,
+        assigned_members: project.assignedMembers || [],
+        tasks: project.tasks || [],
+        start_date: project.startDate,
+        end_date: project.endDate,
+      }),
+    });
+  },
+
+  // 更新项目
+  update: async (id: number, project: Partial<TeamProject>): Promise<void> => {
+    const updateData: any = { ...project };
+    if (project.assignedMembers !== undefined) {
+      updateData.assigned_members = project.assignedMembers;
+    }
+    if (project.tasks !== undefined) {
+      updateData.tasks = project.tasks;
+    }
+    if (project.startDate !== undefined) {
+      updateData.start_date = project.startDate;
+    }
+    if (project.endDate !== undefined) {
+      updateData.end_date = project.endDate;
+    }
+    return apiCall<void>(`/team-projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
+  },
+
+  // 删除项目
+  delete: async (id: number): Promise<void> => {
+    return apiCall<void>(`/team-projects/${id}`, {
+      method: 'DELETE',
+    });
+  },
+};

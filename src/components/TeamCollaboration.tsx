@@ -33,7 +33,7 @@ import {
   ChevronUp,
   Calendar
 } from 'lucide-react';
-import { teamMemberService, activityService, analyticsService } from '../services/dataService';
+import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { 
   PieChart, 
@@ -468,9 +468,9 @@ interface ReportConfig {
   progress: number;
   assignedMembers: number[];
   tasks: Task[];
-}
+  }
 
-interface Task {
+  interface Task {
   id: number;
   projectId?: number;
   title: string;
@@ -481,7 +481,7 @@ interface Task {
   dueDate: string;
   createdAt: string;
   updatedAt: string;
-}
+  }
 
 // ========== 编辑弹窗组件 ==========
 interface EditModalProps {
@@ -550,6 +550,104 @@ const TeamCollaborationEnhanced: React.FC = () => {
   // 加载状态
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 默认项目数据
+  const getDefaultProjects = (): Project[] => [
+    {
+      id: 1,
+      name: 'AI助手系统开发',
+      description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
+      status: 'active',
+      priority: 'high',
+      startDate: '2026-01-15',
+      endDate: '2026-06-30',
+      progress: 65,
+      assignedMembers: [1, 2, 3],
+      tasks: [
+        {
+          id: 1,
+          title: '需求分析',
+          description: '分析用户需求和系统功能',
+          status: 'completed',
+          priority: 'high',
+          assignedTo: 1,
+          dueDate: '2026-02-15',
+          createdAt: '2026-01-15',
+          updatedAt: '2026-02-15'
+        },
+        {
+          id: 2,
+          title: 'UI设计',
+          description: '设计用户界面和交互流程',
+          status: 'in-progress',
+          priority: 'medium',
+          assignedTo: 2,
+          dueDate: '2026-03-15',
+          createdAt: '2026-02-01',
+          updatedAt: '2026-02-20'
+        }
+      ]
+    },
+    {
+      id: 2,
+      name: '知识库重构',
+      description: '重新设计和实现企业知识库系统，支持多模态内容管理',
+      status: 'planning',
+      priority: 'medium',
+      startDate: '2026-03-01',
+      endDate: '2026-08-15',
+      progress: 15,
+      assignedMembers: [2, 4],
+      tasks: [
+        {
+          id: 3,
+          title: '架构设计',
+          description: '设计新的知识库架构',
+          status: 'todo',
+          priority: 'high',
+          assignedTo: 2,
+          dueDate: '2026-03-30',
+          createdAt: '2026-02-25',
+          updatedAt: '2026-02-25'
+        }
+      ]
+    },
+    {
+      id: 3,
+      name: '用户体验优化',
+      description: '基于用户反馈优化产品界面和交互流程',
+      status: 'completed',
+      priority: 'medium',
+      startDate: '2025-11-01',
+      endDate: '2026-02-28',
+      progress: 100,
+      assignedMembers: [1, 3, 4],
+      tasks: [
+        {
+          id: 4,
+          title: '用户调研',
+          description: '收集用户反馈和使用数据',
+          status: 'completed',
+          priority: 'medium',
+          assignedTo: 3,
+          dueDate: '2026-01-15',
+          createdAt: '2025-11-01',
+          updatedAt: '2026-01-15'
+        },
+        {
+          id: 5,
+          title: '界面优化',
+          description: '根据反馈优化界面设计',
+          status: 'completed',
+          priority: 'medium',
+          assignedTo: 4,
+          dueDate: '2026-02-28',
+          createdAt: '2026-01-20',
+          updatedAt: '2026-02-28'
+        }
+      ]
+    }
+  ];
   
   // 编辑状态
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
@@ -611,141 +709,43 @@ const TeamCollaborationEnhanced: React.FC = () => {
           contribution: m.contribution || Math.floor(Math.random() * 100)
         })));
 
-        // 初始化知识缺口数据(可以从后端加载)
-        setKnowledgeGaps([
-          { id: 1, area: 'API设计', gapScore: 85, priority: '高', description: '团队缺乏系统性的API设计规范和最佳实践', suggestions: ['建立API设计规范文档', '开展API设计培训'] },
-          { id: 2, area: 'UI/UX', gapScore: 72, priority: '中', description: '用户体验设计能力需要提升', suggestions: ['引入设计系统', '增加用户研究环节'] },
-          { id: 3, area: '性能优化', gapScore: 68, priority: '中', description: '应用性能优化知识不够系统', suggestions: ['建立性能监控体系', '分享性能优化案例'] },
-          { id: 4, area: '测试覆盖', gapScore: 60, priority: '低', description: '测试覆盖率有待提高', suggestions: ['制定测试规范', '引入自动化测试'] }
-        ]);
-
-        // 初始化协作消息
-        setMessages([
-          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略,结合AI技术和用户体验研究的最新成果.', timestamp: '2026-02-20 10:30' },
-          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手,识别关键痛点和机会点,然后用AI技术来优化这些环节.', timestamp: '2026-02-20 10:35', replies: [
-            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研,收集一些初步反馈.', timestamp: '2026-02-20 10:40' }
-          ]},
-          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
-        ]);
-
-        // 初始化项目数据
-        setProjects([
-          {
-            id: 1,
-            name: 'AI助手系统开发',
-            description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
-            status: 'active',
-            priority: 'high',
-            startDate: '2026-01-15',
-            endDate: '2026-06-30',
-            progress: 65,
-            assignedMembers: [1, 2, 3],
-            tasks: [
-              {
-                id: 1,
-                title: '需求分析',
-                description: '分析用户需求和系统功能',
-                status: 'completed',
-                priority: 'high',
-                assignedTo: 1,
-                dueDate: '2026-02-15',
-                createdAt: '2026-01-15',
-                updatedAt: '2026-02-15'
-              },
-              {
-                id: 2,
-                title: 'UI设计',
-                description: '设计用户界面和交互流程',
-                status: 'in-progress',
-                priority: 'medium',
-                assignedTo: 2,
-                dueDate: '2026-03-15',
-                createdAt: '2026-02-01',
-                updatedAt: '2026-02-20'
-              }
-            ]
-          },
-          {
-            id: 2,
-            name: '知识库重构',
-            description: '重新设计和实现企业知识库系统，支持多模态内容管理',
-            status: 'planning',
-            priority: 'medium',
-            startDate: '2026-03-01',
-            endDate: '2026-08-15',
-            progress: 15,
-            assignedMembers: [2, 4],
-            tasks: [
-              {
-                id: 3,
-                title: '架构设计',
-                description: '设计新的知识库架构',
-                status: 'todo',
-                priority: 'high',
-                assignedTo: 2,
-                dueDate: '2026-03-30',
-                createdAt: '2026-02-25',
-                updatedAt: '2026-02-25'
-              }
-            ]
-          },
-          {
-            id: 3,
-            name: '用户体验优化',
-            description: '基于用户反馈优化产品界面和交互流程',
-            status: 'completed',
-            priority: 'medium',
-            startDate: '2025-11-01',
-            endDate: '2026-02-28',
-            progress: 100,
-            assignedMembers: [1, 3, 4],
-            tasks: [
-              {
-                id: 4,
-                title: '用户调研',
-                description: '收集用户反馈和使用数据',
-                status: 'completed',
-                priority: 'medium',
-                assignedTo: 3,
-                dueDate: '2026-01-15',
-                createdAt: '2025-11-01',
-                updatedAt: '2026-01-15'
-              },
-              {
-                id: 5,
-                title: '界面优化',
-                description: '根据反馈优化界面设计',
-                status: 'completed',
-                priority: 'medium',
-                assignedTo: 4,
-                dueDate: '2026-02-28',
-                createdAt: '2026-01-20',
-                updatedAt: '2026-02-28'
-              }
-            ]
+        // 从后端加载项目数据
+        try {
+          const projectsData = await projectService.getAll();
+          if (projectsData && projectsData.length > 0) {
+            const mappedProjects: Project[] = projectsData.map((p: any) => ({
+              ...p,
+              id: p.id || 0,
+              description: p.description || '',
+              startDate: p.startDate || p.start_date || '',
+              endDate: p.endDate || p.end_date || '',
+              status: p.status || 'pending',
+              priority: p.priority || 'medium',
+              progress: p.progress || 0,
+              assignedMembers: p.assignedMembers || p.assigned_members || [],
+              tasks: (p.tasks || []).map((t: any, idx: number) => ({
+                ...t,
+                id: t.id || Date.now() + idx,
+                projectId: p.id,
+                title: t.title || '',
+                description: t.description || '',
+                status: t.status || 'todo',
+                priority: t.priority || 'medium',
+                assignedTo: t.assignedTo || t.assigned_to || 0,
+                dueDate: t.dueDate || t.due_date || '',
+                createdAt: t.createdAt || t.created_at || new Date().toISOString(),
+                updatedAt: t.updatedAt || t.updated_at || new Date().toISOString(),
+              })),
+            }));
+            setProjects(mappedProjects);
+          } else {
+            // 如果没有数据，使用默认示例项目
+            setProjects(getDefaultProjects());
           }
-        ]);
-
-        // 初始化任务数据
-        setTasks([
-          { id: 1, title: '需求分析', description: '完成AI助手系统的需求分析文档', status: 'completed', priority: 'high', assignedTo: 1, dueDate: '2026-02-15', createdAt: '2026-01-15', updatedAt: '2026-02-10' },
-          { id: 2, title: 'UI设计', description: '设计AI助手系统的用户界面', status: 'in-progress', priority: 'medium', assignedTo: 3, dueDate: '2026-03-01', createdAt: '2026-01-20', updatedAt: '2026-02-25' },
-          { id: 3, title: '后端开发', description: '实现AI助手系统的后端API', status: 'in-progress', priority: 'high', assignedTo: 2, dueDate: '2026-04-15', createdAt: '2026-02-01', updatedAt: '2026-02-28' },
-          { id: 4, title: '测试计划', description: '制定系统测试计划和用例', status: 'todo', priority: 'medium', assignedTo: 4, dueDate: '2026-03-15', createdAt: '2026-02-15', updatedAt: '2026-02-15' }
-        ]);
-
-      } catch (err) {
-        setError('加载协作数据失败,请检查后端连接');
-        console.error('Collaboration data load error:', err);
-        toast.error('加载协作数据失败，使用模拟数据');
-        
-        // 使用模拟数据
-        setTeamMembers([
-          { id: 1, name: '张三', role: '产品经理', email: 'zhang@example.com', avatar: '👨‍💼', online: true, contribution: 85 },
-          { id: 2, name: '李四', role: '后端开发', email: 'li@example.com', avatar: '👩‍💻', online: true, contribution: 92 },
-          { id: 3, name: '王五', role: 'UI设计师', email: 'wang@example.com', avatar: '👨‍🎨', online: false, contribution: 78 },
-          { id: 4, name: '赵六', role: '测试工程师', email: 'zhao@example.com', avatar: '👩‍🔬', online: true, contribution: 71 }
-        ]);
+        } catch (projectErr) {
+          console.error('加载项目数据失败:', projectErr);
+          setProjects(getDefaultProjects());
+        }
 
         // 初始化知识缺口数据
         setKnowledgeGaps([
@@ -764,103 +764,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
         ]);
 
-        // 初始化项目数据
-        setProjects([
-          {
-            id: 1,
-            name: 'AI助手系统开发',
-            description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
-            status: 'active',
-            priority: 'high',
-            startDate: '2026-01-15',
-            endDate: '2026-06-30',
-            progress: 65,
-            assignedMembers: [1, 2, 3],
-            tasks: [
-              {
-                id: 1,
-                title: '需求分析',
-                description: '分析用户需求和系统功能',
-                status: 'completed',
-                priority: 'high',
-                assignedTo: 1,
-                dueDate: '2026-02-15',
-                createdAt: '2026-01-15',
-                updatedAt: '2026-02-15'
-              },
-              {
-                id: 2,
-                title: 'UI设计',
-                description: '设计用户界面和交互流程',
-                status: 'in-progress',
-                priority: 'medium',
-                assignedTo: 2,
-                dueDate: '2026-03-15',
-                createdAt: '2026-02-01',
-                updatedAt: '2026-02-20'
-              }
-            ]
-          },
-          {
-            id: 2,
-            name: '知识库重构',
-            description: '重新设计和实现企业知识库系统，支持多模态内容管理',
-            status: 'planning',
-            priority: 'medium',
-            startDate: '2026-03-01',
-            endDate: '2026-08-15',
-            progress: 15,
-            assignedMembers: [2, 4],
-            tasks: [
-              {
-                id: 3,
-                title: '架构设计',
-                description: '设计新的知识库架构',
-                status: 'todo',
-                priority: 'high',
-                assignedTo: 2,
-                dueDate: '2026-03-30',
-                createdAt: '2026-02-25',
-                updatedAt: '2026-02-25'
-              }
-            ]
-          },
-          {
-            id: 3,
-            name: '用户体验优化',
-            description: '基于用户反馈优化产品界面和交互流程',
-            status: 'completed',
-            priority: 'medium',
-            startDate: '2025-11-01',
-            endDate: '2026-02-28',
-            progress: 100,
-            assignedMembers: [1, 3, 4],
-            tasks: [
-              {
-                id: 4,
-                title: '用户调研',
-                description: '收集用户反馈和使用数据',
-                status: 'completed',
-                priority: 'medium',
-                assignedTo: 3,
-                dueDate: '2026-01-15',
-                createdAt: '2025-11-01',
-                updatedAt: '2026-01-15'
-              },
-              {
-                id: 5,
-                title: '界面优化',
-                description: '根据反馈优化界面设计',
-                status: 'completed',
-                priority: 'medium',
-                assignedTo: 4,
-                dueDate: '2026-02-28',
-                createdAt: '2026-01-20',
-                updatedAt: '2026-02-28'
-              }
-            ]
-          }
-        ]);
       } finally {
         setLoading(false);
       }
@@ -1020,30 +923,92 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setIsProjectModalOpen(true);
   };
 
-  const handleSaveProject = () => {
+  const handleSaveProject = async () => {
     if (!editingProject) return;
     
-    if (editingProject.id === 0) {
-      const newProject = { ...editingProject, id: Date.now() };
-      setProjects([...projects, newProject]);
-      setSelectedProject(newProject);
-      toast.success('项目创建成功');
-    } else {
-      setProjects(projects.map(p => p.id === editingProject.id ? editingProject : p));
-      setSelectedProject(editingProject);
-      toast.success('项目更新成功');
+    try {
+      if (editingProject.id === 0) {
+        const newProject = await projectService.create({
+          name: editingProject.name,
+          description: editingProject.description || '',
+          status: editingProject.status as 'pending' | 'in-progress' | 'completed',
+          priority: editingProject.priority as 'low' | 'medium' | 'high',
+          startDate: editingProject.startDate,
+          endDate: editingProject.endDate,
+          progress: editingProject.progress,
+          assignedMembers: editingProject.assignedMembers,
+          tasks: editingProject.tasks,
+        });
+        const tasks: Task[] = (newProject.tasks || []).map((t, idx) => ({
+          ...t,
+          id: t.id || Date.now() + idx,
+          projectId: newProject.id,
+          title: t.title || '',
+          description: t.description || '',
+          status: t.status || 'todo',
+          priority: t.priority || 'medium',
+          assignedTo: t.assignedTo || 0,
+          dueDate: t.dueDate || '',
+          createdAt: t.createdAt || new Date().toISOString(),
+          updatedAt: t.updatedAt || new Date().toISOString(),
+        }));
+        const project: Project = {
+          ...newProject,
+          id: newProject.id || Date.now(),
+          description: newProject.description || '',
+          startDate: newProject.startDate || '',
+          endDate: newProject.endDate || '',
+          status: newProject.status || 'pending',
+          priority: newProject.priority || 'medium',
+          progress: newProject.progress || 0,
+          assignedMembers: newProject.assignedMembers || [],
+          tasks: tasks,
+        };
+        setProjects([...projects, project]);
+        setSelectedProject(project);
+        toast.success('项目创建成功');
+      } else {
+        await projectService.update(editingProject.id, {
+          name: editingProject.name,
+          description: editingProject.description || '',
+          status: editingProject.status as 'pending' | 'in-progress' | 'completed',
+          priority: editingProject.priority as 'low' | 'medium' | 'high',
+          startDate: editingProject.startDate,
+          endDate: editingProject.endDate,
+          progress: editingProject.progress,
+          assignedMembers: editingProject.assignedMembers,
+          tasks: editingProject.tasks,
+        });
+        const updatedProject: Project = { 
+          ...editingProject,
+          status: editingProject.status || 'pending',
+          priority: editingProject.priority || 'medium',
+        };
+        setProjects(projects.map(p => p.id === editingProject.id ? updatedProject : p));
+        setSelectedProject(updatedProject);
+        toast.success('项目更新成功');
+      }
+      setIsProjectModalOpen(false);
+      setEditingProject(null);
+    } catch (error) {
+      console.error('保存项目失败:', error);
+      toast.error('保存项目失败');
     }
-    setIsProjectModalOpen(false);
-    setEditingProject(null);
   };
 
-  const handleDeleteProject = (id: number) => {
+  const handleDeleteProject = async (id: number) => {
     if (!confirm('确定要删除这个项目吗？删除后所有相关任务也将被删除。')) return;
-    setProjects(projects.filter(p => p.id !== id));
-    if (selectedProject?.id === id) {
-      setSelectedProject(null);
+    try {
+      await projectService.delete(id);
+      setProjects(projects.filter(p => p.id !== id));
+      if (selectedProject?.id === id) {
+        setSelectedProject(null);
+      }
+      toast.success('项目删除成功');
+    } catch (error) {
+      console.error('删除项目失败:', error);
+      toast.error('删除项目失败');
     }
-    toast.success('项目删除成功');
   };
 
   // ========== 任务管理 ==========

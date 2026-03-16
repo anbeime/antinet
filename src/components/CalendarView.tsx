@@ -130,7 +130,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
 
   const days = [];
   for (let i = 0; i < firstDay; i++) {
-    days.push(<div key={`empty-${i}`} className="h-28 bg-gray-50 border"></div>);
+    days.push(<div key={`empty-${i}`} className="h-28 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700"></div>);
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const dayTasks = getTasksForDate(day);
@@ -138,15 +138,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
     days.push(
       <div 
         key={day} 
-        className={`h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'bg-blue-50 border-blue-300' : 'bg-white hover:bg-gray-50'}`}
+        className={`h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
         onClick={() => handleDateClick(day)}
       >
         <div className="flex items-center justify-between">
-          <span className={`text-sm font-semibold ${isToday(day) ? 'text-blue-600' : 'text-gray-700'}`}>
+          <span className={`text-sm font-semibold ${isToday(day) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>
             {day}
           </span>
           {hasTasks && (
-            <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded-full">
+            <span className="text-xs bg-blue-500 text-white dark:bg-blue-600 px-1.5 py-0.5 rounded-full">
               {dayTasks.length}
             </span>
           )}
@@ -164,7 +164,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
               </div>
             ))}
             {dayTasks.length > 4 && (
-              <div className="text-xs text-gray-500 text-center">+{dayTasks.length - 4} 更多</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400 text-center">+{dayTasks.length - 4} 更多</div>
             )}
           </div>
         )}
@@ -175,26 +175,26 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const selectedTasks = getSelectedDateTasks();
 
   return (
-    <div className="h-full flex flex-col relative">
-      <div className="flex items-center justify-between p-4 border-b bg-white">
+    <div className="h-full flex flex-col relative dark:bg-gray-800">
+      <div className="flex items-center justify-between p-4 border-b bg-white dark:bg-gray-800 dark:border-gray-700">
         <div className="flex items-center space-x-4">
-          <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded">
-            <ChevronLeft className="w-5 h-5" />
+          <button onClick={prevMonth} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+            <ChevronLeft className="w-5 h-5 dark:text-gray-300" />
           </button>
-          <h2 className="text-xl font-bold">{year}年 {monthNames[month]}</h2>
-          <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded">
-            <ChevronRight className="w-5 h-5" />
+          <h2 className="text-xl font-bold dark:text-white">{year}年 {monthNames[month]}</h2>
+          <button onClick={nextMonth} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+            <ChevronRight className="w-5 h-5 dark:text-gray-300" />
           </button>
         </div>
         
         <div className="flex items-center space-x-4">
           <button 
             onClick={() => setCurrentDate(new Date())}
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
           >
             今天
           </button>
-          <div className="flex space-x-3">
+          <div className="flex space-x-3 dark:text-gray-300">
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-red-500 rounded mr-1"></span>高</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-yellow-500 rounded mr-1"></span>中</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-green-500 rounded mr-1"></span>低</span>
@@ -203,9 +203,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="grid grid-cols-7 border-b bg-gray-100">
+        <div className="grid grid-cols-7 border-b bg-gray-100 dark:bg-gray-700">
           {dayNames.map(day => (
-            <div key={day} className="p-2 text-center font-medium text-gray-600">
+            <div key={day} className="p-2 text-center font-medium text-gray-600 dark:text-gray-300">
               {day}
             </div>
           ))}
@@ -217,27 +217,27 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       </div>
 
       {showTaskPanel && selectedDate && (
-        <div className="absolute inset-y-0 right-0 w-96 bg-white shadow-2xl border-l flex flex-col z-10">
-          <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+        <div className="absolute inset-y-0 right-0 w-96 bg-white dark:bg-gray-800 shadow-2xl border-l dark:border-gray-700 flex flex-col z-10">
+          <div className="flex items-center justify-between p-4 border-b bg-gray-50 dark:bg-gray-700">
             <div>
-              <h3 className="font-bold text-lg">
+              <h3 className="font-bold text-lg dark:text-white">
                 {selectedDate.getFullYear()}年{selectedDate.getMonth() + 1}月{selectedDate.getDate()}日
               </h3>
-              <p className="text-sm text-gray-500">{selectedTasks.length} 个任务</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{selectedTasks.length} 个任务</p>
             </div>
             <button 
               onClick={() => setShowTaskPanel(false)}
-              className="p-2 hover:bg-gray-200 rounded"
+              className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 dark:text-gray-300" />
             </button>
           </div>
 
           <div className="flex-1 overflow-auto p-4 space-y-3">
             {selectedTasks.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
+              <div className="text-center py-8 text-gray-400 dark:text-gray-500">
                 <p>暂无任务</p>
-                <button className="mt-4 flex items-center justify-center w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                <button className="mt-4 flex items-center justify-center w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700">
                   <Plus className="w-4 h-4 mr-2" />
                   添加任务
                 </button>
@@ -246,7 +246,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
               selectedTasks.map(task => (
                 <div 
                   key={task.id}
-                  className={`p-3 border rounded-lg ${task.is_completed ? 'bg-gray-50' : 'bg-white'}`}
+                  className={`p-3 border rounded-lg dark:border-gray-600 ${task.is_completed ? 'bg-gray-50 dark:bg-gray-700/50' : 'bg-white dark:bg-gray-700'}`}
                 >
                   <div className="flex items-start space-x-3">
                     <button
@@ -261,17 +261,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
                     </button>
                     
                     <div className="flex-1 min-w-0">
-                      <div className={`font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                      <div className={`font-medium dark:text-white ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
                         {task.title}
                       </div>
                       {task.description && (
-                        <div className="text-sm text-gray-500 mt-1">{task.description}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{task.description}</div>
                       )}
                       <div className="flex items-center space-x-2 mt-2">
                         <span className={`px-2 py-0.5 text-xs rounded ${getPriorityColor(task.priority)} text-white`}>
                           {task.priority === 'high' ? '高优先级' : task.priority === 'medium' ? '中优先级' : '低优先级'}
                         </span>
-                        <span className="text-xs text-gray-400">{task.category}</span>
+                        <span className="text-xs text-gray-400 dark:text-gray-500">{task.category}</span>
                         {task.reminder_enabled && (
                           <Bell className="w-3 h-3 text-gray-400" />
                         )}

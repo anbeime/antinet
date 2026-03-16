@@ -153,11 +153,11 @@ class KnowledgeImporter:
 
         # 按类型分组
         cursor.execute('''
-            SELECT type, COUNT(*) as count
+            SELECT card_type, COUNT(*) as count
             FROM knowledge_cards
-            GROUP BY type
+            GROUP BY card_type
         ''')
-        cards_by_type = {row['type']: row['count'] for row in cursor.fetchall()}
+        cards_by_type = {row['card_type']: row['count'] for row in cursor.fetchall()}
 
         # 按来源分组
         cursor.execute('SELECT * FROM knowledge_sources')

@@ -31,7 +31,6 @@ def get_db_manager():
     """获取数据库管理器"""
     if _db_manager is None:
         from database import DatabaseManager
-        settings = Settings()
         return DatabaseManager(settings.DB_PATH)
     return _db_manager
 
@@ -118,6 +117,59 @@ AGENT_MAPPING = {
         "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。发言要简洁有力，100字以内。"
     }
 }
+
+import re
+
+# ==================== 工具函数 ====================
+
+def clean_speech_text(text: str) -> str:
+    """清理speech中的无意义标记"""
+    if not text:
+        return ""
+    # 移除HTML标签
+    text = re.sub(r'<[^>]+>', '', text)
+    # 移除AI标记
+    text = re.sub(r'<\|im_end\|>', '', text)
+    text = re.sub(r'<\|im_start\|>[^<]*', '', text)
+    # 移除多余空白
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+    return text
+
+
+def search_related_cards(query: str, limit: int = 5) -> str:
+    """
+    根据会议主题搜索相关知识卡片
+    返回格式化的参考信息字符串
+    """
+    try:
+        db = get_db_manager()
+        if db is None:
+            return ""
+        
+        cards = db.search_cards(query, limit=limit)
+        if not cards:
+            return ""
+        
+        results = []
+        results.append("\n\n=== 相关知识库参考 ===")
+        for i, card in enumerate(cards, 1):
+            title = card.get('title', '无标题')
+            content = card.get('content', '')
+            category = card.get('category', '')
+            
+            truncated_content = content[:300] + '...' if len(content) > 300 else content
+            results.append(f"【{i}】{title}")
+            if category:
+                results.append(f"    分类: {category}")
+            results.append(f"    内容: {truncated_content}")
+            results.append("")
+        
+        return "\n".join(results)
+    except Exception as e:
+        logger.warning(f"搜索知识库失败: {e}")
+        return ""
+
 
 # ==================== LLM 调用 ====================
 
@@ -367,7 +419,8 @@ async def create_meeting_stream(request: MeetingRequest):
                  if all_speeches:
                      context_parts.append("\n--- 此前的讨论记录 ---")
                      for prev in all_speeches[-16:]:  # 最多保留最近16条，避免上下文过长
-                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
+                         clean_text = clean_speech_text(prev['speech'])
+                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{clean_text}")
                      context_parts.append("--- 讨论记录结束 ---\n")
 
                  user_prompt = "\n".join(context_parts)
@@ -379,35 +432,21 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 如果是密卷房，先搜索数据库获取相关资料
                  if agent_id == "mijuanfang":
                      try:
-                         from database import DatabaseManager
-                         from config import settings
-
-                         db_mgr = DatabaseManager(settings.DB_PATH)
-                         conn = db_mgr.get_connection()
-                         cursor = conn.cursor()
-
-                         # 从主题中提取关键词搜索
-                         search_queries = request.topic.split()[:3]
-
-                         for query in search_queries[:2]:
-                             if len(query) > 1:
-                                 cursor.execute('''
-                                     SELECT title, content FROM knowledge_cards
-                                     WHERE title LIKE ? OR content LIKE ?
-                                     LIMIT 3
-                                 ''', (f'%{query}%', f'%{query}%'))
-                                 rows = cursor.fetchall()
-                                 if rows:
-                                     relevant_info = f"\n【数据库参考】关于'{query}'的相关资料："
-                                     for row in rows:
-                                         title = row[0] or '无标题'
-                                         content = (row[1] or '')[:100]
-                                         relevant_info += f"\n- {title}：{content}..."
-                                     user_prompt += relevant_info
-
-                         conn.close()
+                         db = get_db_manager()
+                         if db:
+                             search_query = f"{request.topic} {request.context}" if request.context else request.topic
+                             cards = db.search_cards(search_query, limit=5)
+                             
+                             if cards:
+                                 relevant_info = f"\n【知识库参考】关于'{request.topic}'的相关资料："
+                                 for card in cards:
+                                     title = card.get('title', '无标题')
+                                     content = (card.get('content', '') or '')[:150]
+                                     relevant_info += f"\n- {title}：{content}..."
+                                 user_prompt += relevant_info
+                                 logger.info(f"密卷房检索到 {len(cards)} 条相关卡片")
                      except Exception as e:
-                         logger.warning(f"密卷房数据库搜索失败: {e}")
+                         logger.warning(f"密卷房知识库搜索失败: {e}")
 
                  # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
                  speech_content = await call_llm(system_prompt, user_prompt)
@@ -570,6 +609,14 @@ async def create_meeting(request: MeetingRequest):
                 for prev in all_speeches[-16:]:
                     context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
                 context_parts.append("--- 讨论记录结束 ---\n")
+
+            # 密卷房：自动搜索知识库
+            card_reference = ""
+            if agent_id == "mijuanfang":
+                search_query = f"{request.topic} {request.context}" if request.context else request.topic
+                card_reference = search_related_cards(search_query, limit=5)
+                if card_reference:
+                    context_parts.append(card_reference)
 
             context_parts.append(f"请你以「{agent_info['name']}」的身份，针对当前议题发表你的观点。")
 

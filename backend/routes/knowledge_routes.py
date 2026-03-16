@@ -94,6 +94,20 @@ class KnowledgeCard(BaseModel):
     category: Optional[str] = None
     project_id: Optional[int] = None  # 关联的专题ID
 
+    def get_valid_category(self) -> str:
+        """获取有效的 category"""
+        valid_categories = {'事实', '解释', '风险', '行动'}
+        if self.category and self.category in valid_categories:
+            return self.category
+        # 根据卡片类型推断 category
+        type_to_category = {
+            'blue': '事实',
+            'green': '解释',
+            'yellow': '风险',
+            'red': '行动'
+        }
+        return type_to_category.get(self.type, '事实')
+
 
 class KnowledgeSource(BaseModel):
     """知识来源模型"""
@@ -190,6 +204,9 @@ async def create_card(card: KnowledgeCard):
     try:
         logger.info(f"[CREATE_CARD] 准备插入数据库，type={card.type}")
 
+        # 使用有效的 category
+        valid_category = card.get_valid_category()
+        
         # 使用正确的字段名 card_type（与数据库表结构一致）
         cursor.execute('''
             INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
@@ -198,7 +215,7 @@ async def create_card(card: KnowledgeCard):
             card.type,
             card.title,
             card.content,
-            card.category,
+            valid_category,
             card.project_id
         ))
 
@@ -478,6 +495,7 @@ async def import_file(file: UploadFile = File(...)):
 
     支持格式：PDF, TXT, MD, DOCX, XLSX, 图片
     """
+    tmp_path = None
     try:
         # 获取文件扩展名
         filename = file.filename or ""
@@ -548,6 +566,8 @@ async def import_file(file: UploadFile = File(...)):
         # 保存上传的文件到临时目录
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
             content = await file.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="上传的文件为空")
             tmp.write(content)
             tmp_path = tmp.name
 
@@ -649,20 +669,56 @@ async def import_file(file: UploadFile = File(...)):
                 'address': f"{card_type.upper()}{idx + 1}"
             })
 
+        saved_count = 0
+        if cards:
+            try:
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                for card in cards:
+                    category_map = {
+                        'blue': '事实',
+                        'green': '解释',
+                        'yellow': '风险',
+                        'red': '行动'
+                    }
+                    category = category_map.get(card['card_type'], '事实')
+                    cursor.execute('''
+                        INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (
+                        card['card_type'],
+                        card['title'],
+                        card['content'],
+                        category,
+                        None
+                    ))
+                    saved_count += 1
+                conn.commit()
+                conn.close()
+                logger.info(f"成功保存 {saved_count} 张知识卡片")
+            except Exception as e:
+                logger.error(f"保存知识卡片失败: {e}")
+
         return {
             'success': True,
             'filename': filename,
             'file_type': file_ext,
             'extracted_length': len(extracted_text),
             'cards': cards,
-            'total': len(cards)
+            'total': len(cards),
+            'saved': saved_count
         }
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"文件导入失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @router.post("/import")
