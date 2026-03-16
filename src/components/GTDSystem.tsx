@@ -430,23 +430,21 @@ const GTDSystem: React.FC = () => {
       <div className="border-b border-gray-200 dark:border-gray-700">
         {/* 分类标签 */}
         <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex overflow-x-auto">
+          <div className="flex overflow-x-auto space-x-1 gtd-tabs-container">
             {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => (
             <button 
               key={category}
               onClick={() => { setActiveCategory(category); setViewMode('list'); }}
-              className={`py-2 px-3 text-sm border-b-2 transition-colors ${
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 activeCategory === category && viewMode === 'list'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-                  : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400' 
+                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
             >
-              <span className="capitalize">
-                {category === 'inbox' ? '收集箱' : 
-                 category === 'today' ? '等待处理' :
-                 category === 'later' ? '将来可能' :
-                 category === 'archive' ? '归档资料' : '专题研究'}
-              </span>
+              {category === 'inbox' ? '收集箱' : 
+               category === 'today' ? '等待处理' :
+               category === 'later' ? '将来可能' :
+               category === 'archive' ? '归档资料' : '专题研究'}
             </button>
             ))}
           </div>
@@ -494,7 +492,7 @@ const GTDSystem: React.FC = () => {
             ) : (
               <>
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold capitalize">
+                  <h2 className="text-2xl font-bold text-gray-900">
                     {activeCategory === 'inbox' ? '收集箱' : 
                      activeCategory === 'today' ? '等待处理' :
                      activeCategory === 'later' ? '将来可能' :
