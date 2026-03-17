@@ -14,8 +14,8 @@ import {
   Trash2, FileType, FileSpreadsheet
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  enhancedChatService, 
+import enhancedChatService from '@/services/enhancedChatService';
+import type { 
   ChatMessage, 
   CardReference, 
   SkillResult,
@@ -141,14 +141,14 @@ const MessageBubble: React.FC<{
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
             {cards.slice(0, 3).map((card, idx) => (
-              <Card key={card.card_id} className="border-l-4 border-l-blue-500">
+              <Card key={card.id || idx} className="border-l-4 border-l-blue-500">
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs px-2 py-0.5 border rounded">
                       {enhancedChatService.formatCardType(card.card_type)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {enhancedChatService.formatSimilarity(card.similarity)}
+                      {enhancedChatService.formatSimilarity(card.match_score)}
                     </span>
                   </div>
                   <h4 className="font-medium text-sm mb-1">{card.title}</h4>
@@ -281,7 +281,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       const response = await enhancedChatService.sendMessage(query);
       const assistantMessage: ChatMessage = {
         role: 'assistant',
-        content: response.response,
+        content: response.reply,
         timestamp: new Date().toISOString(),
         metadata: {
           scene_type: response.scene_type,
@@ -290,7 +290,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         }
       };
       setMessages(prev => [...prev, assistantMessage]);
-      setSuggestedQuestions(response.suggested_questions);
+      setSuggestedQuestions(response.suggestions || []);
       setCurrentScene(response.scene_type);
 
     } catch (error) {

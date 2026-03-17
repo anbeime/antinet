@@ -1,13 +1,24 @@
-﻿"""
-知识图谱API路由
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Optional
+知识库管理API - 提供知识卡片的增删改查和语义检索功能
+"""
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 import logging
+from database import DatabaseManager
+from config import settings
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
+
+class SearchRequest(BaseModel):
+    """知识库搜索请求"""
+    keyword: str = Field(..., description="搜索关键词")
+    limit: int = Field(10, description="返回数量限制")
+
 
 class Node(BaseModel):
     """图谱节点"""
@@ -121,34 +132,25 @@ async def search_knowledge(
         相关卡片列表
     """
     try:
-        # 从太史阁Agent进行语义检索
-        from agents.taishige import TaishigeAgent
-
-        # 创建太史阁实例
-        taishi_ge = TaishigeAgent(task_id="search_api")
-
-        # 提取关键词用于检索
-        keywords = query.split()
-
-        # 使用太史阁的检索功能
-        related_cases = taishi_ge.retrieve_cases(keywords=keywords, top_k=top_k)
-
-        # 转换检索结果为API响应格式
+        # 直接调用知识管理API进行搜索
+        from routes.knowledge_routes import search_cards, SearchRequest
+        
+        # 创建搜索请求
+        search_request = SearchRequest(keyword=query, limit=top_k)
+        
+        # 执行搜索
+        search_result = await search_cards(search_request)
+        
+        # 转换为标准响应格式
         results = []
-        for case in related_cases:
-            if isinstance(case, dict):
-                content = case.get('content', {})
-                if isinstance(content, dict):
-                    cards = content.get('cards', []) if 'cards' in content else [content]
-
-                    for card in cards[:top_k]:
-                        results.append({
-                            "card_id": case.get('knowledge_id', ''),
-                            "similarity": case.get('similarity', 0.8),
-                            "card_type": card.get('type', 'blue'),
-                            "title": card.get('title', card.get('content', '无标题')[:50]),
-                            "summary": card.get('content', '')[:200] + '...' if len(card.get('content', '')) > 200 else card.get('content', '')
-                        })
+        for card in search_result:
+            results.append({
+                "card_id": card.get("id", ""),
+                "similarity": card.get("similarity", 0.8),  # 使用API返回的相似度，如果不存在则使用默认值
+                "card_type": card.get("card_type", "blue"),  # 修正字段名
+                "title": card.get("title", card.get("content", "无标题")[:50]),
+                "summary": card.get("content", "")[:200] + '...' if len(card.get("content", "")) > 200 else card.get("content", "")
+            })
 
         return {
             "query": query,
