@@ -5,7 +5,7 @@
 八府巡按，各司其职。数据不出域，推理不等待。
 
 ---
-![[基于古代朝廷组织架构的端侧 AI 智能体协作系统](https://github.com/anbeime/antinet/blob/main/315.gif?raw=true)](https://youtu.be/mxE-aNMxX8w)
+![https://youtu.be/mxE-aNMxX8w](https://github.com/anbeime/antinet/blob/main/315.gif )
 
 
 ## 🎭 核心创意：朝廷式 Agent 架构
