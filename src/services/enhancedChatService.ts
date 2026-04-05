@@ -175,7 +175,7 @@ class EnhancedChatService {
    * 发送聊天消息
    */
   async sendMessage(
-    query: string, 
+    query: string,
     options: {
       imageData?: string;
       context?: Record<string, any>;
@@ -186,16 +186,17 @@ class EnhancedChatService {
       this.addToHistory({
         role: 'user',
         content: query,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        metadata: options.imageData ? { hasImage: true } : undefined
       });
 
       // 构建符合后端ChatRequest模型的请求
       const cleanHistory = [];
       if (this.conversationHistory && Array.isArray(this.conversationHistory)) {
         for (const msg of this.conversationHistory) {
-          if (msg && 
-              typeof msg.role === 'string' && 
-              typeof msg.content === 'string' && 
+          if (msg &&
+              typeof msg.role === 'string' &&
+              typeof msg.content === 'string' &&
               msg.content.trim().length > 0) {
             // 严格映射role到后端期望的值
             const cleanRole = msg.role === 'user' ? 'user' : 'assistant';
@@ -209,7 +210,9 @@ class EnhancedChatService {
 
       const request = {
         message: query.trim(),
-        history: cleanHistory
+        history: cleanHistory,
+        image_data: options.imageData,
+        context: options.context
       };
 
       const response = await api.post<ChatResponse>(`${API_BASE}/message`, request);

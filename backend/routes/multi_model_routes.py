@@ -88,6 +88,14 @@ async def list_models():
     available = _get_available_models()
     for model_id, info in available.items():
         model_path = info.get("path", "")
+        model_type = info.get("type", "npu")
+        
+        # For API models, path_exists is always True
+        if model_type == "api":
+            path_exists = True
+        else:
+            path_exists = os.path.exists(model_path) if model_path else False
+            
         models.append(ModelInfo(
             id=model_id,
             name=info.get("name", model_id),
@@ -96,9 +104,9 @@ async def list_models():
             quantization=info.get("quantization", ""),
             max_tokens=info.get("max_tokens", 2048),
             recommended=info.get("recommended", False),
-            loaded=(model_id == _current_model),
+            loaded=(model_id == _current_model) or (model_type == "api"),
             path=model_path,
-            path_exists=os.path.exists(model_path) if model_path else False
+            path_exists=path_exists
         ))
     return models
 
@@ -134,18 +142,23 @@ async def switch_model(request: SwitchModelRequest):
             detail=f"模型不存在: {request.model_id}。可用模型: {', '.join(available.keys())}"
         )
 
-    model_path = available[request.model_id].get("path", "")
-    if not os.path.exists(model_path):
-        raise HTTPException(
-            status_code=400,
-            detail=f"模型路径不存在: {model_path}"
-        )
+    model_config = available[request.model_id]
+    model_type = model_config.get("type", "npu")
+    
+    # For API models, no need to check path
+    if model_type != "api":
+        model_path = model_config.get("path", "")
+        if not os.path.exists(model_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"模型路径不存在: {model_path}"
+            )
 
     old_model = _current_model
 
     # 真正执行模型切换（使用全局单例，确保卸载的是真正加载的模型）
     try:
-        from models.model_loader import NPUModelLoader, _global_model_loader
+        from models.model_loader import NPUModelLoader, APIModelLoader, _global_model_loader
         import models.model_loader as ml_module
 
         # 卸载旧模型（使用全局实例，它才持有真正加载的模型）
@@ -158,10 +171,14 @@ async def switch_model(request: SwitchModelRequest):
             logger.warning(f"卸载旧模型失败（可忽略）: {e}")
 
         # 加载新模型并更新全局实例
-        new_loader = NPUModelLoader(request.model_id)
-        new_loader.load()
-        ml_module._global_model_loader = new_loader
-        logger.info(f"已加载新模型: {request.model_id}")
+        if model_type == "api":
+            # API models don't need loading, just set current model
+            logger.info(f"API模型 {request.model_id} 已就绪")
+        else:
+            new_loader = NPUModelLoader(request.model_id)
+            new_loader.load()
+            ml_module._global_model_loader = new_loader
+            logger.info(f"已加载新模型: {request.model_id}")
 
         _current_model = request.model_id
 
@@ -169,7 +186,8 @@ async def switch_model(request: SwitchModelRequest):
             "success": True,
             "message": f"模型已切换: {old_model} → {_current_model}",
             "old_model": old_model,
-            "new_model": _current_model
+            "new_model": _current_model,
+            "model_type": model_type
         }
     except Exception as e:
         logger.error(f"模型切换失败: {e}")
@@ -178,7 +196,7 @@ async def switch_model(request: SwitchModelRequest):
 
 @router.post("/inference")
 async def multi_model_inference(request: InferenceRequest):
-    """使用指定模型进行真实 NPU 推理"""
+    """使用指定模型进行真实 NPU 或 API 推理"""
     model_id = request.model_id or _current_model
 
     available = _get_available_models()
@@ -188,23 +206,25 @@ async def multi_model_inference(request: InferenceRequest):
             detail=f"模型不存在: {model_id}。可用模型: {', '.join(available.keys())}"
         )
 
-    model_path = available[model_id].get("path", "")
-    if not os.path.exists(model_path):
-        raise HTTPException(
-            status_code=400,
-            detail=f"模型路径不存在: {model_path}，请检查 model_loader.py 中的 MODELS 配置"
-        )
+    model_config = available[model_id]
+    model_type = model_config.get("type", "npu")
+    
+    # For NPU models, check path
+    if model_type != "api":
+        model_path = model_config.get("path", "")
+        if not os.path.exists(model_path):
+            raise HTTPException(
+                status_code=400,
+                detail=f"模型路径不存在: {model_path}，请检查 model_loader.py 中的 MODELS 配置"
+            )
 
     try:
-        from models.model_loader import NPUModelLoader
-        import models.model_loader as ml_module
-
-        # 优先使用全局 loader（如果模型匹配）
-        loader = ml_module._global_model_loader
-        if loader is None or loader.model_key != model_id:
-            loader = NPUModelLoader(model_id)
-            ml_module._global_model_loader = loader
-
+        from models.model_loader import get_model_loader
+        
+        # Use the unified get_model_loader function
+        loader = get_model_loader(model_id)
+        
+        # Load if needed (API models don't need loading)
         if not loader.is_loaded:
             loader.load()
 
@@ -217,7 +237,8 @@ async def multi_model_inference(request: InferenceRequest):
         return {
             "success": True,
             "model": model_id,
-            "model_name": available[model_id].get("name", model_id),
+            "model_name": model_config.get("name", model_id),
+            "model_type": model_type,
             "prompt": request.prompt[:100] + "..." if len(request.prompt) > 100 else request.prompt,
             "response": response,
             "tokens_generated": len(response.split()) if response else 0

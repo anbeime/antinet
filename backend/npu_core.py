@@ -3,10 +3,12 @@ NPU推理核心模块
 使用 GenieContext 处理大模型（7B+）
 
 硬件平台: 骁龙® X Elite (X1E-84-100)
-软件工具: QAI AppBuilder v2.31.0 + QNN SDK v2.38
+软件工具: QAI AppBuilder + QNN SDK v2.42 + GenieAPIService v2.1.0
 Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用Hexagon NPU
-模型: Qwen2.0-7B-SSD (INT8量化QNN格式)
 性能模式: BURST高性能模式
+
+模型根目录: C:\D\zhiyi\models\  (所有模型放此目录)
+SDK路径:    C:\D\zhiyi\QAIRT\2.42.0.251225\lib\aarch64-windows-msvc
 """
 import time
 import logging
@@ -28,30 +30,91 @@ logger = logging.getLogger(__name__)
 class NPUInferenceCore:
     """NPU推理核心类 - 使用 GenieContext"""
 
-    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\Qualcomm\AIStack\QAIRT\v2.44.0.260225\lib\arm64x-windows-msvc"):
+    # 模型根目录（所有模型统一放在这里）
+    MODELS_BASE_DIR = r"C:\D\zhiyi\models"
+
+    # 默认模型配置路径（已下载的 LLaMA 3.2 3B）
+    # 注意：实际路径有 models_2.37 这一层中间目录
+    DEFAULT_MODEL_CONFIG = os.path.join(
+        MODELS_BASE_DIR, "models_2.37",
+        "llama3.2-3b-8380-qnn2.37", "config.json"
+    )
+
+    @classmethod
+    def list_available_models(cls) -> list[dict]:
+        """自动扫描 MODELS_BASE_DIR 下所有可用模型"""
+        models = []
+        if not os.path.exists(cls.MODELS_BASE_DIR):
+            return models
+        for item in os.listdir(cls.MODELS_BASE_DIR):
+            model_dir = os.path.join(cls.MODELS_BASE_DIR, item)
+            config_path = os.path.join(model_dir, "config.json")
+            # 也检查二级目录（有些模型放在 models_2.37/xxx/ 下）
+            if not os.path.isdir(model_dir):
+                continue
+            if not os.path.exists(config_path):
+                # 可能是扁平结构：item 就是模型名
+                sub_config = config_path
+            else:
+                sub_config = None
+            # 扫描二级目录
+            for sub in os.listdir(model_dir):
+                sub_path = os.path.join(model_dir, sub)
+                if os.path.isdir(sub_path):
+                    sub_config_path = os.path.join(sub_path, "config.json")
+                    if os.path.exists(sub_config_path):
+                        size = sum(
+                            os.path.getsize(os.path.join(sub_path, f))
+                            for f in os.listdir(sub_path)
+                            if f.endswith('.bin') and os.path.isfile(os.path.join(sub_path, f))
+                        )
+                        models.append({
+                            "name": f"{item}/{sub}",
+                            "path": sub_config_path,
+                            "size_mb": round(size / 1024 / 1024, 1)
+                        })
+            if os.path.exists(config_path):
+                size = sum(
+                    os.path.getsize(os.path.join(model_dir, f))
+                    for f in os.listdir(model_dir)
+                    if f.endswith('.bin') and os.path.isfile(os.path.join(model_dir, f))
+                )
+                models.append({
+                    "name": item,
+                    "path": config_path,
+                    "size_mb": round(size / 1024 / 1024, 1)
+                })
+        return models
+
+    def __init__(self, model_config_path: Optional[str] = None, qai_libs_path: str = r"C:\D\zhiyi\QAIRT\2.42.0.251225\lib\aarch64-windows-msvc"):
         """
         初始化NPU推理核心
 
         Args:
             model_config_path: 模型配置文件路径（config.json）
+                              如不传，则使用 DEFAULT_MODEL_CONFIG
             qai_libs_path: QAI库路径
         """
-        self.model_config_path = model_config_path or r"C:\test\antinet\config.json"
+        self.model_config_path = model_config_path or self.DEFAULT_MODEL_CONFIG
         self.qai_libs_path = qai_libs_path
         self.model: Optional[GenieContext] = None
         self.is_loaded = False
 
         # QAIRT 库路径（包含 QnnSystem.dll 等核心库）
-        qairt_libs_path = r"C:\\Qualcomm\\AIStack\\QAIRT\\v2.44.0.260225\\lib\\arm64x-windows-msvc"
+        qairt_libs_path = r"C:\D\zhiyi\QAIRT\2.42.0.251225\lib\aarch64-windows-msvc"
+        qairt_v38_path = r"C:\D\zhiyi\ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\aarch64-windows-msvc"
 
-        # 设置PATH环境变量（添加两个库路径）
+        # 设置PATH环境变量
         path = os.getenv('PATH', '')
         if self.qai_libs_path not in path:
             path = self.qai_libs_path + ";" + path
-            logger.info(f"[OK] 已添加 QAI库路径到PATH")
+            logger.info(f"[OK] 已添加 QAI库路径到PATH: {self.qai_libs_path}")
         if qairt_libs_path not in path:
             path = qairt_libs_path + ";" + path
-            logger.info(f"[OK] 已添加 QAIRT库路径到PATH")
+            logger.info(f"[OK] 已添加 QAIRT库路径到PATH: {qairt_libs_path}")
+        if qairt_v38_path not in path:
+            path = qairt_v38_path + ";" + path
+            logger.info(f"[OK] 已添加 QAIRT v2.38库路径到PATH: {qairt_v38_path}")
         os.environ['PATH'] = path
 
     def load_model(self):

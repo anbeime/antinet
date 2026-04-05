@@ -134,12 +134,21 @@ data/
 backend/models/pytorch/
 backend/models/onnx/
 backend/models/qnn/*.bin
+models/
 
 # =========================
 #  大型服务 / 模型目录
 # =========================
 genie-vl-service/
 bge-base-zh-v1.5-qnn-8380/
+QAIRT/
+QAIRT_Runtime/
+ai-engine-direct-helper-main/
+
+# =========================
+#  大型压缩包
+# =========================
+*.zip
 
 # =========================
 #  参考资料 / 文档文件

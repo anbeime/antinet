@@ -5,6 +5,7 @@
 # SDK版本: QNN SDK v2.37 / v2.38 / v2.42 (多版本支持)
 # Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用NPU
 # 模型: 支持多个QNN版本的模型
+# 模型目录: C:\D\zhiyi\models (自动下载脚本放置位置)
 # ============================================================
 
 from pydantic_settings import BaseSettings
@@ -13,6 +14,18 @@ from typing import Dict, Any
 
 # 获取后端目录的绝对路径
 BACKEND_DIR = Path(__file__).parent.absolute()
+# 获取项目根目录
+PROJECT_ROOT = BACKEND_DIR.parent.absolute()
+
+# 模型基础目录 - 支持多位置查找
+MODEL_BASE_DIRS = [
+    PROJECT_ROOT / "models",           # 自动下载脚本位置
+    Path("C:/model"),                  # 原配置位置（兼容性）
+    Path("C:/model/models_2.42"),
+    Path("C:/model/models_2.37"),
+    Path("C:/model/models_2.38"),
+    Path("C:/model/models_2.34"),
+]
 
 class Settings(BaseSettings):
     """应用配置 - 骁龙X Elite AIPC端侧AI配置"""
@@ -27,8 +40,8 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # 模型配置（兼容旧代码）
-    MODEL_NAME: str = "qwen2.5-vl-3b"  # 默认模型
-    MODEL_PATH: str = "C:/model/models_2.42/qwen2.5vl3b-8380-2.42"
+    MODEL_NAME: str = "llama3.2-3b"  # 默认模型（轻量快速）
+    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37")
     AUTO_LOAD_MODEL: bool = False  # 禁用启动时预加载，避免阻塞服务启动
 
     # QNN配置
@@ -56,60 +69,107 @@ class Settings(BaseSettings):
 # 多模型注册表
 # ============================================================
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
-    # === 纯文本模型（已移除 llama3.1-8b，NPU加载失败）===
+    # === 纯文本模型 ===
+    "gemma4": {
+        "api_endpoint": "http://localhost:11434",
+        "method": "POST",
+        "type": "api",
+        "description": "Gemma 4 - 通过本地API服务访问的模型",
+        "performance": "high",
+    },
     "llama3.2-3b": {
-        "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
+        "path": str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37"),
         "qnn_version": "2.37",
         "type": "chat",
         "context_length": 8192,
         "description": "Llama 3.2 3B - 轻量级聊天模型，速度快",
         "performance": "fast",
-        "recommended": True
+        "recommended": True,
     },
     "qwen2.0-7b": {
-        "path": "C:/model/models_2.34/Qwen2.0-7B-SSD-8380-2.34",
+        "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
         "qnn_version": "2.34",
         "type": "chat",
         "context_length": 8192,
-        "description": "Qwen 2.0 7B - 中文优化模型",
-        "performance": "medium"
+        "description": "Qwen 2.0 7B SSD - 中文优化模型",
+        "performance": "medium",
     },
 
     # === 视觉模型 ===
     "qwen2.5-vl-3b": {
-        "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
+        "path": str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
         "qnn_version": "2.42",
         "type": "vision",
         "context_length": 8192,
         "description": "Qwen 2.5 VL 3B - 多模态视觉语言模型",
         "requires_py312": True,
-        "requires_image": True
+        "requires_image": True,
     },
 
-    # === 嵌入模型 ===
-    "bge-base-zh": {
-        "path": "C:/model/models_2.38/bge-base-zh-v1.5-qnn-8380",
+    # === Reranker 模型 ===
+    "qwen3-reranker": {
+        "path": str(PROJECT_ROOT / "models" / "qwen3-reranker-8380-2.38"),
         "qnn_version": "2.38",
-        "type": "embedding",
-        "dimension": 768,
-        "description": "BGE Base 中文 - 文本嵌入模型",
-        "performance": "high"
-    }
+        "type": "reranker",
+        "description": "Qwen3 Reranker - 重排序模型",
+        "performance": "high",
+    },
 }
+
+
+def find_model_path(model_key: str) -> str:
+    """查找模型实际路径，支持多位置搜索"""
+    if model_key not in MODEL_REGISTRY:
+        return None
+
+    model_config = MODEL_REGISTRY[model_key]
+    primary_path = model_config.get("path")
+    alt_paths = model_config.get("alt_paths", [])
+
+    # 检查主路径
+    if Path(primary_path).exists():
+        return primary_path
+
+    # 检查备用路径
+    for alt_path in alt_paths:
+        if Path(alt_path).exists():
+            return alt_path
+
+    # 返回主路径（即使不存在）
+    return primary_path
 
 # QNN SDK 版本路径映射
 QNN_SDK_PATHS: Dict[str, str] = {
-    "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
-    "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
-    "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
-    "2.42": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
-    "2.44": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
+    "2.34": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
+    "2.37": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
+    "2.38": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
+    "2.42": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
 }
+
+
+def find_qnn_sdk_path(version: str) -> str:
+    """查找 QNN SDK 实际路径"""
+    # 首先尝试精确版本
+    if version in QNN_SDK_PATHS:
+        sdk_path = QNN_SDK_PATHS[version]
+        if Path(sdk_path).exists():
+            return sdk_path
+
+    # 默认返回 v2.42 路径
+    default_path = str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+    if Path(default_path).exists():
+        return default_path
+
+    return default_path
 
 # 默认模型配置
 DEFAULT_CHAT_MODEL: str = "llama3.2-3b"  # 默认使用轻量快速的3B模型
 DEFAULT_VISION_MODEL: str = "qwen2.5-vl-3b"  # 视觉模型
 DEFAULT_EMBEDDING_MODEL: str = "bge-base-zh"  # 嵌入模型
+
+# 导出路径查找函数
+__all__ = ['Settings', 'settings', 'MODEL_REGISTRY', 'QNN_SDK_PATHS',
+           'find_model_path', 'find_qnn_sdk_path']
 
 # 创建全局设置实例
 settings = Settings()

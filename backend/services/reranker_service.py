@@ -28,8 +28,11 @@ logger = logging.getLogger(__name__)
 # 全局 Reranker 实例
 _reranker_service: Optional["RerankerService"] = None
 
+# 获取项目根目录
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+
 # Reranker 模型默认路径
-DEFAULT_RERANKER_PATH = "C:/model/models_2.38/qwen3-reranker-8380-2.38"
+DEFAULT_RERANKER_PATH = str(PROJECT_ROOT / "models" / "qwen3-reranker-8380-2.38")
 
 
 def _format_instruction(instruction, query, doc):
