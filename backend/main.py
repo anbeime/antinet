@@ -8,6 +8,7 @@
 # 必须在任何导入之前设置环境变量
 import os
 import sys
+from pathlib import Path
 
 # 添加 backend 目录到 Python 路径，以支持正确的模块导入
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,8 +22,65 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
-lib_path = "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc"
-bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc"
+# 按优先级尝试多个位置查找 QAIRT SDK
+def find_qai_libs():
+    """自动查找 QAI 库路径"""
+    candidates = []
+
+    # 1. 项目本地 QAIRT Runtime（从 GitHub releases 下载的 Windows DLL）
+    local_qairt_paths = [
+        Path(project_root) / "QAIRT_Runtime" / "aarch64-windows-msvc",  # ARM64 native（推荐）
+        Path(project_root) / "QAIRT_Runtime" / "arm64x-windows-msvc",   # ARM64EC
+    ]
+    for p in local_qairt_paths:
+        if p.exists():
+            candidates.append(("项目本地 QAIRT Runtime", str(p)))
+
+    # 2. 项目本地 QAIRT 目录（手动下载的 QNN SDK v2.42）
+    d_qairt = Path(project_root) / "QAIRT"
+    if d_qairt.exists():
+        for item in d_qairt.iterdir():
+            if item.is_dir():
+                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
+                    lib_path = item / lib_sub.replace("/", os.sep)
+                    if lib_path.exists():
+                        candidates.append(("项目 QAIRT SDK", str(lib_path)))
+
+    # 3. Qualcomm AIStack 安装目录（多个版本）
+    qualcomm_base = Path("C:/Qualcomm/AIStack/QAIRT")
+    if qualcomm_base.exists():
+        for item in qualcomm_base.iterdir():
+            if item.is_dir():
+                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
+                    lib_path = item / lib_sub.replace("/", os.sep)
+                    if lib_path.exists():
+                        candidates.append(("Qualcomm AIStack 安装", str(lib_path)))
+
+    # 4. QAI AppBuilder 包内的 DLL 目录
+    try:
+        import qai_appbuilder
+        pkg_dir = Path(qai_appbuilder.__file__).parent
+        if pkg_dir.exists():
+            candidates.append(("QAI AppBuilder 包", str(pkg_dir)))
+    except ImportError:
+        pass
+
+    return candidates
+
+sdk_candidates = find_qai_libs()
+if sdk_candidates:
+    lib_path = sdk_candidates[0][1]
+else:
+    lib_path = str(Path(project_root) / "QAIRT_Runtime" / "aarch64-windows-msvc")
+bridge_lib_path = lib_path
+
+print(f"[SETUP] QAI 库路径查找结果:")
+for i, p in enumerate(sdk_candidates):
+    marker = " <-- 使用此路径" if i == 0 else ""
+    print(f"  [{i+1}] {p}{marker}")
+if not sdk_candidates:
+    print(f"  [!] 未找到任何 QAI SDK 路径，使用默认: {lib_path}")
+    print(f"  [!] 请安装 Qualcomm AIStack 或确保 QAI AppBuilder 已正确安装")
 
 # 确保两个目录都在 PATH 中
 paths_to_add = [lib_path, bridge_lib_path]
@@ -247,7 +305,9 @@ except Exception as e:
 # 注册8-Agent会议路由
 try:
     from routes.meeting_routes import router as meeting_router
+    from routes.meeting_routes import set_db_manager as set_meeting_db_manager
     app.include_router(meeting_router)  # 8-Agent会议路由
+    set_meeting_db_manager(db_manager)
     logger.info("[OK] 8-Agent会议路由已注册")
 except Exception as e:
     logger.warning(f"无法导入8-Agent会议路由: {e}")
@@ -255,10 +315,11 @@ except Exception as e:
 # 注册增强版聊天路由
 try:
     from routes.enhanced_chat_routes import router as enhanced_chat_router
-    app.include_router(enhanced_chat_router)
-    import routes.enhanced_chat_routes as enhanced_chat_module
-    enhanced_chat_module.db_manager = db_manager
-    logger.info("[OK] 增强版聊天路由已注册，数据库管理器已注入")
+    app.include_router(enhanced_chat_router)  # 增强版聊天路由
+    # 设置enhanced_chat_routes模块的数据库管理器
+    import routes.enhanced_chat_routes as enhanced_chat_routes_module
+    enhanced_chat_routes_module.db_manager = db_manager
+    logger.info("[OK] 增强版聊天路由已注册")
 except Exception as e:
     logger.warning(f"无法导入增强版聊天路由: {e}")
 
@@ -831,12 +892,5 @@ if __name__ == "__main__":
         log_level="info"
     )
 
-# ============ 聊天机器人路由 ============
-try:
-    from routes.chat_routes_simple import router as simple_chat_router
-    app.include_router(simple_chat_router)
-    print("[INIT] 聊天机器人路由已注册: /api/chat/simple")
-except Exception as e:
-    print(f"[WARN] 聊天机器人路由注册失败: {e}")
-# =========================================
+# 聊天机器人简单路由 (chat_routes_simple.py 不存在，跳过)
 

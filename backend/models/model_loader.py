@@ -17,8 +17,19 @@ from pathlib import Path
 # 强制禁用 qai_hub_models 依赖，防止因缺少该库导致崩溃
 HAS_QAI_HUB = False
 
-# 添加Genie路径
-GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
+# 引入 requests 库用于 API 调用
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+    logger.warning("requests 库未安装，API 模型将不可用")
+
+# 添加Genie路径 - 使用相对路径
+import os
+# 获取项目根目录（backend的上级目录）
+PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+GENIE_PATH = str(PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "genie" / "python")
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
@@ -27,11 +38,11 @@ try:
     from backend.config import QNN_SDK_PATHS
 except ImportError:
     QNN_SDK_PATHS = {
-        "2.34": "C:/Qualcomm/AIStack/QAIRT/2.34.0.250626/lib/arm64x-windows-msvc",
-        "2.37": "C:/Qualcomm/AIStack/QAIRT/2.37.0.250724/lib/arm64x-windows-msvc",
-        "2.38": "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc",
-        "2.42": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
-        "2.44": "C:/Qualcomm/AIStack/QAIRT/v2.44.0.260225/lib/arm64x-windows-msvc",
+        "2.34": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+        "2.37": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+        "2.38": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+        "2.42": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+        "2.44": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
     }
 
 # 提取 QNN 版本号的辅助函数
@@ -59,8 +70,8 @@ def get_qai_libs_path() -> str:
         pass
     return QNN_SDK_PATHS.get("2.38", "")
 
-# AIPC 预装的额外 DLL 目录
-EXTRA_QAI_LIBS = "C:/ai-engine-direct-helper/samples/qai_libs"
+# AIPC 预装的额外 DLL 目录 - 使用相对路径
+EXTRA_QAI_LIBS = str(PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "qai_libs")
 
 def setup_qnn_paths(qnn_version: str = None):
     """
@@ -119,6 +130,9 @@ logger.info("[OK] QNN 调试标志已设置（QNN_DEBUG=1, QNN_VERBOSE=1）")
 # 预加载QNN核心DLL，确保正确的加载顺序
 logger.info("[INFO] 预加载QNN核心DLL...")
 import ctypes
+
+# 从 setup_qnn_paths 中获取 lib_path（作为模块级变量）
+_dll_paths = [lib_path] if lib_path else []
 try:
     # 按顺序预加载DLL，避免版本冲突（改进版：先加载Genie.dll）
     dlls_to_load = [
@@ -131,7 +145,7 @@ try:
 
     for dll in dlls_to_load:
         found = False
-        for p in paths_to_add:
+        for p in _dll_paths:
             dll_path = Path(p) / dll
             if dll_path.exists():
                 try:
@@ -144,7 +158,7 @@ try:
                     logger.warning(f"[WARNING] 预加载失败 {dll}: {e}")
         if not found:
             logger.warning(f"[WARNING] 未找到DLL: {dll}")
-    
+
     logger.info("[OK] DLL预加载完成")
 except Exception as e:
     logger.warning(f"[WARNING] DLL预加载过程出错: {e}")
@@ -178,6 +192,17 @@ class ModelConfig:
 
     # 预装模型配置（注意：qwen2.5-vl-3b 不在此列表，它需要独立 VL 服务）
     MODELS = {
+        "gemma4": {
+            "name": "Gemma 4",
+            "api_endpoint": "http://localhost:11434",
+            "method": "POST",
+            "type": "api",
+            "params": "API",
+            "quantization": "API",
+            "description": "Gemma 4 - 通过本地API服务访问的模型",
+            "max_tokens": 2048,
+            "recommended": True
+        },
         # "qwen2.5-vl-3b": {  # VL 模型，走独立服务，不在此列表
         #     "name": "Qwen2.5-VL-3B",
         #     "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
@@ -189,7 +214,7 @@ class ModelConfig:
         # },
         "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
-            "path": "C:/model/models_2.34/Qwen2.0-7B-SSD-8380-2.34",
+            "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
             "params": "7B",
             "quantization": "QNN 2.34",
             "description": "对话/分析，速度快，中文支持好（需要KV缓存）",
@@ -198,16 +223,16 @@ class ModelConfig:
         },
         "llama3.2-3b": {
             "name": "Llama3.2-3B",
-            "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
+            "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
             "params": "3B",
             "quantization": "QNN 2.37",
-            "description": "轻量级场景，响应最快，内存占用小",
+            "description": "推荐首选，基础模式，3个分片，轻量快速",
             "max_tokens": 2048,
-            "recommended": False
+            "recommended": True
         },
         "bge-base-zh": {
             "name": "BGE-Base-ZH",
-            "path": "C:/model/bge-base-zh-v1.5-qnn-8380/bge-base-zh-v1.5-qnn-8380",
+            "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380" / "bge-base-zh-v1.5-qnn-8380"),
             "params": "110M",
             "quantization": "QNN",
             "description": "中文文本嵌入模型，RAG知识库，完整单文件",
@@ -223,20 +248,136 @@ class ModelConfig:
         #     "max_tokens": 2048,
         #     "recommended": False
         # },
-        "llama3.2-3b": {
-            "name": "Llama3.2-3B",
-            "path": "C:/model/models_2.37/llama3.2-3b-8380-qnn2.37",
-            "params": "3B",
-            "quantization": "QNN 2.37",
-            "description": "推荐首选，基础模式，3个分片，轻量快速",
-            "max_tokens": 2048,
-            "recommended": True
-        }
     }
 
     # 默认使用的模型
     # Llama3.2-3B: 纯文本模型，QNN 2.37，稳定可用
     DEFAULT_MODEL = "llama3.2-3b"
+
+
+class APIModelLoader:
+    """API-based model loader for models like Gemma4"""
+    
+    def __init__(self, model_key: str = None):
+        """
+        Initialize API model loader
+        
+        Args:
+            model_key: Model key name, e.g., "gemma4"
+        """
+        self.model_key = model_key or "gemma4"
+        self.model_config = ModelConfig.MODELS.get(self.model_key)
+        
+        if not self.model_config:
+            raise ValueError(f"Unknown model: {self.model_key}, available models: {list(ModelConfig.MODELS.keys())}")
+        
+        if self.model_config.get("type") != "api":
+            raise ValueError(f"Model {self.model_key} is not an API model")
+        
+        self.api_endpoint = self.model_config.get("api_endpoint")
+        self.method = self.model_config.get("method", "POST")
+        self.is_loaded = True  # API models are always "loaded"
+    
+    def load(self) -> Any:
+        """API models don't need loading, just confirm availability"""
+        logger.info(f"API model {self.model_config['name']} is ready")
+        self.is_loaded = True
+        return self
+    
+    def infer(self, prompt: str, max_new_tokens: int = 256, temperature: float = 0.7) -> str:
+        """
+        Execute inference via API
+        
+        Args:
+            prompt: Input prompt
+            max_new_tokens: Maximum tokens to generate
+            temperature: Temperature parameter
+            
+        Returns:
+            Generated text
+            
+        Raises:
+            Exception: If inference fails
+        """
+        if not HAS_REQUESTS:
+            raise ImportError("requests library is required for API models")
+        
+        try:
+            logger.info(f"Calling API model {self.model_key} at {self.api_endpoint}")
+            
+            # Build request payload
+            payload = {
+                "model": "gemma4",
+                "prompt": prompt,
+                "max_tokens": max_new_tokens,
+                "temperature": temperature
+            }
+            
+            # Make API request
+            response = requests.post(
+                self.api_endpoint,
+                json=payload,
+                timeout=60  # 60 second timeout
+            )
+            
+            # Check for HTTP errors
+            response.raise_for_status()
+            
+            # Parse response
+            result = response.json()
+            
+            # Extract text from response (adjust based on actual API format)
+            if isinstance(result, dict):
+                if "response" in result:
+                    return result["response"]
+                elif "output" in result:
+                    return result["output"]
+                elif "choices" in result and len(result["choices"]) > 0:
+                    choice = result["choices"][0]
+                    if isinstance(choice, dict) and "text" in choice:
+                        return choice["text"]
+                    elif isinstance(choice, str):
+                        return choice
+                elif "message" in result and isinstance(result["message"], dict) and "content" in result["message"]:
+                    return result["message"]["content"]
+            
+            # Fallback: return string representation
+            return str(result)
+            
+        except requests.exceptions.ConnectionError as e:
+            error_msg = f"Failed to connect to API endpoint {self.api_endpoint}: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        except requests.exceptions.Timeout as e:
+            error_msg = f"API request timed out: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"API request failed: {e}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"API inference failed: {e}"
+            logger.error(error_msg)
+            raise
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance stats for API model"""
+        return {
+            "model_name": self.model_config['name'],
+            "params": self.model_config['params'],
+            "quantization": self.model_config['quantization'],
+            "is_loaded": self.is_loaded,
+            "device": "API",
+            "runtime": "HTTP",
+            "api_endpoint": self.api_endpoint,
+            "log_level": "INFO"
+        }
+    
+    def unload(self):
+        """API models don't need unloading"""
+        self.is_loaded = False
+        logger.info(f"API model {self.model_config['name']} marked as unloaded")
 
 
 class NPUModelLoader:
@@ -608,23 +749,34 @@ _global_model_loader: Optional[NPUModelLoader] = None
 logger.info(f"[MODULE INIT] _global_model_loader initialized to: {_global_model_loader}")
 
 
-def get_model_loader(model_key: str = None) -> NPUModelLoader:
+def get_model_loader(model_key: str = None):
     """
-    获取全局模型加载器实例（单例模式）
+    获取全局模型加载器实例（单例模式），支持API和NPU模型
 
     Args:
         model_key: 模型键名
 
     Returns:
-        模型加载器实例
+        模型加载器实例 (NPUModelLoader or APIModelLoader)
     """
     global _global_model_loader
     
+    # Determine which model to use
+    use_model_key = model_key or ModelConfig.DEFAULT_MODEL
+    
+    # Check if model is API-based
+    model_config = ModelConfig.MODELS.get(use_model_key)
+    if model_config and model_config.get("type") == "api":
+        # API models don't use the global singleton
+        logger.info(f"[get_model_loader] Creating APIModelLoader for: {use_model_key}")
+        return APIModelLoader(use_model_key)
+    
+    # For NPU models, use the global singleton
     logger.info(f"[get_model_loader] _global_model_loader before: {_global_model_loader}")
 
     if _global_model_loader is None:
-        logger.info(f"[get_model_loader] Creating new NPUModelLoader with key: {model_key}")
-        _global_model_loader = NPUModelLoader(model_key)
+        logger.info(f"[get_model_loader] Creating new NPUModelLoader with key: {use_model_key}")
+        _global_model_loader = NPUModelLoader(use_model_key)
         logger.info(f"[get_model_loader] Created: {_global_model_loader}")
     else:
         logger.info(f"[get_model_loader] Returning existing: {_global_model_loader}")

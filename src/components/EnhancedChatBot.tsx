@@ -7,21 +7,22 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { 
+import {
   X, Send, Bot, User,
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
-  Trash2, FileType, FileSpreadsheet
+  Trash2, FileType, FileSpreadsheet,
+  Upload, Image
 } from 'lucide-react';
 import { toast } from 'sonner';
 import enhancedChatService from '@/services/enhancedChatService';
-import type { 
-  ChatMessage, 
-  CardReference, 
+import type {
+  ChatMessage,
+  CardReference,
   SkillResult,
   SceneType
 } from '@/services/enhancedChatService';
-// visionService 已移除（视觉模型暂不可用）
+import { fileToBase64 } from '@/services/visionService';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -137,6 +138,15 @@ const MessageBubble: React.FC<{
           <div className="whitespace-pre-wrap"><MessageContent content={message.content} onClose={onClose || (() => {})} /></div>
         </div>
 
+        {/* 图片显示 */}
+        {message.metadata?.image_url && (
+          <img
+            src={message.metadata.image_url}
+            alt="Uploaded"
+            className="mt-2 max-w-full rounded-lg max-h-64 object-cover"
+          />
+        )}
+
         {/* 卡片展示 */}
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
@@ -221,8 +231,14 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [currentScene, setCurrentScene] = useState<SceneType>('general');
   
+  // 图片相关状态
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [imageData, setImageData] = useState<string | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 初始化欢迎消息
   useEffect(() => {
@@ -255,16 +271,48 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
   }, [isOpen]);
 
-  // 路由导航
+  // 图片处理函数
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('请选择图片文件');
+        return;
+      }
+      setSelectedImage(file);
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      
+      // 转换为Base64
+      fileToBase64(file).then(base64 => {
+        setImageData(base64);
+      }).catch(error => {
+        console.error('图片转换失败:', error);
+        toast.error('图片处理失败');
+      });
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImageData(null);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // 发送消息
   const handleSend = async () => {
-    if (!input.trim()) return;
-    await handleSendWithText(input.trim());
+    if (!input.trim() && !selectedImage) return;
+    await handleSendWithText(input.trim(), imageData || undefined);
   };
 
-  const handleSendWithText = async (text: string) => {
-    if (!text.trim()) return;
+  const handleSendWithText = async (text: string, imgData?: string) => {
+    if (!text.trim() && !imgData) return;
 
     const query = text.trim();
     setInput('');
@@ -274,11 +322,17 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       const userMessage: ChatMessage = {
         role: 'user',
         content: query,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        metadata: {
+          image_url: previewUrl || undefined
+        }
       };
       setMessages(prev => [...prev, userMessage]);
 
-      const response = await enhancedChatService.sendMessage(query);
+      const response = await enhancedChatService.sendMessage(query, {
+        imageData: imgData
+      });
+      
       const assistantMessage: ChatMessage = {
         role: 'assistant',
         content: response.reply,
@@ -297,6 +351,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       toast.error('发送失败，请重试');
     } finally {
       setIsLoading(false);
+      handleRemoveImage();
     }
   };
 
@@ -481,6 +536,32 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           )}
 
+          {/* 图片预览 */}
+          {previewUrl && (
+            <div className="px-4 py-2 border-t bg-muted/30">
+              <div className="flex items-center gap-3">
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="w-16 h-16 object-cover rounded-lg border"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{selectedImage?.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedImage ? (selectedImage.size / 1024).toFixed(1) : 0} KB
+                  </p>
+                </div>
+                <button
+                  onClick={handleRemoveImage}
+                  className="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                  disabled={isLoading}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 快捷操作 */}
           <div className="px-4 py-2 border-t">
             <div className="flex flex-wrap gap-2">
@@ -499,6 +580,24 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           {/* 输入区域 */}
           <div className="p-4 border-t">
             <div className="flex gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept="image/*"
+                onChange={handleImageSelect}
+              />
+              
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="flex-shrink-0"
+              >
+                <Upload className="w-4 h-4" />
+              </Button>
+              
               <div className="flex-1 relative">
                 <textarea
                   ref={textareaRef}
@@ -524,7 +623,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <Button
                 onClick={handleSend}
-                disabled={isLoading || !input.trim()}
+                disabled={isLoading || (!input.trim() && !selectedImage)}
                 className="flex-shrink-0"
               >
                 {isLoading ? (
