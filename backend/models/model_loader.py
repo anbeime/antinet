@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import logging
+logger = logging.getLogger(__name__)
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
@@ -25,11 +26,31 @@ except ImportError:
     HAS_REQUESTS = False
     logger.warning("requests 库未安装，API 模型将不可用")
 
-# 添加Genie路径 - 使用相对路径
+# 添加Genie路径 - 支持多个位置查找
 import os
 # 获取项目根目录（backend的上级目录）
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
-GENIE_PATH = str(PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "genie" / "python")
+
+# 智能查找 ai-engine-direct-helper 目录
+def find_ai_engine_helper() -> Path:
+    """智能查找 ai-engine-direct-helper 目录，支持多个位置"""
+    possible_locations = [
+        PROJECT_ROOT / "ai-engine-direct-helper-main",
+        PROJECT_ROOT / "ai-engine-direct-helper",
+        Path("C:/D/zhiy/ai-engine-direct-helper"),
+        Path("C:/D/zhiy/ai-engine-direct-helper-main"),
+    ]
+    
+    for loc in possible_locations:
+        if loc.exists():
+            logger.info(f"[OK] 找到 ai-engine-direct-helper: {loc}")
+            return loc
+    
+    logger.warning(f"[WARNING] 未找到 ai-engine-direct-helper，尝试位置: {possible_locations}")
+    return possible_locations[0]  # 返回默认位置
+
+AI_ENGINE_HELPER_PATH = find_ai_engine_helper()
+GENIE_PATH = str(AI_ENGINE_HELPER_PATH / "samples" / "genie" / "python")
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
@@ -37,13 +58,21 @@ if GENIE_PATH not in sys.path:
 try:
     from backend.config import QNN_SDK_PATHS
 except ImportError:
-    QNN_SDK_PATHS = {
-        "2.34": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-        "2.37": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-        "2.38": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-        "2.42": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-        "2.44": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-    }
+    # 回退：按优先级查找精确版本，然后 fallback 到 2.42
+    def _find_qnn_sdk(version: str) -> str:
+        version_dirs = {
+            "2.34": ["2.34.0.250626", "2.42.0.251225"],
+            "2.37": ["2.37.1.250807", "2.42.0.251225"],
+            "2.38": ["2.38.0.250901", "2.42.0.251225"],
+            "2.42": ["2.42.0.251225"],
+            "2.44": ["2.42.0.251225"],
+        }
+        for vdir in version_dirs.get(version, ["2.42.0.251225"]):
+            p = str(PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc")
+            if os.path.exists(p):
+                return p
+        return str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+    QNN_SDK_PATHS = {v: _find_qnn_sdk(v) for v in ["2.34", "2.37", "2.38", "2.42", "2.44"]}
 
 # 提取 QNN 版本号的辅助函数
 def extract_qnn_version(quantization_str: str) -> str:
@@ -60,37 +89,119 @@ logger = logging.getLogger(__name__)
 def get_qai_libs_path() -> str:
     """
     动态获取 qai_appbuilder 的库路径
+    新机器：qai_appbuilder 包目录直接包含 DLL（没有 libs 子目录）
     """
     try:
         import qai_appbuilder
-        qai_libs = os.path.join(os.path.dirname(qai_appbuilder.__file__), 'libs')
-        if qai_libs and os.path.exists(qai_libs):
-            return qai_libs
+        pkg_dir = os.path.dirname(qai_appbuilder.__file__)
+        # 优先检查 libs 子目录（旧安装方式）
+        libs_dir = os.path.join(pkg_dir, 'libs')
+        if os.path.exists(libs_dir):
+            return libs_dir
+        # 新安装方式：DLL 直接在包目录里
+        if os.path.exists(os.path.join(pkg_dir, 'Genie.dll')):
+            return pkg_dir
     except (ImportError, TypeError):
         pass
-    return QNN_SDK_PATHS.get("2.38", "")
+    # 兜底：使用 QAIRT SDK 路径
+    return QNN_SDK_PATHS.get("2.42", "")
 
-# AIPC 预装的额外 DLL 目录 - 使用相对路径
-EXTRA_QAI_LIBS = str(PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "qai_libs")
+# AIPC 预装的额外 DLL 目录 - 智能查找实际包含 DLL 的目录
+def _find_extra_qai_libs() -> str:
+    """查找 AIPC 预装 DLL 目录（包含 Genie.dll 的实际目录）"""
+    candidates = [
+        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "aarch64-windows-msvc",
+        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "arm64x-windows-msvc",
+        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs",
+        PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc",
+        PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc",
+    ]
+    for c in candidates:
+        if c.exists() and (c / "Genie.dll").exists():
+            logger.info(f"[OK] 找到 AIPC 预装 DLL 目录: {c}")
+            return str(c)
+    # 兜底返回上层目录
+    fallback = str(AI_ENGINE_HELPER_PATH / "samples" / "qai_libs")
+    logger.warning(f"[WARNING] 未找到包含 Genie.dll 的 AIPC 预装目录，使用: {fallback}")
+    return fallback
+
+EXTRA_QAI_LIBS = _find_extra_qai_libs()
 
 def setup_qnn_paths(qnn_version: str = None):
     """
     根据 QNN 版本动态设置库路径
-    同时添加 qai_appbuilder libs 和 AIPC 预装目录
+    优先使用特定模型配套的 SDK 目录
     """
-    lib_path = get_qai_libs_path()
+    # 优先使用特定模型配套的 SDK（用户指定的正确路径）
+    model_specific_paths = [
+        PROJECT_ROOT / "QAIRT" / "GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73",
+    ]
     
-    if qnn_version and qnn_version in QNN_SDK_PATHS:
-        version_path = QNN_SDK_PATHS[qnn_version]
-        if os.path.exists(version_path):
-            lib_path = version_path
+    for sdk_path in model_specific_paths:
+        if sdk_path.exists():
+            lib_path = str(sdk_path)
+            logger.info(f"[INFO] 使用模型专用 SDK: {lib_path}")
+            
+            # 添加到 PATH
+            if lib_path not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = lib_path + ';' + os.environ.get('PATH', '')
+            try:
+                os.add_dll_directory(lib_path)
+                logger.info(f"[OK] 已添加模型专用 SDK 路径: {lib_path}")
+            except Exception as e:
+                logger.warning(f"[WARNING] 添加DLL目录失败: {e}")
+            
+            os.environ['QAI_LIBS_PATH'] = lib_path
+            return lib_path
     
-    # 需要添加的路径列表（按顺序）
+    # 备选方案：尝试 C:\D\zhiyi\QAIRT 目录下的其他 SDK
+    qairt_base = PROJECT_ROOT / "QAIRT"
+    version_priority = ["2.37", "2.38", "2.42"]
+    if qnn_version and qnn_version not in version_priority:
+        version_priority.insert(0, qnn_version)
+    
+    lib_path = None
+    for ver in version_priority:
+        for ver_dir in [f"{ver}.0.251225", f"{ver}.0.250901", f"{ver}.1.250807", f"{ver}.0.250724"]:
+            candidate = qairt_base / ver_dir / "lib" / "aarch64-windows-msvc"
+            if candidate.exists():
+                lib_path = str(candidate)
+                logger.info(f"[INFO] 使用 QAIRT SDK: {lib_path}")
+                break
+        if lib_path:
+            break
+    
+    if not lib_path:
+        lib_path = get_qai_libs_path()
+        logger.info(f"[INFO] 回退到 qai_appbuilder: {lib_path}")
+    
+    # 需要添加的路径列表（按优先级排序）
     paths_to_add = []
+    
+    # 1. QAIRT SDK（最完整，优先）
     if lib_path and os.path.exists(lib_path):
         paths_to_add.append(lib_path)
-    if os.path.exists(EXTRA_QAI_LIBS):
+    
+    # 2. qai_appbuilder 包目录（DLL直接在包里）
+    try:
+        import qai_appbuilder
+        pkg_dir = os.path.dirname(qai_appbuilder.__file__)
+        if pkg_dir not in paths_to_add and os.path.exists(os.path.join(pkg_dir, 'Genie.dll')):
+            paths_to_add.append(pkg_dir)
+    except ImportError:
+        pass
+    
+    # 3. AIPC 预装 DLL 目录
+    if os.path.exists(EXTRA_QAI_LIBS) and EXTRA_QAI_LIBS not in paths_to_add:
         paths_to_add.append(EXTRA_QAI_LIBS)
+    
+    # 4. QAIRT_Runtime 备用目录
+    for rt_dir in [
+        str(PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc"),
+        str(PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc"),
+    ]:
+        if os.path.exists(rt_dir) and rt_dir not in paths_to_add:
+            paths_to_add.append(rt_dir)
     
     # 添加所有路径到 PATH 和 DLL 目录
     current_path = os.environ.get('PATH', '')
@@ -131,8 +242,26 @@ logger.info("[OK] QNN 调试标志已设置（QNN_DEBUG=1, QNN_VERBOSE=1）")
 logger.info("[INFO] 预加载QNN核心DLL...")
 import ctypes
 
-# 从 setup_qnn_paths 中获取 lib_path（作为模块级变量）
+# 从 setup_qnn_paths 中获取所有 DLL 搜索路径
 _dll_paths = [lib_path] if lib_path else []
+# 补充其他可能的 DLL 路径
+for extra in [
+    EXTRA_QAI_LIBS,
+    str(PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc"),
+    str(PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc"),
+    str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+]:
+    if extra and os.path.exists(extra) and extra not in _dll_paths:
+        _dll_paths.append(extra)
+# qai_appbuilder 包目录也可能包含 DLL
+try:
+    import qai_appbuilder
+    pkg_dir = os.path.dirname(qai_appbuilder.__file__)
+    if pkg_dir not in _dll_paths:
+        _dll_paths.append(pkg_dir)
+except ImportError:
+    pass
+logger.info(f"[DLL搜索路径] {_dll_paths}")
 try:
     # 按顺序预加载DLL，避免版本冲突（改进版：先加载Genie.dll）
     dlls_to_load = [
@@ -201,11 +330,12 @@ class ModelConfig:
             "quantization": "API",
             "description": "Gemma 4 - 通过本地API服务访问的模型",
             "max_tokens": 2048,
-            "recommended": True
+            "recommended": True,
+            "path": ""
         },
         # "qwen2.5-vl-3b": {  # VL 模型，走独立服务，不在此列表
         #     "name": "Qwen2.5-VL-3B",
-        #     "path": "C:/model/models_2.42/qwen2.5vl3b-8380-2.42",
+        #     "path": "C:/D/zhiyi/models/models_2.42/qwen2.5vl3b-8380-2.42",
         #     "params": "3B",
         #     "quantization": "QNN 2.42",
         #     "description": "最新模型，支持视觉+语言，QNN 2.42优化，2个分片",
@@ -230,9 +360,18 @@ class ModelConfig:
             "max_tokens": 2048,
             "recommended": True
         },
+        "qwen2.5-vl-3b": {
+            "name": "Qwen2.5-VL-3B",
+            "path": str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
+            "params": "3B",
+            "quantization": "QNN 2.38",
+            "description": "视觉语言模型，配套 GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73",
+            "max_tokens": 2048,
+            "recommended": True
+        },
         "bge-base-zh": {
             "name": "BGE-Base-ZH",
-            "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380" / "bge-base-zh-v1.5-qnn-8380"),
+            "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),
             "params": "110M",
             "quantization": "QNN",
             "description": "中文文本嵌入模型，RAG知识库，完整单文件",
@@ -241,7 +380,7 @@ class ModelConfig:
         },
         # "llama3.1-8b": {  # 已禁用，NPU加载失败
         #     "name": "Llama3.1-8B",
-        #     "path": "C:/model/models_2.38/llama3.1-8b-8380-qnn2.38",
+        #     "path": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38",
         #     "params": "8B",
         #     "quantization": "QNN 2.38",
         #     "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",
@@ -305,19 +444,21 @@ class APIModelLoader:
         try:
             logger.info(f"Calling API model {self.model_key} at {self.api_endpoint}")
             
-            # Build request payload
+            # Build request payload - 使用 Ollama /api/chat 端点
             payload = {
                 "model": "gemma4",
-                "prompt": prompt,
-                "max_tokens": max_new_tokens,
-                "temperature": temperature
+                "messages": [{"role": "user", "content": prompt}],
+                "options": {
+                    "num_predict": max_new_tokens,
+                    "temperature": temperature
+                }
             }
             
-            # Make API request
+            # Make API request - 使用 /api/chat 端点
             response = requests.post(
-                self.api_endpoint,
+                f"{self.api_endpoint}/api/chat",
                 json=payload,
-                timeout=60  # 60 second timeout
+                timeout=120  # 120 second timeout
             )
             
             # Check for HTTP errors
@@ -426,6 +567,11 @@ class NPUModelLoader:
         if not model_path.exists():
             raise FileNotFoundError(f"模型路径不存在: {model_path}，请确保模型文件已部署到AIPC")
 
+        # 根据模型的 QNN 版本切换 DLL 路径（不同版本模型需要匹配的 QNN SDK）
+        qnn_version = extract_qnn_version(self.model_config.get('quantization', ''))
+        logger.info(f"[INFO] 模型 QNN 版本: {qnn_version}")
+        setup_qnn_paths(qnn_version)
+
         start_time = time.time()
 
         max_retries = 3
@@ -441,6 +587,9 @@ class NPUModelLoader:
                 # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
                 config_path = str(model_path / "config.json")
                 logger.info(f"[INFO] 创建 GenieContext: {config_path}")
+
+                # 动态修正 config.json 中的路径（模型文件中可能残留 /sdcard/GenieModels 等旧路径）
+                self._patch_config_paths(model_path)
 
                 # 创建 GenieContext（参考官方 GenieSample.py，只传 config 参数）
                 logger.info(f"[DEBUG] 正在创建 GenieContext，config_path={config_path}")
@@ -515,6 +664,52 @@ class NPUModelLoader:
 
         # 不应到达此处
         raise RuntimeError(f"NPU模型加载失败，未知错误: {last_exception}")
+
+    def _patch_config_paths(self, model_path: Path):
+        """
+        修正模型 config.json 中的路径，将旧路径替换为当前机器的实际路径。
+        模型文件中的 config.json 可能包含 /sdcard/GenieModels/xxx 或 C:/D/zhiyi/modelsxxx 等旧路径，
+        需要替换为当前模型目录的实际 Windows 路径。
+        """
+        config_path = model_path / "config.json"
+        if not config_path.exists():
+            return
+
+        import json
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_text = f.read()
+
+            # 检测是否需要修正（包含 /sdcard/ 或 C:/D/zhiyi/models 等旧路径）
+            needs_patch = '/sdcard/' in config_text or 'C:/D/zhiyi/models' in config_text
+            if not needs_patch:
+                return
+
+            # 将旧路径前缀替换为实际模型目录路径
+            # 使用正斜杠，与原始 config.json 格式一致
+            actual_path = str(model_path).replace('\\', '/')
+
+            import re
+            # 替换 /sdcard/GenieModels/模型目录名/ 为实际路径
+            config_text = re.sub(
+                r'/sdcard/GenieModels/[^/]+/',
+                actual_path + '/',
+                config_text
+            )
+            # 替换 C:/D/zhiyi/modelsmodels_2.xx/模型目录名/ 为实际路径
+            config_text = re.sub(
+                r'C:/D/zhiyi/modelsmodels[^/]*/[^/]+/',
+                actual_path + '/',
+                config_text
+            )
+
+            # 写回修正后的 config.json
+            with open(config_path, 'w', encoding='utf-8') as f:
+                f.write(config_text)
+            logger.info(f"[OK] 已修正 config.json 路径: {actual_path}")
+
+        except Exception as e:
+            logger.warning(f"[WARNING] 修正 config.json 路径失败: {e}")
 
     def _format_prompt(self, user_input: str) -> str:
         """

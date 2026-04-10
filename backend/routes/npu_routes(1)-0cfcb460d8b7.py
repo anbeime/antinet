@@ -8,8 +8,6 @@ from typing import Optional, Dict, Any, List
 import time
 import logging
 
-logger = logging.getLogger(__name__)
-
 from models.model_loader import (
     NPUModelLoader,
     load_model_if_needed,
@@ -17,67 +15,59 @@ from models.model_loader import (
 )
 from routes.model_router import select_model, get_model_info, estimate_complexity
 
-# 定义本地类型，避免循环导入
-class FourColorCard(BaseModel):
-    """四色卡片"""
-    color: str = Field(..., description="卡片颜色: blue|green|yellow|red")
-    title: str = Field(..., description="卡片标题")
-    content: str = Field(..., description="卡片内容")
-    category: str = Field(..., description="类别: 事实|解释|风险|行动")
-
-class AnalyzeRequest(BaseModel):
-    query: str = Field(..., description="自然语言查询")
-    max_tokens: int = Field(256, description="最大生成token数")
-    temperature: float = Field(0.7, description="温度参数")
-    model: Optional[str] = Field(None, description="指定模型键名")
-
-class AnalyzeResponse(BaseModel):
-    success: bool = Field(..., description="是否成功")
-    query: str = Field(..., description="原始查询")
-    cards: List[FourColorCard] = Field(..., description="四色卡片列表")
-    raw_output: str = Field(..., description="原始输出")
-    performance: Dict[str, Any] = Field(..., description="性能数据")
-
-class ModelInfo(BaseModel):
-    key: str = Field(..., description="模型键名")
-    name: str = Field(..., description="模型名称")
-    params: str = Field(..., description="参数规模")
-    quantization: str = Field(..., description="量化类型")
-    description: str = Field(..., description="描述")
-    path: Optional[str] = Field(None, description="模型路径")
-    recommended: bool = Field(False, description="是否推荐")
-
-class BenchmarkResponse(BaseModel):
-    model_name: str = Field(..., description="模型名称")
-    avg_latency_ms: float = Field(..., description="平均延迟(ms)")
-    min_latency_ms: float = Field(..., description="最小延迟(ms)")
-    max_latency_ms: float = Field(..., description="最大延迟(ms)")
-    cpu_vs_npu_speedup: float = Field(..., description="CPU vs NPU加速比")
-    memory_usage_mb: float = Field(..., description="内存使用(MB)")
-    test_count: int = Field(..., description="测试次数")
-    status: str = Field(..., description="状态")
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/npu", tags=["NPU推理"])
 
 
-def get_max_tokens_by_complexity(complexity: str) -> int:
-    """
-    根据任务复杂度返回合适的max_tokens值
-    
-    Args:
-        complexity: 任务复杂度 ('simple', 'medium', 'complex')
-        
-    Returns:
-        max_tokens: 对应的token限制
-    """
-    if complexity == 'simple':
-        return 128  # 简单任务：分类、提取、简短回答
-    elif complexity == 'medium':
-        return 256  # 中等任务：分析、解释、建议
-    else:  # complex
-        return 512  # 复杂任务：讨论、总结、决策、详细分析
+# ==================== 请求/响应模型 ====================
+
+class AnalyzeRequest(BaseModel):
+    """分析请求"""
+    query: str = Field(..., description="自然语言查询", min_length=1, max_length=50000)
+    max_tokens: Optional[int] = Field(128, description="最大生成token数", ge=32, le=4096)
+    temperature: Optional[float] = Field(0.7, description="温度参数", ge=0.0, le=2.0)
+    model: Optional[str] = Field(None, description="指定模型（可选）")
+
+
+class FourColorCard(BaseModel):
+    """四色卡片"""
+    color: str = Field(..., description="卡片颜色: blue/green/yellow/red")
+    category: str = Field(..., description="卡片类别: 事实/解释/风险/行动")
+    title: str = Field(..., description="卡片标题")
+    content: str = Field(..., description="卡片内容")
+
+
+class AnalyzeResponse(BaseModel):
+    """分析响应"""
+    success: bool = Field(..., description="是否成功")
+    query: str = Field(..., description="原始查询")
+    cards: List[FourColorCard] = Field(..., description="四色卡片列表")
+    raw_output: str = Field(..., description="模型原始输出")
+    performance: Dict[str, Any] = Field(..., description="性能数据")
+
+
+class BenchmarkResponse(BaseModel):
+    """性能基准测试响应"""
+    model_name: str
+    avg_latency_ms: float
+    min_latency_ms: float
+    max_latency_ms: float
+    cpu_vs_npu_speedup: float
+    memory_usage_mb: float
+    test_count: int
+    status: str
+
+
+class ModelInfo(BaseModel):
+    """模型信息"""
+    key: str
+    name: str
+    params: str
+    quantization: str
+    description: str
+    path: str
+    recommended: bool
 
 
 # ==================== API 路由 ====================
@@ -109,13 +99,6 @@ async def analyze_data(request: AnalyzeRequest):
         loader = NPUModelLoader(selected_model_key)
         model = loader.load()
 
-        # 如果用户没有指定max_tokens，则根据任务复杂度智能分配
-        actual_max_tokens = request.max_tokens
-        if actual_max_tokens == 128:  # 默认值，说明用户未指定
-            complexity_info = estimate_complexity(request.query)
-            actual_max_tokens = get_max_tokens_by_complexity(complexity_info['complexity'])
-            logger.info(f"[NPU] 智能分配max_tokens: {actual_max_tokens} (复杂度: {complexity_info['complexity']}, 评分: {complexity_info['score']})")
-
         # NPU 推理
         inference_start = time.time()
         raw_output = loader.infer(
@@ -137,7 +120,7 @@ async def analyze_data(request: AnalyzeRequest):
             "model_name": loader.model_config['name'],
             "model_params": loader.model_config['params'],
             "device": "NPU",
-            "tokens_generated": actual_max_tokens,
+            "tokens_generated": request.max_tokens,
             "meets_target": inference_time < 500  # 目标 < 500ms
         }
 
@@ -172,20 +155,20 @@ async def list_models():
 
         model_list = []
         for key, config in models.items():
-            model_list.append({
-                "key": key,
-                "name": config.get('name', key),
-                "params": config.get('params', 'unknown'),
-                "quantization": config.get('quantization', 'unknown'),
-                "description": config.get('description', ''),
-                "path": config.get('path', ''),
-                "recommended": config.get('recommended', False)
-            })
+            model_list.append(ModelInfo(
+                key=key,
+                name=config['name'],
+                params=config['params'],
+                quantization=config['quantization'],
+                description=config['description'],
+                path=config['path'],
+                recommended=config.get('recommended', False)
+            ))
 
         return model_list
 
     except Exception as e:
-        logger.error(f" 获取模型列表失败: {e}", exc_info=True)
+        logger.error(f" 获取模型列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取模型列表失败: {str(e)}")
 
 

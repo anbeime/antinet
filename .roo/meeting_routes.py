@@ -5,32 +5,16 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import asyncio
 import logging
 import json
 import time
-from config import settings
+import httpx
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/meeting", tags=["8-Agent会议"])
-
-_db_manager = None
-
-
-def set_db_manager(db_manager):
-    """设置数据库管理器"""
-    global _db_manager
-    _db_manager = db_manager
-
-
-def get_db_manager():
-    """获取数据库管理器"""
-    if _db_manager is None:
-        from database import DatabaseManager
-        return DatabaseManager(settings.DB_PATH)
-    return _db_manager
 
 # ==================== Agent 映射 ====================
 AGENT_MAPPING = {
@@ -116,140 +100,53 @@ AGENT_MAPPING = {
     }
 }
 
-import re
-
-# ==================== 工具函数 ====================
-
-def clean_speech_text(text: str) -> str:
-    """清理speech中的无意义标记"""
-    if not text:
-        return ""
-    # 移除HTML标签
-    text = re.sub(r'<[^>]+>', '', text)
-    # 移除AI标记
-    text = re.sub(r'<\|im_end\|>', '', text)
-    text = re.sub(r'<\|im_start\|>[^<]*', '', text)
-    # 移除多余空白
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = text.strip()
-    return text
-
-
-def search_related_cards(query: str, limit: int = 5) -> str:
-    """
-    根据会议主题搜索相关知识卡片
-    返回格式化的参考信息字符串
-    """
-    try:
-        db = get_db_manager()
-        if db is None:
-            return ""
-        
-        cards = db.search_cards(query, limit=limit)
-        if not cards:
-            return ""
-        
-        results = []
-        results.append("\n\n=== 相关知识库参考 ===")
-        for i, card in enumerate(cards, 1):
-            title = card.get('title', '无标题')
-            content = card.get('content', '')
-            category = card.get('category', '')
-            
-            truncated_content = content[:300] + '...' if len(content) > 300 else content
-            results.append(f"【{i}】{title}")
-            if category:
-                results.append(f"    分类: {category}")
-            results.append(f"    内容: {truncated_content}")
-            results.append("")
-        
-        return "\n".join(results)
-    except Exception as e:
-        logger.warning(f"搜索知识库失败: {e}")
-        return ""
-
-
 # ==================== LLM 调用 ====================
-
-# 优先使用 NPU，如果失败则用 Ollama
-OLLAMA_ENABLED = True
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "gemma4"
-
-# NPU 状态跟踪
-_npu_tried = False
-_npu_works = False
-
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
     """
     调用LLM生成回复。
-    优先使用 NPU，如果 NPU 初始化失败则使用 Ollama
+    优先使用本地 NPU 推理接口 /api/npu/analyze（已注册在同一个 8000 端口）。
+    如果 NPU 不可用，尝试直接导入 NPU 模型加载器进行推理。
     """
-    global _npu_tried, _npu_works
-    
     combined_prompt = f"{system_prompt}\n\n{user_prompt}"
-    
-    # 尝试 NPU（只尝试一次，避免重复崩溃）
-    if not _npu_tried:
-        _npu_tried = True
-        try:
-            from models.model_loader import NPUModelLoader, get_model_loader
-            from routes.model_router import select_model
-            
-            model_key = select_model(combined_prompt)
-            logger.info(f"[INFO] 尝试初始化 NPU 模型: {model_key}")
-            
-            loader = get_model_loader(model_key)
-            loader.load()
-            _npu_works = True
-            logger.info("[OK] NPU 模型加载成功")
-            
-            clean_prompt = combined_prompt.strip()
-            if clean_prompt:
-                loop = asyncio.get_event_loop()
-                raw_output = await loop.run_in_executor(None, lambda: loader.infer(prompt=clean_prompt))
-                if raw_output and raw_output.strip():
-                    logger.info(f"[OK] NPU 推理成功")
-                    return raw_output.strip()
-        except Exception as e:
-            logger.warning(f"NPU 初始化/推理失败: {e}")
-            # 标记 NPU 不可用，继续使用 Ollama
-    
-    # Ollama fallback
-    if OLLAMA_ENABLED:
-        try:
-            import requests
-            # 简化请求，减少 token 数量，加快响应
-            payload = {
-                "model": OLLAMA_MODEL,
-                "prompt": combined_prompt[:2000] if len(combined_prompt) > 2000 else combined_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 100,  # 减少输出token
-                    "num_ctx": 2048
+
+    # 方式1: 调用本地 NPU 推理接口
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                "http://127.0.0.1:8000/api/npu/analyze",
+                json={
+                    "query": combined_prompt,
+                    "max_tokens": 256,  # 提高token限制，让LLM有充分表达空间
+                    "temperature": 0.7   # 使用标准温度
                 }
-            }
-            logger.info(f"[DEBUG] Ollama 请求: model={OLLAMA_MODEL}, timeout=120")
-            # 增加超时时间
-            resp = requests.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=120)
-            logger.info(f"[DEBUG] Ollama 响应: status={resp.status_code}")
-            
-            if resp.status_code == 200:
-                result = resp.json()
-                response_text = result.get("response", "").strip()
-                if response_text:
-                    logger.info(f"[OK] Ollama 成功, 长度: {len(response_text)}")
-                    return response_text
-                else:
-                    logger.warning(f"[WARNING] Ollama 返回空")
-        except requests.exceptions.Timeout:
-            logger.warning(f"[WARNING] Ollama 请求超时")
-        except Exception as e:
-            logger.warning(f"Ollama 调用失败: {e}")
-    
-    logger.error("[ERROR] 所有推理方式均失败")
+            )
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                raw = result.get("raw_output", "").strip()
+                if raw:
+                    return raw
+    except Exception as e:
+        logger.warning(f"NPU接口调用失败: {e}")
+
+    # 方式2: 直接调用 NPU 模型加载器（进程内调用，避免 HTTP 开销）
+    try:
+        from models.model_loader import NPUModelLoader, get_model_loader
+        from routes.model_router import select_model
+        model_key = select_model(combined_prompt)
+        loader = get_model_loader(model_key)
+        loader.load()
+        # 使用默认参数 instead of custom ones to avoid SetParams failures
+        # The model's config files already contain appropriate defaults
+        raw_output = loader.infer(
+            prompt=combined_prompt
+        )
+        if raw_output and raw_output.strip():
+            return raw_output.strip()
+    except Exception as e:
+        logger.warning(f"NPU直接推理失败: {e}")
+
     return ""
 
 
@@ -338,44 +235,6 @@ async def meeting_health():
     }
 
 
-@router.get("/history")
-async def get_meeting_history(limit: int = 50):
-    """获取历史会议列表"""
-    db = get_db_manager()
-    meetings = db.get_all_meetings(limit=limit)
-    return {
-        "success": True,
-        "count": len(meetings),
-        "meetings": meetings
-    }
-
-
-@router.get("/history/{meeting_id}")
-async def get_meeting_detail(meeting_id: str):
-    """获取单个会议详情"""
-    db = get_db_manager()
-    meeting = db.get_meeting(meeting_id)
-    if not meeting:
-        raise HTTPException(status_code=404, detail="会议不存在")
-    return {
-        "success": True,
-        "meeting": meeting
-    }
-
-
-@router.delete("/history/{meeting_id}")
-async def delete_meeting_record(meeting_id: str):
-    """删除会议记录"""
-    db = get_db_manager()
-    success = db.delete_meeting(meeting_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="会议不存在")
-    return {
-        "success": True,
-        "message": "会议记录已删除"
-    }
-
-
 @router.post("/discuss/stream")
 async def create_meeting_stream(request: MeetingRequest):
     """
@@ -449,8 +308,7 @@ async def create_meeting_stream(request: MeetingRequest):
                  if all_speeches:
                      context_parts.append("\n--- 此前的讨论记录 ---")
                      for prev in all_speeches[-16:]:  # 最多保留最近16条，避免上下文过长
-                         clean_text = clean_speech_text(prev['speech'])
-                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{clean_text}")
+                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
                      context_parts.append("--- 讨论记录结束 ---\n")
 
                  user_prompt = "\n".join(context_parts)
@@ -462,21 +320,27 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 如果是密卷房，先搜索数据库获取相关资料
                  if agent_id == "mijuanfang":
                      try:
-                         db = get_db_manager()
-                         if db:
-                             search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                             cards = db.search_cards(search_query, limit=5)
-                             
-                             if cards:
-                                 relevant_info = f"\n【知识库参考】关于'{request.topic}'的相关资料："
-                                 for card in cards:
-                                     title = card.get('title', '无标题')
-                                     content = (card.get('content', '') or '')[:150]
-                                     relevant_info += f"\n- {title}：{content}..."
-                                 user_prompt += relevant_info
-                                 logger.info(f"密卷房检索到 {len(cards)} 条相关卡片")
+                         from api.knowledge_routes import search_cards
+                         import json
+
+                         # 从上下文中提取关键词
+                         topic = request.topic.lower()
+                         context_keywords = [keyword for keyword in user_prompt.split() if len(keyword) > 3]
+
+                         # 使用多个关键词搜索
+                         search_queries = topic.split()[:3] + context_keywords[:3]
+
+                         for query in search_queries[:2]:  # 最多搜索2个查询
+                             if len(query) > 2:
+                                 search_result = await search_cards(keyword=query, limit=3)
+                                 if search_result and len(search_result) > 0:
+                                     # 将搜索结果添加到上下文
+                                     relevant_info = f"\n【数据库参考】关于'{query}'的相关资料："
+                                     for card in search_result[:3]:  # 最多引用3个卡片
+                                         relevant_info += f"\n- {card.get('title', '无标题')}：{card.get('content', '')[:100]}..."
+                                     user_prompt += relevant_info
                      except Exception as e:
-                         logger.warning(f"密卷房知识库搜索失败: {e}")
+                         logger.warning(f"密卷房数据库搜索失败: {e}")
 
                  # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
                  speech_content = await call_llm(system_prompt, user_prompt)
@@ -560,29 +424,6 @@ async def create_meeting_stream(request: MeetingRequest):
         end_time = time.time()
         duration = end_time - start_time
 
-        # 保存会议记录到数据库
-        try:
-            db = get_db_manager()
-            db.save_meeting(
-                meeting_id=meeting_id,
-                topic=request.topic,
-                context=request.context,
-                card_ids=request.card_ids,
-                rounds=request.rounds,
-                participants=[info["name"] for info in AGENT_MAPPING.values()],
-                summary=summary,
-                decision=decision,
-                action_items=action_items,
-                all_speeches=all_speeches,
-                all_rounds=all_rounds,
-                start_time=datetime.fromtimestamp(start_time).isoformat(),
-                end_time=datetime.fromtimestamp(end_time).isoformat(),
-                duration_seconds=round(duration, 2)
-            )
-            logger.info(f"会议记录已保存: {meeting_id}")
-        except Exception as e:
-            logger.error(f"保存会议记录失败: {e}")
-
         # 会议结束
         yield _sse_event("meeting_end", {
             "meeting_id": meeting_id,
@@ -639,14 +480,6 @@ async def create_meeting(request: MeetingRequest):
                 for prev in all_speeches[-16:]:
                     context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
                 context_parts.append("--- 讨论记录结束 ---\n")
-
-            # 密卷房：自动搜索知识库
-            card_reference = ""
-            if agent_id == "mijuanfang":
-                search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                card_reference = search_related_cards(search_query, limit=5)
-                if card_reference:
-                    context_parts.append(card_reference)
 
             context_parts.append(f"请你以「{agent_info['name']}」的身份，针对当前议题发表你的观点。")
 
@@ -706,43 +539,6 @@ async def create_meeting(request: MeetingRequest):
     summary, decision, action_items = _parse_decision(decision_text, request.topic)
 
     end_time = time.time()
-
-    # 保存会议记录到数据库
-    try:
-        db = get_db_manager()
-        db.save_meeting(
-            meeting_id=meeting_id,
-            topic=request.topic,
-            context=request.context,
-            card_ids=request.card_ids,
-            rounds=request.rounds,
-            participants=[info["name"] for info in AGENT_MAPPING.values()],
-            summary=summary,
-            decision=decision,
-            action_items=action_items,
-            all_speeches=[{
-                "agent_name": s["agent_name"],
-                "agent_title": s["agent_title"],
-                "system_prompt": s.get("system_prompt", ""),
-                "speech": s["speech"]
-            } for s in all_speeches],
-            all_rounds=[{
-                "round": r.round,
-                "theme": r.theme,
-                "speeches": [{
-                    "agent_id": s.agent_id,
-                    "agent_name": s.agent_name,
-                    "agent_title": s.agent_title,
-                    "speech": s.speech
-                } for s in r.speeches]
-            } for r in all_rounds],
-            start_time=datetime.fromtimestamp(start_time).isoformat(),
-            end_time=datetime.fromtimestamp(end_time).isoformat(),
-            duration_seconds=round(end_time - start_time, 2)
-        )
-        logger.info(f"会议记录已保存: {meeting_id}")
-    except Exception as e:
-        logger.error(f"保存会议记录失败: {e}")
 
     return MeetingResponse(
         success=True,

@@ -219,7 +219,16 @@ class DatabaseManager:
                 )
             """)
             
-            # 10. 知识卡片关联专题字段
+            # 检查并添加 knowledge_cards 表的缺失字段
+            try:
+                cursor.execute("SELECT * FROM knowledge_cards LIMIT 1")
+                columns = [desc[0] for desc in cursor.description]
+                for col, col_type in [("type", "TEXT"), ("category", "TEXT"), ("similarity", "REAL")]:
+                    if col not in columns:
+                        cursor.execute(f"ALTER TABLE knowledge_cards ADD COLUMN {col} {col_type}")
+            except:
+                pass
+            
             try:
                 cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN project_id INTEGER")
             except:

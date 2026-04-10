@@ -7,7 +7,7 @@
       "ssd-version" : 1,
       "forecast-token-count" : 4,
       "forecast-prefix" : 16,
-      "forecast-prefix-name" : "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\",
+      "forecast-prefix-name" : "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\",
       "branches" : [3, 2],
       "n-streams" : 1,
       "p-threshold" : 0.0
@@ -33,7 +33,7 @@
     },
     "tokenizer" : {
       "version" : 1,
-      "path" : "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\tokenizer.json"
+      "path" : "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\tokenizer.json"
     },
     "engine" : {
       "version" : 1,
@@ -52,7 +52,7 @@
           "kv-dim" : 128,
           "rope-theta": 1000000
         },
-        "extensions": "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\htp_backend_ext_config.json"
+        "extensions": "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\htp_backend_ext_config.json"
       },
       "model" : {
         "version" : 1,
@@ -60,11 +60,11 @@
         "binary" : {
           "version" : 1,
           "ctx-bins" : [
-            "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\model-1.bin",
-            "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\model-2.bin",
-            "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\model-3.bin",
-            "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\model-4.bin",
-            "C:\\model\\models_2.34\\Qwen2.0-7B-SSD-8380-2.34\\model-5.bin"
+            "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\model-1.bin",
+            "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\model-2.bin",
+            "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\model-3.bin",
+            "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\model-4.bin",
+            "C:\\D\\zhiyi\\models\\Qwen2.0-7B-SSD-8380-2.34\\model-5.bin"
           ]
         }
       }

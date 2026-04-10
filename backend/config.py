@@ -5,7 +5,7 @@
 # SDK版本: QNN SDK v2.37 / v2.38 / v2.42 (多版本支持)
 # Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用NPU
 # 模型: 支持多个QNN版本的模型
-# 模型目录: C:\D\zhiyi\models (自动下载脚本放置位置)
+# 模型目录: {PROJECT_ROOT}/models (自动下载脚本放置位置)
 # ============================================================
 
 from pydantic_settings import BaseSettings
@@ -19,12 +19,7 @@ PROJECT_ROOT = BACKEND_DIR.parent.absolute()
 
 # 模型基础目录 - 支持多位置查找
 MODEL_BASE_DIRS = [
-    PROJECT_ROOT / "models",           # 自动下载脚本位置
-    Path("C:/model"),                  # 原配置位置（兼容性）
-    Path("C:/model/models_2.42"),
-    Path("C:/model/models_2.37"),
-    Path("C:/model/models_2.38"),
-    Path("C:/model/models_2.34"),
+    PROJECT_ROOT / "models",           # 当前项目位置（所有模型都在这）
 ]
 
 class Settings(BaseSettings):
@@ -41,7 +36,7 @@ class Settings(BaseSettings):
 
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "llama3.2-3b"  # 默认模型（轻量快速）
-    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37")
+    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37")
     AUTO_LOAD_MODEL: bool = False  # 禁用启动时预加载，避免阻塞服务启动
 
     # QNN配置
@@ -78,7 +73,7 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "performance": "high",
     },
     "llama3.2-3b": {
-        "path": str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37"),
+        "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
         "qnn_version": "2.37",
         "type": "chat",
         "context_length": 8192,
@@ -138,12 +133,29 @@ def find_model_path(model_key: str) -> str:
     # 返回主路径（即使不存在）
     return primary_path
 
-# QNN SDK 版本路径映射
+# QNN SDK 版本路径映射 - 每个版本按优先级查找
+# 注意：QAIRT 2.42 SDK 向下兼容 v73 模型，但精确版本更好
+def _find_qnn_sdk_path(version: str) -> str:
+    """查找指定版本的 QNN SDK DLL 路径"""
+    # 版本号到目录名的映射
+    version_dirs = {
+        "2.34": ["2.34.0.250626", "2.42.0.251225"],
+        "2.37": ["2.37.1.250807", "2.42.0.251225"],
+        "2.38": ["2.38.0.250901", "2.42.0.251225"],
+        "2.42": ["2.42.0.251225"],
+    }
+    for vdir in version_dirs.get(version, ["2.42.0.251225"]):
+        p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc"
+        if p.exists():
+            return str(p)
+    # fallback 到 2.42
+    return str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+
 QNN_SDK_PATHS: Dict[str, str] = {
-    "2.34": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.37": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.38": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.42": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+    "2.34": _find_qnn_sdk_path("2.34"),
+    "2.37": _find_qnn_sdk_path("2.37"),
+    "2.38": _find_qnn_sdk_path("2.38"),
+    "2.42": _find_qnn_sdk_path("2.42"),
 }
 
 

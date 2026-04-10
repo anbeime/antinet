@@ -5,6 +5,10 @@ NPU模型加载器
 
 import os
 from typing import Dict, Optional, Any
+from pathlib import Path
+
+# 项目根目录
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 class NPUModelLoader:
@@ -19,14 +23,14 @@ class NPUModelLoader:
     
     # 模型路径配置
     MODEL_PATHS = {
-        "qwen2.0-7b-ssd": "C:/model/Qwen2.0-7B-SSD-8380-2.34/",  # 通用推荐 ⭐️ (~450ms)
-        "llama3.1-8b": "C:/model/llama3.1-8b/",                    # 更强推理 (~520ms)
-        "llama3.2-3b": "C:/model/llama3.2-3b/",                     # 最快响应 (~280ms)
+        "qwen2.0-7b-ssd": str(_PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),  # 通用推荐 ⭐️ (~450ms)
+        "llama3.1-8b": str(_PROJECT_ROOT / "models" / "llama3.1-8b"),                    # 更强推理 (~520ms)
+        "llama3.2-3b": str(_PROJECT_ROOT / "models" / "llama3.2-3b"),                     # 最快响应 (~280ms)
         # 四色卡片生成器专用模型
-        "qwen2-1.5b-int4": "C:/model/Qwen2-1.5B-INT4/",            # 事实卡片生成器
-        "qwen2-7b-lora-int4": "C:/model/Qwen2-7B-LoRA-INT4/",      # 解释卡片生成器
-        "phi-3-mini-int4": "C:/model/Phi-3-mini-INT4/",             # 风险卡片生成器
-        "qwen2-7b-cot-int4": "C:/model/Qwen2-7B-CoT-INT4/",        # 行动卡片生成器
+        "qwen2-1.5b-int4": str(_PROJECT_ROOT / "models" / "Qwen2-1.5B-INT4"),            # 事实卡片生成器
+        "qwen2-7b-lora-int4": str(_PROJECT_ROOT / "models" / "Qwen2-7B-LoRA-INT4"),      # 解释卡片生成器
+        "phi-3-mini-int4": str(_PROJECT_ROOT / "models" / "Phi-3-mini-INT4"),             # 风险卡片生成器
+        "qwen2-7b-cot-int4": str(_PROJECT_ROOT / "models" / "Qwen2-7B-CoT-INT4"),        # 行动卡片生成器
     }
     
     # 模型性能指标

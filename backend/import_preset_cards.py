@@ -152,7 +152,7 @@ PRESET_KNOWLEDGE_CARDS = [
     },
     {
         "title": "NPU环境依赖",
-        "content": "NPU功能需要ARM64 Python环境、正确的QAI AppBuilder版本（2.38.0）、模型文件路径配置（C:/model/Qwen2.0-7B-SSD-8380-2.34/）和DLL路径配置，配置错误会导致NPU不可用。风险等级：中",
+        "content": "NPU功能需要ARM64 Python环境、正确的QAI AppBuilder版本（2.38.0）、模型文件路径配置（models/Qwen2.0-7B-SSD-8380-2.34/）和DLL路径配置，配置错误会导致NPU不可用。风险等级：中",
         "category": "风险",
         "card_type": "yellow"
     },

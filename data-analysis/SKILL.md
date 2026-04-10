@@ -76,10 +76,10 @@ GENIE_API_BASE_URL = "http://localhost:8000"
 ```python
 # 模型路径配置
 MODEL_PATHS = {
-    "qwen2.0-7b-ssd": "C:/model/Qwen2.0-7B-SSD-8380-2.34/",  # 通用推荐 ⭐️ (~450ms)
-    "llama3.1-8b": "C:/model/llama3.1-8b/",                    # 更强推理 (~520ms)
-    "llama3.2-3b": "C:/model/llama3.2-3b/",                     # 最快响应 (~280ms)
-    "crnn-int8": "C:/model/crnn-int8/",                        # NPU OCR模型 (~50ms)
+    "qwen2.0-7b-ssd": "models/Qwen2.0-7B-SSD-8380-2.34",  # 通用推荐 ⭐️ (~450ms)
+    "llama3.1-8b": "models/llama3.1-8b",                    # 更强推理 (~520ms)
+    "llama3.2-3b": "models/llama3.2-3b",                     # 最快响应 (~280ms)
+    "crnn-int8": "models/crnn-int8",                        # NPU OCR模型 (~50ms)
 }
 
 # 使用NPUModelLoader切换模型
@@ -91,7 +91,7 @@ model = loader.load()
 
 # 使用NPU OCR
 from scripts.ocr_npu import NPUCREngine
-ocr_engine = NPUCREngine(model_path="C:/model/crnn-int8/")
+ocr_engine = NPUCREngine(model_path="models/crnn-int8")
 result = ocr_engine.extract_text_from_image(image_path)
 ```
 
@@ -535,7 +535,7 @@ mkdir -p ./knowledge-graph/
     from scripts.ocr_npu import NPUCREngine
 
     # 初始化NPU OCR引擎
-    ocr_engine = NPUCREngine(model_path="C:/model/crnn-int8/")
+    ocr_engine = NPUCREngine(model_path="models/crnn-int8")
 
     # 单张图像OCR
     result = ocr_engine.extract_text_from_image(
@@ -698,7 +698,7 @@ mkdir -p ./knowledge-graph/
 - **后端**：FastAPI + Python 3.10+
 - **前端**：React 18 + TypeScript + Vite + Tailwind CSS
 - **数据库**：SQLite（元数据） + DuckDB（分析数据）
-- **模型**：Qwen2.0-7B-SSD-8380-2.34（路径：C:/model/Qwen2.0-7B-SSD-8380-2.34/）
+- **模型**：Qwen2.0-7B-SSD-8380-2.34（路径：models/Qwen2.0-7B-SSD-8380-2.34）
 - **向量检索**：BGE-M3 + FAISS/Chroma
 - **NPU SDK**：QNN SDK
 - **服务接口**：GenieAPIService（HTTP API）

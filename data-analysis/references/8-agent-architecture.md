@@ -361,7 +361,7 @@ graph TD
 - **NPU驱动**：特定版本（根据硬件型号）
 - **服务接口**：GenieAPIService（HTTP API）
 - **模型**：Qwen2.0-7B-SSD-8380-2.34
-- **模型路径**：C:/model/Qwen2.0-7B-SSD-8380-2.34/
+- **模型路径**：models/Qwen2.0-7B-SSD-8380-2.34/
 
 ### 后端技术栈
 - **框架**：FastAPI + Python 3.10+
@@ -391,7 +391,7 @@ export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib:$LD_LIBRARY_PATH
 # GenieAPIService HTTP API配置
 GENIE_API_BASE_URL = "http://localhost:8000"
 GENIE_API_KEY = "your-api-key"
-MODEL_PATH = "C:/model/Qwen2.0-7B-SSD-8380-2.34/"
+MODEL_PATH = "models/Qwen2.0-7B-SSD-8380-2.34/"
 ```
 
 #### FastAPI服务启动

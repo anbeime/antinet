@@ -110,9 +110,9 @@ wget https://model-hub.qualcomm.com/llama3.1-8b-qnn.zip
 wget https://model-hub.qualcomm.com/llama3.2-3b-qnn.zip
 
 # 解压到模型目录
-unzip qwen2.0-7b-ssd-qnn.zip -d C:/model/Qwen2.0-7B-SSD-8380-2.34/
-unzip llama3.1-8b-qnn.zip -d C:/model/llama3.1-8b/
-unzip llama3.2-3b-qnn.zip -d C:/model/llama3.2-3b/
+unzip qwen2.0-7b-ssd-qnn.zip -d models/Qwen2.0-7B-SSD-8380-2.34/
+unzip llama3.1-8b-qnn.zip -d models/llama3.1-8b/
+unzip llama3.2-3b-qnn.zip -d models/llama3.2-3b/
 ```
 
 ### 2. 模型量化（自定义模型）
@@ -139,22 +139,22 @@ quantizer.quantize()
 # 四色卡片生成器模型配置
 CARD_GENERATOR_MODELS = {
     "fact_generator": {
-        "model_path": "C:/model/Qwen2.1.5B-INT4/",
+        "model_path": "models/Qwen2.1.5B-INT4/",
         "precision": "INT4",
         "deployment": "NPU"
     },
     "interpreter": {
-        "model_path": "C:/model/Qwen2-7B-LoRA-INT4/",
+        "model_path": "models/Qwen2-7B-LoRA-INT4/",
         "precision": "INT4",
         "deployment": "NPU"
     },
     "risk_detector": {
-        "model_path": "C:/model/Phi-3-mini-INT4/",
+        "model_path": "models/Phi-3-mini-INT4/",
         "precision": "INT4",
         "deployment": "NPU"
     },
     "action_advisor": {
-        "model_path": "C:/model/Qwen2-7B-CoT-INT4/",
+        "model_path": "models/Qwen2-7B-CoT-INT4/",
         "precision": "INT4",
         "deployment": "NPU"
     }
@@ -413,11 +413,11 @@ pip install easyocr>=1.7.0
 
 ```bash
 # 下载模型文件到指定目录
-# 模型路径: C:/model/easyocr-npu/
+# 模型路径: models/easyocr-npu/
 # 包含: crnn-int8/ (主识别模型), ctc-decoder/ (解码器)
 
 # 验证模型文件
-dir C:\model\easyocr-npu\crnn-int8
+dir models\easyocr-npu\crnn-int8
 ```
 
 详细部署指南：见 [references/easyocr-npu-deployment.md](references/easyocr-npu-deployment.md)
@@ -503,7 +503,7 @@ print("EasyOCR版本:", easyocr.__version__)
 
 # 验证模型文件
 import os
-model_path = "C:/model/easyocr-npu/"
+model_path = "models/easyocr-npu/"
 print("模型目录存在:", os.path.exists(model_path))
 ```
 
@@ -581,7 +581,7 @@ loader = NPUModelLoader(model_key="llama3.2-3b")
 ```python
 # 验证模型路径
 import os
-model_path = "C:/model/Qwen2.0-7B-SSD-8380-2.34/"
+model_path = "models/Qwen2.0-7B-SSD-8380-2.34/"
 print(os.path.exists(model_path))  # 应返回 True
 
 # 验证QNN SDK

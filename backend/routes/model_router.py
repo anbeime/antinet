@@ -109,16 +109,16 @@ def select_model(query: str) -> str:
         logger.info(f"  级别: {estimation['complexity']}")
         logger.info(f"  原因: {', '.join(estimation['reasons'])}")
 
-        # 选择模型
+        # 选择模型 - 优先使用 QNN 2.42 版本的模型
         if estimation['complexity'] == 'simple':
             model_key = 'llama3.2-3b'
             model_reason = '简单查询，选择极速模型'
         elif estimation['complexity'] == 'medium':
-            model_key = 'llama3.2-3b'  # 改用 llama3.2-3b，llama3.1-8b 加载失败
+            model_key = 'llama3.2-3b'
             model_reason = '中等复杂度，选择平衡模型'
-        else:  # complex
-            model_key = 'qwen2.0-7b'
-            model_reason = '复杂查询，选择高质量中文模型'
+        else:  # complex - 使用 QNN 2.42 版本
+            model_key = 'qwen2.5-vl-3b'  # 尝试 QNN 2.42
+            model_reason = '复杂查询，选择 QNN 2.42 版本模型'
 
         logger.info(f"[ModelRouter] 选择的模型: {model_key}")
         logger.info(f"[ModelRouter] 选择理由: {model_reason}")

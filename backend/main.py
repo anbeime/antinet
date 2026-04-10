@@ -24,10 +24,20 @@ if project_root not in sys.path:
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
 # 按优先级尝试多个位置查找 QAIRT SDK
 def find_qai_libs():
-    """自动查找 QAI 库路径"""
+    """自动查找 QAI 库路径 - 优先使用项目 QAIRT 目录"""
     candidates = []
 
-    # 1. 项目本地 QAIRT Runtime（从 GitHub releases 下载的 Windows DLL）
+    # 1. Qualcomm AIStack 安装目录（优先，用户下载的文件在这里）
+    qualcomm_base = Path(project_root) / "QAIRT"
+    if qualcomm_base.exists():
+        for item in qualcomm_base.iterdir():
+            if item.is_dir():
+                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
+                    lib_path = item / lib_sub.replace("/", os.sep)
+                    if lib_path.exists():
+                        candidates.append(("Qualcomm AIStack 安装", str(lib_path)))
+
+    # 2. 项目本地 QAIRT Runtime（从 GitHub releases 下载的 Windows DLL）
     local_qairt_paths = [
         Path(project_root) / "QAIRT_Runtime" / "aarch64-windows-msvc",  # ARM64 native（推荐）
         Path(project_root) / "QAIRT_Runtime" / "arm64x-windows-msvc",   # ARM64EC
@@ -36,7 +46,7 @@ def find_qai_libs():
         if p.exists():
             candidates.append(("项目本地 QAIRT Runtime", str(p)))
 
-    # 2. 项目本地 QAIRT 目录（手动下载的 QNN SDK v2.42）
+    # 3. 项目本地 QAIRT 目录（手动下载的 QNN SDK v2.42）
     d_qairt = Path(project_root) / "QAIRT"
     if d_qairt.exists():
         for item in d_qairt.iterdir():
@@ -45,16 +55,6 @@ def find_qai_libs():
                     lib_path = item / lib_sub.replace("/", os.sep)
                     if lib_path.exists():
                         candidates.append(("项目 QAIRT SDK", str(lib_path)))
-
-    # 3. Qualcomm AIStack 安装目录（多个版本）
-    qualcomm_base = Path("C:/Qualcomm/AIStack/QAIRT")
-    if qualcomm_base.exists():
-        for item in qualcomm_base.iterdir():
-            if item.is_dir():
-                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
-                    lib_path = item / lib_sub.replace("/", os.sep)
-                    if lib_path.exists():
-                        candidates.append(("Qualcomm AIStack 安装", str(lib_path)))
 
     # 4. QAI AppBuilder 包内的 DLL 目录
     try:
@@ -101,10 +101,17 @@ except ImportError:
     os.environ['QNN_LOG_LEVEL'] = "DEBUG"
     print(f"[SETUP] 使用默认 QNN 日志级别: DEBUG")
 
-# 显式添加 DLL 目录（Python 3.8+）
-for p in paths_to_add:
-    if os.path.exists(p):
-        os.add_dll_directory(p)
+# 设置 NPU 库路径 - 确保所有 QAIRT 路径都添加
+# 添加更多 DLL 搜索路径
+extra_dll_paths = [
+    os.path.join(project_root, "QAIRT", "2.42.0.251225", "bin"),
+    os.path.join(project_root, "QAIRT", "2.38.0.250901", "bin"),
+    os.path.join(project_root, "QAIRT", "2.37.1.250807", "bin"),
+]
+for dll_path in extra_dll_paths:
+    if os.path.exists(dll_path):
+        os.add_dll_directory(dll_path)
+        print(f"[SETUP] 添加额外 DLL 目录: {dll_path}")
 
 print(f"[SETUP] NPU library paths configured:")
 print(f"  - qai_libs: {lib_path}")
@@ -891,6 +898,60 @@ if __name__ == "__main__":
         workers=1,     # 确保单进程，避免多进程间的状态隔离
         log_level="info"
     )
+
+
+# ============================================================
+# Agent 兼容端点 - /generate
+# 用于 8-Agent 系统调用，与 GenieAPI 格式兼容
+# ============================================================
+
+class GenerateRequest(BaseModel):
+    """生成请求 - 与 GenieAPI 格式兼容"""
+    prompt: str = Field(..., description="输入提示")
+    model: str = Field(default="llama3.2-3b", description="模型名称")
+    max_tokens: int = Field(default=256, description="最大生成token数")
+    temperature: float = Field(default=0.7, description="温度参数")
+
+
+class GenerateResponse(BaseModel):
+    """生成响应 - 与 GenieAPI 格式兼容"""
+    response: str
+    done: bool = True
+
+
+@app.post("/generate", response_model=GenerateResponse)
+async def generate_text(request: GenerateRequest):
+    """
+    文本生成端点 - 与 GenieAPIService 格式兼容
+    用于 8-Agent 系统调用
+    """
+    try:
+        logger.info(f"[Generate] 收到请求: model={request.model}, prompt={request.prompt[:50]}...")
+        
+        # 导入模型加载器
+        from models.model_loader import NPUModelLoader
+        
+        # 创建模型加载器
+        loader = NPUModelLoader(request.model)
+        
+        # 加载模型（如未加载）
+        if not loader.is_loaded:
+            loader.load()
+        
+        # 执行推理
+        result = loader.infer(
+            request.prompt,
+            max_new_tokens=request.max_tokens,
+            temperature=request.temperature
+        )
+        
+        logger.info(f"[Generate] 推理完成, 输出长度: {len(result)}")
+        
+        return GenerateResponse(response=result, done=True)
+        
+    except Exception as e:
+        logger.error(f"[Generate] 推理失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 聊天机器人简单路由 (chat_routes_simple.py 不存在，跳过)
 

@@ -3,8 +3,12 @@
 """
 import os
 from typing import List
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+
+# 项目根目录
+PROJECT_ROOT = Path(__file__).parent.parent
 
 # 加载环境变量
 load_dotenv()
@@ -15,7 +19,7 @@ class Settings(BaseSettings):
     
     # GenieAPIService配置
     genie_api_base_url: str = os.getenv("GENIE_API_BASE_URL", "http://localhost:8000")
-    model_path: str = os.getenv("MODEL_PATH", "C:/model/Qwen2.0-7B-SSD-8380-2.34/")
+    model_path: str = os.getenv("MODEL_PATH", str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"))
     genie_api_key: str = os.getenv("GENIE_API_KEY", "")
     
     # QNN SDK配置
