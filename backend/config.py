@@ -2,7 +2,7 @@
 # 知易智能知识管家 - 骁龙X Elite AIPC端侧AI应用
 # ============================================================
 # 硬件平台: 骁龙® X Elite (X1E-84-100)
-# SDK版本: QNN SDK v2.37 / v2.38 / v2.42 (多版本支持)
+# SDK版本: QNN SDK v2.37 / v2.42 (多版本支持)
 # Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用NPU
 # 模型: 支持多个QNN版本的模型
 # 模型目录: {PROJECT_ROOT}/models (自动下载脚本放置位置)
@@ -101,14 +101,7 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "requires_image": True,
     },
 
-    # === Reranker 模型 ===
-    "qwen3-reranker": {
-        "path": str(PROJECT_ROOT / "models" / "qwen3-reranker-8380-2.38"),
-        "qnn_version": "2.38",
-        "type": "reranker",
-        "description": "Qwen3 Reranker - 重排序模型",
-        "performance": "high",
-    },
+
 }
 
 
@@ -134,28 +127,28 @@ def find_model_path(model_key: str) -> str:
     return primary_path
 
 # QNN SDK 版本路径映射 - 每个版本按优先级查找
-# 注意：QAIRT 2.42 SDK 向下兼容 v73 模型，但精确版本更好
+# 注意：QAIRT 2.45 SDK 向下兼容 v73 模型，精确版本优先，新版本 fallback
 def _find_qnn_sdk_path(version: str) -> str:
     """查找指定版本的 QNN SDK DLL 路径"""
-    # 版本号到目录名的映射
+    # 版本号到目录名的映射（优先精确版本，然后 fallback 到兼容的新版本）
     version_dirs = {
-        "2.34": ["2.34.0.250626", "2.42.0.251225"],
-        "2.37": ["2.37.1.250807", "2.42.0.251225"],
-        "2.38": ["2.38.0.250901", "2.42.0.251225"],
-        "2.42": ["2.42.0.251225"],
+        "2.34": ["2.34.0.250626", "2.45.40.260406", "2.42.0.251225"],
+        "2.37": ["2.37.1.250807", "2.45.40.260406", "2.42.0.251225"],
+        "2.42": ["2.42.0.251225", "2.45.40.260406"],
+        "2.45": ["2.45.40.260406"],
     }
-    for vdir in version_dirs.get(version, ["2.42.0.251225"]):
+    for vdir in version_dirs.get(version, ["2.45.40.260406"]):
         p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc"
         if p.exists():
             return str(p)
-    # fallback 到 2.42
-    return str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+    # fallback 到 2.45
+    return str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "aarch64-windows-msvc")
 
 QNN_SDK_PATHS: Dict[str, str] = {
     "2.34": _find_qnn_sdk_path("2.34"),
     "2.37": _find_qnn_sdk_path("2.37"),
-    "2.38": _find_qnn_sdk_path("2.38"),
     "2.42": _find_qnn_sdk_path("2.42"),
+    "2.45": _find_qnn_sdk_path("2.45"),
 }
 
 
@@ -167,8 +160,8 @@ def find_qnn_sdk_path(version: str) -> str:
         if Path(sdk_path).exists():
             return sdk_path
 
-    # 默认返回 v2.42 路径
-    default_path = str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+    # 默认返回 v2.45 路径
+    default_path = str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "aarch64-windows-msvc")
     if Path(default_path).exists():
         return default_path
 

@@ -779,7 +779,7 @@ const Home: React.FC = () => {
                       <div className={`${cardTypeMap[card.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
-                          <h3 className="font-medium">{card.title}</h3>
+                          <h3 className="font-medium cursor-pointer hover:text-blue-600 hover:underline transition-colors" onClick={() => openDetailModal(card)}>{card.title}</h3>
                           <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(card.createdAt)}</span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
@@ -1558,7 +1558,12 @@ const Home: React.FC = () => {
         </main>
 
       {/* 聊天机器人按钮 - 可拖拽 */}
-      <ChatButton />
+      <ChatButton onCardClick={(cardRef) => {
+        const found = cards.find(c => c.id === cardRef.id);
+        if (found) {
+          openDetailModal(found);
+        }
+      }} />
 
       {/* 页脚 */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 mt-auto">

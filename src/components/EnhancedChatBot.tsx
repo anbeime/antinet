@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 interface EnhancedChatBotProps {
   isOpen: boolean;
   onClose: () => void;
+  onCardClick?: (card: CardReference) => void;
 }
 
 // 渲染消息内容组件 - 支持 [点击跳转:url] 格式的链接
@@ -89,7 +90,8 @@ const MessageBubble: React.FC<{
   skillResult?: SkillResult;
   sceneType?: SceneType;
   onClose?: () => void;
-}> = ({ message, cards, skillResult, sceneType, onClose }) => {
+  onCardClick?: (card: CardReference) => void;
+}> = ({ message, cards, skillResult, sceneType, onClose, onCardClick }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
 
@@ -151,7 +153,11 @@ const MessageBubble: React.FC<{
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
             {cards.slice(0, 3).map((card, idx) => (
-              <Card key={card.id || idx} className="border-l-4 border-l-blue-500">
+              <div
+                key={card.id || idx}
+                className={`bg-white dark:bg-gray-800 rounded-lg shadow border-l-4 border-l-blue-500 ${onCardClick ? 'cursor-pointer hover:shadow-md hover:border-l-blue-600 transition-all' : ''}`}
+                onClick={() => onCardClick?.(card)}
+              >
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs px-2 py-0.5 border rounded">
@@ -161,12 +167,12 @@ const MessageBubble: React.FC<{
                       {enhancedChatService.formatSimilarity(card.match_score)}
                     </span>
                   </div>
-                  <h4 className="font-medium text-sm mb-1">{card.title}</h4>
+                  <h4 className="font-medium text-sm mb-1 hover:text-blue-600 transition-colors">{card.title}</h4>
                   <p className="text-xs text-muted-foreground line-clamp-2">
                     {card.content}
                   </p>
                 </CardContent>
-              </Card>
+              </div>
             ))}
             {cards.length > 3 && (
               <div className="text-xs text-muted-foreground text-center">
@@ -223,7 +229,7 @@ const QuickAction: React.FC<{
   </Button>
 );
 
-export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose }) => {
+export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -335,7 +341,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       
       const assistantMessage: ChatMessage = {
         role: 'assistant',
-        content: response.reply,
+        content: response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。',
         timestamp: new Date().toISOString(),
         metadata: {
           scene_type: response.scene_type,
@@ -497,6 +503,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   skillResult={message.metadata?.skill_result}
                   sceneType={message.metadata?.scene_type}
                   onClose={onClose}
+                  onCardClick={onCardClick}
                 />
               ))}
               

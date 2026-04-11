@@ -18,7 +18,7 @@ echo [1/2] Python 环境: venv_arm64
 echo.
 
 REM 设置 QNN 库路径
-set "QNN_SDK=%~dp0..\QAIRT\2.42.0.251225\lib\aarch64-windows-msvc"
+set "QNN_SDK=%~dp0..\QAIRT\2.45.40.260406\lib\aarch64-windows-msvc"
 set "QAIRT_RUNTIME=%~dp0..\ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\aarch64-windows-msvc"
 set "PATH=%QNN_SDK%;%QAIRT_RUNTIME%;%PATH%"
 

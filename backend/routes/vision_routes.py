@@ -75,39 +75,48 @@ async def call_qwen_vl_service(
         
         if image_path and os.path.exists(image_path):
             # ========== VL (图文) 模式 ==========
+            # 使用 OpenAI 视觉格式 (与 GenieAPIClientVision.py 一致)
             # 读取图片并转换为 base64
             with open(image_path, "rb") as f:
                 image_data = base64.b64encode(f.read()).decode('utf-8')
             
-            logger.info(f"[VisionRoutes] VL模式 - 图片: {image_path}")
+            # 根据文件扩展名推断 MIME 类型
+            ext = os.path.splitext(image_path)[1].lower()
+            mime_map = {'.jpg': 'jpeg', '.jpeg': 'jpeg', '.png': 'png', '.gif': 'gif', '.bmp': 'bmp', '.webp': 'webp'}
+            mime_type = mime_map.get(ext, 'jpeg')
             
-            # 构建 VL 模型特殊格式的 messages
+            logger.info(f"[VisionRoutes] VL模式 - 图片: {image_path} ({mime_type})")
+            
+            # 构建 OpenAI 视觉格式的 messages
             vl_messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
                 {
                     "role": "user",
-                    "content": {
-                        "question": prompt,      # 文本提示
-                        "image": image_data      # base64图片
-                    }
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{mime_type};base64,{image_data}"
+                            }
+                        }
+                    ]
                 }
             ]
             
             # 添加对话历史（如果有）
             if conversation_history:
-                # 将历史插入到system和当前user之间
-                vl_messages = [vl_messages[0]] + conversation_history + [vl_messages[1]]
+                vl_messages = conversation_history + vl_messages
             
             # 构建请求数据
             request_data = {
                 "model": "qwen2.5vl3b-8380-2.42",
-                "messages": [{"role": "user", "content": "placeholder"}],  # 占位符
+                "messages": vl_messages,
                 "extra_body": {
-                    "messages": vl_messages,  # 真实数据放在extra_body中
-                    "size": 4096,
+                    "size": 2048,
+                    "seed": 42,
                     "temp": 0.7,
                     "top_k": 1,
-                    "top_p": 0.9
+                    "top_p": 1.0
                 }
             }
         else:
@@ -128,10 +137,11 @@ async def call_qwen_vl_service(
                 "model": "qwen2.5vl3b-8380-2.42",
                 "messages": messages,
                 "extra_body": {
-                    "size": 4096,
+                    "size": 2048,
+                    "seed": 42,
                     "temp": 0.7,
                     "top_k": 1,
-                    "top_p": 0.9
+                    "top_p": 1.0
                 }
             }
         

@@ -109,7 +109,6 @@ class NPUInferenceCore:
 
         # QAIRT 库路径（包含 QnnSystem.dll 等核心库）
         qairt_libs_path = self._find_qairt_path()
-        qairt_v38_path = str(_PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "qai_libs" / "QAIRT_Runtime" / "aarch64-windows-msvc")
 
         # 设置PATH环境变量
         path = os.getenv('PATH', '')
@@ -119,9 +118,6 @@ class NPUInferenceCore:
         if qairt_libs_path not in path and qairt_libs_path != self.qai_libs_path:
             path = qairt_libs_path + ";" + path
             logger.info(f"[OK] 已添加 QAIRT库路径到PATH: {qairt_libs_path}")
-        if os.path.exists(qairt_v38_path) and qairt_v38_path not in path:
-            path = qairt_v38_path + ";" + path
-            logger.info(f"[OK] 已添加 QAIRT v2.38库路径到PATH: {qairt_v38_path}")
         os.environ['PATH'] = path
 
     @staticmethod
@@ -136,7 +132,7 @@ class NPUInferenceCore:
                     if lib_path.exists():
                         return str(lib_path)
         # 回退到默认路径
-        return str(_PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+        return str(_PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "aarch64-windows-msvc")
 
     def load_model(self):
         """加载模型到NPU"""

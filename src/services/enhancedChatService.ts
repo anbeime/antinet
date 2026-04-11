@@ -215,7 +215,24 @@ class EnhancedChatService {
         context: options.context
       };
 
-      const response = await api.post<ChatResponse>(`${API_BASE}/message`, request);
+      const rawResponse = await api.post<any>(`${API_BASE}/message`, request);
+
+      // 兼容后端字段名差异
+      const response: ChatResponse = {
+        reply: rawResponse.reply || rawResponse.response || '',
+        scene_type: rawResponse.scene_type || 'general',
+        cards: (rawResponse.cards || []).map((c: any) => ({
+          id: c.id || c.card_id || '',
+          card_type: c.card_type || 'blue',
+          title: c.title || '',
+          content: c.content || '',
+          match_score: c.match_score ?? c.similarity ?? 0,
+          color: c.color || 'blue'
+        })),
+        skill_result: rawResponse.skill_result,
+        suggestions: rawResponse.suggestions || rawResponse.suggested_questions || [],
+        metadata: rawResponse.metadata || {}
+      };
 
       // 添加助手回复到历史
       this.addToHistory({

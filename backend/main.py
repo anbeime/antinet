@@ -104,8 +104,8 @@ except ImportError:
 # 设置 NPU 库路径 - 确保所有 QAIRT 路径都添加
 # 添加更多 DLL 搜索路径
 extra_dll_paths = [
+    os.path.join(project_root, "QAIRT", "2.45.40.260406", "bin"),
     os.path.join(project_root, "QAIRT", "2.42.0.251225", "bin"),
-    os.path.join(project_root, "QAIRT", "2.38.0.250901", "bin"),
     os.path.join(project_root, "QAIRT", "2.37.1.250807", "bin"),
 ]
 for dll_path in extra_dll_paths:
