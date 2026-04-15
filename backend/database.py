@@ -1115,19 +1115,28 @@ class DatabaseManager:
 
     def update_team_project(self, project_id: int, **kwargs) -> bool:
         """更新团队项目"""
+        # 驼峰转蛇形命名字段映射
+        field_mapping = {
+            'startDate': 'start_date',
+            'endDate': 'end_date',
+            'assignedMembers': 'assigned_members',
+        }
+        
         with self.get_connection() as conn:
             cursor = conn.cursor()
             updates = []
             values = []
             for key, value in kwargs.items():
-                if key == 'assigned_members':
+                # 转换字段名
+                db_key = field_mapping.get(key, key)
+                if db_key == 'assigned_members':
                     updates.append('assigned_members = ?')
                     values.append(json.dumps(value) if value else '[]')
-                elif key == 'tasks':
+                elif db_key == 'tasks':
                     updates.append('tasks_json = ?')
                     values.append(json.dumps(value) if value else '[]')
                 else:
-                    updates.append(f'{key} = ?')
+                    updates.append(f'{db_key} = ?')
                     values.append(value)
             values.append(datetime.now().isoformat())
             values.append(project_id)

@@ -8,14 +8,17 @@ from typing import Optional, Dict, Any, List
 import time
 import logging
 
-logger = logging.getLogger(__name__)
-
 from models.model_loader import (
     NPUModelLoader,
     load_model_if_needed,
     ModelConfig
 )
 from routes.model_router import select_model, get_model_info, estimate_complexity
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/npu", tags=["NPU推理"])
+
 
 # 定义本地类型，避免循环导入
 class FourColorCard(BaseModel):
@@ -30,6 +33,7 @@ class AnalyzeRequest(BaseModel):
     max_tokens: int = Field(256, description="最大生成token数")
     temperature: float = Field(0.7, description="温度参数")
     model: Optional[str] = Field(None, description="指定模型键名")
+    system_prompt: Optional[str] = Field(None, description="系统提示词（可选，用于指定角色或行为）")
 
 class AnalyzeResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
@@ -56,10 +60,6 @@ class BenchmarkResponse(BaseModel):
     memory_usage_mb: float = Field(..., description="内存使用(MB)")
     test_count: int = Field(..., description="测试次数")
     status: str = Field(..., description="状态")
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/npu", tags=["NPU推理"])
 
 
 def get_max_tokens_by_complexity(complexity: str) -> int:
@@ -105,6 +105,14 @@ async def analyze_data(request: AnalyzeRequest):
             selected_model_key = request.model
             logger.info(f"[NPU] 用户指定模型: {selected_model_key}")
 
+        # 处理 Ollama 模型请求（超时时回退到NPU本地模型）
+        if selected_model_key == "gemma4":
+            try:
+                return await _ollama_analyze(request)
+            except Exception as e:
+                logger.warning(f"[NPU] Ollama调用失败，回退到本地NPU模型: {e}")
+                selected_model_key = "llama3.2-3b"
+
         # 加载模型
         loader = NPUModelLoader(selected_model_key)
         model = loader.load()
@@ -119,8 +127,18 @@ async def analyze_data(request: AnalyzeRequest):
         # NPU 推理
         inference_start = time.time()
         raw_output = loader.infer(
-            prompt=request.query
+            prompt=request.query,
+            max_new_tokens=actual_max_tokens,
+            temperature=request.temperature,
+            system_prompt=request.system_prompt
         )
+        
+        # 清理特殊 token
+        if raw_output:
+            for tok in ['<|im_end|>', '<|im_start|>', '<|assistant|>', '<|end|>', '<|user|>', '<|bos|>', '<|eos|>']:
+                raw_output = raw_output.replace(tok, '')
+            raw_output = raw_output.strip()
+        
         inference_time = (time.time() - inference_start) * 1000
 
         # 生成四色卡片（这里是示例逻辑，实际需要根据输出解析）
@@ -156,8 +174,8 @@ async def analyze_data(request: AnalyzeRequest):
         )
 
     except Exception as e:
-        logger.error(f" 分析失败: {e}")
-        raise HTTPException(status_code=500, detail=f"分析失败: {str(e)}")
+        logger.error(f"[NPU] 分析失败: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"分析失败: {type(e).__name__}: {str(e) or '未知错误'}")
 
 
 @router.get("/models", response_model=List[ModelInfo])
@@ -357,3 +375,66 @@ def generate_four_color_cards(raw_output: str, query: str) -> List[FourColorCard
             ))
     
     return cards
+
+
+async def _ollama_analyze(request: AnalyzeRequest) -> AnalyzeResponse:
+    """使用 Ollama Gemma4 模型进行分析"""
+    try:
+        import httpx
+        start_time = time.time()
+        
+        payload = {
+            "model": "gemma4:latest",
+            "messages": [
+                {"role": "user", "content": request.query}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": request.temperature,
+                "num_predict": request.max_tokens
+            }
+        }
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post("http://localhost:11434/api/chat", json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+        
+        raw_output = result.get("message", {}).get("content", "").strip()
+        inference_time = (time.time() - start_time) * 1000
+        total_time = inference_time
+        
+        cards = generate_four_color_cards(raw_output, request.query)
+        
+        performance = {
+            "inference_time_ms": round(inference_time, 2),
+            "total_time_ms": round(total_time, 2),
+            "model_key": "gemma4",
+            "model_name": "Gemma 4 8B (Ollama)",
+            "model_params": "8B",
+            "device": "Ollama",
+            "tokens_generated": request.max_tokens,
+            "meets_target": inference_time < 3000
+        }
+        
+        logger.info(f"[Ollama] 分析完成: {inference_time:.2f}ms, {len(raw_output)}字")
+        
+        return AnalyzeResponse(
+            success=True,
+            query=request.query,
+            cards=cards,
+            raw_output=raw_output,
+            performance=performance
+        )
+        
+    except ImportError:
+        raise HTTPException(status_code=500, detail="httpx 未安装，请运行: pip install httpx")
+    except httpx.HTTPStatusError as e:
+        detail = f"Ollama返回HTTP {e.response.status_code}: {e.response.text[:200]}"
+        logger.error(f"[Ollama] {detail}")
+        raise HTTPException(status_code=500, detail=detail)
+    except httpx.ConnectError:
+        raise HTTPException(status_code=500, detail="Ollama服务未启动，请先运行: ollama serve")
+    except Exception as e:
+        logger.error(f"[Ollama] 分析失败: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ollama分析失败: {type(e).__name__}: {str(e)}")

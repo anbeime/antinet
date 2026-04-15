@@ -12,9 +12,10 @@ import {
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
-  Upload, Image
+  Upload, Mic, MicOff, Volume2, VolumeX
 } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 import enhancedChatService from '@/services/enhancedChatService';
 import type {
   ChatMessage,
@@ -23,8 +24,7 @@ import type {
   SceneType
 } from '@/services/enhancedChatService';
 import { fileToBase64 } from '@/services/visionService';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 interface EnhancedChatBotProps {
@@ -33,7 +33,53 @@ interface EnhancedChatBotProps {
   onCardClick?: (card: CardReference) => void;
 }
 
-// 渲染消息内容组件 - 支持 [点击跳转:url] 格式的链接
+// Markdown 渲染组件 - 中国风配色（参考日历组件）
+const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+  return (
+    <ReactMarkdown
+      components={{
+        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-1" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif' }}>{children}</h1>,
+        h2: ({ children }) => <h2 className="text-sm font-bold mb-1.5 mt-1" style={{ color: '#a0522d' }}>{children}</h2>,
+        h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1" style={{ color: '#b87333' }}>{children}</h3>,
+        p: ({ children }) => <p className="text-xs leading-relaxed my-1" style={{ color: '#4a3728' }}>{children}</p>,
+        ul: ({ children }) => <ul className="space-y-0.5 my-1 ml-3 list-disc list-outside">{children}</ul>,
+        ol: ({ children }) => <ol className="space-y-0.5 my-1 ml-3 list-decimal list-outside">{children}</ol>,
+        li: ({ children }) => <li className="text-xs leading-relaxed" style={{ color: '#4a3728' }}>{children}</li>,
+        strong: ({ children }) => <strong className="font-semibold" style={{ color: '#8b4513' }}>{children}</strong>,
+        em: ({ children }) => <em className="italic" style={{ color: '#a0522d' }}>{children}</em>,
+        code: ({ className, children, ...props }) => {
+          const isBlock = className?.includes('language-');
+          return isBlock ? (
+            <pre className="rounded-lg p-3 my-2 overflow-x-auto border" style={{ backgroundColor: '#faf5f0', borderColor: '#e8ddd0' }}>
+              <code className="text-xs" style={{ color: '#6b4423' }} {...props}>{children}</code>
+            </pre>
+          ) : (
+            <code className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: '#fef3e2', color: '#8b4513' }} {...props}>{children}</code>
+          );
+        },
+        blockquote: ({ children }) => (
+          <blockquote className="pl-3 my-2 rounded-r py-1" style={{ borderLeft: '3px solid #d4a574', backgroundColor: '#fef3e2' }}>
+            {children}
+          </blockquote>
+        ),
+        hr: () => <hr className="my-2" style={{ borderColor: '#e8ddd0' }} />,
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-2 rounded border" style={{ borderColor: '#e8ddd0' }}>
+            <table className="w-full text-xs">{children}</table>
+          </div>
+        ),
+        thead: ({ children }) => <thead style={{ backgroundColor: '#fef3e2' }}>{children}</thead>,
+        th: ({ children }) => <th className="px-2 py-1 text-left font-medium border-b" style={{ color: '#8b4513', borderColor: '#e8ddd0' }}>{children}</th>,
+        td: ({ children }) => <td className="px-2 py-1 border-b" style={{ color: '#4a3728', borderColor: '#f0e6d8' }}>{children}</td>,
+        a: ({ href, children }) => <a href={href} className="underline hover:opacity-80" style={{ color: '#b87333' }} target="_blank" rel="noopener noreferrer">{children}</a>,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+};
+
+// 渲染消息内容组件 - 支持 markdown 渲染和 [点击跳转:url] 格式的链接
 const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ content, onClose }) => {
   const navigate = useNavigate();
   
@@ -54,9 +100,9 @@ const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ co
     const [fullMatch, url] = match;
     const beforeText = content.slice(lastIndex, match.index);
     
-    // 添加链接前的文本
+    // 添加链接前的文本（用 markdown 渲染）
     if (beforeText) {
-      parts.push(<span key={`text-${lastIndex}`}>{beforeText}</span>);
+      parts.push(<MarkdownContent key={`md-${lastIndex}`} content={beforeText} />);
     }
     
     // 添加可点击的按钮（使用navigate跳转）
@@ -74,10 +120,10 @@ const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ co
     lastIndex = match.index + fullMatch.length;
   }
   
-  // 添加剩余的文本
+  // 添加剩余的文本（用 markdown 渲染）
   const remainingText = content.slice(lastIndex);
   if (remainingText) {
-    parts.push(<span key={`text-end`}>{remainingText}</span>);
+    parts.push(<MarkdownContent key={`md-end`} content={remainingText} />);
   }
   
   return <>{parts}</>;
@@ -91,7 +137,9 @@ const MessageBubble: React.FC<{
   sceneType?: SceneType;
   onClose?: () => void;
   onCardClick?: (card: CardReference) => void;
-}> = ({ message, cards, skillResult, sceneType, onClose, onCardClick }) => {
+  onSpeak?: (text: string) => void;
+  isSpeaking?: boolean;
+}> = ({ message, cards, skillResult, sceneType, onClose, onCardClick, onSpeak, isSpeaking }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
 
@@ -107,8 +155,8 @@ const MessageBubble: React.FC<{
       {/* 头像 */}
       <div className={cn(
         "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
-        isUser ? "bg-primary" : isSkill ? "bg-purple-500" : "bg-transparent"
-      )}>
+        isUser ? "" : isSkill ? "" : "bg-transparent"
+      )} style={{ backgroundColor: isUser ? '#8b4513' : isSkill ? '#b87333' : undefined }}>
         {isUser ? (
           <User className="w-4 h-4 text-white" />
         ) : isSkill ? (
@@ -125,7 +173,7 @@ const MessageBubble: React.FC<{
       )}>
         {/* 场景标签 */}
         {sceneType && sceneType !== 'general' && !isUser && (
-          <span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b7355', border: '1px solid #e8ddd0' }}>
             {enhancedChatService.getSceneIcon(sceneType)} {enhancedChatService.getSceneName(sceneType)}
           </span>
         )}
@@ -133,11 +181,27 @@ const MessageBubble: React.FC<{
         {/* 文本内容 */}
         <div className={cn(
           "px-4 py-2 rounded-2xl text-sm",
-          isUser 
-            ? "bg-primary text-primary-foreground rounded-br-md" 
-            : "bg-muted rounded-bl-md"
-        )}>
+          isUser
+            ? "rounded-br-md"
+            : "rounded-bl-md"
+        )} style={{
+          backgroundColor: isUser ? '#8b4513' : '#fef3e2',
+          color: isUser ? '#fff9f3' : '#4a3728',
+          border: isUser ? 'none' : '1px solid #e8ddd0'
+        }}>
           <div className="whitespace-pre-wrap"><MessageContent content={message.content} onClose={onClose || (() => {})} /></div>
+          {/* 语音播放按钮 - 仅助手消息显示 */}
+          {!isUser && onSpeak && message.content && (
+            <button
+              onClick={() => onSpeak(message.content)}
+              className="mt-1 flex items-center gap-1 text-xs opacity-60 hover:opacity-100 transition-opacity cursor-pointer border-none bg-transparent"
+              style={{ color: '#8b4513' }}
+              title={isSpeaking ? '停止朗读' : '朗读'}
+            >
+              {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+              <span>{isSpeaking ? '停止' : '朗读'}</span>
+            </button>
+          )}
         </div>
 
         {/* 图片显示 */}
@@ -146,36 +210,44 @@ const MessageBubble: React.FC<{
             src={message.metadata.image_url}
             alt="Uploaded"
             className="mt-2 max-w-full rounded-lg max-h-64 object-cover"
+            style={{ border: '2px solid #d4a574' }}
           />
         )}
 
-        {/* 卡片展示 */}
+        {/* 卡片展示 - 保持原有漂亮样式，仅微调边框色 */}
         {cards && cards.length > 0 && (
           <div className="space-y-2 mt-2">
             {cards.slice(0, 3).map((card, idx) => (
               <div
                 key={card.id || idx}
-                className={`bg-white dark:bg-gray-800 rounded-lg shadow border-l-4 border-l-blue-500 ${onCardClick ? 'cursor-pointer hover:shadow-md hover:border-l-blue-600 transition-all' : ''}`}
+                className={`rounded-lg shadow transition-all ${onCardClick ? 'cursor-pointer hover:shadow-md' : ''}`}
+                style={{
+                  backgroundColor: '#fff9f3',
+                  borderLeft: '4px solid #d4a574',
+                  border: '1px solid #e8ddd0',
+                  borderLeftWidth: '4px',
+                  borderLeftColor: '#d4a574'
+                }}
                 onClick={() => onCardClick?.(card)}
               >
                 <CardContent className="p-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs px-2 py-0.5 border rounded">
+                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}>
                       {enhancedChatService.formatCardType(card.card_type)}
                     </span>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs" style={{ color: '#8b7355' }}>
                       {enhancedChatService.formatSimilarity(card.match_score)}
                     </span>
                   </div>
-                  <h4 className="font-medium text-sm mb-1 hover:text-blue-600 transition-colors">{card.title}</h4>
-                  <p className="text-xs text-muted-foreground line-clamp-2">
+                  <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: '#8b4513' }}>{card.title}</h4>
+                  <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
                     {card.content}
                   </p>
                 </CardContent>
               </div>
             ))}
             {cards.length > 3 && (
-              <div className="text-xs text-muted-foreground text-center">
+              <div className="text-xs text-center" style={{ color: '#8b7355' }}>
                 还有 {cards.length - 3} 张相关卡片
               </div>
             )}
@@ -184,26 +256,29 @@ const MessageBubble: React.FC<{
 
         {/* 技能结果 */}
         {skillResult && (
-          <Card className="mt-2 border-purple-200 bg-purple-50/50 dark:bg-purple-900/10">
-            <CardContent className="p-3">
+          <div className="mt-2 rounded-lg shadow-sm overflow-hidden" style={{ backgroundColor: '#fef3e2', border: '1px solid #d4a574' }}>
+            <div className="p-3">
               <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-purple-500" />
-                <span className="font-medium text-sm">技能执行结果</span>
-                <span className={`text-xs px-2 py-0.5 rounded ${skillResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                <Sparkles className="w-4 h-4" style={{ color: '#b87333' }} />
+                <span className="font-medium text-sm" style={{ color: '#8b4513' }}>技能执行结果</span>
+                <span className="text-xs px-2 py-0.5 rounded" style={{
+                  backgroundColor: skillResult.success ? '#f0fdf4' : '#fef2f2',
+                  color: skillResult.success ? '#166534' : '#991b1b'
+                }}>
                   {skillResult.success ? '成功' : '失败'}
                 </span>
               </div>
               {skillResult.result && (
-                <p className="text-sm text-muted-foreground">{skillResult.result}</p>
+                <p className="text-sm" style={{ color: '#6b5a4e' }}>{skillResult.result}</p>
               )}
               {skillResult.file_path && (
-                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: '#8b7355' }}>
                   <FileText className="w-3 h-3" />
                   <span className="truncate">{skillResult.file_path}</span>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
               </div>
@@ -217,16 +292,15 @@ const QuickAction: React.FC<{
   label: string;
   onClick: () => void;
   color?: string;
-}> = ({ icon, label, onClick, color = "bg-muted" }) => (
-  <Button
-    variant="outline"
-    size="sm"
-    className="flex items-center gap-2 text-xs h-auto py-2 px-3"
+}> = ({ icon, label, onClick, color }) => (
+  <button
+    className="flex items-center gap-2 text-xs h-auto py-2 px-3 rounded-md transition-colors cursor-pointer"
+    style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
     onClick={onClick}
   >
-    <span className={cn("p-1 rounded", color)}>{icon}</span>
+    <span className="p-1 rounded" style={{ backgroundColor: color || '#d4a574' }}>{icon}</span>
     {label}
-  </Button>
+  </button>
 );
 
 export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
@@ -235,12 +309,21 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
-  const [currentScene, setCurrentScene] = useState<SceneType>('general');
   
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imageData, setImageData] = useState<string | null>(null);
+  
+  // 语音相关状态
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(() => {
+    return localStorage.getItem('autoSpeak') === 'true';
+  });
+  const recognitionRef = useRef<any>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -251,7 +334,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     if (isOpen && messages.length === 0) {
       setMessages([{
         role: 'assistant',
-        content: `你好！我是知易智能知识管家助手。
+        content: `你好！我是小易。
 
 我可以帮您：
 查询知识库卡片 - 搜索事实、解释、风险、行动卡片
@@ -311,6 +394,144 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
   };
 
+  // ============ 语音功能 ============
+  
+  // 初始化语音合成
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      synthRef.current = window.speechSynthesis;
+    }
+  }, []);
+
+  // 语音识别（ASR）
+  const toggleListening = () => {
+    if (isListening) {
+      // 停止录音
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error('您的浏览器不支持语音识别，建议使用 Chrome 浏览器');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript) {
+        setInput(transcript);
+        // 自动发送
+        setTimeout(() => handleSendWithText(transcript, imageData || undefined), 200);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('语音识别错误:', event.error);
+      if (event.error === 'not-allowed') {
+        toast.error('请允许浏览器访问麦克风');
+      } else {
+        toast.error('语音识别失败，请重试');
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    toast.success('正在聆听，请说话...', { duration: 2000 });
+  };
+
+  // 语音合成（TTS）- 优先后端 Edge-TTS，回退浏览器 TTS
+  const speakText = async (text: string) => {
+    // 停止当前播放
+    if (isSpeaking) {
+      synthRef.current?.cancel();
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      setIsSpeaking(false);
+      return;
+    }
+
+    try {
+      // 先尝试后端 Edge-TTS
+      const response = await fetch('http://localhost:8000/api/chat/enhanced/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: '晓伊' }),
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('audio/mpeg')) {
+          // 后端返回了音频文件
+          const blob = await response.blob();
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          currentAudioRef.current = audio;
+          setIsSpeaking(true);
+          audio.onended = () => {
+            setIsSpeaking(false);
+            currentAudioRef.current = null;
+            URL.revokeObjectURL(audioUrl);
+          };
+          audio.onerror = () => {
+            setIsSpeaking(false);
+            currentAudioRef.current = null;
+            URL.revokeObjectURL(audioUrl);
+            // 回退到浏览器 TTS
+            _browserTTS(text);
+          };
+          audio.play();
+          return;
+        }
+      }
+    } catch {
+      // 后端 TTS 不可用
+    }
+
+    // 回退到浏览器 TTS
+    _browserTTS(text);
+  };
+
+  const _browserTTS = (text: string) => {
+    if (!synthRef.current) return;
+    synthRef.current.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    
+    // 选择中文女声
+    const voices = synthRef.current.getVoices();
+    const zhVoice = voices.find(v => v.lang.includes('zh') && v.name.includes('Xiao')) 
+      || voices.find(v => v.lang.includes('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    synthRef.current.speak(utterance);
+  };
+
+
+
   // 发送消息
   const handleSend = async () => {
     if (!input.trim() && !selectedImage) return;
@@ -339,9 +560,10 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         imageData: imgData
       });
       
+      const replyContent = response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。';
       const assistantMessage: ChatMessage = {
         role: 'assistant',
-        content: response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。',
+        content: replyContent,
         timestamp: new Date().toISOString(),
         metadata: {
           scene_type: response.scene_type,
@@ -351,7 +573,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       };
       setMessages(prev => [...prev, assistantMessage]);
       setSuggestedQuestions(response.suggestions || []);
-      setCurrentScene(response.scene_type);
+
+      // 自动朗读
+      if (autoSpeak && replyContent) {
+        // 停止当前朗读
+        synthRef.current?.cancel();
+        if (currentAudioRef.current) {
+          currentAudioRef.current.pause();
+          currentAudioRef.current = null;
+        }
+        setTimeout(() => speakText(replyContent), 300);
+      }
+
 
     } catch (error) {
       toast.error('发送失败，请重试');
@@ -383,7 +616,6 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       onClick: () => {
         onClose();
         navigate('/');
-        // 触发知识库搜索
         setTimeout(() => {
           const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
           if (searchInput) {
@@ -392,7 +624,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           }
         }, 100);
       },
-      color: "bg-blue-100 text-blue-600"
+      color: "#8b4513"
     },
     {
       icon: <Presentation className="w-3 h-3" />,
@@ -401,7 +633,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClose();
         navigate('/ppt-analysis');
       },
-      color: "bg-purple-100 text-purple-600"
+      color: "#a0522d"
     },
     {
       icon: <Table className="w-3 h-3" />,
@@ -410,7 +642,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClose();
         navigate('/excel-analysis');
       },
-      color: "bg-orange-100 text-orange-600"
+      color: "#b87333"
     },
     {
       icon: <FileType className="w-3 h-3" />,
@@ -419,7 +651,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClose();
         navigate('/pdf-analysis');
       },
-      color: "bg-red-100 text-red-600"
+      color: "#cd853f"
     },
     {
       icon: <FileSpreadsheet className="w-3 h-3" />,
@@ -428,7 +660,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClose();
         navigate('/pdf-analysis');
       },
-      color: "bg-red-100 text-red-600"
+      color: "#d4a574"
     },
     {
       icon: <Sparkles className="w-3 h-3" />,
@@ -437,7 +669,16 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClose();
         navigate('/npu-analysis');
       },
-      color: "bg-cyan-100 text-cyan-600"
+      color: "#8b7355"
+    },
+    {
+      icon: <Sparkles className="w-3 h-3" />,
+      label: "深度思考",
+      onClick: () => {
+        setInput("请帮我深度分析：");
+        textareaRef.current?.focus();
+      },
+      color: "#6b4423"
     }
   ];
 
@@ -453,47 +694,63 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClick={onClose}
       >
         <motion.div
-          className="w-full max-w-2xl h-[80vh] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          className="w-full max-w-2xl h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          style={{ backgroundColor: '#fff9f3', border: '1px solid #e8ddd0' }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* 头部 */}
-          <CardHeader className="border-b bg-gradient-to-r from-blue-600 to-purple-600 text-white py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <Bot className="w-5 h-5" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">知易智能助手</CardTitle>
-                  <p className="text-xs text-white/80">
-                    支持知识库查询 · 技能调用
-                  </p>
-                </div>
+          {/* 头部 - 中国风 */}
+          <div className="flex items-center justify-between px-4 py-3" style={{ background: 'linear-gradient(135deg, #8b4513, #d4a574)', borderBottom: '2px solid #d4a574' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                <Bot className="w-5 h-5 text-white" />
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-white hover:bg-white/20"
-                  onClick={handleClear}
-                  title="清空对话"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-white hover:bg-white/20"
-                  onClick={onClose}
-                >
-                  <X className="w-5 h-5" />
-                </Button>
+              <div>
+                <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>小易</h3>
+                <p className="text-xs text-white/80">
+                  知识库查询 · 技能调用 · 深度思考
+                </p>
               </div>
             </div>
-          </CardHeader>
+            <div className="flex items-center gap-2">
+              <button
+                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
+                onClick={() => {
+                  const newVal = !autoSpeak;
+                  setAutoSpeak(newVal);
+                  localStorage.setItem('autoSpeak', String(newVal));
+                  if (!newVal) {
+                    synthRef.current?.cancel();
+                    if (currentAudioRef.current) {
+                      currentAudioRef.current.pause();
+                      currentAudioRef.current = null;
+                    }
+                    setIsSpeaking(false);
+                  }
+                  toast.success(newVal ? '已开启自动朗读' : '已关闭自动朗读', { duration: 1500 });
+                }}
+                title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
+              >
+                <Volume2 className="w-4 h-4" />
+                {autoSpeak && <span className="text-xs text-white">自动</span>}
+              </button>
+              <button
+                className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
+                onClick={handleClear}
+                title="清空对话"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
+                onClick={onClose}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
 
           {/* 消息区域 */}
-          <div className="flex-1 p-4 overflow-y-auto">
+          <div className="flex-1 p-4 overflow-y-auto" style={{ backgroundColor: '#faf8f5' }}>
             <div className="space-y-4">
               {messages.map((message, index) => (
                 <MessageBubble
@@ -504,6 +761,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   sceneType={message.metadata?.scene_type}
                   onClose={onClose}
                   onCardClick={onCardClick}
+                  onSpeak={speakText}
+                  isSpeaking={isSpeaking}
                 />
               ))}
               
@@ -511,7 +770,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="flex items-center gap-2 text-muted-foreground"
+                  className="flex items-center gap-2"
+                  style={{ color: '#8b7355' }}
                 >
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-sm">思考中...</span>
@@ -524,20 +784,19 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
           {/* 建议问题 */}
           {suggestedQuestions.length > 0 && (
-            <div className="px-4 py-2 border-t bg-muted/30">
-              <p className="text-xs text-muted-foreground mb-2">推荐问题：</p>
+            <div className="px-4 py-2" style={{ backgroundColor: '#fef3e2', borderTop: '1px solid #e8ddd0' }}>
+              <p className="text-xs mb-2" style={{ color: '#8b7355' }}>推荐问题：</p>
               <div className="flex flex-wrap gap-2">
                 {suggestedQuestions.map((question, index) => (
-                  <Button
+                  <button
                     key={index}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs h-auto py-1"
+                    className="text-xs h-auto py-1 px-2 rounded-md transition-colors cursor-pointer"
+                    style={{ backgroundColor: '#fff9f3', color: '#8b4513', border: '1px solid #e8ddd0' }}
                     onClick={() => handleSuggestedQuestion(question)}
                   >
                     {question}
-                    <ChevronRight className="w-3 h-3 ml-1" />
-                  </Button>
+                    <ChevronRight className="w-3 h-3 ml-1 inline" />
+                  </button>
                 ))}
               </div>
             </div>
@@ -545,22 +804,24 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
           {/* 图片预览 */}
           {previewUrl && (
-            <div className="px-4 py-2 border-t bg-muted/30">
+            <div className="px-4 py-2" style={{ backgroundColor: '#fef3e2', borderTop: '1px solid #e8ddd0' }}>
               <div className="flex items-center gap-3">
                 <img
                   src={previewUrl}
                   alt="Preview"
-                  className="w-16 h-16 object-cover rounded-lg border"
+                  className="w-16 h-16 object-cover rounded-lg"
+                  style={{ border: '2px solid #d4a574' }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{selectedImage?.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium truncate" style={{ color: '#8b4513' }}>{selectedImage?.name}</p>
+                  <p className="text-xs" style={{ color: '#8b7355' }}>
                     {selectedImage ? (selectedImage.size / 1024).toFixed(1) : 0} KB
                   </p>
                 </div>
                 <button
                   onClick={handleRemoveImage}
-                  className="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                  className="p-1 rounded-lg transition-colors"
+                  style={{ color: '#8b7355' }}
                   disabled={isLoading}
                 >
                   <X className="w-4 h-4" />
@@ -570,7 +831,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           )}
 
           {/* 快捷操作 */}
-          <div className="px-4 py-2 border-t">
+          <div className="px-4 py-2" style={{ borderTop: '1px solid #e8ddd0' }}>
             <div className="flex flex-wrap gap-2">
               {quickActions.map((action, index) => (
                 <QuickAction
@@ -585,7 +846,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           </div>
 
           {/* 输入区域 */}
-          <div className="p-4 border-t">
+          <div className="p-4" style={{ backgroundColor: '#fff9f3', borderTop: '2px solid #d4a574' }}>
             <div className="flex gap-2">
               <input
                 type="file"
@@ -595,15 +856,29 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 onChange={handleImageSelect}
               />
               
-              <Button
-                variant="outline"
-                size="icon"
+              <button
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isLoading}
-                className="flex-shrink-0"
               >
                 <Upload className="w-4 h-4" />
-              </Button>
+              </button>
+              
+              {/* 语音输入按钮 */}
+              <button
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{
+                  backgroundColor: isListening ? '#8b4513' : '#fef3e2',
+                  color: isListening ? '#fff9f3' : '#8b4513',
+                  border: isListening ? '2px solid #8b4513' : '1px solid #e8ddd0'
+                }}
+                onClick={toggleListening}
+                disabled={isLoading}
+                title={isListening ? '停止录音' : '语音输入'}
+              >
+                {isListening ? <MicOff className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4" />}
+              </button>
               
               <div className="flex-1 relative">
                 <textarea
@@ -616,10 +891,10 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                       handleSend();
                     }
                   }}
-                  placeholder="输入消息... (Shift+Enter换行)"
-                  className="w-full min-h-[44px] max-h-[120px] px-3 py-2 text-sm rounded-md border bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder={isListening ? "正在聆听..." : "输入消息... (Shift+Enter换行)"}
+                  className="w-full min-h-[44px] max-h-[120px] px-3 py-2 text-sm rounded-md resize-none focus:outline-none"
+                  style={{ backgroundColor: '#fef3e2', border: '1px solid #e8ddd0', color: '#4a3728' }}
                   rows={1}
-                  style={{ height: 'auto' }}
                   onInput={(e) => {
                     const target = e.target as HTMLTextAreaElement;
                     target.style.height = 'auto';
@@ -628,18 +903,25 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 />
               </div>
               
-              <Button
+              <button
                 onClick={handleSend}
                 disabled={isLoading || (!input.trim() && !selectedImage)}
-                className="flex-shrink-0"
+                className="p-2 text-white rounded-md transition-colors flex-shrink-0 disabled:opacity-50"
+                style={{ backgroundColor: '#8b4513' }}
               >
                 {isLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Send className="w-4 h-4" />
                 )}
-              </Button>
+              </button>
             </div>
+            {isListening && (
+              <div className="mt-1 text-xs flex items-center gap-1" style={{ color: '#8b4513' }}>
+                <Mic className="w-3 h-3 animate-pulse" />
+                <span>正在聆听，请说话...</span>
+              </div>
+            )}
           </div>
         </motion.div>
       </motion.div>

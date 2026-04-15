@@ -67,7 +67,7 @@ python -c "import qnn; print(qnn.__version__)"
 
 ```python
 # GenieAPIService HTTP API配置
-GENIE_API_BASE_URL = "http://localhost:8000"
+GENIE_API_BASE_URL = "http://localhost:8910"
 GENIE_API_TIMEOUT = 30
 ```
 

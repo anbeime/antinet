@@ -362,7 +362,7 @@ async def search_cards(request: SearchRequest):
         request: 搜索请求（包含关键词和限制）
 
     Returns:
-        匹配的卡片列表
+匹配的卡片列表
     """
     try:
         conn = db_manager.get_connection()
@@ -433,6 +433,16 @@ async def import_analyze(request: ImportAnalyzeRequest):
         
         for idx, para in enumerate(paragraphs):
             if len(para) < 10:
+                continue
+            
+            # 过滤系统提示泄露内容（NPU模型有时会输出内部系统信息）
+            leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                           'instruction', 'prompt', 'special token', '#### Instruction',
+                           '#### Response', 'system', '<|assistant', '<|end']
+            if any(pat.lower() in para.lower() for pat in leak_patterns):
+                continue
+            # 过滤Markdown格式化的编号标题（如 "5. **xxx**:"）且内容过短
+            if re.match(r'^\d+\.\s+\*\*', para) and len(para) < 80:
                 continue
             
             lower_para = para.lower()
@@ -601,34 +611,31 @@ async def import_file(file: UploadFile = File(...)):
                 raise HTTPException(status_code=503, detail="Excel解析未安装，请运行: pip install pandas openpyxl")
 
         elif file_ext in ['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp']:
-            # 图片需要OCR或视觉模型
+            # 图片需要视觉模型分析
             try:
-                import base64
-                with open(tmp_path, 'rb') as f:
-                    img_data = base64.b64encode(f.read()).decode('utf-8')
-
-                # 调用视觉模型
                 import httpx
                 async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "qwen2.5vl3b-8380-2.42",
-                            "messages": [{"role": "user", "content": "placeholder"}],
-                            "extra_body": {
-                                "messages": [
-                                    {"role": "system", "content": "You are a helpful assistant."},
-                                    {"role": "user", "content": {"question": "请提取图片中的所有文字内容", "image": img_data}}
-                                ]
-                            }
-                        }
-                    )
+                    # 优先使用项目自身的视觉分析API
+                    with open(tmp_path, 'rb') as img_file:
+                        response = await client.post(
+                            "http://127.0.0.1:8000/api/vision/analyze",
+                            files={"file": (filename, img_file, file.content_type or "image/jpeg")},
+                            data={"question": "请提取图片中的所有文字和关键信息"}
+                        )
                     if response.status_code == 200:
                         result = response.json()
-                        extracted_text = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        if result.get("success"):
+                            extracted_text = result.get("description", result.get("analysis", ""))
+                            if result.get("facts"):
+                                extracted_text += "\n\n" + "\n".join(result["facts"])
+                        else:
+                            extracted_text = result.get("analysis", "")
+                    else:
+                        logger.warning(f"视觉分析API返回 {response.status_code}")
+                        extracted_text = ""
             except Exception as e:
-                logger.warning(f"图片OCR失败: {e}")
-                extracted_text = f"[图片文件: {filename}]"
+                logger.warning(f"图片视觉分析失败: {e}")
+                extracted_text = ""
 
         # 分析提取的文本
         cards = []
@@ -638,6 +645,16 @@ async def import_file(file: UploadFile = File(...)):
         
         for idx, para in enumerate(paragraphs):
             if len(para) < 10:
+                continue
+            
+            # 过滤系统提示泄露内容（NPU模型有时会输出内部系统信息）
+            leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                           'instruction', 'prompt', 'special token', '#### Instruction',
+                           '#### Response', 'system', '<|assistant', '<|end']
+            if any(pat.lower() in para.lower() for pat in leak_patterns):
+                continue
+            # 过滤Markdown格式化的编号标题（如 "5. **xxx**:"）且内容过短
+            if re.match(r'^\d+\.\s+\*\*', para) and len(para) < 80:
                 continue
             
             lower_para = para.lower()

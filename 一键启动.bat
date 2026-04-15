@@ -17,7 +17,7 @@ if not exist "%~dp0node_modules" (
 )
 
 REM Set common paths
-set "QNN_LIB_PATH=%~dp0ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\aarch64-windows-msvc"
+set "QNN_LIB_PATH=%~dp0ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\arm64x-windows-msvc"
 set "GENIE_SERVICE_DIR=%~dp0ai-engine-direct-helper-main\samples\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73"
 set "MODEL_DIR=%~dp0models\qwen2.5vl3b-8380-2.42"
 

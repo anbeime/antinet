@@ -389,9 +389,9 @@ export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib:$LD_LIBRARY_PATH
 #### GenieAPIService配置
 ```python
 # GenieAPIService HTTP API配置
-GENIE_API_BASE_URL = "http://localhost:8000"
+GENIE_API_BASE_URL = "http://localhost:8910"
 GENIE_API_KEY = "your-api-key"
-MODEL_PATH = "models/Qwen2.0-7B-SSD-8380-2.34/"
+MODEL_PATH = "models/qwen2.5vl3b-8380-2.42/"
 ```
 
 #### FastAPI服务启动

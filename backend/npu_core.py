@@ -13,6 +13,7 @@ SDK路径:    <项目根目录>/QAIRT/<版本>/lib/aarch64-windows-msvc
 import time
 import logging
 import os
+from pathlib import Path
 from typing import Optional, Callable
 from qai_appbuilder import GenieContext
 
@@ -37,9 +38,8 @@ class NPUInferenceCore:
     MODELS_BASE_DIR = str(_PROJECT_ROOT / "models")
 
     # 默认模型配置路径（已下载的 LLaMA 3.2 3B）
-    # 注意：实际路径有 models_2.37 这一层中间目录
     DEFAULT_MODEL_CONFIG = os.path.join(
-        MODELS_BASE_DIR, "models_2.37",
+        MODELS_BASE_DIR,
         "llama3.2-3b-8380-qnn2.37", "config.json"
     )
 
@@ -125,14 +125,18 @@ class NPUInferenceCore:
         """自动查找 QAIRT SDK 路径"""
         qairt_base = _PROJECT_ROOT / "QAIRT"
         if qairt_base.exists():
-            # 按版本号降序查找
+            # 按版本号降序查找，优先使用 arm64x-windows-msvc（ARM64EC，兼容性更好）
             for version_dir in sorted(qairt_base.iterdir(), reverse=True):
                 if version_dir.is_dir():
+                    lib_path = version_dir / "lib" / "arm64x-windows-msvc"
+                    if lib_path.exists():
+                        return str(lib_path)
+                    # 备选：aarch64-windows-msvc（原生 ARM64）
                     lib_path = version_dir / "lib" / "aarch64-windows-msvc"
                     if lib_path.exists():
                         return str(lib_path)
         # 回退到默认路径
-        return str(_PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "aarch64-windows-msvc")
+        return str(_PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc")
 
     def load_model(self):
         """加载模型到NPU"""

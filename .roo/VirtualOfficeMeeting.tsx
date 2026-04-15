@@ -12,11 +12,7 @@ import {
   Settings,
   Monitor,
   Square,
-  History,
-  Calendar,
-  Clock,
-  FileText,
-  X
+  Archive
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
@@ -331,14 +327,10 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
   const [rounds, setRounds] = useState(3);
-  const [meetingImage, setMeetingImage] = useState<string | null>(null);  // Base64 图片数据
   const [isLoading, setIsLoading] = useState(false);
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
-  const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
-  const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const meetingTimerRef = useRef<any>(null);
   const pollTimerRef = useRef<any>(null);
 
@@ -396,24 +388,6 @@ const VirtualOfficeMeeting: React.FC = () => {
     return events;
   };
 
-  const fetchMeetingHistory = async () => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/history`);
-      const data = await response.json();
-      if (data.success) {
-        setMeetingHistory(data.meetings || []);
-      }
-    } catch (error) {
-      console.error('获取历史会议失败:', error);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === 'history') {
-      fetchMeetingHistory();
-    }
-  }, [activeTab]);
-
   // Agent ID → 像素办公室 key 的反向映射
   const MEETING_TO_PIXEL: Record<string, string> = Object.fromEntries(
     Object.entries(PIXEL_TO_MEETING).map(([k, v]) => [v, k])
@@ -448,7 +422,7 @@ const VirtualOfficeMeeting: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, context, rounds, image_data: meetingImage }),
+        body: JSON.stringify({ topic, context, rounds }),
         signal: controller.signal
       });
 
@@ -573,14 +547,6 @@ const VirtualOfficeMeeting: React.FC = () => {
               break;
 
             case 'meeting_decision':
-              // 保存决策结果
-              allRounds.push({
-                summary: evt.data.summary,
-                decision: evt.data.decision,
-                actionItems: evt.data.action_items,
-                round: allRounds.length + 1,
-                theme: '最终决策'
-              });
               setPixelState(prev => ({ ...prev, detail: '指挥使正在做最终裁决...', progress: 95 }));
               setMessengerInfo(prev => ({ ...prev, agentName: '指挥使', agentTitle: '总指挥', message: '正在生成最终决策...', progress: 95 }));
               break;
@@ -709,7 +675,6 @@ const VirtualOfficeMeeting: React.FC = () => {
     setContext('');
     setDeliverable('');
     setRounds(3);
-    setMeetingImage(null);
     setMeetingResult(null);
     setExpandedRounds(new Set());
     setShowResults(false);
@@ -761,7 +726,8 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
         title: `会议纪要: ${topic}`,
         description: taskContent,
         category: 'archive',
-        priority: 'medium'
+        priority: 'medium',
+        status: 'pending'
       });
       toast.success('会议记录已保存到任务归档');
     } catch (error) {
@@ -860,56 +826,6 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
                   className="w-full px-3 py-2.5 rounded-lg text-sm text-white placeholder-gray-500 border border-gray-600/50 focus:border-blue-500 focus:outline-none transition-colors resize-none"
                   style={{ background: '#0f1729' }}
                 />
-              </div>
-
-              {/* 图片上传 - 视觉分析 */}
-              <div>
-                <label className="block text-sm text-gray-300 mb-1.5">📎 参考图片（可选）</label>
-                {meetingImage ? (
-                  <div className="relative rounded-lg overflow-hidden border border-gray-600/50" style={{ background: '#0f1729' }}>
-                    <img
-                      src={`data:image/jpeg;base64,${meetingImage}`}
-                      alt="上传的参考图片"
-                      className="w-full h-32 object-cover"
-                    />
-                    <button
-                      onClick={() => setMeetingImage(null)}
-                      className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-500 text-white transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                    <div className="px-2 py-1 text-xs text-green-400 flex items-center gap-1">
-                      <Monitor className="w-3 h-3" />
-                      视觉模型将分析此图片
-                    </div>
-                  </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center w-full h-20 rounded-lg border-2 border-dashed border-gray-600/50 hover:border-blue-500/50 cursor-pointer transition-colors" style={{ background: '#0f1729' }}>
-                    <Monitor className="w-5 h-5 text-gray-500 mb-1" />
-                    <span className="text-xs text-gray-500">点击上传图片，密卷房将用视觉模型分析</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 10 * 1024 * 1024) {
-                            toast.error('图片大小不能超过10MB');
-                            return;
-                          }
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            const base64 = (reader.result as string).split(',')[1];
-                            setMeetingImage(base64);
-                            toast.success('图片已上传，会议中将由视觉模型分析');
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                )}
               </div>
 
               {/* 讨论轮次 */}
@@ -1014,113 +930,13 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
         {/* ========== 右侧栏 65% ========== */}
         <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
 
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('new')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'new' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              新建会议
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'history' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <History className="w-4 h-4" />
-              历史会议
-            </button>
-          </div>
-
-          {activeTab === 'history' && (
-            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-                <History className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">历史会议记录</span>
-                <span className="text-gray-500 text-xs ml-auto">{meetingHistory.length} 条</span>
+          {/* 模块1: 像素办公室 */}
+          <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/50">
+              <div className="flex items-center gap-2">
+                <Monitor className="w-4 h-4 text-gray-400" />
+                <span className="text-white font-medium text-sm">像素办公室</span>
               </div>
-              <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
-                {meetingHistory.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-8">暂无历史会议记录</div>
-                ) : (
-                  meetingHistory.map((meeting: any) => (
-                    <div
-                      key={meeting.meeting_id}
-                      onClick={() => setSelectedMeeting(selectedMeeting?.meeting_id === meeting.meeting_id ? null : meeting)}
-                      className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                        selectedMeeting?.meeting_id === meeting.meeting_id ? 'border-blue-500 bg-blue-500/10' : 'border-gray-700/50 hover:border-gray-600'
-                      }`}
-                      style={{ background: '#0f1729' }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-white font-medium text-sm truncate">{meeting.topic}</div>
-                          <div className="flex items-center gap-3 mt-1.5 text-gray-500 text-xs">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {meeting.start_time ? new Date(meeting.start_time).toLocaleDateString('zh-CN') : '-'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {meeting.duration_seconds ? `${Math.round(meeting.duration_seconds / 60)}分钟` : '-'}
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <FileText className="w-3 h-3" />
-                              {meeting.rounds}轮
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      {selectedMeeting?.meeting_id === meeting.meeting_id && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          className="mt-4 pt-4 border-t border-gray-700/50"
-                        >
-                          {meeting.summary && (
-                            <div className="mb-3">
-                              <div className="text-gray-400 text-xs mb-1">会议总结</div>
-                              <div className="text-gray-300 text-sm">{meeting.summary}</div>
-                            </div>
-                          )}
-                          {meeting.decision && (
-                            <div className="mb-3">
-                              <div className="text-gray-400 text-xs mb-1">决策</div>
-                              <div className="text-green-400 text-sm">{meeting.decision}</div>
-                            </div>
-                          )}
-                          {meeting.action_items && meeting.action_items.length > 0 && (
-                            <div>
-                              <div className="text-gray-400 text-xs mb-1">行动项</div>
-                              <ul className="space-y-1">
-                                {meeting.action_items.map((item: string, idx: number) => (
-                                  <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
-                                    <span className="text-blue-400">•</span>
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'new' && (
-            <>
-              <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
-                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700/50">
-                  <div className="flex items-center gap-2">
-                    <Monitor className="w-4 h-4 text-gray-400" />
-                    <span className="text-white font-medium text-sm">像素办公室</span>
-                  </div>
               <div className="flex items-center gap-3">
                 <span className="text-white text-xs">进度: {pixelState.progress}%</span>
                 <div className="w-32 h-1.5 rounded-full overflow-hidden" style={{ background: '#0f1729' }}>
@@ -1238,12 +1054,12 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={saveToArchive}
+                      onClick={exportResults}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      保存归档
+                      导出
                     </button>
                     <button
                       onClick={resetMeeting}
@@ -1339,8 +1155,6 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
               </motion.div>
             )}
           </AnimatePresence>
-          </>
-          )}
         </div>
       </div>
     </div>

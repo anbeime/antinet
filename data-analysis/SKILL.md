@@ -69,7 +69,7 @@ set PATH=%QNN_SDK_ROOT%/bin;%PATH%
 #### GenieAPIService配置
 ```python
 # GenieAPIService HTTP API配置
-GENIE_API_BASE_URL = "http://localhost:8000"
+GENIE_API_BASE_URL = "http://localhost:8910"
 ```
 
 #### 模型配置

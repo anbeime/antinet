@@ -22,67 +22,49 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # 设置NPU库路径 - 必须在导入模型加载器之前完成
-# 按优先级尝试多个位置查找 QAIRT SDK
+# 【重要】只设置默认版本（2.37），匹配系统NPU驱动
+# 模型加载时会根据模型的QNN版本动态切换，避免版本冲突
 def find_qai_libs():
-    """自动查找 QAI 库路径 - 优先使用项目 QAIRT 目录"""
-    candidates = []
-
-    # 1. Qualcomm AIStack 安装目录（优先，用户下载的文件在这里）
+    """自动查找 QAI 库路径 - 默认使用 2.37（匹配系统NPU驱动）"""
     qualcomm_base = Path(project_root) / "QAIRT"
-    if qualcomm_base.exists():
-        for item in qualcomm_base.iterdir():
-            if item.is_dir():
-                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
-                    lib_path = item / lib_sub.replace("/", os.sep)
-                    if lib_path.exists():
-                        candidates.append(("Qualcomm AIStack 安装", str(lib_path)))
-
-    # 2. 项目本地 QAIRT Runtime（从 GitHub releases 下载的 Windows DLL）
-    local_qairt_paths = [
-        Path(project_root) / "QAIRT_Runtime" / "aarch64-windows-msvc",  # ARM64 native（推荐）
-        Path(project_root) / "QAIRT_Runtime" / "arm64x-windows-msvc",   # ARM64EC
-    ]
-    for p in local_qairt_paths:
+    
+    # 【关键】默认使用 2.37 版本（匹配当前系统 NPU 驱动）
+    # 只有匹配版本的 SDK 才能正确加载模型
+    default_version_dirs = ["2.37.1.250807"]
+    
+    for ver_dir in default_version_dirs:
+        version_path = qualcomm_base / ver_dir
+        if version_path.is_dir():
+            for lib_sub in ["lib/arm64x-windows-msvc", "lib/aarch64-windows-msvc"]:
+                lib_path = version_path / lib_sub.replace("/", os.sep)
+                if lib_path.exists():
+                    return str(lib_path)
+    
+    # 回退：查找任意可用版本
+    fallback_versions = ["2.45.40.260406", "2.42.0.251225", "2.34.0.250626"]
+    for ver_dir in fallback_versions:
+        version_path = qualcomm_base / ver_dir
+        if version_path.is_dir():
+            for lib_sub in ["lib/arm64x-windows-msvc", "lib/aarch64-windows-msvc"]:
+                lib_path = version_path / lib_sub.replace("/", os.sep)
+                if lib_path.exists():
+                    print(f"[SETUP] ⚠️ 未找到2.37版本SDK，回退使用: {ver_dir}")
+                    return str(lib_path)
+    
+    # 最后回退到 QAIRT_Runtime
+    for lib_sub in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
+        p = Path(project_root) / "QAIRT_Runtime" / lib_sub
         if p.exists():
-            candidates.append(("项目本地 QAIRT Runtime", str(p)))
+            return str(p)
+    
+    return str(Path(project_root) / "QAIRT_Runtime" / "arm64x-windows-msvc")
 
-    # 3. 项目本地 QAIRT 目录（手动下载的 QNN SDK v2.42）
-    d_qairt = Path(project_root) / "QAIRT"
-    if d_qairt.exists():
-        for item in d_qairt.iterdir():
-            if item.is_dir():
-                for lib_sub in ["lib/aarch64-windows-msvc", "lib/arm64x-windows-msvc"]:
-                    lib_path = item / lib_sub.replace("/", os.sep)
-                    if lib_path.exists():
-                        candidates.append(("项目 QAIRT SDK", str(lib_path)))
-
-    # 4. QAI AppBuilder 包内的 DLL 目录
-    try:
-        import qai_appbuilder
-        pkg_dir = Path(qai_appbuilder.__file__).parent
-        if pkg_dir.exists():
-            candidates.append(("QAI AppBuilder 包", str(pkg_dir)))
-    except ImportError:
-        pass
-
-    return candidates
-
-sdk_candidates = find_qai_libs()
-if sdk_candidates:
-    lib_path = sdk_candidates[0][1]
-else:
-    lib_path = str(Path(project_root) / "QAIRT_Runtime" / "aarch64-windows-msvc")
+lib_path = find_qai_libs()
 bridge_lib_path = lib_path
 
-print(f"[SETUP] QAI 库路径查找结果:")
-for i, p in enumerate(sdk_candidates):
-    marker = " <-- 使用此路径" if i == 0 else ""
-    print(f"  [{i+1}] {p}{marker}")
-if not sdk_candidates:
-    print(f"  [!] 未找到任何 QAI SDK 路径，使用默认: {lib_path}")
-    print(f"  [!] 请安装 Qualcomm AIStack 或确保 QAI AppBuilder 已正确安装")
+print(f"[SETUP] QAI 库路径: {lib_path}")
 
-# 确保两个目录都在 PATH 中
+# 只添加匹配版本的路径到 PATH，避免多版本 DLL 冲突
 paths_to_add = [lib_path, bridge_lib_path]
 current_path = os.environ.get('PATH', '')
 for p in paths_to_add:
@@ -91,7 +73,13 @@ for p in paths_to_add:
 os.environ['PATH'] = current_path
 os.environ['QAI_LIBS_PATH'] = lib_path
 
-# 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
+# 显式添加 DLL 目录（Python 3.8+）- 只添加匹配版本
+for p in paths_to_add:
+    if os.path.exists(p):
+        os.add_dll_directory(p)
+        print(f"[SETUP] 添加 DLL 目录: {p}")
+
+# 设置 QNN 日志级别
 try:
     from config import settings
     qnn_log_level = settings.QNN_LOG_LEVEL
@@ -100,18 +88,6 @@ try:
 except ImportError:
     os.environ['QNN_LOG_LEVEL'] = "DEBUG"
     print(f"[SETUP] 使用默认 QNN 日志级别: DEBUG")
-
-# 设置 NPU 库路径 - 确保所有 QAIRT 路径都添加
-# 添加更多 DLL 搜索路径
-extra_dll_paths = [
-    os.path.join(project_root, "QAIRT", "2.45.40.260406", "bin"),
-    os.path.join(project_root, "QAIRT", "2.42.0.251225", "bin"),
-    os.path.join(project_root, "QAIRT", "2.37.1.250807", "bin"),
-]
-for dll_path in extra_dll_paths:
-    if os.path.exists(dll_path):
-        os.add_dll_directory(dll_path)
-        print(f"[SETUP] 添加额外 DLL 目录: {dll_path}")
 
 print(f"[SETUP] NPU library paths configured:")
 print(f"  - qai_libs: {lib_path}")
@@ -336,9 +312,7 @@ except Exception as e:
 async def initialize_agent_system():
     """初始化 8-Agent 系统"""
     try:
-        logger.info("[AgentSystem] 正在初始化 8-Agent 系统...")
-        from routes.agent_routes import initialize_agents
-        initialize_agents()
+        logger.info("[AgentSystem] 8-Agent 系统已通过路由注册自动就绪")
 
         # 初始化技能系统
         logger.info("[SkillSystem] 正在初始化技能系统...")

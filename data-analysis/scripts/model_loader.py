@@ -1,6 +1,6 @@
 """
 NPU模型加载器
-支持多模型动态切换（llama3.2-3b/Qwen2.0-7B-SSD/llama3.1-8b）
+支持多模型动态切换（llama3.2-3b/Qwen2.0-7B-SSD/Qwen2.5-VL-3B）
 """
 
 import os
@@ -18,19 +18,15 @@ class NPUModelLoader:
     支持的模型：
     - llama3.2-3b: 3B参数，~280ms，最快响应
     - Qwen2.0-7B-SSD: 7B参数，~450ms，通用推荐
-    - llama3.1-8b: 8B参数，~520ms，更强推理
+    - Qwen2.5-VL-3B: 3B参数，~350ms，视觉+语言
     """
     
-    # 模型路径配置
+    # 模型路径配置（与实际 models/ 目录对应）
     MODEL_PATHS = {
         "qwen2.0-7b-ssd": str(_PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),  # 通用推荐 ⭐️ (~450ms)
-        "llama3.1-8b": str(_PROJECT_ROOT / "models" / "llama3.1-8b"),                    # 更强推理 (~520ms)
-        "llama3.2-3b": str(_PROJECT_ROOT / "models" / "llama3.2-3b"),                     # 最快响应 (~280ms)
-        # 四色卡片生成器专用模型
-        "qwen2-1.5b-int4": str(_PROJECT_ROOT / "models" / "Qwen2-1.5B-INT4"),            # 事实卡片生成器
-        "qwen2-7b-lora-int4": str(_PROJECT_ROOT / "models" / "Qwen2-7B-LoRA-INT4"),      # 解释卡片生成器
-        "phi-3-mini-int4": str(_PROJECT_ROOT / "models" / "Phi-3-mini-INT4"),             # 风险卡片生成器
-        "qwen2-7b-cot-int4": str(_PROJECT_ROOT / "models" / "Qwen2-7B-CoT-INT4"),        # 行动卡片生成器
+        "llama3.2-3b": str(_PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),        # 最快响应 (~280ms)
+        "qwen2.5-vl-3b": str(_PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),        # 视觉+语言 (~350ms)
+        "bge-base-zh": str(_PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),       # 嵌入模型
     }
     
     # 模型性能指标
@@ -40,35 +36,20 @@ class NPUModelLoader:
             "memory_gb": 3.2,
             "accuracy": 0.92
         },
-        "llama3.1-8b": {
-            "latency_ms": 520,
-            "memory_gb": 3.8,
-            "accuracy": 0.95
-        },
         "llama3.2-3b": {
             "latency_ms": 280,
             "memory_gb": 1.8,
             "accuracy": 0.85
         },
-        "qwen2-1.5b-int4": {
-            "latency_ms": 150,
-            "memory_gb": 0.8,
+        "qwen2.5-vl-3b": {
+            "latency_ms": 350,
+            "memory_gb": 2.5,
             "accuracy": 0.88
         },
-        "qwen2-7b-lora-int4": {
-            "latency_ms": 380,
-            "memory_gb": 2.8,
-            "accuracy": 0.93
-        },
-        "phi-3-mini-int4": {
-            "latency_ms": 200,
-            "memory_gb": 1.2,
-            "accuracy": 0.90
-        },
-        "qwen2-7b-cot-int4": {
-            "latency_ms": 400,
-            "memory_gb": 2.8,
-            "accuracy": 0.94
+        "bge-base-zh": {
+            "latency_ms": 50,
+            "memory_gb": 0.2,
+            "accuracy": 0.95
         }
     }
     
@@ -223,9 +204,9 @@ if __name__ == "__main__":
     print(result2)
     print()
     
-    # 示例3：使用更强模型（llama3.1-8b）
-    print("=== 示例3：使用更强模型 ===")
-    loader3 = NPUModelLoader(model_key="llama3.1-8b")
+    # 示例3：使用视觉语言模型
+    print("=== 示例3：使用视觉语言模型 ===")
+    loader3 = NPUModelLoader(model_key="qwen2.5-vl-3b")
     model3 = loader3.load()
     result3 = loader3.generate("分析销售下滑的深层原因并预测下月趋势", max_tokens=3000)
     print(result3)

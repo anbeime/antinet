@@ -195,7 +195,7 @@ data-analysis-iteration/
 
 ```env
 # GenieAPIService配置
-GENIE_API_BASE_URL=http://localhost:5000
+GENIE_API_BASE_URL=http://localhost:8000
 GENIE_MODEL_PATH=models/Qwen2.0-7B-SSD-8380-2.34/
 
 # QNN SDK配置

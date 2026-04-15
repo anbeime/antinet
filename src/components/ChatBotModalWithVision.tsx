@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Bot, User, Image, Upload, Loader } from 'lucide-react';
+import { X, Send, Bot, User, Upload, Loader, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 interface Message {
   id: string;
@@ -21,7 +22,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
     {
       id: '1',
       role: 'assistant',
-      content: '你好！我是知易智能知识管家的视觉助手。\n\n[提示] 使用提示：\n1. 我支持图片分析功能\n2. 可以上传图片进行智能分析\n3. 基于本地 NPU 模型运行\n4. 数据不出域，完全本地化\n\n有什么可以帮您的？',
+      content: '你好！我是小易视觉助手。\n\n🍵 我支持图片分析功能，可以上传图片进行智能分析，基于本地 NPU 模型运行，数据不出域。\n\n有什么可以帮您的？',
       timestamp: new Date(),
     },
   ]);
@@ -29,6 +30,12 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // 语音相关状态
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,6 +61,13 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
       }, 100);
     }
   }, [isOpen]);
+
+  // 初始化语音合成
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      synthRef.current = window.speechSynthesis;
+    }
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -242,6 +256,93 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
     }
   };
 
+  // 语音识别（ASR）
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      toast.error('您的浏览器不支持语音识别，建议使用 Chrome');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      if (transcript) {
+        setInput(transcript);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onerror = () => {
+      toast.error('语音识别失败，请重试');
+      setIsListening(false);
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    toast.success('正在聆听...', { duration: 2000 });
+  };
+
+  // 语音合成（TTS）
+  const speakText = async (text: string) => {
+    if (isSpeaking) {
+      synthRef.current?.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:8000/api/chat/enhanced/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: '晓伊' }),
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType?.includes('audio/mpeg')) {
+          const blob = await response.blob();
+          const audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          setIsSpeaking(true);
+          audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(audioUrl); };
+          audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(audioUrl); _browserTTS(text); };
+          audio.play();
+          return;
+        }
+      }
+    } catch {}
+
+    _browserTTS(text);
+  };
+
+  const _browserTTS = (text: string) => {
+    if (!synthRef.current) return;
+    synthRef.current.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    const voices = synthRef.current.getVoices();
+    const zhVoice = voices.find(v => v.lang.includes('zh') && v.name.includes('Xiao')) || voices.find(v => v.lang.includes('zh'));
+    if (zhVoice) utterance.voice = zhVoice;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    synthRef.current.speak(utterance);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -260,16 +361,20 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[800px] max-h-[80vh] flex flex-col overflow-hidden"
-        style={{ transform: `translate(${transform.x}px, ${transform.y}px)` }}
+        className="relative rounded-xl shadow-2xl w-[800px] max-h-[80vh] flex flex-col overflow-hidden"
+        style={{ backgroundColor: '#fff9f3', border: '1px solid #e8ddd0' }}
       >
-        <div 
-          className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 cursor-move bg-gradient-to-r from-blue-500 to-purple-600"
+        {/* 头部 - 中国风 */}
+        <div
+          className="flex items-center justify-between p-4 cursor-move"
+          style={{ background: 'linear-gradient(135deg, #8b4513, #d4a574)', borderBottom: '2px solid #d4a574' }}
           onMouseDown={handleMouseDown}
         >
           <div className="flex items-center gap-2 text-white">
-            <Bot className="w-5 h-5" />
-            <span className="font-semibold">视觉智能助手</span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+              <Bot className="w-4 h-4" />
+            </div>
+            <span className="font-semibold" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>视觉智能助手</span>
           </div>
           <button
             onClick={onClose}
@@ -279,15 +384,16 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* 消息区域 */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ backgroundColor: '#faf8f5' }}>
           {messages.map((msg) => (
             <div
               key={msg.id}
               className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
             >
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                msg.role === 'user' ? 'bg-blue-500' : 'bg-purple-500'
-              }`}>
+                msg.role === 'user' ? '' : ''
+              }`} style={{ backgroundColor: msg.role === 'user' ? '#8b4513' : '#d4a574' }}>
                 {msg.role === 'user' ? (
                   <User className="w-4 h-4 text-white" />
                 ) : (
@@ -296,11 +402,54 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
               </div>
               <div className={`flex-1 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
                 <div className={`inline-block p-3 rounded-lg max-w-[80%] ${
-                  msg.role === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700'
-                }`}>
-                  {msg.content}
+                  msg.role === 'user' ? '' : ''
+                }`} style={{
+                  backgroundColor: msg.role === 'user' ? '#8b4513' : '#fef3e2',
+                  color: msg.role === 'user' ? '#fff9f3' : '#4a3728',
+                  border: msg.role === 'user' ? 'none' : '1px solid #e8ddd0'
+                }}>
+                  {msg.role === 'assistant' ? (
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ children }) => <h1 className="text-base font-bold mb-2 mt-1" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif' }}>{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-sm font-bold mb-1.5 mt-1" style={{ color: '#a0522d' }}>{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-xs font-bold mb-1 mt-1" style={{ color: '#b87333' }}>{children}</h3>,
+                        p: ({ children }) => <p className="text-xs leading-relaxed my-1" style={{ color: '#4a3728' }}>{children}</p>,
+                        ul: ({ children }) => <ul className="space-y-0.5 my-1 ml-3 list-disc list-outside">{children}</ul>,
+                        ol: ({ children }) => <ol className="space-y-0.5 my-1 ml-3 list-decimal list-outside">{children}</ol>,
+                        li: ({ children }) => <li className="text-xs leading-relaxed" style={{ color: '#4a3728' }}>{children}</li>,
+                        strong: ({ children }) => <strong className="font-semibold" style={{ color: '#8b4513' }}>{children}</strong>,
+                        em: ({ children }) => <em className="italic" style={{ color: '#a0522d' }}>{children}</em>,
+                        code: ({ className, children, ...props }) => {
+                          const isBlock = className?.includes('language-');
+                          return isBlock ? (
+                            <pre className="rounded-lg p-3 my-2 overflow-x-auto border" style={{ backgroundColor: '#faf5f0', borderColor: '#e8ddd0' }}>
+                              <code className="text-xs" style={{ color: '#6b4423' }} {...props}>{children}</code>
+                            </pre>
+                          ) : (
+                            <code className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: '#fff9f3', color: '#8b4513' }} {...props}>{children}</code>
+                          );
+                        },
+                        blockquote: ({ children }) => (
+                          <blockquote className="pl-3 my-2 rounded-r py-1" style={{ borderLeft: '3px solid #d4a574', backgroundColor: '#fff9f3' }}>
+                            {children}
+                          </blockquote>
+                        ),
+                        hr: () => <hr className="my-2" style={{ borderColor: '#e8ddd0' }} />,
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto my-2 rounded border" style={{ borderColor: '#e8ddd0' }}>
+                            <table className="w-full text-xs">{children}</table>
+                          </div>
+                        ),
+                        thead: ({ children }) => <thead style={{ backgroundColor: '#fef3e2' }}>{children}</thead>,
+                        th: ({ children }) => <th className="px-2 py-1 text-left font-medium border-b" style={{ color: '#8b4513', borderColor: '#e8ddd0' }}>{children}</th>,
+                        td: ({ children }) => <td className="px-2 py-1 border-b" style={{ color: '#4a3728', borderColor: '#f0e6d8' }}>{children}</td>,
+                        a: ({ href, children }) => <a href={href} className="underline hover:opacity-80" style={{ color: '#b87333' }} target="_blank" rel="noopener noreferrer">{children}</a>,
+                      }}
+                    >{msg.content}</ReactMarkdown>
+                  ) : (
+                    <span>{msg.content}</span>
+                  )}
                   {msg.imageUrl && (
                     <img 
                       src={msg.imageUrl} 
@@ -308,17 +457,29 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
                       className="mt-2 max-w-full rounded-lg max-h-48 object-cover"
                     />
                   )}
+                  {/* 语音播放按钮 - 仅助手消息 */}
+                  {msg.role === 'assistant' && msg.content && (
+                    <button
+                      onClick={() => speakText(msg.content)}
+                      className="mt-1 flex items-center gap-1 text-xs opacity-60 hover:opacity-100 transition-opacity cursor-pointer border-none bg-transparent"
+                      style={{ color: '#8b4513' }}
+                      title={isSpeaking ? '停止朗读' : '朗读'}
+                    >
+                      {isSpeaking ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                      <span>{isSpeaking ? '停止' : '朗读'}</span>
+                    </button>
+                  )}
                 </div>
-                <div className={`text-xs text-gray-500 mt-1 ${
+                <div className={`text-xs mt-1 ${
                   msg.role === 'user' ? 'text-right' : 'text-left'
-                }`}>
+                }`} style={{ color: '#8b7355' }}>
                   {msg.timestamp.toLocaleTimeString()}
                 </div>
               </div>
             </div>
           ))}
           {isLoading && (
-            <div className="flex items-center gap-2 text-gray-500">
+            <div className="flex items-center gap-2" style={{ color: '#8b7355' }}>
               <Loader className="w-4 h-4 animate-spin" />
               <span className="text-sm">处理中...</span>
             </div>
@@ -328,22 +489,24 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
 
         {/* 图片预览 */}
         {previewUrl && (
-          <div className="px-4 py-2 border-t bg-gray-50 dark:bg-gray-800">
+          <div className="px-4 py-2" style={{ backgroundColor: '#fef3e2', borderTop: '1px solid #e8ddd0' }}>
             <div className="flex items-center gap-3">
               <img 
                 src={previewUrl} 
                 alt="Preview" 
                 className="w-16 h-16 object-cover rounded-lg border"
+                style={{ borderColor: '#d4a574' }}
               />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{selectedImage?.name}</p>
-                <p className="text-xs text-gray-500">
+                <p className="text-sm font-medium truncate" style={{ color: '#8b4513' }}>{selectedImage?.name}</p>
+                <p className="text-xs" style={{ color: '#8b7355' }}>
                   {selectedImage ? (selectedImage.size / 1024).toFixed(1) : 0} KB
                 </p>
               </div>
               <button
                 onClick={handleRemoveImage}
-                className="p-1 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="p-1 rounded-lg transition-colors"
+                style={{ color: '#8b7355' }}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -351,7 +514,8 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
           </div>
         )}
 
-        <div className="p-4 border-t bg-white dark:bg-gray-800 flex-shrink-0">
+        {/* 输入区域 */}
+        <div className="p-4 flex-shrink-0" style={{ backgroundColor: '#fff9f3', borderTop: '2px solid #d4a574' }}>
           <div className="flex gap-2">
             <input
               type="file"
@@ -363,10 +527,26 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
             
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              className="p-2 rounded-lg transition-colors"
+              style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
               disabled={isLoading}
             >
               <Upload className="w-5 h-5" />
+            </button>
+            
+            {/* 语音输入按钮 */}
+            <button
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                backgroundColor: isListening ? '#8b4513' : '#fef3e2',
+                color: isListening ? '#fff9f3' : '#8b4513',
+                border: isListening ? '2px solid #8b4513' : '1px solid #e8ddd0'
+              }}
+              onClick={toggleListening}
+              disabled={isLoading}
+              title={isListening ? '停止录音' : '语音输入'}
+            >
+              {isListening ? <MicOff className="w-5 h-5 animate-pulse" /> : <Mic className="w-5 h-5" />}
             </button>
             
             <textarea
@@ -374,8 +554,9 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入消息... (Enter发送, Shift+Enter换行)"
-              className="flex-1 px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder={isListening ? "正在聆听..." : "输入消息... (Enter发送, Shift+Enter换行)"}
+              className="flex-1 px-3 py-2 text-sm rounded-lg resize-none focus:outline-none"
+              style={{ backgroundColor: '#fef3e2', border: '1px solid #e8ddd0', color: '#4a3728' }}
               rows={2}
               disabled={isLoading}
             />
@@ -383,14 +564,15 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
             <button
               onClick={handleSend}
               disabled={isLoading || (!input.trim() && !selectedImage)}
-              className="p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-lg transition-colors"
+              className="p-2 text-white rounded-lg transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#8b4513' }}
             >
               {isLoading ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
           </div>
           
-          <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            [提示] 支持文本和图片分析 · 基于本地 NPU 模型
+          <div className="mt-2 text-xs" style={{ color: '#8b7355' }}>
+            {isListening ? '🎤 正在聆听...' : '[提示] 支持文本和图片分析 · 语音输入 · 基于本地 NPU 模型'}
           </div>
         </div>
       </motion.div>

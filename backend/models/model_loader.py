@@ -14,17 +14,14 @@ import logging
 logger = logging.getLogger(__name__)
 from typing import Optional, Dict, Any, List
 from pathlib import Path
+import threading
 
 # 强制禁用 qai_hub_models 依赖，防止因缺少该库导致崩溃
 HAS_QAI_HUB = False
 
-# 引入 requests 库用于 API 调用
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
-    logger.warning("requests 库未安装，API 模型将不可用")
+# 🔒 NPU 推理锁 - 防止并发推理导致 DSP 崩溃
+_npu_inference_lock = threading.Lock()
+_npu_cooldown_seconds = 0.5  # 推理间隔冷却时间
 
 # 添加Genie路径 - 支持多个位置查找
 import os
@@ -58,20 +55,31 @@ if GENIE_PATH not in sys.path:
 try:
     from backend.config import QNN_SDK_PATHS
 except ImportError:
-    # 回退：按优先级查找精确版本，然后 fallback 到 2.42
+    # 回退：查找精确版本的 SDK，不跨版本回退（版本不兼容会导致 DSP 崩溃）
     def _find_qnn_sdk(version: str) -> str:
+        # 每个版本只查找自己的精确目录，不回退到其他版本
         version_dirs = {
-            "2.34": ["2.34.0.250626", "2.42.0.251225"],
-            "2.37": ["2.37.1.250807", "2.42.0.251225"],
-            "2.38": ["2.38.0.250901", "2.42.0.251225"],
+            "2.34": ["2.34.0.250626"],
+            "2.37": ["2.37.1.250807"],
+            "2.38": ["GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73"],
             "2.42": ["2.42.0.251225"],
-            "2.44": ["2.42.0.251225"],
+            "2.44": ["2.45.40.260406"],
         }
-        for vdir in version_dirs.get(version, ["2.42.0.251225"]):
-            p = str(PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc")
-            if os.path.exists(p):
-                return p
-        return str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+        for vdir in version_dirs.get(version, []):
+            # 特殊处理：GenieAPIService 目录结构不同
+            if "GenieAPIService" in vdir:
+                p = str(PROJECT_ROOT / "QAIRT" / vdir)
+                if os.path.exists(p):
+                    return p
+            else:
+                # 优先 arm64x-windows-msvc
+                for arch in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
+                    p = str(PROJECT_ROOT / "QAIRT" / vdir / "lib" / arch)
+                    if os.path.exists(p):
+                        return p
+        # 找不到精确版本时返回空字符串，而不是回退到其他版本
+        logger.warning(f"[SDK] 未找到 QNN {version} 版本的 SDK，模型加载可能失败")
+        return ""
     QNN_SDK_PATHS = {v: _find_qnn_sdk(v) for v in ["2.34", "2.37", "2.38", "2.42", "2.44"]}
 
 # 提取 QNN 版本号的辅助函数
@@ -103,15 +111,15 @@ def get_qai_libs_path() -> str:
             return pkg_dir
     except (ImportError, TypeError):
         pass
-    # 兜底：使用 QAIRT SDK 路径
-    return QNN_SDK_PATHS.get("2.42", "")
+    # 兜底：使用 QAIRT SDK 路径（优先2.45，然后2.42）
+    return QNN_SDK_PATHS.get("2.45", QNN_SDK_PATHS.get("2.42", ""))
 
 # AIPC 预装的额外 DLL 目录 - 智能查找实际包含 DLL 的目录
 def _find_extra_qai_libs() -> str:
     """查找 AIPC 预装 DLL 目录（包含 Genie.dll 的实际目录）"""
     candidates = [
-        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "aarch64-windows-msvc",
         AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "arm64x-windows-msvc",
+        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "aarch64-windows-msvc",
         AI_ENGINE_HELPER_PATH / "samples" / "qai_libs",
         PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc",
         PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc",
@@ -130,44 +138,86 @@ EXTRA_QAI_LIBS = _find_extra_qai_libs()
 def setup_qnn_paths(qnn_version: str = None):
     """
     根据 QNN 版本动态设置库路径
-    优先使用特定模型配套的 SDK 目录
+    
+    【重要发现】系统NPU驱动版本必须与SDK版本匹配！
+    错误: Stub lib id mismatch: expected (v2.42), detected (v2.37)
+    解决: 使用与系统驱动匹配的 SDK 版本
+    
+    策略:
+    1. 如果指定版本存在，优先使用
+    2. 否则使用系统驱动检测到的版本（默认2.37）
     """
-    # 优先使用特定模型配套的 SDK（用户指定的正确路径）
-    model_specific_paths = [
-        PROJECT_ROOT / "QAIRT" / "GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73",
-    ]
+    # QAIRT 版本号到目录名的映射
+    version_dir_map = {
+        "2.45": ["2.45.40.260406"],
+        "2.42": ["2.42.0.251225"],
+        "2.38": ["GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73"],
+        "2.37": ["2.37.1.250807"],
+        "2.34": ["2.34.0.250626"],
+    }
     
-    for sdk_path in model_specific_paths:
-        if sdk_path.exists():
-            lib_path = str(sdk_path)
-            logger.info(f"[INFO] 使用模型专用 SDK: {lib_path}")
-            
-            # 添加到 PATH
-            if lib_path not in os.environ.get('PATH', ''):
-                os.environ['PATH'] = lib_path + ';' + os.environ.get('PATH', '')
-            try:
-                os.add_dll_directory(lib_path)
-                logger.info(f"[OK] 已添加模型专用 SDK 路径: {lib_path}")
-            except Exception as e:
-                logger.warning(f"[WARNING] 添加DLL目录失败: {e}")
-            
-            os.environ['QAI_LIBS_PATH'] = lib_path
-            return lib_path
-    
-    # 备选方案：尝试 C:\D\zhiyi\QAIRT 目录下的其他 SDK
     qairt_base = PROJECT_ROOT / "QAIRT"
-    version_priority = ["2.37", "2.38", "2.42"]
-    if qnn_version and qnn_version not in version_priority:
-        version_priority.insert(0, qnn_version)
     
+    # 【关键】默认使用 2.37（匹配当前系统NPU驱动）
+    # 如果需要其他版本，必须显式指定且SDK存在
+    DEFAULT_SDK_VERSION = "2.37"
+    
+    # 找到第一个存在的版本
+    def find_existing_version(versions):
+        for ver in versions:
+            ver_dirs = version_dir_map.get(ver, [])
+            for ver_dir in ver_dirs:
+                if "GenieAPIService" in ver_dir:
+                    if (qairt_base / ver_dir).exists():
+                        return ver
+                else:
+                    for arch in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
+                        if (qairt_base / ver_dir / "lib" / arch).exists():
+                            return ver
+        return None
+    
+    # 确定使用的版本
+    use_version = None
+    
+    if qnn_version:
+        # 尝试使用指定版本
+        existing = find_existing_version([qnn_version])
+        if existing:
+            use_version = qnn_version
+            logger.info(f"[SDK] 使用指定版本: {qnn_version}")
+        else:
+            logger.warning(f"[SDK] 指定版本 {qnn_version} 不存在，回退到默认版本")
+    
+    if not use_version:
+        # 使用默认版本（匹配系统驱动）
+        existing = find_existing_version([DEFAULT_SDK_VERSION])
+        if existing:
+            use_version = DEFAULT_SDK_VERSION
+            logger.info(f"[SDK] 使用默认版本（匹配系统驱动）: {DEFAULT_SDK_VERSION}")
+    
+    if not use_version:
+        logger.error("[SDK] 未找到匹配版本的 QNN SDK！模型加载可能失败")
+        return None
+    
+    # 只使用匹配版本的 SDK，不尝试其他版本（版本不兼容会导致 DSP 崩溃）
     lib_path = None
-    for ver in version_priority:
-        for ver_dir in [f"{ver}.0.251225", f"{ver}.0.250901", f"{ver}.1.250807", f"{ver}.0.250724"]:
-            candidate = qairt_base / ver_dir / "lib" / "aarch64-windows-msvc"
+    ver_dirs = version_dir_map.get(use_version, [])
+    for ver_dir in ver_dirs:
+        # 特殊处理：GenieAPIService 目录结构不同（DLL直接在根目录）
+        if "GenieAPIService" in ver_dir:
+            candidate = qairt_base / ver_dir
             if candidate.exists():
                 lib_path = str(candidate)
-                logger.info(f"[INFO] 使用 QAIRT SDK: {lib_path}")
+                logger.info(f"[INFO] 使用 Genie SDK: {lib_path}")
                 break
+        else:
+            # 标准QAIRT目录结构：lib/arm64x-windows-msvc
+            for arch in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
+                candidate = qairt_base / ver_dir / "lib" / arch
+                if candidate.exists():
+                    lib_path = str(candidate)
+                    logger.info(f"[INFO] 使用 QAIRT SDK: {lib_path}")
+                    break
         if lib_path:
             break
     
@@ -176,32 +226,17 @@ def setup_qnn_paths(qnn_version: str = None):
         logger.info(f"[INFO] 回退到 qai_appbuilder: {lib_path}")
     
     # 需要添加的路径列表（按优先级排序）
+    # 【重要】只添加匹配版本的 SDK，避免版本冲突
     paths_to_add = []
     
-    # 1. QAIRT SDK（最完整，优先）
+    # 1. QAIRT SDK（版本匹配，优先）
     if lib_path and os.path.exists(lib_path):
         paths_to_add.append(lib_path)
+        logger.info(f"[SDK] 添加匹配版本SDK: {lib_path}")
     
-    # 2. qai_appbuilder 包目录（DLL直接在包里）
-    try:
-        import qai_appbuilder
-        pkg_dir = os.path.dirname(qai_appbuilder.__file__)
-        if pkg_dir not in paths_to_add and os.path.exists(os.path.join(pkg_dir, 'Genie.dll')):
-            paths_to_add.append(pkg_dir)
-    except ImportError:
-        pass
-    
-    # 3. AIPC 预装 DLL 目录
-    if os.path.exists(EXTRA_QAI_LIBS) and EXTRA_QAI_LIBS not in paths_to_add:
-        paths_to_add.append(EXTRA_QAI_LIBS)
-    
-    # 4. QAIRT_Runtime 备用目录
-    for rt_dir in [
-        str(PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc"),
-        str(PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc"),
-    ]:
-        if os.path.exists(rt_dir) and rt_dir not in paths_to_add:
-            paths_to_add.append(rt_dir)
+    # 2. 不再添加可能冲突的其他路径
+    # 注意：移除了 qai_appbuilder、EXTRA_QAI_LIBS、QAIRT_Runtime
+    # 因为这些可能包含不同版本的 DLL，导致崩溃
     
     # 添加所有路径到 PATH 和 DLL 目录
     current_path = os.environ.get('PATH', '')
@@ -220,8 +255,10 @@ def setup_qnn_paths(qnn_version: str = None):
     
     return lib_path
 
-# 初始化默认路径
-lib_path = setup_qnn_paths("2.38")
+# 初始化默认路径（不在此处加载，避免提前锁定版本）
+# SDK 路径将在模型加载时根据模型版本动态设置
+lib_path = None
+logger.info("[SDK] SDK路径将在模型加载时动态设置")
 
 # 设置 QNN 日志级别为 DEBUG 以启用详细日志输出
 try:
@@ -233,37 +270,26 @@ except ImportError:
     os.environ['QNN_LOG_LEVEL'] = "DEBUG"
     logger.info("[INFO] 使用默认 QNN 日志级别: DEBUG")
 
-# 设置 QNN 其他环境变量以启用详细日志
-os.environ['QNN_DEBUG'] = "1"
-os.environ['QNN_VERBOSE'] = "1"
-logger.info("[OK] QNN 调试标志已设置（QNN_DEBUG=1, QNN_VERBOSE=1）")
+# 设置 QNN 其他环境变量（关闭 SDK 详细日志，只保留应用层日志）
+os.environ['QNN_DEBUG'] = "0"
+os.environ['QNN_VERBOSE'] = "0"
+os.environ['QNN_LOG_LEVEL'] = "WARN"  # 只显示警告和错误
+logger.info("[OK] QNN SDK 日志已设置为简洁模式")
 
-# 预加载QNN核心DLL，确保正确的加载顺序
-logger.info("[INFO] 预加载QNN核心DLL...")
+# 【重要】不在模块导入时预加载 DLL
+# DLL 将在模型加载时根据模型版本动态预加载，避免版本冲突
 import ctypes
 
-# 从 setup_qnn_paths 中获取所有 DLL 搜索路径
-_dll_paths = [lib_path] if lib_path else []
-# 补充其他可能的 DLL 路径
-for extra in [
-    EXTRA_QAI_LIBS,
-    str(PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc"),
-    str(PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc"),
-    str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
-]:
-    if extra and os.path.exists(extra) and extra not in _dll_paths:
-        _dll_paths.append(extra)
-# qai_appbuilder 包目录也可能包含 DLL
-try:
-    import qai_appbuilder
-    pkg_dir = os.path.dirname(qai_appbuilder.__file__)
-    if pkg_dir not in _dll_paths:
-        _dll_paths.append(pkg_dir)
-except ImportError:
-    pass
-logger.info(f"[DLL搜索路径] {_dll_paths}")
-try:
-    # 按顺序预加载DLL，避免版本冲突（改进版：先加载Genie.dll）
+def _preload_dlls(lib_path: str):
+    """
+    预加载指定版本的 QNN DLL
+    必须在 setup_qnn_paths 之后调用，确保版本匹配
+    """
+    if not lib_path:
+        logger.warning("[DLL] 无有效SDK路径，跳过预加载")
+        return
+    
+    logger.info(f"[DLL] 预加载 SDK: {lib_path}")
     dlls_to_load = [
         "Genie.dll",           # Genie核心库
         "QnnSystem.dll",       # QNN系统库
@@ -273,24 +299,15 @@ try:
     ]
 
     for dll in dlls_to_load:
-        found = False
-        for p in _dll_paths:
-            dll_path = Path(p) / dll
-            if dll_path.exists():
-                try:
-                    # 使用windll而不是CDLL，因为有些DLL需要stdcall调用约定
-                    ctypes.WinDLL(str(dll_path))
-                    logger.info(f"[OK] 预加载成功: {dll}")
-                    found = True
-                    break
-                except Exception as e:
-                    logger.warning(f"[WARNING] 预加载失败 {dll}: {e}")
-        if not found:
-            logger.warning(f"[WARNING] 未找到DLL: {dll}")
-
-    logger.info("[OK] DLL预加载完成")
-except Exception as e:
-    logger.warning(f"[WARNING] DLL预加载过程出错: {e}")
+        dll_path = Path(lib_path) / dll
+        if dll_path.exists():
+            try:
+                ctypes.WinDLL(str(dll_path))
+                logger.info(f"[DLL] 预加载成功: {dll}")
+            except Exception as e:
+                logger.warning(f"[DLL] 预加载失败 {dll}: {e}")
+        else:
+            logger.debug(f"[DLL] 未找到: {dll_path}")
 
 # qai_hub_models是可选的，仅用于性能配置（BURST模式）
 PerfProfile = None
@@ -319,23 +336,11 @@ except ImportError as e:
 class ModelConfig:
     """模型配置类"""
 
-    # 预装模型配置（注意：qwen2.5-vl-3b 不在此列表，它需要独立 VL 服务）
+    # 预装模型配置
     MODELS = {
-        "gemma4": {
-            "name": "Gemma 4",
-            "api_endpoint": "http://localhost:11434",
-            "method": "POST",
-            "type": "api",
-            "params": "API",
-            "quantization": "API",
-            "description": "Gemma 4 - 通过本地API服务访问的模型",
-            "max_tokens": 2048,
-            "recommended": True,
-            "path": ""
-        },
-        # "qwen2.5-vl-3b": {  # VL 模型，走独立服务，不在此列表
+        # "qwen2.5-vl-3b": {
         #     "name": "Qwen2.5-VL-3B",
-        #     "path": "C:/D/zhiyi/models/models_2.42/qwen2.5vl3b-8380-2.42",
+        #     "path": str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
         #     "params": "3B",
         #     "quantization": "QNN 2.42",
         #     "description": "最新模型，支持视觉+语言，QNN 2.42优化，2个分片",
@@ -360,15 +365,6 @@ class ModelConfig:
             "max_tokens": 2048,
             "recommended": True
         },
-        "qwen2.5-vl-3b": {
-            "name": "Qwen2.5-VL-3B",
-            "path": str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
-            "params": "3B",
-            "quantization": "QNN 2.38",
-            "description": "视觉语言模型，配套 GenieAPIService_v2.1.0_QAIRT_v2.38.0_v73",
-            "max_tokens": 2048,
-            "recommended": True
-        },
         "bge-base-zh": {
             "name": "BGE-Base-ZH",
             "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),
@@ -377,148 +373,13 @@ class ModelConfig:
             "description": "中文文本嵌入模型，RAG知识库，完整单文件",
             "max_tokens": 512,
             "recommended": True
-        },
-        # "llama3.1-8b": {  # 已禁用，NPU加载失败
-        #     "name": "Llama3.1-8B",
-        #     "path": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38",
-        #     "params": "8B",
-        #     "quantization": "QNN 2.38",
-        #     "description": "对话生成，英文效果好，推理能力强，性能优化（分片文件，需合并）",
-        #     "max_tokens": 2048,
-        #     "recommended": False
-        # },
+        }
     }
 
-    # 默认使用的模型
-    # Llama3.2-3B: 纯文本模型，QNN 2.37，稳定可用
+    # 默认使用的模型（参考旧版本）
     DEFAULT_MODEL = "llama3.2-3b"
 
 
-class APIModelLoader:
-    """API-based model loader for models like Gemma4"""
-    
-    def __init__(self, model_key: str = None):
-        """
-        Initialize API model loader
-        
-        Args:
-            model_key: Model key name, e.g., "gemma4"
-        """
-        self.model_key = model_key or "gemma4"
-        self.model_config = ModelConfig.MODELS.get(self.model_key)
-        
-        if not self.model_config:
-            raise ValueError(f"Unknown model: {self.model_key}, available models: {list(ModelConfig.MODELS.keys())}")
-        
-        if self.model_config.get("type") != "api":
-            raise ValueError(f"Model {self.model_key} is not an API model")
-        
-        self.api_endpoint = self.model_config.get("api_endpoint")
-        self.method = self.model_config.get("method", "POST")
-        self.is_loaded = True  # API models are always "loaded"
-    
-    def load(self) -> Any:
-        """API models don't need loading, just confirm availability"""
-        logger.info(f"API model {self.model_config['name']} is ready")
-        self.is_loaded = True
-        return self
-    
-    def infer(self, prompt: str, max_new_tokens: int = 256, temperature: float = 0.7) -> str:
-        """
-        Execute inference via API
-        
-        Args:
-            prompt: Input prompt
-            max_new_tokens: Maximum tokens to generate
-            temperature: Temperature parameter
-            
-        Returns:
-            Generated text
-            
-        Raises:
-            Exception: If inference fails
-        """
-        if not HAS_REQUESTS:
-            raise ImportError("requests library is required for API models")
-        
-        try:
-            logger.info(f"Calling API model {self.model_key} at {self.api_endpoint}")
-            
-            # Build request payload - 使用 Ollama /api/chat 端点
-            payload = {
-                "model": "gemma4",
-                "messages": [{"role": "user", "content": prompt}],
-                "options": {
-                    "num_predict": max_new_tokens,
-                    "temperature": temperature
-                }
-            }
-            
-            # Make API request - 使用 /api/chat 端点
-            response = requests.post(
-                f"{self.api_endpoint}/api/chat",
-                json=payload,
-                timeout=120  # 120 second timeout
-            )
-            
-            # Check for HTTP errors
-            response.raise_for_status()
-            
-            # Parse response
-            result = response.json()
-            
-            # Extract text from response (adjust based on actual API format)
-            if isinstance(result, dict):
-                if "response" in result:
-                    return result["response"]
-                elif "output" in result:
-                    return result["output"]
-                elif "choices" in result and len(result["choices"]) > 0:
-                    choice = result["choices"][0]
-                    if isinstance(choice, dict) and "text" in choice:
-                        return choice["text"]
-                    elif isinstance(choice, str):
-                        return choice
-                elif "message" in result and isinstance(result["message"], dict) and "content" in result["message"]:
-                    return result["message"]["content"]
-            
-            # Fallback: return string representation
-            return str(result)
-            
-        except requests.exceptions.ConnectionError as e:
-            error_msg = f"Failed to connect to API endpoint {self.api_endpoint}: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-        except requests.exceptions.Timeout as e:
-            error_msg = f"API request timed out: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-        except requests.exceptions.RequestException as e:
-            error_msg = f"API request failed: {e}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-        except Exception as e:
-            error_msg = f"API inference failed: {e}"
-            logger.error(error_msg)
-            raise
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance stats for API model"""
-        return {
-            "model_name": self.model_config['name'],
-            "params": self.model_config['params'],
-            "quantization": self.model_config['quantization'],
-            "is_loaded": self.is_loaded,
-            "device": "API",
-            "runtime": "HTTP",
-            "api_endpoint": self.api_endpoint,
-            "log_level": "INFO"
-        }
-    
-    def unload(self):
-        """API models don't need unloading"""
-        self.is_loaded = False
-        logger.info(f"API model {self.model_config['name']} marked as unloaded")
 
 
 class NPUModelLoader:
@@ -570,7 +431,10 @@ class NPUModelLoader:
         # 根据模型的 QNN 版本切换 DLL 路径（不同版本模型需要匹配的 QNN SDK）
         qnn_version = extract_qnn_version(self.model_config.get('quantization', ''))
         logger.info(f"[INFO] 模型 QNN 版本: {qnn_version}")
-        setup_qnn_paths(qnn_version)
+        sdk_path = setup_qnn_paths(qnn_version)
+        
+        # 预加载匹配版本的 DLL
+        _preload_dlls(sdk_path)
 
         start_time = time.time()
 
@@ -581,8 +445,10 @@ class NPUModelLoader:
             try:
                 if attempt > 0:
                     logger.warning(f"重试加载模型 (尝试 {attempt+1}/{max_retries})")
-                    # 等待一小段时间再重试
-                    time.sleep(2.0)
+                    # 递增等待时间，给DSP更多恢复时间
+                    wait_time = 3.0 * attempt
+                    logger.info(f"等待 {wait_time}s 让DSP恢复...")
+                    time.sleep(wait_time)
 
                 # 使用 config.json 路径创建 GenieContext（官方示例：只传一个参数）
                 config_path = str(model_path / "config.json")
@@ -613,9 +479,6 @@ class NPUModelLoader:
                 else:
                     logger.info(f"[OK] 确认使用 QnnHtp backend (NPU)")
 
-                # 注意：config.json已经配置了BURST模式，不需要在Python代码中重复设置
-                # 避免重复设置导致冲突
-
                 load_time = time.time() - start_time
 
                 logger.info(f"[OK] NPU 模型加载成功")
@@ -636,12 +499,22 @@ class NPUModelLoader:
 
             except Exception as e:
                 last_exception = e
+                error_msg = str(e)
                 logger.error(f"[ERROR] NPU 模型加载失败 (尝试 {attempt+1}/{max_retries}): {e}")
                 import traceback
                 logger.error(f"详细堆栈:\n{traceback.format_exc()}")
 
+                # 检查是否是设备创建错误（DSP崩溃/FastRPC超时）
+                if "Device Creation failure" in error_msg or "Extensions Failure" in error_msg or "Fastrpc" in error_msg:
+                    logger.error("[CRITICAL] NPU DSP 设备创建失败 - DSP可能需要恢复")
+                    logger.error("建议: 等待30秒后重试，或重启计算机")
+                    # 增加额外等待时间让DSP恢复
+                    if attempt < max_retries - 1:
+                        extra_wait = 10.0 * (attempt + 1)
+                        logger.info(f"等待额外 {extra_wait}s 让DSP恢复...")
+                        time.sleep(extra_wait)
+
                 # 检查是否是设备创建错误（错误代码14001）
-                error_msg = str(e)
                 if "14001" in error_msg or "Failed to create device" in error_msg:
                     logger.error("[CRITICAL] NPU设备创建失败（错误代码14001）")
                     logger.error("可能原因:")
@@ -696,9 +569,9 @@ class NPUModelLoader:
                 actual_path + '/',
                 config_text
             )
-            # 替换 C:/D/zhiyi/modelsmodels_2.xx/模型目录名/ 为实际路径
+            # 替换 C:/D/zhiyi/models_2.xx/模型目录名/ 为实际路径
             config_text = re.sub(
-                r'C:/D/zhiyi/modelsmodels[^/]*/[^/]+/',
+                r'C:/D/zhiyi/models[^/]*/[^/]+/',
                 actual_path + '/',
                 config_text
             )
@@ -711,38 +584,64 @@ class NPUModelLoader:
         except Exception as e:
             logger.warning(f"[WARNING] 修正 config.json 路径失败: {e}")
 
-    def _format_prompt(self, user_input: str) -> str:
+    def _format_prompt(self, user_input: str, system_prompt: str = None) -> str:
         """
         格式化用户输入为模型期望的提示格式
         
-        根据prompt.conf文件格式：
-        prompt_tags_1: <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n
-        prompt_tags_2: <|im_end|>\n<|im_start|>assistant\n
+        【参考旧版本】简化处理：忽略自定义 system_prompt，把所有内容放到 user 部分
+        这样可以避免模型混淆输入输出
         
         Args:
-            user_input: 用户输入文本
+            user_input: 用户输入文本（已包含所有上下文）
+            system_prompt: 忽略（旧版本兼容）
             
         Returns:
             格式化后的完整提示
         """
-        # 硬编码的提示格式（从prompt.conf解析）
+        # 使用固定的简单 system prompt，避免模型混淆（参考旧版本）
         prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
         prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
         
-        # 构建完整提示
+        # 构建完整提示（user_input 已包含所有内容）
         formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
-        logger.debug(f"提示格式化: 用户输入={repr(user_input)}, 格式化后长度={len(formatted_prompt)}")
+        
+        logger.debug(f"[ChatML] user_input长度={len(user_input)}, 格式化后长度={len(formatted_prompt)}")
         
         return formatted_prompt
 
-    def infer(self, prompt: str, max_new_tokens: int = 256, temperature: float = 0.7) -> str:
+    def _clean_output(self, output: str, input_prompt: str) -> str:
+        """
+        清理模型输出，移除特殊 token（简化版，参考旧版本）
+        
+        Args:
+            output: 原始模型输出
+            input_prompt: 格式化后的输入提示词（未使用，保留参数兼容）
+            
+        Returns:
+            清理后的输出
+        """
+        if not output:
+            return output
+        
+        # 只清理基本的特殊 token
+        special_tokens = [
+            '<|im_start|>', '<|im_end|>',
+            '</s>', '<|end|>', '<|bos|>', '<|eos|>'
+        ]
+        for tok in special_tokens:
+            output = output.replace(tok, '')
+        
+        return output.strip()
+
+    def infer(self, prompt: str, max_new_tokens: int = 32, temperature: float = 0.7, system_prompt: str = None) -> str:
         """
         执行推理
 
         Args:
             prompt: 输入提示词
-            max_new_tokens: 最大生成token数（默认64以优化性能）
-            temperature: 温度参数
+            max_new_tokens: 最大生成token数（默认32，参考旧版本）
+            temperature: 温度参数（默认0.7，参考旧版本）
+            system_prompt: 忽略（旧版本兼容）
 
         Returns:
             生成的文本
@@ -758,13 +657,21 @@ class NPUModelLoader:
         if not self.is_loaded:
             self.load()
 
+        # 🔒 获取NPU推理锁，防止并发导致DSP崩溃
+        acquired = _npu_inference_lock.acquire(timeout=120)  # 最多等待2分钟
+        if not acquired:
+            raise RuntimeError("NPU推理锁获取超时，可能存在死锁或长时间推理")
+        
         try:
+            # 🧊 推理前冷却等待
+            time.sleep(_npu_cooldown_seconds)
+            
             # 🔑 分段计时1: 整体开始
             total_start = time.time()
 
             # 🔑 分段计时2: 提示词格式化
             format_start = time.time()
-            formatted_prompt = self._format_prompt(prompt)
+            formatted_prompt = self._format_prompt(prompt, system_prompt=system_prompt)
             format_time = (time.time() - format_start) * 1000
             logger.debug(f"提示词格式化: {format_time:.2f}ms")
 
@@ -816,7 +723,38 @@ class NPUModelLoader:
             # 🔑 分段计时3: 纯推理时间
             inference_start = time.time()
             logger.debug(f"开始NPU推理...")
-            self.model.Query(formatted_prompt, callback)
+            
+            # 使用线程+超时保护，防止 DSP 卡死导致整个服务挂住
+            import concurrent.futures
+            query_error = [None]
+            
+            def _do_query():
+                try:
+                    self.model.Query(formatted_prompt, callback)
+                except Exception as e:
+                    query_error[0] = e
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_do_query)
+                try:
+                    # 推理超时：max_new_tokens * 5秒/token + 30秒基础
+                    query_timeout = max(max_new_tokens * 5 + 30, 60)
+                    future.result(timeout=query_timeout)
+                except concurrent.futures.TimeoutError:
+                    logger.error(f"[ERROR] NPU推理超时 ({query_timeout}s)，DSP可能卡死")
+                    # 释放 GenieContext，让 DSP 有机会恢复
+                    try:
+                        if self.model and hasattr(self.model, 'release'):
+                            self.model.release()
+                            logger.info("[RECOVERY] 已释放 GenieContext，DSP 资源已回收")
+                    except Exception as release_err:
+                        logger.warning(f"[RECOVERY] 释放 GenieContext 失败: {release_err}")
+                    self.model = None
+                    self.is_loaded = False
+                    raise RuntimeError(f"NPU推理超时 ({query_timeout}s)，GenieContext 已释放，下次推理将重新加载")
+            
+            if query_error[0]:
+                raise query_error[0]
             inference_time = (time.time() - inference_start) * 1000
             logger.debug(f"推理完成，生成Token数: {token_count}")
 
@@ -880,13 +818,33 @@ class NPUModelLoader:
             else:
                 logger.info(f"[PERF] ✅ 性能正常: {throughput:.1f} tokens/sec, 每Token {avg_token_time:.1f}ms")
 
+            # 🔑 关键修复：清理输出中可能包含的输入提示词
+            result = self._clean_output(result, formatted_prompt)
+            
+            # 🧊 推理后冷却等待
+            time.sleep(_npu_cooldown_seconds)
+            
             return result
 
         except Exception as e:
             logger.error(f"[ERROR] 推理失败: {e}")
             import traceback
             logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+            # 推理异常时释放 GenieContext，避免 DSP 资源残留
+            if "Fastrpc" in str(e) or "Device Creation" in str(e) or "DSP" in str(e).upper():
+                logger.warning("[RECOVERY] 检测到 DSP 相关错误，释放 GenieContext 以恢复 NPU")
+                try:
+                    if self.model and hasattr(self.model, 'release'):
+                        self.model.release()
+                        logger.info("[RECOVERY] GenieContext 已释放")
+                except Exception as release_err:
+                    logger.warning(f"[RECOVERY] 释放 GenieContext 失败: {release_err}")
+                self.model = None
+                self.is_loaded = False
             raise
+        finally:
+            # 🔓 确保锁被释放
+            _npu_inference_lock.release()
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """
@@ -907,12 +865,21 @@ class NPUModelLoader:
 
     def unload(self):
         """卸载模型释放资源"""
-        if self.model and hasattr(self.model, 'release'):
-            self.model.release()
+        # 🔒 等待推理锁释放
+        acquired = _npu_inference_lock.acquire(timeout=30)
+        
+        try:
+            if self.model and hasattr(self.model, 'release'):
+                self.model.release()
+                # 等待资源完全释放
+                time.sleep(1.0)
 
-        self.model = None
-        self.is_loaded = False
-        logger.info(f"[OK] 模型已卸载: {self.model_config['name']}")
+            self.model = None
+            self.is_loaded = False
+            logger.info(f"[OK] 模型已卸载: {self.model_config['name']}")
+        finally:
+            if acquired:
+                _npu_inference_lock.release()
 
     @staticmethod
     def list_available_models() -> Dict[str, Dict[str, Any]]:
@@ -944,34 +911,23 @@ _global_model_loader: Optional[NPUModelLoader] = None
 logger.info(f"[MODULE INIT] _global_model_loader initialized to: {_global_model_loader}")
 
 
-def get_model_loader(model_key: str = None):
+def get_model_loader(model_key: str = None) -> NPUModelLoader:
     """
-    获取全局模型加载器实例（单例模式），支持API和NPU模型
+    获取全局模型加载器实例（单例模式）
 
     Args:
         model_key: 模型键名
 
     Returns:
-        模型加载器实例 (NPUModelLoader or APIModelLoader)
+        模型加载器实例
     """
     global _global_model_loader
     
-    # Determine which model to use
-    use_model_key = model_key or ModelConfig.DEFAULT_MODEL
-    
-    # Check if model is API-based
-    model_config = ModelConfig.MODELS.get(use_model_key)
-    if model_config and model_config.get("type") == "api":
-        # API models don't use the global singleton
-        logger.info(f"[get_model_loader] Creating APIModelLoader for: {use_model_key}")
-        return APIModelLoader(use_model_key)
-    
-    # For NPU models, use the global singleton
     logger.info(f"[get_model_loader] _global_model_loader before: {_global_model_loader}")
 
     if _global_model_loader is None:
-        logger.info(f"[get_model_loader] Creating new NPUModelLoader with key: {use_model_key}")
-        _global_model_loader = NPUModelLoader(use_model_key)
+        logger.info(f"[get_model_loader] Creating new NPUModelLoader with key: {model_key}")
+        _global_model_loader = NPUModelLoader(model_key)
         logger.info(f"[get_model_loader] Created: {_global_model_loader}")
     else:
         logger.info(f"[get_model_loader] Returning existing: {_global_model_loader}")

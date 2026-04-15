@@ -3,6 +3,7 @@
 事实生成专家，基于数据挖掘关键事实，生成结构化事实卡片
 """
 import logging
+import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 import httpx
@@ -258,32 +259,63 @@ class FactGeneratorAgent:
     
     async def _call_genie_api(self, prompt: str) -> str:
         """
-        调用GenieAPIService进行NPU推理
+        调用LLM推理（优先走 call_llm 降级链，回退到直接HTTP调用）
         
-        参数：
-            prompt: 提示词
-        
-        返回：
-            推理结果
+        降级链：8910 Genie API → Ollama → NPU进程内 → 失败
         """
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # 优先使用 call_llm 降级链（8910→Ollama→NPU）
+            from routes.meeting_routes import call_llm
+            result = await call_llm("你是通政司，负责从数据中挖掘关键事实。", prompt)
+            if result:
+                return result
+        except Exception as e:
+            logger.debug(f"[通政司] call_llm降级链不可用，回退直接HTTP: {e}")
+        
+        # 回退：直接调用8910 Genie API
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
-                    f"{self.genie_api_base_url}/generate",
+                    "http://127.0.0.1:8910/v1/chat/completions",
                     json={
-                        "model": self.model_path,
-                        "prompt": prompt,
-                        "max_tokens": 2000,
-                        "temperature": 0.7
+                        "model": "qwen2.5vl3b-8380-2.42",
+                        "messages": [
+                            {"role": "system", "content": "你是通政司，负责从数据中挖掘关键事实。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "size": 1024,
+                        "seed": 42,
+                        "temp": 0.7,
+                        "top_k": 1,
+                        "top_p": 1.0
                     }
                 )
                 response.raise_for_status()
                 result = response.json()
-                return result.get("text", "")
-        
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content:
+                    return content
         except Exception as e:
-            logger.error(f"调用GenieAPIService失败: {e}", exc_info=True)
-            raise
+            logger.debug(f"[通政司] 8910 Genie API不可用: {e}")
+        
+        # 最终回退：NPU进程内推理
+        try:
+            from models.model_loader import get_model_loader
+            loader = get_model_loader("qwen2.0-7b")
+            loader.load()
+            loop = asyncio.get_event_loop()
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: loader.infer(
+                    prompt=prompt[:800], max_new_tokens=512, temperature=0.7
+                )),
+                timeout=30.0
+            )
+            if result:
+                return result
+        except Exception as e:
+            logger.debug(f"[通政司] NPU进程内推理失败: {e}")
+        
+        raise RuntimeError("所有LLM层不可用")
     
     def _parse_json_response(self, response: str) -> Dict:
         """

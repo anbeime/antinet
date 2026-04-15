@@ -17,9 +17,9 @@ if not exist "%~dp0..\venv_arm64\Scripts\python.exe" (
 echo [1/2] Python 环境: venv_arm64
 echo.
 
-REM 设置 QNN 库路径
-set "QNN_SDK=%~dp0..\QAIRT\2.45.40.260406\lib\aarch64-windows-msvc"
-set "QAIRT_RUNTIME=%~dp0..\ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\aarch64-windows-msvc"
+REM 设置 QNN 库路径 - 优先 arm64x-windows-msvc（ARM64EC，兼容性更好）
+set "QNN_SDK=%~dp0..\QAIRT\2.45.40.260406\lib\arm64x-windows-msvc"
+set "QAIRT_RUNTIME=%~dp0..\ai-engine-direct-helper-main\samples\qai_libs\QAIRT_Runtime\arm64x-windows-msvc"
 set "PATH=%QNN_SDK%;%QAIRT_RUNTIME%;%PATH%"
 
 echo [2/2] 启动后端服务 (端口 8000)...
