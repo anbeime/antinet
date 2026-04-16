@@ -285,6 +285,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入视觉理解路由: {e}")
 
+# 注册 Genie 模型测试场路由
+try:
+    from routes.genie_playground_routes import router as genie_playground_router
+    app.include_router(genie_playground_router)  # Genie模型测试场路由
+    logger.info("[OK] Genie模型测试场路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入Genie模型测试场路由: {e}")
+
 # 注册8-Agent会议路由
 try:
     from routes.meeting_routes import router as meeting_router

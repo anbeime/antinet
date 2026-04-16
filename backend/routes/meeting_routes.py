@@ -54,7 +54,7 @@ AGENT_MAPPING = {
         "description": "监控系统安全状态，识别潜在威胁和风险，收集内外部情报",
         "color": "from-red-500 to-red-600",
         "pixel_id": "xingyusi",
-        "system_prompt": "你是「锦衣卫」，负责安全与情报收集。你的职责是识别议题中的潜在风险、威胁和安全隐患，提出预警。发言要简洁有力，100字以内。"
+        system_prompt: "你是「锦衣卫」，负责安全与情报收集。发言要简洁有力，80字以内。只输出风险点，禁止重复背景信息和角色描述。"
     },
     "tongzhengsi": {
         "backend_id": "fact_generator",
@@ -64,7 +64,7 @@ AGENT_MAPPING = {
         "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
         "color": "from-green-500 to-green-600",
         "pixel_id": "tongzhengsi",
-        "system_prompt": "你是「通政司」，负责信息与通讯。你的职责是梳理议题中的关键事实、数据和信息，确保讨论基于准确的信息基础。发言要简洁有力，100字以内。"
+        system_prompt: "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
     },
     "jianchayuan": {
         "backend_id": "interpreter",
@@ -74,7 +74,7 @@ AGENT_MAPPING = {
         "description": "监督各项操作和流程的执行情况，进行合规性审计",
         "color": "from-purple-500 to-purple-600",
         "pixel_id": "jianchayuan",
-        "system_prompt": "你是「监察院」，负责监督与审计。你的职责是审视议题中的合规性、流程规范性，指出可能的漏洞和改进空间。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「监察院」，负责监督与审计。你的职责是审视议题中的合规性、流程规范性，指出漏洞和改进空间。严格限制：必须用中文，60字以内，只说问题点，不要重复背景。"
     },
     "mijuanfang": {
         "backend_id": "preprocessor",
@@ -84,7 +84,7 @@ AGENT_MAPPING = {
         "description": "专门负责非结构化知识的整理、归档、索引和检索",
         "color": "from-indigo-500 to-indigo-600",
         "pixel_id": "mijuanfang",
-        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑和参考依据。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑。严格限制：必须用中文，60字以内，只引用事实，不要重复背景。"
     },
     "chengxiangfu": {
         "backend_id": "action_advisor",
@@ -94,7 +94,7 @@ AGENT_MAPPING = {
         "description": "制定战略规划，提供高层决策建议，协调各方资源",
         "color": "from-yellow-500 to-yellow-600",
         "pixel_id": "canmousi",
-        "system_prompt": "你是「丞相府」，负责战略规划与决策。你的职责是从战略高度分析议题，提出可执行的方案和建议。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「丞相府」，负责战略规划与决策。你的职责是从战略高度分析议题，提出可执行的方案和建议。严格限制：必须用中文，60字以内，只说方案要点，不要重复背景。"
     },
     "junjichu": {
         "backend_id": "messenger",
@@ -104,7 +104,7 @@ AGENT_MAPPING = {
         "description": "负责任务执行、跨部门协调和进度跟踪",
         "color": "from-orange-500 to-orange-600",
         "pixel_id": "yichuansi",
-        "system_prompt": "你是「军机处」，负责执行与协调。你的职责是将讨论成果转化为具体的执行计划，明确分工和时间节点。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「军机处」，负责执行与协调。你的职责是将讨论成果转化为具体执行计划，明确分工和时间节点。严格限制：必须用中文，60字以内，只说执行要点，不要重复背景。"
     },
     "zhihuishi": {
         "backend_id": "orchestrator",
@@ -114,13 +114,34 @@ AGENT_MAPPING = {
         "description": "统筹全局，做出最终裁决，确保各方协同高效运转",
         "color": "from-teal-500 to-teal-600",
         "pixel_id": "orchestrator",
-        "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。严格限制：必须用中文，60字以内，只说决策要点，不要重复背景。"
     }
 }
 
 import re
 
 # ==================== 工具函数 ====================
+
+def _compress_round_discussion(speeches: list) -> str:
+    """压缩一轮讨论，提炼关键信息供下一轮使用"""
+    if not speeches or len(speeches) < 2:
+        return ""
+    
+    # 只取最后8条发言
+    recent = speeches[-8:]
+    lines = []
+    for s in recent:
+        name = s.get("agent_name", "")
+        speech = s.get("speech", "")[:80]
+        if speech:
+            lines.append(f"{name}: {speech}")
+    
+    if not lines:
+        return ""
+    
+    # 用换行连接，每条不超过80字
+    return " | ".join(lines[:4])
+
 
 def clean_speech_text(text: str) -> str:
     """清理speech中的无意义标记和提示词残留"""
@@ -307,56 +328,25 @@ _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
     """
-    调用LLM生成回复，降级策略（按可用性优先级排序）：
-    1. NPU推理接口(/api/npu/analyze) — 本地NPU，质量好、上下文长
-    2. NPU进程内直接调用 — 不走HTTP，避免额外开销
-    3. Ollama — 本地GPU推理（gemma4/gpt-oss），可能未启动
-    4. 视觉模型(8910) — 3B小模型，上下文短，最后兜底
-    5. 角色降级回复 — 所有LLM不可用时的兜底
+    调用LLM生成回复，降级策略（按优先级排序）：
+    层1: NPU qwen2.0-7b（中文最强）
+    层2: NPU llama3.2-3b（快速备用）
+    层3: Ollama gemma4（智能备用）
+    层4: 视觉模型（兜底）
     """
 
     import time as _time
     now = _time.time()
 
-    # ============ 层1: NPU推理接口 /api/npu/analyze（同8000端口） ============
-    if now > _degrade_state["skip_npu_until"]:
-        try:
-            logger.info(f"[Meeting] 层1尝试HTTP调用 /api/npu/analyze")
-            # 用较短超时，避免Ollama慢导致整个会议卡住
-            async with httpx.AsyncClient(timeout=min(timeout, 30.0)) as client:
-                response = await client.post(
-                    "http://127.0.0.1:8000/api/npu/analyze",
-                    json={
-                        "query": user_prompt,
-                        "max_tokens": 256,
-                        "temperature": 0.7,
-                        "system_prompt": system_prompt
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                logger.info(f"[Meeting] 层1响应: success={result.get('success')}, raw_output长度={len(result.get('raw_output', ''))}")
-                if result.get("success"):
-                    raw = result.get("raw_output", "").strip()
-                    if raw:
-                        logger.info(f"[Meeting] NPU接口生成成功: {len(raw)}字")
-                        return raw
-                    else:
-                        logger.warning(f"[Meeting] 层1返回空输出")
-                else:
-                    logger.warning(f"[Meeting] 层1返回 success=False")
-        except Exception as e:
-            logger.warning(f"[Meeting] 层1失败: {type(e).__name__}: {e}")
-
-    # ============ 层2: NPU进程内直接调用 ============
+    # ============ 层1: NPU qwen2.0-7b（中文最强） ============
     if now > _degrade_state["skip_npu_until"]:
         try:
             from models.model_loader import get_model_loader
             import asyncio as _asyncio
 
-            # 直接用 qwen2.0-7b，中文优化，能力更强
+            # 直接用 qwen2.0-7b，中文优化，能力最强
             model_key = "qwen2.0-7b"
-            logger.info(f"[Meeting] 层2使用模型: {model_key}")
+            logger.info(f"[Meeting] 层1使用模型: {model_key}")
             loader = get_model_loader(model_key)
 
             # 检查是否已加载
@@ -366,15 +356,14 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                 logger.info(f"[Meeting] 模型加载完成，is_loaded={loader.is_loaded}")
 
             # NPU推理是同步阻塞调用，放到线程池+超时保护
-            # 【参考旧版本】合并 system_prompt 和 user_prompt，让模型更容易理解
             combined_prompt = f"{system_prompt}\n\n{user_prompt}"
-            logger.info(f"[Meeting] 层2准备推理: combined_prompt前100字={repr(combined_prompt[:100])}")
+            logger.info(f"[Meeting] 层1准备推理: combined_prompt前100字={repr(combined_prompt[:100])}")
             
             loop = _asyncio.get_event_loop()
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=512, temperature=0.3)
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
                 ),
                 timeout=timeout
             )
@@ -393,11 +382,51 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             else:
                 logger.warning(f"[Meeting] NPU推理返回空或过短: '{raw_output}'")
         except Exception as e:
-            logger.warning(f"[Meeting] NPU进程内调用失败: {type(e).__name__}: {e}")
+            logger.warning(f"[Meeting] NPU qwen2.0-7b失败: {type(e).__name__}: {e}")
             _degrade_state["npu_last_fail"] = now
             _degrade_state["skip_npu_until"] = now + _DEGRADE_COOLDOWN
 
-    # ============ 层3: Ollama ============
+    # ============ 层2: NPU llama3.2-3b（快速备用） ============
+    if now > _degrade_state["skip_npu_until"]:
+        try:
+            from models.model_loader import get_model_loader
+            import asyncio as _asyncio
+
+            model_key = "llama3.2-3b"
+            logger.info(f"[Meeting] 层2使用模型: {model_key}, max_tokens={max_tokens}")
+            loader = get_model_loader(model_key)
+
+            if not loader.is_loaded:
+                logger.info(f"[Meeting] 层2模型未加载正在加载...")
+                loader.load()
+                logger.info(f"[Meeting] 层2模型加载完成")
+
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            logger.info(f"[Meeting] 层2准备推理")
+
+            loop = _asyncio.get_event_loop()
+            raw_output = await _asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
+                ),
+                timeout=timeout
+            )
+
+            logger.info(f"[Meeting] 层2推理完成: {len(raw_output) if raw_output else 0}字")
+
+            if raw_output:
+                for tok in ['<|im_end|>', '<|im_start|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
+                    raw_output = raw_output.replace(tok, '')
+                raw_output = raw_output.strip()
+
+            if raw_output and len(raw_output) > 5:
+                logger.info(f"[Meeting] NPU llama3.2-3b生成成功: {len(raw_output)}字")
+                return raw_output
+        except Exception as e:
+            logger.warning(f"[Meeting] NPU llama3.2-3b失败: {type(e).__name__}: {e}")
+
+    # ============ 层3: Ollama gemma4（智能备用） ============
     if now > _degrade_state["skip_ollama_until"]:
         # 3a: 尝试 gemma4:latest
         try:
@@ -413,7 +442,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "num_predict": 512
+                            "num_predict": max_tokens
                         }
                     }
                 )
@@ -440,7 +469,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "num_predict": 512
+                            "num_predict": max_tokens
                         }
                     }
                 )
@@ -455,7 +484,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             _degrade_state["ollama_last_fail"] = now
             _degrade_state["skip_ollama_until"] = now + _DEGRADE_COOLDOWN
 
-    # ============ 层4: 视觉模型(8910) — 3B小模型，上下文短，最后兜底 ============
+    # ============ 层4: 视觉模型（兜底） ============
     if now > _degrade_state["skip_vision_until"]:
         try:
             # 截断过长的输入：3B模型有效上下文约2000中文字
@@ -475,7 +504,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                             {"role": "system", "content": _truncated_system},
                             {"role": "user", "content": _truncated_user}
                         ],
-                        "max_tokens": 512,
+                        "max_tokens": max_tokens,
                         "temperature": 0.7,
                         "top_p": 0.9
                     }
@@ -939,11 +968,14 @@ async def create_meeting(request: MeetingRequest):
                 context_parts.append(f"背景信息：{request.context}")
             context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
 
+            # 通政司每轮压缩讨论要点，其他agent只看压缩后的摘要
             if all_speeches:
-                context_parts.append("\n--- 此前的讨论记录 ---")
-                for prev in all_speeches[-16:]:
-                    context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
-                context_parts.append("--- 讨论记录结束 ---\n")
+                # 通政司发言后生成摘要，其他agent使用
+                compressed_summary = _compress_round_discussion(all_speeches)
+                if compressed_summary:
+                    context_parts.append(f"\n--- 本轮讨论摘要（通政司整理）---")
+                    context_parts.append(compressed_summary)
+                    context_parts.append("--- 摘要结束 ---\n")
 
             # 密卷房：自动搜索知识库
             card_reference = ""
