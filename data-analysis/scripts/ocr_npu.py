@@ -8,6 +8,9 @@ import platform
 from pathlib import Path
 from typing import Dict, Optional, Any
 
+# 项目根目录
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 
 class NPUCREngine:
     """
@@ -26,7 +29,7 @@ class NPUCREngine:
         初始化NPU OCR引擎
         
         Args:
-            model_path: OCR模型路径（如C:/model/crnn-int8/）
+            model_path: OCR模型路径（如models/crnn-int8/）
             device: 部署设备（"NPU"或"CPU"）
             precision: 精度（"INT8"或"FP16"）
         """
@@ -38,7 +41,7 @@ class NPUCREngine:
         
         # 默认模型路径
         if not self.model_path:
-            self.model_path = "C:/model/crnn-int8/"
+            self.model_path = str(_PROJECT_ROOT / "models" / "crnn-int8")
         
         # 初始化引擎
         self._initialize()
@@ -310,7 +313,7 @@ if __name__ == "__main__":
     print("=== 示例1：单张图像OCR（NPU） ===")
     
     engine = NPUCREngine(
-        model_path="C:/model/crnn-int8/",
+        model_path=str(_PROJECT_ROOT / "models" / "crnn-int8"),
         device="NPU",
         precision="INT8"
     )

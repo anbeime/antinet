@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Bell, CheckCircle2, Circle, X, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import dayjs from 'dayjs';
+import { getLunarDate, getTraditionalFestivalsData } from '@/utils/calendar/calendar';
 
 interface GTDTask {
   id: number;
@@ -46,6 +48,19 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
 
+  // 农历和节日数据
+  const traditionalFestivals = getTraditionalFestivalsData(year);
+
+  const getLunarForDate = (day: number) => {
+    const d = dayjs(new Date(year, month, day));
+    return getLunarDate(d);
+  };
+
+  const getFestivalForDate = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return traditionalFestivals[dateStr] || null;
+  };
+
   const getTasksForDate = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return tasks.filter(t => {
@@ -58,7 +73,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const getSelectedDateTasks = () => {
     if (!selectedDate) return [];
     const dateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-    return tasks.filter(t => t.due_date === dateStr);
+    return tasks.filter(t => {
+      if (t.due_date === dateStr) return true;
+      if (!t.due_date && t.created_at && t.created_at.startsWith(dateStr)) return true;
+      return false;
+    });
   };
 
   const isToday = (day: number) => {
@@ -130,31 +149,43 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
 
   const days = [];
   for (let i = 0; i < firstDay; i++) {
-    days.push(<div key={`empty-${i}`} className="h-28 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700"></div>);
+    days.push(<div key={`empty-${i}`} className="h-28 border" style={{ backgroundColor: '#faf8f5', borderColor: '#e8ddd0' }}></div>);
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const dayTasks = getTasksForDate(day);
     const hasTasks = dayTasks.length > 0;
+    const lunarStr = getLunarForDate(day);
+    const festival = getFestivalForDate(day);
+    const isWeekend = new Date(year, month, day).getDay() === 0 || new Date(year, month, day).getDay() === 6;
     days.push(
       <div 
         key={day} 
-        className={`h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300' : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+        className={`h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'border-amber-400' : ''}`}
+        style={{ 
+          backgroundColor: isToday(day) ? '#fef3e2' : '#fffdf9',
+          borderColor: isToday(day) ? '#d4a574' : '#e8ddd0'
+        }}
         onClick={() => handleDateClick(day)}
       >
         <div className="flex items-center justify-between">
-          <span className={`text-sm font-semibold ${isToday(day) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>
+          <span className={`text-sm font-semibold ${isToday(day) ? 'text-amber-700' : isWeekend ? 'text-blue-600' : 'text-gray-700'}`}>
             {day}
           </span>
           {hasTasks && (
-            <span className="text-xs bg-blue-500 text-white dark:bg-blue-600 px-1.5 py-0.5 rounded-full">
+            <span className="text-xs text-white px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#d4a574' }}>
               {dayTasks.length}
             </span>
           )}
         </div>
         
+        {/* 农历日期 */}
+        <div className={`text-[10px] mt-0.5 ${festival ? 'font-medium' : ''}`} style={{ color: festival ? '#d4a574' : '#b8a090' }}>
+          {festival || lunarStr}
+        </div>
+        
         {hasTasks && (
           <div className="mt-1 space-y-1 overflow-hidden">
-            {dayTasks.slice(0, 4).map(task => (
+            {dayTasks.slice(0, 3).map(task => (
               <div 
                 key={task.id}
                 className={`text-xs px-1.5 py-1 rounded truncate text-white flex items-center space-x-1 ${getPriorityColor(task.priority)} ${task.is_completed ? 'opacity-50 line-through' : ''}`}
@@ -163,8 +194,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
                 <span className="truncate">{task.title}</span>
               </div>
             ))}
-            {dayTasks.length > 4 && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 text-center">+{dayTasks.length - 4} 更多</div>
+            {dayTasks.length > 3 && (
+              <div className="text-xs text-center" style={{ color: '#b8a090' }}>+{dayTasks.length - 3} 更多</div>
             )}
           </div>
         )}
@@ -173,28 +204,31 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   }
 
   const selectedTasks = getSelectedDateTasks();
+  const selectedLunar = selectedDate ? getLunarDate(dayjs(selectedDate)) : '';
+  const selectedFestival = selectedDate ? getFestivalForDate(selectedDate.getDate()) : null;
 
   return (
-    <div className="h-full flex flex-col relative dark:bg-gray-800">
-      <div className="flex items-center justify-between p-4 border-b bg-white dark:bg-gray-800 dark:border-gray-700">
+    <div className="h-full flex flex-col relative" style={{ backgroundColor: '#faf8f5' }}>
+      <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: '#fff9f3', borderColor: '#e8ddd0' }}>
         <div className="flex items-center space-x-4">
-          <button onClick={prevMonth} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-            <ChevronLeft className="w-5 h-5 dark:text-gray-300" />
+          <button onClick={prevMonth} className="p-2 hover:bg-amber-100 rounded transition-colors">
+            <ChevronLeft className="w-5 h-5" style={{ color: '#8b7355' }} />
           </button>
-          <h2 className="text-xl font-bold dark:text-white">{year}年 {monthNames[month]}</h2>
-          <button onClick={nextMonth} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-            <ChevronRight className="w-5 h-5 dark:text-gray-300" />
+          <h2 className="text-xl font-bold" style={{ color: '#8b4513' }}>{year}年 {monthNames[month]}</h2>
+          <button onClick={nextMonth} className="p-2 hover:bg-amber-100 rounded transition-colors">
+            <ChevronRight className="w-5 h-5" style={{ color: '#8b7355' }} />
           </button>
         </div>
         
         <div className="flex items-center space-x-4">
           <button 
             onClick={() => setCurrentDate(new Date())}
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
+            className="px-3 py-1 text-white rounded hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: '#d4a574' }}
           >
             今天
           </button>
-          <div className="flex space-x-3 dark:text-gray-300">
+          <div className="flex space-x-3" style={{ color: '#8b7355' }}>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-red-500 rounded mr-1"></span>高</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-yellow-500 rounded mr-1"></span>中</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-green-500 rounded mr-1"></span>低</span>
@@ -203,9 +237,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="grid grid-cols-7 border-b bg-gray-100 dark:bg-gray-700">
+        <div className="grid grid-cols-7 border-b" style={{ backgroundColor: '#d4a574' }}>
           {dayNames.map(day => (
-            <div key={day} className="p-2 text-center font-medium text-gray-600 dark:text-gray-300">
+            <div key={day} className="p-2 text-center font-medium text-white text-sm">
               {day}
             </div>
           ))}
@@ -217,27 +251,33 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       </div>
 
       {showTaskPanel && selectedDate && (
-        <div className="absolute inset-y-0 right-0 w-96 bg-white dark:bg-gray-800 shadow-2xl border-l dark:border-gray-700 flex flex-col z-10">
-          <div className="flex items-center justify-between p-4 border-b bg-gray-50 dark:bg-gray-700">
+        <div className="absolute inset-y-0 right-0 w-[520px] shadow-2xl flex flex-col z-10" style={{ backgroundColor: '#fff9f3', borderLeft: '2px solid #d4a574' }}>
+          <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: '#fef3e2', borderColor: '#e8ddd0' }}>
             <div>
-              <h3 className="font-bold text-lg dark:text-white">
+              <h3 className="font-bold text-lg" style={{ color: '#8b4513' }}>
                 {selectedDate.getFullYear()}年{selectedDate.getMonth() + 1}月{selectedDate.getDate()}日
               </h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{selectedTasks.length} 个任务</p>
+              <p className="text-sm" style={{ color: '#d4a574' }}>
+                {selectedFestival ? `${selectedFestival} · ` : ''}{selectedLunar}
+                <span style={{ color: '#8b7355' }}> · {selectedTasks.length} 个任务</span>
+              </p>
             </div>
             <button 
               onClick={() => setShowTaskPanel(false)}
-              className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+              className="p-2 hover:bg-amber-100 rounded transition-colors"
             >
-              <X className="w-5 h-5 dark:text-gray-300" />
+              <X className="w-5 h-5" style={{ color: '#8b7355' }} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-auto p-4 space-y-3">
+          <div className="flex-1 overflow-auto p-5 space-y-4">
             {selectedTasks.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 dark:text-gray-500">
-                <p>暂无任务</p>
-                <button className="mt-4 flex items-center justify-center w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700">
+              <div className="text-center py-12" style={{ color: '#b8a090' }}>
+                <p className="text-lg">暂无任务</p>
+                <button 
+                  className="mt-4 flex items-center justify-center w-full px-4 py-2.5 text-white rounded-lg hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#d4a574' }}
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   添加任务
                 </button>
@@ -246,12 +286,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
               selectedTasks.map(task => (
                 <div 
                   key={task.id}
-                  className={`p-3 border rounded-lg dark:border-gray-600 ${task.is_completed ? 'bg-gray-50 dark:bg-gray-700/50' : 'bg-white dark:bg-gray-700'}`}
+                  className={`p-4 border rounded-xl transition-colors ${task.is_completed ? 'opacity-60' : 'hover:shadow-md'}`}
+                  style={{ 
+                    borderColor: '#e8ddd0',
+                    backgroundColor: task.is_completed ? '#faf5f0' : '#ffffff'
+                  }}
                 >
                   <div className="flex items-start space-x-3">
                     <button
                       onClick={() => handleToggleComplete(task.id, task.is_completed)}
-                      className="mt-0.5"
+                      className="mt-1 flex-shrink-0"
                     >
                       {task.is_completed ? (
                         <CheckCircle2 className="w-5 h-5 text-green-500" />
@@ -261,26 +305,34 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
                     </button>
                     
                     <div className="flex-1 min-w-0">
-                      <div className={`font-medium dark:text-white ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                      <div className={`text-base font-semibold leading-relaxed ${task.is_completed ? 'line-through text-gray-400' : ''}`} style={{ color: task.is_completed ? undefined : '#8b4513' }}>
                         {task.title}
                       </div>
                       {task.description && (
-                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{task.description}</div>
+                        <div className="text-sm text-gray-500 mt-2 leading-relaxed whitespace-pre-wrap break-words">{task.description}</div>
                       )}
-                      <div className="flex items-center space-x-2 mt-2">
-                        <span className={`px-2 py-0.5 text-xs rounded ${getPriorityColor(task.priority)} text-white`}>
+                      <div className="flex flex-wrap items-center gap-2 mt-3">
+                        <span className={`px-2.5 py-0.5 text-xs rounded-full ${getPriorityColor(task.priority)} text-white`}>
                           {task.priority === 'high' ? '高优先级' : task.priority === 'medium' ? '中优先级' : '低优先级'}
                         </span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">{task.category}</span>
+                        <span className="px-2 py-0.5 text-xs rounded-full border" style={{ color: '#8b7355', borderColor: '#e8ddd0' }}>
+                          {task.category === 'inbox' ? '收集箱' : task.category === 'today' ? '今日' : task.category === 'later' ? '待定' : task.category === 'projects' ? '项目' : task.category === 'archive' ? '归档' : task.category}
+                        </span>
+                        {task.due_date && (
+                          <span className="text-xs" style={{ color: '#8b7355' }}>截止: {task.due_date}</span>
+                        )}
                         {task.reminder_enabled && (
-                          <Bell className="w-3 h-3 text-gray-400" />
+                          <span className="flex items-center text-xs text-gray-400">
+                            <Bell className="w-3 h-3 mr-1" />
+                            已设提醒
+                          </span>
                         )}
                       </div>
                     </div>
 
                     <button
                       onClick={() => handleDeleteTask(task.id)}
-                      className="p-1 text-gray-400 hover:text-red-500"
+                      className="p-1.5 text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

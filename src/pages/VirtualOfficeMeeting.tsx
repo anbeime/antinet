@@ -15,7 +15,8 @@ import {
   History,
   Calendar,
   Clock,
-  FileText
+  FileText,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
@@ -330,6 +331,7 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
   const [rounds, setRounds] = useState(3);
+  const [meetingImage, setMeetingImage] = useState<string | null>(null);  // Base64 图片数据
   const [isLoading, setIsLoading] = useState(false);
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
@@ -446,7 +448,7 @@ const VirtualOfficeMeeting: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, context, rounds }),
+        body: JSON.stringify({ topic, context, rounds, image_data: meetingImage }),
         signal: controller.signal
       });
 
@@ -707,6 +709,7 @@ const VirtualOfficeMeeting: React.FC = () => {
     setContext('');
     setDeliverable('');
     setRounds(3);
+    setMeetingImage(null);
     setMeetingResult(null);
     setExpandedRounds(new Set());
     setShowResults(false);
@@ -857,6 +860,56 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
                   className="w-full px-3 py-2.5 rounded-lg text-sm text-white placeholder-gray-500 border border-gray-600/50 focus:border-blue-500 focus:outline-none transition-colors resize-none"
                   style={{ background: '#0f1729' }}
                 />
+              </div>
+
+              {/* 图片上传 - 视觉分析 */}
+              <div>
+                <label className="block text-sm text-gray-300 mb-1.5">📎 参考图片（可选）</label>
+                {meetingImage ? (
+                  <div className="relative rounded-lg overflow-hidden border border-gray-600/50" style={{ background: '#0f1729' }}>
+                    <img
+                      src={`data:image/jpeg;base64,${meetingImage}`}
+                      alt="上传的参考图片"
+                      className="w-full h-32 object-cover"
+                    />
+                    <button
+                      onClick={() => setMeetingImage(null)}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-red-500/80 hover:bg-red-500 text-white transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    <div className="px-2 py-1 text-xs text-green-400 flex items-center gap-1">
+                      <Monitor className="w-3 h-3" />
+                      视觉模型将分析此图片
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex flex-col items-center justify-center w-full h-20 rounded-lg border-2 border-dashed border-gray-600/50 hover:border-blue-500/50 cursor-pointer transition-colors" style={{ background: '#0f1729' }}>
+                    <Monitor className="w-5 h-5 text-gray-500 mb-1" />
+                    <span className="text-xs text-gray-500">点击上传图片，密卷房将用视觉模型分析</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 10 * 1024 * 1024) {
+                            toast.error('图片大小不能超过10MB');
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const base64 = (reader.result as string).split(',')[1];
+                            setMeetingImage(base64);
+                            toast.success('图片已上传，会议中将由视觉模型分析');
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                )}
               </div>
 
               {/* 讨论轮次 */}

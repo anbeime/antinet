@@ -42,6 +42,8 @@ import SkillCenter from '@/pages/SkillCenter';
 import PDFAnalysis from '@/pages/PDFAnalysis';
 import BatchProcess from '@/pages/BatchProcess';
 import MultiModel from '@/pages/MultiModel';
+import GeniePlayground from '@/pages/GeniePlayground';
+import GenieNPUTest from '@/pages/GenieNPUTest';
 import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
@@ -119,7 +121,7 @@ const cardTypeMap = {
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -644,7 +646,7 @@ const Home: React.FC = () => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'genie-playground'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -674,10 +676,24 @@ const Home: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setActiveTab('multi-model')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'multi-model' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Layers size={16} />
                   <span>多模型</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('genie-playground')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'genie-playground' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Cpu size={16} />
+                  <span>Genie测试场</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('genie-npu-test')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'genie-npu-test' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Cpu size={16} />
+                  <span>NPU模型测试</span>
                 </button>
               </div>
             </div>
@@ -779,7 +795,7 @@ const Home: React.FC = () => {
                       <div className={`${cardTypeMap[card.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
                       <div className="flex-1">
                         <div className="flex justify-between items-start">
-                          <h3 className="font-medium">{card.title}</h3>
+                          <h3 className="font-medium cursor-pointer hover:text-blue-600 hover:underline transition-colors" onClick={() => openDetailModal(card)}>{card.title}</h3>
                           <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(card.createdAt)}</span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
@@ -1541,6 +1557,16 @@ const Home: React.FC = () => {
           <MultiModel />
         )}
 
+        {/* Genie 模型测试场视图 */}
+        {activeTab === 'genie-playground' && (
+          <GeniePlayground />
+        )}
+
+        {/* Genie NPU模型测试视图 */}
+        {activeTab === 'genie-npu-test' && (
+          <GenieNPUTest />
+        )}
+
         {/* 格式转换视图 */}
         {activeTab === 'format-converter' && (
           <FormatConverter />
@@ -1558,7 +1584,12 @@ const Home: React.FC = () => {
         </main>
 
       {/* 聊天机器人按钮 - 可拖拽 */}
-      <ChatButton />
+      <ChatButton onCardClick={(cardRef) => {
+        const found = cards.find(c => c.id === cardRef.id);
+        if (found) {
+          openDetailModal(found);
+        }
+      }} />
 
       {/* 页脚 */}
       <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 mt-auto">

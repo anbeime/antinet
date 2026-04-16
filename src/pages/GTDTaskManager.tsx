@@ -71,20 +71,21 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b px-6 py-4">
+    <div className="h-screen flex flex-col" style={{ backgroundColor: '#faf8f5' }}>
+      <div className="border-b px-6 py-4" style={{ backgroundColor: '#fff9f3', borderColor: '#e8ddd0' }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold text-gray-800">任务管理</h1>
+            <h1 className="text-2xl font-bold" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif', letterSpacing: '0.05em' }}>任务管理</h1>
             
-            <div className="flex bg-gray-100 rounded-lg p-1">
+            <div className="rounded-lg p-1" style={{ backgroundColor: '#f5ebe0' }}>
               <button
                 onClick={() => setViewMode('list')}
                 className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   viewMode === 'list' 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'text-white shadow-sm' 
+                    : 'hover:opacity-80'
                 }`}
+                style={viewMode === 'list' ? { backgroundColor: '#d4a574', color: '#fff' } : { color: '#8b7355' }}
               >
                 <ListTodo className="w-4 h-4 mr-1.5" />
                 列表
@@ -93,9 +94,10 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
                 onClick={() => setViewMode('calendar')}
                 className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   viewMode === 'calendar' 
-                    ? 'bg-white text-gray-900 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? 'text-white shadow-sm' 
+                    : 'hover:opacity-80'
                 }`}
+                style={viewMode === 'calendar' ? { backgroundColor: '#d4a574', color: '#fff' } : { color: '#8b7355' }}
               >
                 <Calendar className="w-4 h-4 mr-1.5" />
                 日历
@@ -105,7 +107,8 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
           
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: '#d4a574' }}
           >
             <Plus className="w-4 h-4 mr-2" />
             新建任务
@@ -118,33 +121,35 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
       </div>
 
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">新建任务</h2>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700">
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ backgroundColor: 'rgba(139, 115, 85, 0.3)' }}>
+          <div className="rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" style={{ backgroundColor: '#fff9f3', border: '2px solid #d4a574' }}>
+            <div className="flex items-center justify-between px-6 py-4" style={{ backgroundColor: '#d4a574' }}>
+              <h2 className="text-xl font-bold text-white" style={{ fontFamily: 'KaiTi, STKaiti, serif', letterSpacing: '0.1em' }}>新建任务</h2>
+              <button onClick={() => setShowCreateModal(false)} className="text-white/80 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="p-6 space-y-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">标题 *</label>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>标题 *</label>
                 <input
                   type="text"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none transition-colors"
+                  style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
                   placeholder="请输入任务标题"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>描述</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none transition-colors"
+                  style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
                   rows={3}
                   placeholder="请输入任务描述"
                 />
@@ -152,11 +157,12 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>分类</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none"
+                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
                   >
                     <option value="inbox">收集箱</option>
                     <option value="today">今日</option>
@@ -167,11 +173,12 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">优先级</label>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>优先级</label>
                   <select
                     value={formData.priority}
                     onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none"
+                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
                   >
                     <option value="low">低</option>
                     <option value="medium">中</option>
@@ -180,40 +187,46 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">到期日期</label>
-                <input
-                  type="date"
-                  value={formData.due_date}
-                  onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>到期日期</label>
+                  <input
+                    type="date"
+                    value={formData.due_date}
+                    onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none"
+                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">提醒时间</label>
-                <input
-                  type="datetime-local"
-                  value={formData.remind_at}
-                  onChange={(e) => setFormData({ ...formData, remind_at: e.target.value, reminder_enabled: !!e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+                <div>
+                  <label className="block text-sm font-medium mb-1.5" style={{ color: '#8b4513' }}>提醒时间</label>
+                  <input
+                    type="datetime-local"
+                    value={formData.remind_at}
+                    onChange={(e) => setFormData({ ...formData, remind_at: e.target.value, reminder_enabled: !!e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-lg focus:ring-2 focus:outline-none"
+                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fffdf9', color: '#8b4513' }}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3 mt-6">
+            <div className="flex justify-end space-x-3 px-6 py-4" style={{ borderTop: '1px solid #e8ddd0' }}>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                className="px-5 py-2.5 rounded-lg hover:opacity-80 transition-opacity"
+                style={{ border: '1px solid #e8ddd0', color: '#8b7355' }}
               >
                 取消
               </button>
               <button
                 onClick={handleCreateTask}
                 disabled={creating}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-5 py-2.5 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                style={{ backgroundColor: '#d4a574' }}
               >
-                {creating ? '创建中...' : '创建'}
+                {creating ? '创建中...' : '创建任务'}
               </button>
             </div>
           </div>

@@ -13,6 +13,8 @@ import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
 import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
 import GTDTaskManager from "@/pages/GTDTaskManager";
+import GeniePlayground from "@/pages/GeniePlayground";
+import GenieNPUTest from "@/pages/GenieNPUTest";
 import { useState } from "react";
 import { AuthContext } from '@/contexts/authContext';
 
@@ -43,6 +45,8 @@ export default function App() {
           <Route path="/format-converter" element={<FormatConverter />} />
           <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
           <Route path="/gtd-tasks" element={<GTDTaskManager />} />
+          <Route path="/genie-playground" element={<GeniePlayground />} />
+          <Route path="/genie-npu-test" element={<GenieNPUTest />} />
         </Routes>
       </AuthContext.Provider>
   );

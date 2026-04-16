@@ -218,7 +218,7 @@ class CardGeneratorFactory:
         """创建事实卡片生成器"""
         loader = NPUModelLoader(
             model_key="Qwen2-1.5B-INT4",
-            model_path="C:/model/Qwen2-1.5B-INT4/"
+            model_path="models/Qwen2-1.5B-INT4/"
         )
         model = loader.load()
         return model
@@ -228,7 +228,7 @@ class CardGeneratorFactory:
         """创建解释卡片生成器"""
         loader = NPUModelLoader(
             model_key="Qwen2-7B-LoRA-INT4",
-            model_path="C:/model/Qwen2-7B-LoRA-INT4/"
+            model_path="models/Qwen2-7B-LoRA-INT4/"
         )
         model = loader.load()
         return model
@@ -238,7 +238,7 @@ class CardGeneratorFactory:
         """创建风险卡片生成器"""
         loader = NPUModelLoader(
             model_key="Phi-3-mini-INT4",
-            model_path="C:/model/Phi-3-mini-INT4/"
+            model_path="models/Phi-3-mini-INT4/"
         )
         model = loader.load()
         return model
@@ -248,7 +248,7 @@ class CardGeneratorFactory:
         """创建行动卡片生成器"""
         loader = NPUModelLoader(
             model_key="Qwen2-7B-CoT-INT4",
-            model_path="C:/model/Qwen2-7B-CoT-INT4/"
+            model_path="models/Qwen2-7B-CoT-INT4/"
         )
         model = loader.load()
         return model

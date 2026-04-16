@@ -115,7 +115,9 @@ export const apiRequest = async <T = any>(
   if (data && method !== 'GET') {
     if (data instanceof FormData) {
       // FormData不需要设置Content-Type
-      delete requestOptions.headers['Content-Type'];
+      if (requestOptions.headers) {
+        delete (requestOptions.headers as Record<string, string>)['Content-Type'];
+      }
       requestOptions.body = data;
     } else {
       requestOptions.body = JSON.stringify(data);

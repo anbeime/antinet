@@ -2,14 +2,17 @@
 from qai_appbuilder import QNNContext, QNNConfig, Runtime, LogLevel, ProfilingLevel
 from pathlib import Path
 
+# 获取项目根目录
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 print("NPU 简单测试")
 
 # 配置QNN
-qnn_libs_path = Path("C:/ai-engine-direct-helper/samples/qai_libs")
+qnn_libs_path = PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "qai_libs"
 QNNConfig.Config(str(qnn_libs_path), Runtime.HTP, LogLevel.INFO, ProfilingLevel.BASIC)
 
 # 尝试加载模型
-model_path = "C:/model/Qwen2.0-7B-SSD-8380-2.34"
+model_path = str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34")
 try:
     model = QNNContext("test", model_path)
     print(f"[OK] 模型加载成功: {type(model)}")

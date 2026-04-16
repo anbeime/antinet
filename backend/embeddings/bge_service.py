@@ -11,6 +11,9 @@ from typing import List
 from pathlib import Path
 import json
 
+# 获取项目根目录
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 logger = logging.getLogger(__name__)
 
 EMBEDDING_DIM = 768
@@ -47,7 +50,7 @@ class BGEEmbeddingService:
 
     def _load_qnn_model(self):
         """加载QNN BGE模型"""
-        model_path = Path("C:/model/models_2.38/bge-base-zh-v1.5-qnn-8380")
+        model_path = _PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"
         if not model_path.exists():
             raise FileNotFoundError(f"BGE模型不存在: {model_path}")
         
@@ -58,7 +61,7 @@ class BGEEmbeddingService:
         
         # 尝试使用QNN Runtime
         try:
-            sys.path.insert(0, 'C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc')
+            sys.path.insert(0, str(_PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "arm64x-windows-msvc"))
             import QAiRuntimeOmni as qai
             
             self.qnn_context = qai.QnnContext()

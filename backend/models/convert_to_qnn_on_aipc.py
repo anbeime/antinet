@@ -11,13 +11,13 @@ from pathlib import Path
 import shutil
 
 # 添加Genie路径
-GENIE_PATH = "C:\\ai-engine-direct-helper\\samples\\genie\\python"
+GENIE_PATH = "C:\\D\zhiyi\\ai-engine-direct-helper-main\\samples\\genie\\python"
 if GENIE_PATH not in sys.path:
     sys.path.append(GENIE_PATH)
 
 # 设置必要的环境变量
-lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
-bridge_lib_path = "C:/Qualcomm/AIStack/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+lib_path = "C:/D/zhiyi/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
+bridge_lib_path = "C:/D/zhiyi/QAIRT/2.38.0.250901/lib/arm64x-windows-msvc"
 
 paths_to_add = [lib_path, bridge_lib_path]
 current_path = os.environ.get('PATH', '')
@@ -40,7 +40,7 @@ def check_qai_appbuilder():
         return True
     except ImportError as e:
         print(f" QAI AppBuilder 导入失败: {e}")
-        print("请运行: pip install C:\\ai-engine-direct-helper\\samples\\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl")
+        print("请运行: pip install C:\\D\zhiyi\\ai-engine-direct-helper-main\\samples\\qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl")
         return False
 
 def extract_model_zip(model_zip_path, target_dir):
@@ -134,16 +134,16 @@ def main():
     # 2. 定义模型路径
     models = {
         "qwen2-7b-ssd": {
-            "zip": "C:/model/Qwen2.0-7B-SSD-8380-2.34.zip",
-            "dir": "C:/model/Qwen2.0-7B-SSD-8380-2.34"
+            "zip": "C:/D/zhiyi/models/Qwen2.0-7B-SSD-8380-2.34.zip",
+            "dir": "C:/D/zhiyi/models/Qwen2.0-7B-SSD-8380-2.34"
         },
         "llama3.1-8b": {
-            "zip": "C:/model/llama3.1-8b-8380-qnn2.38.zip",
-            "dir": "C:/model/llama3.1-8b-8380-qnn2.38"
+            "zip": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38.zip",
+            "dir": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38"
         },
         "llama3.2-3b": {
-            "zip": "C:/model/llama3.2-3b-8380-qnn2.37.zip",
-            "dir": "C:/model/llama3.2-3b-8380-qnn2.37"
+            "zip": "C:/D/zhiyi/models/llama3.2-3b-8380-qnn2.37.zip",
+            "dir": "C:/D/zhiyi/models/llama3.2-3b-8380-qnn2.37"
         }
     }
     

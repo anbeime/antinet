@@ -75,40 +75,47 @@ async def call_qwen_vl_service(
         
         if image_path and os.path.exists(image_path):
             # ========== VL (图文) 模式 ==========
+            # 使用 OpenAI 视觉格式 (与 GenieAPIClientVision.py 一致)
             # 读取图片并转换为 base64
             with open(image_path, "rb") as f:
                 image_data = base64.b64encode(f.read()).decode('utf-8')
             
-            logger.info(f"[VisionRoutes] VL模式 - 图片: {image_path}")
+            # 根据文件扩展名推断 MIME 类型
+            ext = os.path.splitext(image_path)[1].lower()
+            mime_map = {'.jpg': 'jpeg', '.jpeg': 'jpeg', '.png': 'png', '.gif': 'gif', '.bmp': 'bmp', '.webp': 'webp'}
+            mime_type = mime_map.get(ext, 'jpeg')
             
-            # 构建 VL 模型特殊格式的 messages
+            logger.info(f"[VisionRoutes] VL模式 - 图片: {image_path} ({mime_type})")
+            
+            # 构建 OpenAI 视觉格式的 messages
             vl_messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
                 {
                     "role": "user",
-                    "content": {
-                        "question": prompt,      # 文本提示
-                        "image": image_data      # base64图片
-                    }
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{mime_type};base64,{image_data}"
+                            }
+                        }
+                    ]
                 }
             ]
             
             # 添加对话历史（如果有）
             if conversation_history:
-                # 将历史插入到system和当前user之间
-                vl_messages = [vl_messages[0]] + conversation_history + [vl_messages[1]]
+                vl_messages = conversation_history + vl_messages
             
-            # 构建请求数据
+            # 构建请求数据（extra_body 字段需平铺到顶层，与 OpenAI SDK 行为一致）
             request_data = {
                 "model": "qwen2.5vl3b-8380-2.42",
-                "messages": [{"role": "user", "content": "placeholder"}],  # 占位符
-                "extra_body": {
-                    "messages": vl_messages,  # 真实数据放在extra_body中
-                    "size": 4096,
-                    "temp": 0.7,
-                    "top_k": 1,
-                    "top_p": 0.9
-                }
+                "messages": vl_messages,
+                "size": 2048,
+                "seed": 42,
+                "temp": 0.7,
+                "top_k": 1,
+                "top_p": 1.0
             }
         else:
             # ========== LLM (纯文本) 模式 ==========
@@ -123,23 +130,22 @@ async def call_qwen_vl_service(
             if conversation_history:
                 messages = [messages[0]] + conversation_history + [messages[1]]
             
-            # 构建请求数据
+            # 构建请求数据（extra_body 字段需平铺到顶层，与 OpenAI SDK 行为一致）
             request_data = {
                 "model": "qwen2.5vl3b-8380-2.42",
                 "messages": messages,
-                "extra_body": {
-                    "size": 4096,
-                    "temp": 0.7,
-                    "top_k": 1,
-                    "top_p": 0.9
-                }
+                "size": 2048,
+                "seed": 42,
+                "temp": 0.7,
+                "top_k": 1,
+                "top_p": 1.0
             }
         
         logger.info(f"[VisionRoutes] 调用 Qwen VL 服务: {QWEN_VL_SERVICE_URL}")
         logger.debug(f"[VisionRoutes] 请求数据: {request_data}")
         
-        # 调用服务
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        # 调用服务（禁用系统代理，避免被代理拦截本地请求）
+        async with httpx.AsyncClient(timeout=60.0, proxy=None) as client:
             response = await client.post(
                 f"{QWEN_VL_SERVICE_URL}/v1/chat/completions",
                 json=request_data
@@ -351,8 +357,8 @@ async def health_check():
     视觉服务健康检查
     """
     try:
-        # 检查 Qwen VL 服务是否可用（使用 /v1/models 端点）
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        # 检查 Qwen VL 服务是否可用（使用 /v1/models 端点，禁用代理）
+        async with httpx.AsyncClient(timeout=5.0, proxy=None) as client:
             response = await client.get(f"{QWEN_VL_SERVICE_URL}/v1/models")
             service_available = response.status_code == 200
         

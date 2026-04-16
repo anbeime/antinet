@@ -38,11 +38,41 @@ else:
 
 @router.get("/status")
 async def get_pdf_status():
-    """获取 PDF 功能状态"""
-    return {
+    """获取 PDF 功能状态（含 MinerU 高质量解析能力）"""
+    base_status = {
         "available": PDF_AVAILABLE,
-        "message": "PDF 功能已启用" if PDF_AVAILABLE else "PDF 功能未安装，请运行: pip install pypdf pdfplumber reportlab"
+        "message": "PDF 功能已启用" if PDF_AVAILABLE else "PDF 功能未安装，请运行: pip install pypdf pdfplumber reportlab",
+        "four_color_available": FOUR_COLOR_AVAILABLE and PDF_AVAILABLE,
+        "toolkit_available": PDF_TOOLKIT_AVAILABLE,
     }
+
+    # MinerU 状态
+    try:
+        from tools.mineru_processor import get_mineru_processor
+        proc = get_mineru_processor()
+        ms = proc.get_status()
+        backends = []
+        if ms["vlm_client_available"]:
+            backends.append("vlm-http-client")
+        if ms["pipeline_available"]:
+            backends.append("pipeline")
+        if ms["cli_path"]:
+            backends.append("cli")
+        base_status["mineru"] = {
+            "available": ms["available"],
+            "version": ms["version"],
+            "backends": backends,
+            "message": "MinerU 已就绪 - 支持高质量 PDF→Markdown+JSON" if ms["available"] else "MinerU 未安装",
+        }
+    except Exception as e:
+        base_status["mineru"] = {
+            "available": False,
+            "version": None,
+            "backends": [],
+            "message": f"MinerU 不可用: {e}",
+        }
+
+    return base_status
 
 
 @router.post("/extract/text")
@@ -761,3 +791,210 @@ async def images_to_pdf(
                 os.unlink(f)
             except:
                 pass
+
+
+# ==================== MinerU 高质量解析路由 ====================
+# MinerU 2.5/3.x：复杂PDF一键变完美Markdown+结构化JSON
+# 公式、表格、阅读顺序全保真
+
+try:
+    from tools.mineru_processor import get_mineru_processor, MINERU_AVAILABLE as _MINERU_AVAILABLE
+    MINERU_ROUTE_AVAILABLE = True
+except ImportError:
+    _MINERU_AVAILABLE = False
+    MINERU_ROUTE_AVAILABLE = False
+
+
+@router.get("/mineru/status")
+async def get_mineru_status():
+    """
+    获取 MinerU 可用状态
+
+    返回 MinerU 版本、支持的 backend 以及所需依赖状态。
+    """
+    if not MINERU_ROUTE_AVAILABLE:
+        return {
+            "available": False,
+            "message": "MinerU 未安装，请运行: pip install mineru",
+            "version": None,
+            "backends": [],
+        }
+    proc = get_mineru_processor()
+    status = proc.get_status()
+    backends = []
+    if status["vlm_client_available"]:
+        backends.append("vlm-http-client")
+    if status["pipeline_available"]:
+        backends.append("pipeline")
+    if status["cli_path"]:
+        backends.append("cli")
+    return {
+        "available": status["available"],
+        "version": status["version"],
+        "backends": backends,
+        "vlm_client_available": status["vlm_client_available"],
+        "pipeline_available": status["pipeline_available"],
+        "cli_path": status["cli_path"],
+        "message": "MinerU 已就绪" if status["available"] else f"MinerU 不可用: {status['import_error']}",
+    }
+
+
+@router.post("/mineru/parse")
+async def mineru_parse_pdf(
+    file: UploadFile = File(..., description="PDF 文件"),
+    backend: str = Form("auto", description="解析后端: auto | vlm-http-client | pipeline | cli"),
+    language: str = Form("ch", description="文档语言: ch | en"),
+    formula_enable: bool = Form(True, description="是否识别公式"),
+    table_enable: bool = Form(True, description="是否识别表格"),
+    vlm_server_url: Optional[str] = Form(None, description="VLM HTTP server 地址（backend=vlm-http-client 时使用）"),
+    return_content_list: bool = Form(True, description="是否返回结构化 content_list JSON"),
+    return_middle_json: bool = Form(False, description="是否返回中间 middle_json（体积较大）"),
+):
+    """
+    🚀 MinerU 高质量 PDF 解析
+
+    基于 MinerU 3.x，将复杂 PDF 一键转换为：
+    - **Markdown**：公式、表格、阅读顺序全保真
+    - **content_list.json**：结构化 JSON（段落/表格/图片/公式分类）
+    - **middle.json**（可选）：完整中间语义层
+
+    适合：学术论文、技术手册、财报、含公式/表格的复杂文档。
+
+    **backend 选项：**
+    - `auto`：自动选择（vlm-http-client > pipeline > cli）
+    - `vlm-http-client`：调用外部 VLM API，需填 vlm_server_url
+    - `pipeline`：本地模型（需要 torch + 已下载模型）
+    - `cli`：通过 mineru CLI 子进程执行
+    """
+    if not MINERU_ROUTE_AVAILABLE or not _MINERU_AVAILABLE:
+        # 检查是否可以通过 CLI 降级
+        proc = get_mineru_processor() if MINERU_ROUTE_AVAILABLE else None
+        if proc is None or not proc.get_status().get("cli_path"):
+            raise HTTPException(
+                status_code=503,
+                detail="MinerU 未安装，请运行: pip install mineru"
+            )
+
+    proc = get_mineru_processor()
+
+    # 保存上传文件
+    suffix = Path(file.filename).suffix or ".pdf"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+
+    # 创建专属输出目录（不自动删除，结果可复用）
+    output_dir = tempfile.mkdtemp(prefix="mineru_out_")
+
+    try:
+        result = proc.parse_pdf(
+            pdf_path=tmp_path,
+            output_dir=output_dir,
+            backend=backend,
+            language=language,
+            formula_enable=formula_enable,
+            table_enable=table_enable,
+            vlm_server_url=vlm_server_url or None,
+        )
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        response = {
+            "success": True,
+            "filename": file.filename,
+            "backend_used": result["backend_used"],
+            "markdown": result["markdown"],
+            "markdown_length": len(result["markdown"]),
+        }
+
+        if return_content_list:
+            response["content_list"] = result["content_list"]
+            response["content_list_v2"] = result["content_list_v2"]
+            response["content_list_count"] = len(result["content_list"])
+
+        if return_middle_json:
+            response["middle_json"] = result["middle_json"]
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"MinerU 解析失败: {str(e)}")
+
+    finally:
+        # 清理上传的临时文件（保留输出目录供下载）
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/mineru/parse-to-zip")
+async def mineru_parse_pdf_to_zip(
+    file: UploadFile = File(..., description="PDF 文件"),
+    backend: str = Form("auto"),
+    language: str = Form("ch"),
+    formula_enable: bool = Form(True),
+    table_enable: bool = Form(True),
+    vlm_server_url: Optional[str] = Form(None),
+):
+    """
+    🚀 MinerU 解析 PDF → 下载完整结果 ZIP 包
+
+    ZIP 包含：
+    - `<name>.md`：Markdown 全文
+    - `<name>_content_list.json`：结构化 JSON
+    - `<name>_content_list_v2.json`：结构化 JSON v2
+    - `<name>_middle.json`：中间语义层
+    - `images/`：文档中的图片
+    """
+    if not MINERU_ROUTE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="MinerU 未安装")
+
+    proc = get_mineru_processor()
+
+    suffix = Path(file.filename).suffix or ".pdf"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+
+    output_dir = tempfile.mkdtemp(prefix="mineru_out_")
+
+    try:
+        result = proc.parse_pdf(
+            pdf_path=tmp_path,
+            output_dir=output_dir,
+            backend=backend,
+            language=language,
+            formula_enable=formula_enable,
+            table_enable=table_enable,
+            vlm_server_url=vlm_server_url or None,
+        )
+
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        # 打包为 ZIP
+        zip_path = os.path.join(tempfile.gettempdir(), f"mineru_{Path(file.filename).stem}.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            out_base = Path(output_dir)
+            for f_path in out_base.rglob("*"):
+                if f_path.is_file():
+                    arcname = f_path.relative_to(out_base)
+                    zf.write(f_path, arcname)
+
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename=f"{Path(file.filename).stem}_mineru.zip",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"MinerU 解析失败: {str(e)}")
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        shutil.rmtree(output_dir, ignore_errors=True)
