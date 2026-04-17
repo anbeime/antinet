@@ -87,7 +87,7 @@ class KnowledgeCard(BaseModel):
     """知识卡片模型"""
     id: Optional[int] = None
     type: str  # 使用 type 与数据库一致
-    title: str
+    title: Optional[str] = None  # 允许为空，由系统自动生成
     content: str
     source: Optional[str] = None
     url: Optional[str] = None
@@ -107,6 +107,29 @@ class KnowledgeCard(BaseModel):
             'red': '行动'
         }
         return type_to_category.get(self.type, '事实')
+    
+    def get_or_generate_title(self) -> str:
+        """获取或自动生成标题"""
+        if self.title and self.title.strip():
+            return self.title.strip()
+        
+        # 从内容中提取标题
+        if self.content:
+            # 取内容的前30个字符作为标题
+            preview = self.content.strip()[:30]
+            # 去掉可能的标点符号
+            preview = preview.rstrip('。！?？,，')
+            if preview:
+                return preview + "..."
+        
+        # 默认标题
+        type_to_title = {
+            'blue': '新事实',
+            'green': '新解释',
+            'yellow': '新风险',
+            'red': '新行动'
+        }
+        return type_to_title.get(self.type, '新卡片')
 
 
 class KnowledgeSource(BaseModel):
@@ -207,13 +230,16 @@ async def create_card(card: KnowledgeCard):
         # 使用有效的 category
         valid_category = card.get_valid_category()
         
+        # 自动生成标题（如果未提供）
+        card_title = card.get_or_generate_title()
+        
         # 使用正确的字段名 card_type（与数据库表结构一致）
         cursor.execute('''
             INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
             VALUES (?, ?, ?, ?, ?)
         ''', (
             card.type,
-            card.title,
+            card_title,
             card.content,
             valid_category,
             card.project_id

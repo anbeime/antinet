@@ -5,6 +5,12 @@ import NPUDashboard from "@/pages/NPUDashboard";
 import PDFAnalysis from "@/pages/PDFAnalysis";
 import PPTAnalysis from "@/pages/PPTAnalysis";
 import ExcelAnalysis from "@/pages/ExcelAnalysis";
+import ReportAutomation from "@/pages/ReportAutomation";
+import OfficeDocs from "@/pages/OfficeDocs";
+import PDFViewer from "@/pages/PDFViewer";
+import PPTViewer from "@/pages/PPTViewer";
+import MindMap from "@/pages/MindMap";
+import KnowledgeGraphView from "@/pages/KnowledgeGraphView";
 import DataManagement from "@/pages/DataManagement";
 import BatchProcess from "@/pages/BatchProcess";
 import AgentSystem from "@/pages/AgentSystem";
@@ -37,6 +43,12 @@ export default function App() {
           <Route path="/pdf-analysis" element={<PDFAnalysis />} />
           <Route path="/ppt-analysis" element={<PPTAnalysis />} />
           <Route path="/excel-analysis" element={<ExcelAnalysis />} />
+          <Route path="/report-automation" element={<ReportAutomation />} />
+          <Route path="/office-docs" element={<OfficeDocs />} />
+          <Route path="/pdf-viewer" element={<PDFViewer />} />
+          <Route path="/ppt-viewer" element={<PPTViewer />} />
+          <Route path="/mindmap" element={<MindMap />} />
+          <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />
           <Route path="/data-management" element={<DataManagement />} />
           <Route path="/batch-process" element={<BatchProcess />} />
           <Route path="/agent-system" element={<AgentSystem />} />

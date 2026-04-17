@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Column {
@@ -272,14 +272,55 @@ const ExcelAnalysis: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold mb-4 flex items-center">
                 <Calculator className="w-5 h-5 mr-2 text-green-500" />
-                分析工具
+                在线查看
               </h3>
               <div className="space-y-2">
-                {['数据统计', '趋势分析', '相关性分析', '异常检测', '预测建模'].map(tool => (
-                  <button key={tool} className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm">
-                    {tool}
-                  </button>
-                ))}
+                <button 
+                  onClick={() => window.open('http://localhost:3000/office-docs', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                  <span>在线表格</span>
+                </button>
+                <button 
+                  onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <FileText className="w-4 h-4 text-red-500" />
+                  <span>PDF查看器</span>
+                </button>
+                <button 
+                  onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <Presentation className="w-4 h-4 text-orange-500" />
+                  <span>PPT演示</span>
+                </button>
+                <button 
+                  onClick={() => window.open('http://localhost:3000/report-automation', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <BarChart3 className="w-4 h-4 text-purple-500" />
+                  <span>报表生成</span>
+                </button>
+                <button 
+                  onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.6c-.15-.41-.24-.86-.24-1.33 0-1.1.9-2 2-2v1c0-.55.45-1 1-1H17V9.5c0-.28-.22-.5-.5-.5s-.5.22-.5.5V11H14v-.5c0-.28-.22-.5-.5-.5s-.5.22-.5.5V13h-2V9.5c0-.28-.22-.5-.5-.5s-.5.22-.5.5V15c0 2.21 1.79 4 4 4v1c-1.1 0-2-.9-2-2v-1H9v1c-1.1 0-2-.9-2-2 0-.62.08-1.21.21-1.79L5.21 16.3C5.08 15.62 5 14.87 5 14c0-3.86 3.14-7 7-7 1.03 0 2 .22 2.88.63V5c0-.55.45-1 1-1s1 .45 1 1v3.88c.88-.41 1.85-.63 2.87-.63 4.07 0 7.38 3.32 7.38 7.38 0 .62-.08 1.21-.21 1.79l-1.96 1.45c.13.58.21 1.23.21 1.85 0 2.21-1.79 4-4 4v-1z"/>
+                  </svg>
+                  <span>知识图谱</span>
+                </button>
+                <button 
+                  onClick={() => window.open('http://localhost:3000/mindmap', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                  </svg>
+                  <span>思维导图</span>
+                </button>
               </div>
             </div>
 

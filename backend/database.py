@@ -272,8 +272,102 @@ class DatabaseManager:
 
             conn.commit()
 
+        # 初始化新服务的表结构
+        self._init_service_tables()
+
         # 插入默认数据（只插入一次）
         self.insert_default_data()
+
+    def _init_service_tables(self):
+        """初始化新服务所需的表"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # 知识图谱实体表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS kg_entities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    description TEXT,
+                    properties TEXT,
+                    confidence REAL DEFAULT 1.0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    version INTEGER DEFAULT 1
+                )
+            """)
+
+            # 知识图谱关系表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS kg_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    relation_id TEXT UNIQUE NOT NULL,
+                    source_id TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    relation_type TEXT NOT NULL,
+                    properties TEXT,
+                    confidence REAL DEFAULT 1.0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 接入文档表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ingested_documents (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT UNIQUE NOT NULL,
+                    source TEXT NOT NULL,
+                    content TEXT,
+                    format TEXT,
+                    metadata TEXT,
+                    content_hash TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 推荐历史表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS recommendation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    recommendation_type TEXT,
+                    content_id TEXT,
+                    action TEXT,
+                    feedback TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 用户上下文表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_contexts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    context_key TEXT NOT NULL,
+                    context_value TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 审计日志表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    event_type TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    result TEXT DEFAULT 'success',
+                    details TEXT
+                )
+            """)
+
+            conn.commit()
 
     def insert_default_data(self):
         """插入默认的硬编码数据"""
