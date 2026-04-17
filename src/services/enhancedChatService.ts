@@ -43,7 +43,8 @@ export type SceneType =
   | 'skill_excel' 
   | 'skill_word' 
   | 'greeting' 
-  | 'help';
+  | 'help'
+  | 'ollama_chat';
 
 // 聊天消息接口
 export interface ChatMessage {
@@ -215,7 +216,24 @@ class EnhancedChatService {
         context: options.context
       };
 
-      const response = await api.post<ChatResponse>(`${API_BASE}/message`, request);
+      const rawResponse = await api.post<any>(`${API_BASE}/message`, request);
+
+      // 兼容后端字段名差异
+      const response: ChatResponse = {
+        reply: rawResponse.reply || rawResponse.response || '',
+        scene_type: rawResponse.scene_type || 'general',
+        cards: (rawResponse.cards || []).map((c: any) => ({
+          id: c.id || c.card_id || '',
+          card_type: c.card_type || 'blue',
+          title: c.title || '',
+          content: c.content || '',
+          match_score: c.match_score ?? c.similarity ?? 0,
+          color: c.color || 'blue'
+        })),
+        skill_result: rawResponse.skill_result,
+        suggestions: rawResponse.suggestions || rawResponse.suggested_questions || [],
+        metadata: rawResponse.metadata || {}
+      };
 
       // 添加助手回复到历史
       this.addToHistory({
@@ -265,7 +283,8 @@ class EnhancedChatService {
       'skill_excel': '📈',
       'skill_word': '📝',
       'greeting': '👋',
-      'help': '❓'
+      'help': '❓',
+      'ollama_chat': '🧠'
     };
     return icons[sceneType] || '💬';
   }
@@ -282,7 +301,8 @@ class EnhancedChatService {
       'skill_excel': 'Excel分析',
       'skill_word': 'Word生成',
       'greeting': '欢迎消息',
-      'help': '帮助信息'
+      'help': '帮助信息',
+      'ollama_chat': '深度思考'
     };
     return names[sceneType] || '未知场景';
   }

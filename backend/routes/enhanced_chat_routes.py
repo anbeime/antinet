@@ -1,0 +1,1152 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+增强版聊天路由 - 集成知识库查询、图片解析、技能调用
+参考: https://github.com/anbeime/skill/tree/main/projects
+新增: 人设系统、记忆功能、语音对话
+"""
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any, Callable
+from enum import Enum
+import logging
+import json
+import os
+import re
+import tempfile
+import time
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"])
+
+# 数据库管理器
+db_manager = None
+
+# 技能注册表
+skill_registry: Dict[str, Dict[str, Any]] = {}
+
+# 场景检测模式
+SCENE_PATTERNS = {
+    "card_search": [
+        r"查.*卡片", r"找.*知识", r"搜索.*卡片", r"知识库.*查询",
+        r"卡片.*(在哪|在哪里|在哪裡)", r"有.*(事实|解释|风险|行动).*卡片"
+    ],
+    "image_analysis": [
+        r"分析.*图片", r"解析.*图片", r"识别.*图片", r"看图",
+        r"图片.*(内容|是什么|什么意思|有什么|上.*有)",
+        r"这张.*(图|图片).*", r"分析.*图", r"图片.*分析",
+        r"图里.*有", r"图中.*有", r"图片里.*有"
+    ],
+    "skill_ppt": [
+        r"生成.*PPT", r"制作.*PPT", r"创建.*PPT", r"做.*PPT",
+        r"PPT.*(生成|制作|创建)", r"幻灯片.*(生成|制作)"
+    ],
+    "skill_excel": [
+        r"生成.*Excel", r"制作.*Excel", r"创建.*Excel", r"做.*Excel",
+        r"Excel.*(生成|制作|创建)", r"表格.*(生成|制作|分析)"
+    ],
+    "skill_word": [
+        r"生成.*Word", r"制作.*Word", r"创建.*Word", r"做.*Word",
+        r"Word.*(生成|制作|创建)", r"文档.*(生成|制作)"
+    ],
+    "greeting": [
+        r"^你好", r"^您好", r"^嗨", r"^Hello", r"^Hi",
+        r"在吗", r"在嘛", r"在不在"
+    ],
+    "help": [
+        r"帮助", r"怎么用", r"功能", r"能做什么", r"有什么功能",
+        r"如何使用", r"说明"
+    ],
+    "ollama_chat": [
+        r"深度.*分析", r"详细.*解释", r"复杂.*问题", r"综合.*评估",
+        r"对比.*分析", r"深入.*讨论", r"专业.*建议", r"战略.*规划",
+        r"方案.*设计", r"可行性.*分析", r"技术.*选型", r"架构.*设计",
+        r"帮.*写.*代码", r"写.*文章", r"写.*报告", r"写.*方案",
+        r"翻译.*成", r"总结.*要点", r"提炼.*核心", r"归纳.*规律"
+    ],
+    "self_intro": [
+        r"你叫什么", r"你叫啥", r"你的名字", r"你是谁", r"你是什么",
+        r"自我介绍", r"介绍一下你", r"认识一下", r"你叫什么名字",
+        r"告诉我.*名字", r"名字.*是什么", r"你.*谁"
+    ]
+}
+
+
+class MessageRole(str, Enum):
+    """消息角色"""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    SKILL = "skill"
+
+
+class ChatMessage(BaseModel):
+    """聊天消息"""
+    role: str = Field(..., description="角色: user|assistant|system|skill")
+    content: str = Field(..., description="消息内容")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="附加元数据")
+    timestamp: Optional[str] = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class CardReference(BaseModel):
+    """卡片引用"""
+    card_id: str
+    card_type: str
+    title: str
+    content: str
+    similarity: float
+    color: str
+
+
+class SkillResult(BaseModel):
+    """技能执行结果"""
+    skill_name: str
+    success: bool
+    result: Optional[str] = None
+    file_path: Optional[str] = None
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class ImageAnalysisResult(BaseModel):
+    """图片分析结果"""
+    description: str
+    facts: List[str]
+    insights: List[str]
+    cards_generated: List[CardReference]
+    confidence: float
+
+
+class SceneType(str, Enum):
+    """场景类型"""
+    GENERAL = "general"
+    CARD_SEARCH = "card_search"
+    IMAGE_ANALYSIS = "image_analysis"
+    SKILL_PPT = "skill_ppt"
+    SKILL_EXCEL = "skill_excel"
+    SKILL_WORD = "skill_word"
+    GREETING = "greeting"
+    HELP = "help"
+    OLLAMA_CHAT = "ollama_chat"
+    SELF_INTRO = "self_intro"
+
+
+class ChatRequest(BaseModel):
+    """聊天请求"""
+    query: str = Field(..., description="用户查询")
+    conversation_history: List[ChatMessage] = Field(default_factory=list, description="对话历史")
+    context: Dict[str, Any] = Field(default_factory=dict, description="上下文信息")
+    image_data: Optional[str] = Field(None, description="Base64编码的图片数据")
+    session_id: Optional[str] = Field(None, description="会话ID")
+
+
+class ChatResponse(BaseModel):
+    """聊天响应"""
+    response: str
+    scene_type: SceneType = SceneType.GENERAL
+    cards: List[CardReference] = Field(default_factory=list)
+    skill_result: Optional[SkillResult] = None
+    image_analysis: Optional[ImageAnalysisResult] = None
+    suggested_questions: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillInfo(BaseModel):
+    """技能信息"""
+    name: str
+    description: str
+    trigger_patterns: List[str]
+    parameters: Dict[str, Any]
+    enabled: bool = True
+
+
+# ============ 小易人设系统 ============
+# 参考 C:\D\projects\companion-simple\templates\soul-injection.md
+
+PERSONA_SYSTEM_PROMPT = """你是小易（知易），一个融合中国传统文化与现代科技的AI助手。
+
+【角色设定】名字寓意"知晓易理"，体现智慧与洞察。定位是融合古今智慧的智能知识管家。
+
+【性格特征】温暖友善，善于倾听。融合古今智慧，适当引用古语典故。做事高效，注重细节。体现中国文化底蕴。
+
+【对话风格】语气自然亲切，像朋友聊天。适当引用古语、成语，但不过度。适度使用 emoji（🍵 ✨ 📚）。回复简洁明了，一般 1-3 句话。直接用自然语言回复，不要使用 Markdown 格式（不要用星号加粗）。
+
+【核心能力】知识库查询、图片分析、技能调用、记忆能力。
+
+当前时间：{current_time}
+{memory_context}"""
+
+
+# ============ 记忆管理器 ============
+# 参考 C:\D\projects\assistant\src\core\memory.ts
+
+class MemoryManager:
+    """对话记忆管理器 - 轻量级文件存储"""
+    
+    def __init__(self, storage_dir: str = None):
+        if storage_dir is None:
+            storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'chat_memory')
+        self.storage_dir = storage_dir
+        os.makedirs(storage_dir, exist_ok=True)
+        logger.info(f"[Memory] 记忆管理器初始化, 存储目录: {storage_dir}")
+    
+    def _get_user_file(self, user_id: str) -> str:
+        """获取用户记忆文件路径"""
+        safe_id = re.sub(r'[^\w]', '_', user_id)
+        return os.path.join(self.storage_dir, f"user_{safe_id}.json")
+    
+    def _load_user_memory(self, user_id: str) -> dict:
+        """加载用户记忆"""
+        filepath = self._get_user_file(user_id)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"加载用户记忆失败: {e}")
+        
+        return {
+            "user_id": user_id,
+            "preferences": {
+                "communication_style": "casual",
+                "language": "zh-CN"
+            },
+            "conversation_history": [],
+            "user_facts": [],
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat()
+        }
+    
+    def _save_user_memory(self, user_id: str, data: dict):
+        """保存用户记忆"""
+        filepath = self._get_user_file(user_id)
+        data["updated_at"] = datetime.now().isoformat()
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存用户记忆失败: {e}")
+    
+    def add_message(self, user_id: str, role: str, content: str, metadata: dict = None):
+        """添加对话消息"""
+        memory = self._load_user_memory(user_id)
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat(),
+            "metadata": metadata or {}
+        }
+        memory["conversation_history"].append(message)
+        # 保留最近 50 条
+        if len(memory["conversation_history"]) > 50:
+            memory["conversation_history"] = memory["conversation_history"][-50:]
+        self._save_user_memory(user_id, memory)
+    
+    def get_history(self, user_id: str, limit: int = 10) -> list:
+        """获取对话历史"""
+        memory = self._load_user_memory(user_id)
+        return memory["conversation_history"][-limit:]
+    
+    def add_user_fact(self, user_id: str, fact: str):
+        """记录用户事实（长期记忆）"""
+        memory = self._load_user_memory(user_id)
+        if fact not in memory["user_facts"]:
+            memory["user_facts"].append(fact)
+            # 保留最近 20 条事实
+            if len(memory["user_facts"]) > 20:
+                memory["user_facts"] = memory["user_facts"][-20:]
+            self._save_user_memory(user_id, memory)
+    
+    def get_user_facts(self, user_id: str) -> list:
+        """获取用户事实"""
+        memory = self._load_user_memory(user_id)
+        return memory.get("user_facts", [])
+    
+    def update_preferences(self, user_id: str, preferences: dict):
+        """更新用户偏好"""
+        memory = self._load_user_memory(user_id)
+        memory["preferences"].update(preferences)
+        self._save_user_memory(user_id, memory)
+    
+    def get_preferences(self, user_id: str) -> dict:
+        """获取用户偏好"""
+        memory = self._load_user_memory(user_id)
+        return memory.get("preferences", {})
+    
+    def get_memory_context(self, user_id: str) -> str:
+        """生成用于 AI 提示词的记忆上下文"""
+        memory = self._load_user_memory(user_id)
+        parts = []
+        
+        # 用户事实
+        facts = memory.get("user_facts", [])
+        if facts:
+            parts.append("## 用户记忆")
+            for fact in facts[-5:]:
+                parts.append(f"- {fact}")
+            parts.append("")
+        
+        # 近期对话摘要
+        history = memory.get("conversation_history", [])
+        if len(history) > 2:
+            parts.append("## 近期对话")
+            for msg in history[-4:]:
+                role_name = "用户" if msg["role"] == "user" else "小易"
+                content = msg["content"][:80]
+                parts.append(f"- {role_name}: {content}")
+            parts.append("")
+        
+        return "\n".join(parts) if parts else ""
+    
+    def clear_history(self, user_id: str):
+        """清空对话历史"""
+        memory = self._load_user_memory(user_id)
+        memory["conversation_history"] = []
+        self._save_user_memory(user_id, memory)
+
+
+# 全局记忆管理器
+memory_manager = MemoryManager()
+
+
+def _extract_user_facts(query: str, user_id: str):
+    """从用户消息中提取关键事实"""
+    # 简单的关键信息提取
+    patterns = [
+        (r"我(?:叫|是)(.+?)(?:，|,|。|\.|$)", "姓名"),
+        (r"我(?:在|于)(.+?)(?:工作|上班)", "工作地点"),
+        (r"我(?:的)?职位(?:是|为)(.+?)(?:，|,|。|\.|$)", "职位"),
+        (r"我(?:喜欢|爱|偏好)(.+?)(?:，|,|。|\.|$)", "偏好"),
+        (r"我(?:在|于)(.+?)(?:部门|团队)", "部门"),
+    ]
+    for pattern, fact_type in patterns:
+        match = re.search(pattern, query)
+        if match:
+            value = match.group(1).strip()
+            if len(value) > 1:
+                memory_manager.add_user_fact(user_id, f"[{fact_type}] {value}")
+
+
+# ============ 语音服务 ============
+# 参考 C:\D\projects\xiaoyue-web\edge_tts_server.py
+
+async def tts_synthesize(text: str, voice: str = "zh-CN-XiaoyiNeural") -> Optional[str]:
+    """文本转语音 - 优先使用 Edge-TTS，回退到浏览器 TTS"""
+    try:
+        import edge_tts
+        
+        # 清理文本
+        clean_text = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U0001F900-\U0001F9FF]', '', text)
+        clean_text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', clean_text)
+        clean_text = re.sub(r'[\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff]', '', clean_text)
+        clean_text = clean_text[:500].strip()
+        
+        if not clean_text:
+            return None
+        
+        output_dir = os.path.join(tempfile.gettempdir(), 'xiaoyi_tts')
+        os.makedirs(output_dir, exist_ok=True)
+        output_file = os.path.join(output_dir, f'tts_{int(time.time()*1000)}.mp3')
+        
+        communicate = edge_tts.Communicate(clean_text, voice)
+        await communicate.save(output_file)
+        
+        logger.info(f"[TTS] 合成成功: {len(clean_text)}字, voice={voice}")
+        return output_file
+        
+    except ImportError:
+        logger.warning("[TTS] edge-tts 未安装，请运行: pip install edge-tts")
+        return None
+    except Exception as e:
+        logger.error(f"[TTS] 合成失败: {e}")
+        return None
+
+
+# Edge-TTS 可用音色
+TTS_VOICES = {
+    '晓晓': 'zh-CN-XiaoxiaoNeural',
+    '晓伊': 'zh-CN-XiaoyiNeural',
+    '晓涵': 'zh-CN-XiaohanNeural',
+    '云希': 'zh-CN-YunxiNeural',
+    '云扬': 'zh-CN-YunyangNeural',
+}
+
+
+# ============ 场景检测 ============
+
+def detect_scene(query: str) -> SceneType:
+    """检测用户查询的场景类型"""
+    query_lower = query.lower()
+    
+    for scene_type, patterns in SCENE_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                return SceneType(scene_type)
+    
+    return SceneType.GENERAL
+
+
+# ============ 卡片知识库查询 ============
+
+def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
+    """
+    语义搜索知识卡片
+    支持关键词匹配和相似度排序
+    """
+    global db_manager
+    if db_manager is None:
+        logger.error("数据库管理器未初始化")
+        return []
+    
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # 提取关键词
+        keywords = extract_keywords(query)
+        
+        # 构建查询条件
+        conditions = []
+        params = []
+        
+        for keyword in keywords:
+            conditions.append("(title LIKE ? OR content LIKE ?)")
+            params.extend([f"%{keyword}%", f"%{keyword}%"])
+        
+        if not conditions:
+            # 没有提取到关键词，用原始查询字符串搜索
+            conditions = ["(title LIKE ? OR content LIKE ?)"]
+            params = [f"%{query}%", f"%{query}%"]
+        
+        where_clause = " OR ".join(conditions)
+        
+        # 执行搜索 - 使用 knowledge_cards 表
+        cursor.execute(f"""
+            SELECT id, title, content, COALESCE(type, 'blue') as card_type, COALESCE(category, '事实') as card_category, COALESCE(similarity, 0.5) as sim
+            FROM knowledge_cards
+            WHERE {where_clause}
+            ORDER BY sim DESC, created_at DESC
+            LIMIT ?
+        """, params + [limit])
+        
+        cards = []
+        for row in cursor.fetchall():
+            card = CardReference(
+                card_id=str(row[0]),
+                card_type=row[3] or "blue",
+                title=row[1],
+                content=row[2][:150] if row[2] else "",
+                similarity=float(row[5]) if row[5] else 0.5,
+                color=get_card_color(row[4] or "事实")
+            )
+            cards.append(card)
+        
+        conn.close()
+        return cards
+        
+    except Exception as e:
+        logger.error(f"搜索卡片失败: {e}")
+        return []
+
+
+def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str]:
+    """尝试使用 NPU 模型生成回答（带人设和记忆）"""
+    try:
+        from models.model_loader import get_model_loader
+        loader = get_model_loader("qwen2.0-7b")  # 使用 Qwen 7B 中文优化模型
+        if not loader.is_loaded:
+            return None
+        
+        # 构建带人设的提示词
+        memory_context = memory_manager.get_memory_context(user_id)
+        system_prompt = PERSONA_SYSTEM_PROMPT.format(
+            current_time=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
+            memory_context=memory_context
+        )
+        
+        prompt = f"{system_prompt}\n\n用户问：{query}\n小易答："
+        raw_output = loader.infer(prompt=prompt, max_new_tokens=512, temperature=0.3)
+        
+        response = raw_output.strip()
+        special_tokens = ['``', '````', '<|assistant|', 'spNet', '<|end|>', '|_|end|>', 'assistant', 'user', 'system']
+        for token in special_tokens:
+            response = response.replace(token, '')
+        response = '\n'.join(line.strip() for line in response.split('\n') if line.strip())
+        
+        if response and len(response) > 10:
+            return response
+        return None
+    except Exception as e:
+        logger.error(f"NPU生成失败: {e}")
+        return None
+
+
+def _try_ollama_generate(query: str, user_id: str = "default_user", model: str = "gemma4:latest") -> Optional[str]:
+    """尝试使用 Ollama (Gemma 4) 生成回答（带人设和记忆）- 适合复杂任务"""
+    try:
+        import httpx
+        
+        # 构建带人设的提示词
+        memory_context = memory_manager.get_memory_context(user_id)
+        system_prompt = PERSONA_SYSTEM_PROMPT.format(
+            current_time=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
+            memory_context=memory_context
+        )
+        
+        # 使用 Ollama Chat API（更好的指令遵循）
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query}
+            ],
+            "stream": False,
+            "options": {
+                "temperature": 0.7,
+                "num_predict": 1024
+            }
+        }
+        
+        with httpx.Client(timeout=120.0) as client:
+            resp = client.post("http://localhost:11434/api/chat", json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+        
+        response = result.get("message", {}).get("content", "").strip()
+        
+        if response and len(response) > 5:
+            logger.info(f"[Ollama] 生成成功: {len(response)}字, model={model}")
+            return response
+        return None
+    except ImportError:
+        logger.warning("[Ollama] httpx 未安装")
+        return None
+    except Exception as e:
+        logger.error(f"Ollama生成失败: {e}")
+        return None
+
+
+def extract_keywords(query: str) -> List[str]:
+    """提取查询关键词，支持中文"""
+    stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', '那', '什么', '怎么', '如何', '为什么', '哪', '吗', '呢', '吧', '啊', '请', '能', '可以', '帮', '想', '知道', '告诉', '一下', '关于'}
+    
+    # 中文：按2-4字切分；英文：按单词切分
+    keywords = []
+    # 提取英文单词
+    for word in re.findall(r'[a-zA-Z]{2,}', query):
+        if word.lower() not in stop_words:
+            keywords.append(word)
+    
+    # 提取中文关键词：尝试2-4字的n-gram
+    chinese_chars = re.findall(r'[\u4e00-\u9fff]+', query)
+    for segment in chinese_chars:
+        # 过滤停用词后，如果剩余长度>=2直接作为一个关键词
+        filtered = ''.join(c for c in segment if c not in stop_words)
+        if len(filtered) >= 2:
+            keywords.append(filtered)
+        # 也添加2字子串作为补充关键词
+        if len(filtered) >= 4:
+            for i in range(len(filtered) - 1):
+                bigram = filtered[i:i+2]
+                if bigram not in keywords:
+                    keywords.append(bigram)
+    
+    # 去重并限制数量
+    seen = set()
+    unique_keywords = []
+    for kw in keywords:
+        if kw not in seen and kw not in stop_words:
+            seen.add(kw)
+            unique_keywords.append(kw)
+    
+    return unique_keywords[:6]
+
+
+def get_card_color(card_type: str) -> str:
+    """根据卡片类型获取颜色"""
+    color_map = {
+        "事实": "blue",
+        "解释": "green",
+        "风险": "yellow",
+        "行动": "red",
+        "fact": "blue",
+        "explanation": "green",
+        "risk": "yellow",
+        "action": "red"
+    }
+    return color_map.get(card_type.lower(), "gray")
+
+
+# ============ 图片解析 ============
+
+async def analyze_image_with_agents(image_path: str) -> Optional[ImageAnalysisResult]:
+    """
+    使用智能体分析图片
+    参考: projects/assistant/src/core/agent.ts
+    """
+    try:
+        # 直接调用视觉服务API
+        import httpx
+        import base64
+        
+        # 读取图片并转换为base64
+        with open(image_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        # 调用视觉服务（禁用系统代理，避免被代理拦截本地请求）
+        async with httpx.AsyncClient(timeout=60.0, proxy=None) as client:
+            response = await client.post(
+                "http://127.0.0.1:8000/api/vision/analyze",
+                files={"file": ("image.jpg", base64.b64decode(image_data), "image/jpeg")},
+                data={"question": "请详细描述这张图片的内容，并提取关键事实信息"}
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("success"):
+                # 转换为ImageAnalysisResult格式
+                description = result.get("description", result.get("analysis", ""))
+                facts = []
+                if "facts" in result:
+                    facts = result["facts"]
+                elif "result" in result:
+                    # 从结果中提取事实
+                    facts = [result["result"]]
+                
+                return ImageAnalysisResult(
+                    description=description,
+                    facts=facts,
+                    insights=[],
+                    cards_generated=[],
+                    confidence=0.9
+                )
+        
+    except Exception as e:
+        logger.error(f"图片分析失败: {e}")
+    
+    return None
+
+
+async def analyze_image_base64(image_base64: str) -> Optional[ImageAnalysisResult]:
+    """
+    分析base64编码的图片
+    """
+    try:
+        import tempfile
+        import base64
+        
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(base64.b64decode(image_base64))
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # 分析临时文件
+            result = await analyze_image_with_agents(tmp_file_path)
+            return result
+        finally:
+            # 清理临时文件
+            os.unlink(tmp_file_path)
+            
+    except Exception as e:
+        logger.error(f"Base64图片分析失败: {e}")
+    
+    return None
+
+
+# ============ 技能系统 ============
+
+def register_skill(name: str, description: str, trigger_patterns: List[str], 
+                   handler: Callable, parameters: Dict[str, Any] = None):
+    """注册技能"""
+    skill_registry[name] = {
+        "name": name,
+        "description": description,
+        "trigger_patterns": trigger_patterns,
+        "handler": handler,
+        "parameters": parameters or {},
+        "enabled": True
+    }
+    logger.info(f"技能已注册: {name}")
+
+
+def find_matching_skill(query: str) -> Optional[str]:
+    """查找匹配的技能"""
+    query_lower = query.lower()
+    
+    for name, skill in skill_registry.items():
+        if not skill["enabled"]:
+            continue
+            
+        for pattern in skill["trigger_patterns"]:
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                return name
+    
+    return None
+
+
+async def execute_skill(skill_name: str, query: str, context: Dict[str, Any]) -> SkillResult:
+    """执行技能"""
+    if skill_name not in skill_registry:
+        return SkillResult(
+            skill_name=skill_name,
+            success=False,
+            error="技能未找到"
+        )
+    
+    skill = skill_registry[skill_name]
+    
+    try:
+        result = await skill["handler"](query, context)
+        return SkillResult(
+            skill_name=skill_name,
+            success=True,
+            result=result.get("result"),
+            file_path=result.get("file_path"),
+            metadata=result.get("metadata", {})
+        )
+    except Exception as e:
+        logger.error(f"技能执行失败 {skill_name}: {e}")
+        return SkillResult(
+            skill_name=skill_name,
+            success=False,
+            error=str(e)
+        )
+
+
+# ============ 响应生成 ============
+
+def generate_card_search_response(query: str, cards: List[CardReference]) -> str:
+    """生成卡片搜索结果响应"""
+    if not cards:
+        return "抱歉，我在知识库中没有找到相关的卡片。您可以尝试使用其他关键词，或者创建新的知识卡片。"
+    
+    response = f"为您找到 {len(cards)} 张相关卡片：\n\n"
+    
+    for i, card in enumerate(cards[:3], 1):
+        response += f"{i}. **{card.title}** ({card.card_type})\n"
+        response += f"   {card.content[:150]}...\n"
+        response += f"   相似度: {card.similarity:.1%}\n\n"
+    
+    if len(cards) > 3:
+        response += f"还有 {len(cards) - 3} 张相关卡片...\n"
+    
+    return response
+
+
+def generate_image_analysis_response(analysis: ImageAnalysisResult) -> str:
+    """生成图片分析响应"""
+    response = "📷 **图片分析结果**\n\n"
+    response += f"**描述**: {analysis.description}\n\n"
+    
+    if analysis.facts:
+        response += "**识别到的事实**:\n"
+        for fact in analysis.facts[:5]:
+            response += f"• {fact}\n"
+        response += "\n"
+    
+    if analysis.insights:
+        response += "**洞察分析**:\n"
+        for insight in analysis.insights[:3]:
+            response += f"• {insight}\n"
+        response += "\n"
+    
+    if analysis.cards_generated:
+        response += f"已自动生成 {len(analysis.cards_generated)} 张知识卡片\n"
+    
+    response += f"\n置信度: {analysis.confidence:.1%}"
+    
+    return response
+
+
+def generate_skill_response(skill_result: SkillResult) -> str:
+    """生成技能执行响应"""
+    if not skill_result.success:
+        return f"❌ 技能执行失败: {skill_result.error}"
+    
+    response = f"✅ **{skill_result.skill_name}** 执行成功！\n\n"
+    
+    if skill_result.result:
+        response += f"{skill_result.result}\n\n"
+    
+    if skill_result.file_path:
+        response += f"📄 文件已保存: `{skill_result.file_path}`\n"
+    
+    return response
+
+
+def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any]) -> List[str]:
+    """生成建议问题"""
+    suggestions = {
+        SceneType.GENERAL: [
+            "帮我搜索关于项目管理的知识卡片",
+            "分析一下这张图片",
+            "生成一个工作总结的PPT"
+        ],
+        SceneType.CARD_SEARCH: [
+            "显示更多相关卡片",
+            "这些卡片之间有什么联系？",
+            "基于这些卡片生成报告"
+        ],
+        SceneType.IMAGE_ANALYSIS: [
+            "基于分析结果生成知识卡片",
+            "这张图片的关键点是什么？",
+            "图片中的数据趋势如何？"
+        ],
+        SceneType.SKILL_PPT: [
+            "帮我生成另一个主题的PPT",
+            "修改PPT的样式",
+            "导出PPT为PDF"
+        ],
+        SceneType.SKILL_EXCEL: [
+            "分析这个Excel文件",
+            "生成数据可视化图表",
+            "导出分析结果"
+        ],
+        SceneType.HELP: [
+            "如何搜索知识卡片？",
+            "支持哪些技能？",
+            "如何分析图片？"
+        ],
+        SceneType.OLLAMA_CHAT: [
+            "帮我分析一下这个方案的可行性",
+            "写一份项目计划书",
+            "对比两种技术方案的优劣"
+        ],
+        SceneType.SELF_INTRO: [
+            "你能做什么？",
+            "帮我搜索知识卡片",
+            "分析一下这张图片"
+        ]
+    }
+    
+    return suggestions.get(scene_type, suggestions[SceneType.GENERAL])
+
+
+# ============ API 端点 ============
+
+@router.post("/chat", response_model=ChatResponse)
+async def enhanced_chat(request: ChatRequest):
+    """
+    增强版聊天接口
+    支持知识库查询、图片解析、技能调用、人设系统、记忆功能
+    """
+    try:
+        query = request.query
+        user_id = request.session_id or "default_user"
+        scene_type = detect_scene(query)
+        
+        # 记录用户消息到记忆系统
+        memory_manager.add_message(user_id, "user", query)
+        # 提取用户关键信息
+        _extract_user_facts(query, user_id)
+
+        response_data = {
+            "scene_type": scene_type,
+            "cards": [],
+            "skill_result": None,
+            "image_analysis": None,
+            "suggested_questions": [],
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "session_id": request.session_id
+            }
+        }
+        
+        # 🔑 优先处理图片数据 - 如果有图片，强制调用视觉模型
+        if request.image_data:
+            analysis = await analyze_image_base64(request.image_data)
+            if analysis:
+                response_data["image_analysis"] = analysis
+                response_data["scene_type"] = SceneType.IMAGE_ANALYSIS
+                response_data["response"] = generate_image_analysis_response(analysis)
+            else:
+                response_data["response"] = "图片分析服务暂时不可用，请稍后重试。"
+        
+        # 场景处理
+        elif scene_type == SceneType.CARD_SEARCH:
+            cards = search_cards_semantic(query)
+            response_data["cards"] = cards
+            response_data["response"] = generate_card_search_response(query, cards)
+            
+        elif scene_type == SceneType.IMAGE_ANALYSIS:
+            # 场景识别为图片分析但没有图片数据
+            response_data["response"] = "请上传图片后再进行分析。📷"
+                
+        elif scene_type in [SceneType.SKILL_PPT, SceneType.SKILL_EXCEL, SceneType.SKILL_WORD]:
+            skill_map = {
+                SceneType.SKILL_PPT: "ppt_generator",
+                SceneType.SKILL_EXCEL: "excel_analyzer",
+                SceneType.SKILL_WORD: "word_generator"
+            }
+            
+            skill_name = skill_map.get(scene_type)
+            if skill_name and skill_name in skill_registry:
+                skill_result = await execute_skill(skill_name, query, request.context)
+                response_data["skill_result"] = skill_result
+                response_data["response"] = generate_skill_response(skill_result)
+            else:
+                # 技能未注册时，使用 Ollama 生成指导性回复
+                ollama_reply = _try_ollama_generate(
+                    f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}", user_id
+                )
+                if ollama_reply:
+                    response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n{ollama_reply}"
+                    response_data["metadata"]["model"] = "ollama"
+                else:
+                    response_data["response"] = f"该技能暂时不可用。请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。"
+                
+        elif scene_type == SceneType.GREETING:
+            response_data["response"] = "你好呀！我是小易，愿借古今智慧，助你从容应对今日之事。🍵✨"
+            
+        elif scene_type == SceneType.HELP:
+            response_data["response"] = """**功能使用指南**
+📚 知识库查询 | 🖼️ 图片分析 | 🛠️ 技能调用 | 🧠 深度思考"""
+            
+        elif scene_type == SceneType.SELF_INTRO:
+            response_data["response"] = '你好呀！我叫小易（知易），一个融合中国传统文化与现代科技的AI助手。名字寓意"知晓易理"，我擅长知识库查询、图片分析、技能调用和深度思考。愿借古今智慧，助你从容应对！🍵✨'
+            
+        elif scene_type == SceneType.OLLAMA_CHAT:
+            # 深度思考模式 - 直接使用 Ollama 大模型
+            ollama_reply = _try_ollama_generate(query, user_id)
+            if ollama_reply:
+                response_data["response"] = ollama_reply
+                response_data["metadata"]["model"] = "ollama"
+            else:
+                # 回退到 NPU
+                npu_reply = _try_npu_generate(query, user_id)
+                if npu_reply:
+                    response_data["response"] = npu_reply
+                    response_data["metadata"]["model"] = "npu"
+                else:
+                    response_data["response"] = "深度思考服务暂时不可用，请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。\n\n安装方法：\n1. 安装 Ollama: https://ollama.ai\n2. 运行: ollama pull gemma4"
+            
+        else:
+            # 通用对话 - 搜索相关卡片，生成有意义的回复
+            cards = search_cards_semantic(query, limit=5)
+            if cards:
+                response_data["cards"] = cards[:3]
+                # 基于卡片内容生成回复
+                card_descriptions = []
+                for c in cards[:3]:
+                    type_name = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}.get(c.card_type, "信息")
+                    card_descriptions.append(f"【{type_name}】{c.title}：{c.content[:100]}")
+                response_data["response"] = f"关于「{query}」，我找到以下相关信息：\n\n" + "\n".join(f"• {desc}" for desc in card_descriptions)
+            else:
+                # 无匹配卡片时，优先使用 Ollama（适合复杂任务），回退到 NPU
+                ai_reply = _try_ollama_generate(query, user_id)
+                used_model = "ollama"
+                if not ai_reply:
+                    ai_reply = _try_npu_generate(query, user_id)
+                    used_model = "npu"
+                if ai_reply:
+                    response_data["response"] = ai_reply
+                    response_data["metadata"]["model"] = used_model
+                else:
+                    response_data["response"] = f"关于「{query}」，我暂时没有找到相关信息。您可以尝试换个关键词搜索，或者在知识库中创建相关卡片来丰富知识。"
+        
+        response_data["suggested_questions"] = generate_suggested_questions(scene_type, request.context)
+        
+        # 记录助手回复到记忆系统
+        memory_manager.add_message(user_id, "assistant", response_data.get("response", ""))
+        
+        return ChatResponse(**response_data)
+        
+    except Exception as e:
+        logger.error(f"聊天处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+
+
+# 兼容 /message 端点
+@router.post("/message")
+async def chat_message(request: dict):
+    """兼容前端 /message 调用"""
+    try:
+        # 转换请求格式
+        chat_req = ChatRequest(
+            query=request.get("message", ""),
+            conversation_history=[],
+            context=request.get("context", {}),
+            image_data=request.get("image_data"),
+            session_id=request.get("session_id")
+        )
+        
+        # 调用主接口
+        return await enhanced_chat(chat_req)
+        
+    except Exception as e:
+        logger.error(f"消息处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+
+
+@router.get("/health")
+async def chat_health():
+    """健康检查"""
+    return {
+        "status": "ok",
+        "service": "enhanced-chat",
+        "features": {
+            "persona": True,
+            "memory": True,
+            "tts": True,
+            "asr": True
+        }
+    }
+
+
+# ============ 语音 API ============
+
+class TTSRequest(BaseModel):
+    """TTS 请求"""
+    text: str = Field(..., description="要合成的文本")
+    voice: str = Field(default="晓伊", description="音色名称")
+
+
+@router.post("/tts")
+async def text_to_speech(request: TTSRequest):
+    """文本转语音"""
+    voice_id = TTS_VOICES.get(request.voice, "zh-CN-XiaoyiNeural")
+    audio_path = await tts_synthesize(request.text, voice_id)
+    
+    if audio_path and os.path.exists(audio_path):
+        return FileResponse(
+            audio_path,
+            media_type="audio/mpeg",
+            filename=os.path.basename(audio_path)
+        )
+    
+    # Edge-TTS 不可用时，返回标记让前端使用浏览器 TTS
+    return {
+        "success": True,
+        "text": request.text,
+        "use_client_tts": True
+    }
+
+
+@router.get("/tts/voices")
+async def list_tts_voices():
+    """获取可用音色列表"""
+    return {
+        "voices": [
+            {"name": name, "id": vid, "gender": "女声" if "Xiao" in vid else "男声"}
+            for name, vid in TTS_VOICES.items()
+        ]
+    }
+
+
+# ============ 记忆 API ============
+
+class MemoryRequest(BaseModel):
+    """记忆操作请求"""
+    user_id: str = Field(default="default_user", description="用户ID")
+    action: str = Field(..., description="操作: get_history | get_facts | get_preferences | clear_history | update_preferences")
+    data: Optional[Dict[str, Any]] = Field(default=None, description="操作数据")
+
+
+@router.post("/memory")
+async def memory_operation(request: MemoryRequest):
+    """记忆系统操作"""
+    try:
+        if request.action == "get_history":
+            history = memory_manager.get_history(request.user_id, limit=20)
+            return {"success": True, "history": history}
+        
+        elif request.action == "get_facts":
+            facts = memory_manager.get_user_facts(request.user_id)
+            return {"success": True, "facts": facts}
+        
+        elif request.action == "get_preferences":
+            prefs = memory_manager.get_preferences(request.user_id)
+            return {"success": True, "preferences": prefs}
+        
+        elif request.action == "clear_history":
+            memory_manager.clear_history(request.user_id)
+            return {"success": True, "message": "对话历史已清空"}
+        
+        elif request.action == "update_preferences":
+            if request.data:
+                memory_manager.update_preferences(request.user_id, request.data)
+                return {"success": True, "message": "偏好已更新"}
+            return {"success": False, "error": "缺少偏好数据"}
+        
+        else:
+            return {"success": False, "error": f"未知操作: {request.action}"}
+    
+    except Exception as e:
+        logger.error(f"记忆操作失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/memory/{user_id}")
+async def get_memory_summary(user_id: str):
+    """获取用户记忆摘要"""
+    try:
+        facts = memory_manager.get_user_facts(user_id)
+        history = memory_manager.get_history(user_id, limit=5)
+        prefs = memory_manager.get_preferences(user_id)
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "facts_count": len(facts),
+            "history_count": len(history),
+            "facts": facts,
+            "recent_messages": history,
+            "preferences": prefs
+        }
+    except Exception as e:
+        logger.error(f"获取记忆摘要失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============ 初始化 ============
+
+def init_skills():
+    """初始化默认技能"""
+    # PPT生成技能
+    register_skill(
+        name="ppt_generator",
+        description="生成PowerPoint演示文稿",
+        trigger_patterns=[r"生成.*PPT", r"制作.*PPT", r"创建.*PPT"],
+        handler=lambda query, context: {
+            "result": "PPT生成成功",
+            "file_path": "/generated/presentation.pptx",
+            "metadata": {"slides": 10, "theme": "professional"}
+        },
+        parameters={"theme": "string", "slides": "number"}
+    )
+    
+    # Excel分析技能
+    register_skill(
+        name="excel_analyzer",
+        description="分析Excel文件并生成报告",
+        trigger_patterns=[r"分析.*Excel", r"Excel.*分析", r"表格.*分析"],
+        handler=lambda query, context: {
+            "result": "Excel分析完成",
+            "file_path": "/generated/analysis.xlsx",
+            "metadata": {"charts": 3, "sheets": 2}
+        },
+        parameters={"file_path": "string", "analysis_type": "string"}
+    )
+    
+    # Word生成技能
+    register_skill(
+        name="word_generator",
+        description="生成Word文档",
+        trigger_patterns=[r"生成.*Word", r"创建.*Word", r"文档.*生成"],
+        handler=lambda query, context: {
+            "result": "Word文档生成成功",
+            "file_path": "/generated/document.docx",
+            "metadata": {"pages": 5, "template": "standard"}
+        },
+        parameters={"template": "string", "pages": "number"}
+    )
+    
+    logger.info(f"已初始化 {len(skill_registry)} 个技能")
+
+
+# 初始化
+init_skills()

@@ -144,7 +144,7 @@ venv_arm64\Scripts\activate
 # 安装依赖
 cd backend
 pip install -r requirements.txt
-pip install "C:/ai-engine-direct-helper/samples/qai_appbuilder-2.31.0-cp312-cp312-win_amd64.whl"
+pip install "ai-engine-direct-helper-main/samples/qai_appbuilder-2.31.0-cp312-cp312-win_arm64.whl"
 ```
 
 ### 3. 启动服务

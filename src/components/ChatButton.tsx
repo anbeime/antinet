@@ -14,11 +14,13 @@ import { cn } from '@/lib/utils';
 interface ChatButtonProps {
   className?: string;
   initialPosition?: { x: number; y: number };
+  onCardClick?: (card: any) => void;
 }
 
 export const ChatButton: React.FC<ChatButtonProps> = ({ 
   className,
-  initialPosition = { x: 0, y: 0 }
+  initialPosition = { x: 0, y: 0 },
+  onCardClick
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasNotification, setHasNotification] = useState(false);
@@ -108,7 +110,8 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
       {/* 聊天窗口 */}
       <EnhancedChatBot 
         isOpen={isOpen} 
-        onClose={() => setIsOpen(false)} 
+        onClose={() => setIsOpen(false)}
+        onCardClick={onCardClick}
       />
     </>
   );

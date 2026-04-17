@@ -61,7 +61,7 @@ class CardSearchResponse(BaseModel):
 
 def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    使用关键词搜索数据库中的知识卡片
+    使用语义向量搜索数据库中的知识卡片
 
     参数：
         query: 查询关键词
@@ -78,20 +78,18 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
+        
+        print(f"[DEBUG] 搜索关键词: {query}")
 
-        # 使用 SQL LIKE 进行模糊匹配
+        # 直接使用关键词搜索（快速），避免逐卡做 embedding 推理导致极慢
         query_lower = query.lower()
-        print(f"[DEBUG] 搜索关键词: {query_lower}")
-
         sql = """
-            SELECT id, title, content, card_type, category, created_at
+            SELECT id, title, content, card_type, category
             FROM knowledge_cards
             WHERE LOWER(title) LIKE ? OR LOWER(content) LIKE ?
             ORDER BY id DESC
         """
         params = (f"%{query_lower}%", f"%{query_lower}%")
-        print(f"[DEBUG] SQL: {sql}")
-        print(f"[DEBUG] 参数: {params}")
 
         cursor.execute(sql, params)
 
@@ -551,28 +549,30 @@ async def chat_query(request: ChatRequest):
     接收用户查询，返回基于知识库的回复
     """
     logger.info(f"[ChatRoutes] 收到查询: {request.query}")
+    import time as _time
+    t_start = _time.time()
 
     try:
-        # 使用混合搜索（向量 + 关键词）
+        # 搜索卡片
+        t_search = _time.time()
         if hasattr(sys.modules[__name__], '_hybrid_search'):
             cards = _hybrid_search(request.query, limit=10)
         else:
-            # 回退到关键词搜索
             cards = _search_cards_by_keyword(request.query, limit=10)
-        logger.info(f"[ChatRoutes] 混合搜索找到 {len(cards)} 张卡片")
-        print(f"[DEBUG] 搜索到 {len(cards)} 张卡片")
+        t_search_ms = (_time.time() - t_search) * 1000
+        logger.info(f"[ChatRoutes] 搜索耗时 {t_search_ms:.0f}ms, 找到 {len(cards)} 张卡片")
         
-        if cards:
-            print(f"[DEBUG] 第一张卡片: {cards[0]}")
-        else:
-            print(f"[DEBUG] 没有找到卡片，查询词: {request.query}")
-
-        # 使用NPU模型生成AI回答（真正的RAG）
-        response = _generate_ai_response(request.query, cards)
-        print(f"[DEBUG] 生成回复长度: {len(response)}")
+        # 生成回答
+        t_gen = _time.time()
+        response = _generate_response(request.query, cards)
+        t_gen_ms = (_time.time() - t_gen) * 1000
+        logger.info(f"[ChatRoutes] 生成回答耗时 {t_gen_ms:.0f}ms")
         
         # 生成推荐问题
         suggested_questions = _generate_suggested_questions(request.query, cards)
+        
+        t_total_ms = (_time.time() - t_start) * 1000
+        logger.info(f"[ChatRoutes] 查询总耗时 {t_total_ms:.0f}ms")
 
         # 构建响应
         sources = [

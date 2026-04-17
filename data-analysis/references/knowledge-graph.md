@@ -1419,8 +1419,8 @@ async def get_rules(rule_type: Optional[str] = None):
 **配置**
 ```python
 # GenieAPIService配置
-GENIE_API_BASE_URL = "http://localhost:8000"
-MODEL_PATH = "C:/model/Qwen2.0-7B-SSD-8380-2.34/"
+GENIE_API_BASE_URL = "http://localhost:8910"
+MODEL_PATH = "models/qwen2.5vl3b-8380-2.42/"
 
 # HTTP客户端
 import httpx

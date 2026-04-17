@@ -95,6 +95,14 @@ export const API_ENDPOINTS = {
   'MULTI_STATUS': '/api/multi/status',
   'MULTI_EMBEDDING': '/api/multi/embedding',
 
+  // Genie 模型测试场
+  'GENIE_MODELS': '/api/genie-playground/models',
+  'GENIE_SERVICE_STATUS': '/api/genie-playground/service-status',
+  'GENIE_CHAT': '/api/genie-playground/chat',
+  'GENIE_CHAT_STREAM': '/api/genie-playground/chat/stream',
+  'GENIE_VISION_CHAT': '/api/genie-playground/vision-chat',
+  'GENIE_BATCH_TEST': '/api/genie-playground/batch-test',
+
   // 其他
   '_ACTIVITIES': '/activities',
   'MOCK_ANALYTICS_REPORT': '/api/mock/analytics/report',
@@ -182,6 +190,12 @@ export const API_METHODS = {
   'MULTI_MODEL_INFO': ['GET'],
   'MULTI_STATUS': ['GET'],
   'MULTI_EMBEDDING': ['POST'],
+  'GENIE_MODELS': ['GET'],
+  'GENIE_SERVICE_STATUS': ['GET'],
+  'GENIE_CHAT': ['POST'],
+  'GENIE_CHAT_STREAM': ['POST'],
+  'GENIE_VISION_CHAT': ['POST'],
+  'GENIE_BATCH_TEST': ['POST'],
   'SKILL_AGENT_AGENT_NAME': ['GET'],
   'SKILL_BATCH_EXECUTE': ['POST'],
   'SKILL_CATEGORIES': ['GET'],

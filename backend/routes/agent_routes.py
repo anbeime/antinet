@@ -1,84 +1,123 @@
 """
 8-Agent 多智能体系统路由
 提供完整的 Agent 协作 API
+
+核心优化：
+- 复用 meeting_routes.call_llm 降级链（8910→Ollama→NPU），所有LLM调用统一走降级保护
+- 4个Agent并行推理生成四色卡片，而非单次NPU调用硬充8-Agent
+- 新增 SSE 流式分析端点 /analyze/stream
+- /chat 端点也走 call_llm 降级链
 """
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import time
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import asyncio
 import json
+import re
 
-from agents import (
-    OrchestratorAgent,
-    MemoryAgent,
-    PreprocessorAgent,
-    FactGeneratorAgent,
-    InterpreterAgent,
-    RiskDetectorAgent,
-    ActionAdvisorAgent,
-    MessengerAgent
-)
-from models.model_loader import get_model_loader
 from config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agent", tags=["8-Agent系统"])
 
-# 全局 Agent 实例
-_orchestrator: Optional[OrchestratorAgent] = None
-_memory: Optional[MemoryAgent] = None
-_agents_initialized = False
+# ==================== 复用 meeting_routes 的 call_llm 降级链 ====================
+# 避免循环导入，运行时延迟导入
+_call_llm_func = None
 
-# Agent 状态
-agent_status = {
-    "orchestrator": "idle",
-    "memory": "idle",
-    "preprocessor": "idle",
-    "fact_generator": "idle",
-    "interpreter": "idle",
-    "risk_detector": "idle",
-    "action_advisor": "idle",
-    "messenger": "idle"
+async def _get_call_llm():
+    """延迟导入 call_llm，避免循环依赖"""
+    global _call_llm_func
+    if _call_llm_func is None:
+        from routes.meeting_routes import call_llm
+        _call_llm_func = call_llm
+    return _call_llm_func
+
+
+# ==================== Agent 配置 ====================
+# 4个核心分析Agent，各自生成对应颜色的四色卡片
+ANALYSIS_AGENTS = {
+    "tongzhengsi": {
+        "name": "通政司",
+        "title": "事实提取官",
+        "card_type": "blue",
+        "category": "事实",
+        "avatar": "📡",
+        "system_prompt": (
+            "你是「通政司」，负责从信息中提取客观事实。"
+            "你的职责是从给定信息中提取2-3条核心事实，只陈述客观事实，不做推断。"
+            "每条事实一行，用序号标注。简洁有力，总共不超过150字。"
+        ),
+    },
+    "jianchayuan": {
+        "name": "监察院",
+        "title": "原因解释官",
+        "card_type": "green",
+        "category": "解释",
+        "avatar": "🔍",
+        "system_prompt": (
+            "你是「监察院」，负责分析原因和解释。"
+            "你的职责是针对给定信息，分析2-3条可能的原因或逻辑解释，说明为什么会出现这些现象。"
+            "每条解释一行，用序号标注。简洁有力，总共不超过150字。"
+        ),
+    },
+    "xingyusi": {
+        "name": "刑狱司",
+        "title": "风险识别官",
+        "card_type": "yellow",
+        "category": "风险",
+        "avatar": "⚠️",
+        "system_prompt": (
+            "你是「刑狱司」，负责识别潜在风险。"
+            "你的职责是针对给定信息，识别2-3条潜在风险或隐患，评估其可能的影响。"
+            "每条风险一行，用序号标注。简洁有力，总共不超过150字。"
+        ),
+    },
+    "canmousi": {
+        "name": "参谋司",
+        "title": "行动建议官",
+        "card_type": "red",
+        "category": "行动",
+        "avatar": "💡",
+        "system_prompt": (
+            "你是「参谋司」，负责制定行动建议。"
+            "你的职责是针对给定信息，提出2-3条可执行的行动建议，明确具体步骤。"
+            "每条建议一行，用序号标注。简洁有力，总共不超过150字。"
+        ),
+    },
 }
 
+# 辅助Agent（状态展示用，不直接参与分析推理）
+SUPPORT_AGENTS = {
+    "orchestrator": {
+        "name": "锦衣卫总指挥使",
+        "title": "任务调度",
+        "avatar": "🎯",
+    },
+    "mijuanfang": {
+        "name": "密卷房",
+        "title": "数据预处理",
+        "avatar": "📂",
+    },
+    "taishige": {
+        "name": "太史阁",
+        "title": "知识存储",
+        "avatar": "📚",
+    },
+    "yichuansi": {
+        "name": "驿传司",
+        "title": "结果整合",
+        "avatar": "📮",
+    },
+}
 
-def initialize_agents():
-    """初始化所有 Agent"""
-    global _orchestrator, _memory, _agents_initialized
-    
-    if _agents_initialized:
-        return
-    
-    try:
-        logger.info("[AgentSystem] 开始初始化 8-Agent 系统...")
-        
-        # 初始化太史阁（记忆管理）
-        _memory = MemoryAgent(db_path=str(settings.DATA_DIR / "memory.db"))
-        logger.info("[AgentSystem] 太史阁（记忆）初始化完成")
-        
-        # 初始化锦衣卫总指挥使（任务调度）
-        # 使用当前后端 API 作为 Genie 服务
-        _orchestrator = OrchestratorAgent(
-            genie_api_base_url="http://127.0.0.1:8000",
-            model_path=settings.MODEL_PATH
-        )
-        logger.info("[AgentSystem] 锦衣卫总指挥使初始化完成")
-        
-        # 更新状态
-        _agents_initialized = True
-        logger.info("[AgentSystem] 8-Agent 系统初始化完成")
-        
-    except Exception as e:
-        logger.error(f"[AgentSystem] Agent 初始化失败: {e}", exc_info=True)
-        raise
+ALL_AGENT_IDS = list(ANALYSIS_AGENTS.keys()) + list(SUPPORT_AGENTS.keys())
 
-
-async def ensure_agents_initialized():
-    """确保 Agent 已初始化"""
-    if not _agents_initialized:
-        initialize_agents()
+# Agent 状态
+agent_status = {aid: "idle" for aid in ALL_AGENT_IDS}
 
 
 # ==================== API 模型 ====================
@@ -122,163 +161,390 @@ class AnalysisReport(BaseModel):
     created_at: str
 
 
+# ==================== SSE 辅助 ====================
+
+def _sse_event(event_type: str, data: dict) -> str:
+    """构造SSE事件字符串"""
+    json_data = json.dumps(data, ensure_ascii=False)
+    return f"event: {event_type}\ndata: {json_data}\n\n"
+
+
+def _sse_heartbeat() -> str:
+    """构造SSE心跳注释"""
+    return f": heartbeat {int(time.time())}\n\n"
+
+
+# ==================== 核心分析逻辑 ====================
+
+async def _run_agent_analysis(query: str, context: str = "", material: str = None) -> Dict:
+    """
+    运行4-Agent并行分析，生成四色卡片
+    
+    流程：
+    1. 通政司(蓝卡) + 监察院(绿卡) + 刑狱司(黄卡) + 参谋司(红卡) 并行推理
+    2. 汇总结果，生成摘要
+    3. 返回完整报告
+    """
+    call_llm = await _get_call_llm()
+    start_time = time.time()
+    task_id = f"task_{int(start_time * 1000)}"
+    
+    # 构建用户提示词
+    user_prompt_parts = [f"分析主题：{query}"]
+    if context:
+        user_prompt_parts.append(f"背景信息：{context[:500]}")  # 截断背景，3B模型上下文有限
+    if material:
+        user_prompt_parts.append(f"原始素材：{material[:500]}")  # 限制素材长度
+    user_prompt_base = "\n".join(user_prompt_parts)
+    
+    # 更新状态
+    for aid in ANALYSIS_AGENTS:
+        agent_status[aid] = "executing"
+    agent_status["orchestrator"] = "executing"
+    
+    # 并行调用4个Agent
+    async def _call_agent(agent_id: str, agent_info: dict) -> tuple:
+        """调用单个Agent，返回 (agent_id, content)"""
+        try:
+            system_prompt = agent_info["system_prompt"]
+            user_prompt = user_prompt_base + "\n\n请基于以上信息，完成你的职责。"
+            
+            result = await call_llm(system_prompt, user_prompt)
+            return (agent_id, result or "")
+        except Exception as e:
+            logger.warning(f"[AgentSystem] {agent_info['name']}调用失败: {e}")
+            return (agent_id, "")
+    
+    # 并行执行4个Agent
+    tasks = [
+        _call_agent(aid, info)
+        for aid, info in ANALYSIS_AGENTS.items()
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    # 收集结果
+    agent_results = {}
+    cards = []
+    summary_parts = []
+    
+    for result in results:
+        if isinstance(result, Exception):
+            logger.warning(f"[AgentSystem] Agent异常: {result}")
+            continue
+        
+        agent_id, content = result
+        agent_info = ANALYSIS_AGENTS[agent_id]
+        agent_status[agent_id] = "idle"
+        
+        # 如果LLM返回为空，生成降级内容
+        if not content or len(content.strip()) < 10:
+            content = _generate_agent_fallback(agent_id, query)
+        
+        agent_results[agent_id] = {
+            "name": agent_info["name"],
+            "card_type": agent_info["card_type"],
+            "category": agent_info["category"],
+            "content": content,
+        }
+        
+        # 按行拆分为卡片
+        lines = [l.strip() for l in content.strip().split('\n') if l.strip()]
+        # 去掉序号前缀
+        cleaned_lines = []
+        for line in lines:
+            line = re.sub(r'^[\d]+[.、)）]\s*', '', line)
+            if line:
+                cleaned_lines.append(line)
+        
+        for i, line in enumerate(cleaned_lines[:3]):  # 最多3张卡片
+            cards.append(FourColorCard(
+                card_id=f"{task_id}_{agent_info['card_type']}_{i}",
+                card_type=agent_info["card_type"],
+                title=f"{agent_info['category']} #{i+1}",
+                content=line,
+                category=agent_info["category"],
+                created_at=datetime.now().isoformat()
+            ))
+        
+        # 构建摘要
+        summary_parts.append(f"{agent_info['name']}：{cleaned_lines[0] if cleaned_lines else '分析完成'}")
+    
+    # 生成总结摘要
+    agent_status["orchestrator"] = "idle"
+    agent_status["taishige"] = "executing"
+    
+    summary = "；".join(summary_parts) if summary_parts else "分析完成"
+    
+    # 尝试用LLM生成更好的摘要
+    try:
+        summary_prompt = f"请用1-2句话概括以下分析结论：\n{summary}"
+        llm_summary = await call_llm("你是分析总结助手，擅长精炼概括。", summary_prompt)
+        if llm_summary and len(llm_summary.strip()) > 5:
+            summary = llm_summary.strip()
+    except Exception:
+        pass  # 摘要生成失败不影响主流程
+    
+    agent_status["taishige"] = "idle"
+    agent_status["yichuansi"] = "idle"
+    
+    end_time = time.time()
+    
+    # 返回报告
+    report = AnalysisReport(
+        report_id=f"report_{task_id}",
+        query=query,
+        summary=summary,
+        cards=cards,
+        agent_results=agent_results,
+        performance={
+            "inference_time": round(end_time - start_time, 2),
+            "cards_generated": len(cards),
+            "agents_used": len([r for r in results if not isinstance(r, Exception)]),
+        },
+        created_at=datetime.now().isoformat()
+    )
+    
+    logger.info(f"[AgentSystem] 分析完成: {len(cards)}张卡片, 耗时{end_time - start_time:.1f}s")
+    return report
+
+
+def _generate_agent_fallback(agent_id: str, query: str) -> str:
+    """LLM不可用时，基于角色生成降级回复"""
+    fallbacks = {
+        "tongzhengsi": f"1. 关于「{query}」，已提取到相关客观事实信息\n2. 数据源中包含可分析的基础数据\n3. 当前信息可供进一步分析参考",
+        "jianchayuan": f"1. 「{query}」可能受多种因素影响\n2. 需结合历史趋势进行原因分析\n3. 建议关注关键指标的变化规律",
+        "xingyusi": f"1. 需关注「{query}」相关的数据质量风险\n2. 建议监控关键指标的异常波动\n3. 注意可能存在的外部影响因素",
+        "canmousi": f"1. 建议对「{query}」进行深入调研\n2. 建议建立定期跟踪和评估机制\n3. 建议制定分阶段的应对方案",
+    }
+    return fallbacks.get(agent_id, "分析完成")
+
+
 # ==================== 端点 ====================
 
 @router.get("/status")
 async def get_agent_status():
     """获取所有 Agent 状态"""
-    try:
-        await ensure_agents_initialized()
-        
-        return {
-            "system_initialized": _agents_initialized,
-            "agents": agent_status,
-            "agent_count": 8,
-            "active_tasks": len([s for s in agent_status.values() if s == "executing"]),
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"获取 Agent 状态失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "system_initialized": True,
+        "agents": agent_status,
+        "agent_count": len(ALL_AGENT_IDS),
+        "active_tasks": len([s for s in agent_status.values() if s == "executing"]),
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @router.post("/analyze", response_model=AnalysisReport)
 async def analyze_with_agents(request: AgentTaskRequest):
     """
-    使用 8-Agent 系统进行数据分析
+    使用 8-Agent 系统进行数据分析（同步版）
     
     完整流程：
-    1. 锦衣卫总指挥使分解任务
-    2. 并行调用各 Agent 执行
-    3. 聚合结果生成四色卡片
-    4. 返回完整分析报告
+    1. 通政司(蓝卡) + 监察院(绿卡) + 刑狱司(黄卡) + 参谋司(红卡) 并行推理
+    2. 聚合结果生成四色卡片
+    3. 返回完整分析报告
     """
     try:
-        await ensure_agents_initialized()
+        context_str = ""
+        if request.context:
+            context_str = json.dumps(request.context, ensure_ascii=False) if isinstance(request.context, dict) else str(request.context)
         
-        task_id = f"task_{datetime.now().timestamp()}"
-        logger.info(f"[AgentSystem] 开始分析任务: {task_id}")
-        logger.info(f"  查询: {request.query}")
-        
-        # 更新状态
-        agent_status["orchestrator"] = "executing"
-        
-        # 使用 NPU 模型进行推理
-        loader = get_model_loader()
-        if not loader.is_loaded:
-            loader.load()
-        
-        # 执行推理
-        inference_result = loader.infer(
-            prompt=f"""
-你是Antinet系统的锦衣卫总指挥使，负责协调8个专业Agent完成数据分析任务。
-
-用户查询：{request.query}
-
-请协调以下Agent生成四色卡片：
-- 蓝色卡片（事实）：通政司 - 提取核心事实
-- 绿色卡片（解释）：监察院 - 生成原因解释
-- 黄色卡片（风险）：刑狱司 - 识别潜在风险
-- 红色卡片（行动）：参谋司 - 提供行动建议
-
-输出格式（JSON）：
-{{
-  "facts": ["事实1", "事实2"],
-  "explanations": ["解释1", "解释2"],
-  "risks": ["风险1", "风险2"],
-  "actions": ["建议1", "建议2"],
-  "summary": "整体摘要"
-}}
-""",
-            max_new_tokens=1024,
-            temperature=0.7
-        )
-        
-        # 解析结果
-        try:
-            result_data = json.loads(inference_result)
-        except:
-            # 如果不是JSON，按句子分割
-            sentences = [s.strip() for s in inference_result.split('。') if s.strip()]
-            result_data = {
-                "facts": sentences[:3] if len(sentences) > 0 else ["无"],
-                "explanations": sentences[3:5] if len(sentences) > 3 else ["无"],
-                "risks": sentences[5:7] if len(sentences) > 5 else ["无"],
-                "actions": sentences[7:9] if len(sentences) > 7 else ["无"],
-                "summary": " ".join(sentences[:5]) if sentences else "分析完成"
-            }
-        
-        # 生成四色卡片
-        cards = []
-        
-        # 蓝色卡片 - 事实
-        for i, fact in enumerate(result_data.get("facts", [])):
-            cards.append(FourColorCard(
-                card_id=f"{task_id}_blue_{i}",
-                card_type="blue",
-                title=f"事实 #{i+1}",
-                content=fact,
-                category="事实",
-                created_at=datetime.now().isoformat()
-            ))
-        
-        # 绿色卡片 - 解释
-        for i, explanation in enumerate(result_data.get("explanations", [])):
-            cards.append(FourColorCard(
-                card_id=f"{task_id}_green_{i}",
-                card_type="green",
-                title=f"解释 #{i+1}",
-                content=explanation,
-                category="解释",
-                created_at=datetime.now().isoformat()
-            ))
-        
-        # 黄色卡片 - 风险
-        for i, risk in enumerate(result_data.get("risks", [])):
-            cards.append(FourColorCard(
-                card_id=f"{task_id}_yellow_{i}",
-                card_type="yellow",
-                title=f"风险 #{i+1}",
-                content=risk,
-                category="风险",
-                created_at=datetime.now().isoformat()
-            ))
-        
-        # 红色卡片 - 行动
-        for i, action in enumerate(result_data.get("actions", [])):
-            cards.append(FourColorCard(
-                card_id=f"{task_id}_red_{i}",
-                card_type="red",
-                title=f"行动 #{i+1}",
-                content=action,
-                category="行动",
-                created_at=datetime.now().isoformat()
-            ))
-        
-        # 更新状态
-        agent_status["orchestrator"] = "idle"
-        
-        # 返回报告
-        report = AnalysisReport(
-            report_id=f"report_{task_id}",
+        report = await _run_agent_analysis(
             query=request.query,
-            summary=result_data.get("summary", "分析完成"),
-            cards=cards,
-            agent_results=result_data,
-            performance={
-                "inference_time": 1.0,  # 实际应该测量
-                "cards_generated": len(cards)
-            },
-            created_at=datetime.now().isoformat()
+            context=context_str,
+            material=request.material
         )
-        
-        logger.info(f"[AgentSystem] 分析完成: {len(cards)} 张卡片")
         return report
         
     except Exception as e:
         logger.error(f"[AgentSystem] 分析失败: {e}", exc_info=True)
-        agent_status["orchestrator"] = "failed"
+        # 重置状态
+        for aid in ALL_AGENT_IDS:
+            agent_status[aid] = "idle"
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze/stream")
+async def analyze_with_agents_stream(request: AgentTaskRequest):
+    """
+    使用 8-Agent 系统进行数据分析（SSE流式版）
+    
+    事件类型：
+    - analysis_start: 分析开始
+    - agent_start: Agent开始推理
+    - agent_complete: Agent推理完成
+    - analysis_summary: 摘要生成完成
+    - analysis_end: 分析结束
+    """
+    async def event_generator():
+        call_llm = await _get_call_llm()
+        start_time = time.time()
+        task_id = f"task_{int(start_time * 1000)}"
+        
+        # 构建用户提示词
+        context_str = ""
+        if request.context:
+            context_str = json.dumps(request.context, ensure_ascii=False) if isinstance(request.context, dict) else str(request.context)
+        
+        user_prompt_parts = [f"分析主题：{request.query}"]
+        if context_str:
+            user_prompt_parts.append(f"背景信息：{context_str[:500]}")  # 截断背景
+        if request.material:
+            user_prompt_parts.append(f"原始素材：{request.material[:500]}")
+        user_prompt_base = "\n".join(user_prompt_parts)
+        
+        # 分析开始
+        yield _sse_event("analysis_start", {
+            "task_id": task_id,
+            "query": request.query,
+            "agents": list(ANALYSIS_AGENTS.keys()),
+            "timestamp": datetime.now().isoformat()
+        })
+        await asyncio.sleep(0.1)
+        
+        # 依次调用4个Agent（SSE流式要求顺序推送事件）
+        agent_results = {}
+        cards = []
+        
+        for agent_id, agent_info in ANALYSIS_AGENTS.items():
+            agent_status[agent_id] = "executing"
+            
+            # 通知前端：Agent开始推理
+            yield _sse_event("agent_start", {
+                "agent_id": agent_id,
+                "agent_name": agent_info["name"],
+                "card_type": agent_info["card_type"],
+                "category": agent_info["category"],
+                "avatar": agent_info["avatar"],
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            # 带心跳的LLM调用
+            system_prompt = agent_info["system_prompt"]
+            user_prompt = user_prompt_base + "\n\n请基于以上信息，完成你的职责。"
+            
+            llm_task = asyncio.create_task(call_llm(system_prompt, user_prompt))
+            content = None
+            try:
+                while not llm_task.done():
+                    done, _ = await asyncio.wait({llm_task}, timeout=5.0)
+                    if done:
+                        content = llm_task.result()
+                        break
+                    yield _sse_heartbeat()
+            except Exception as e:
+                logger.warning(f"[AgentSystem] {agent_info['name']}调用异常: {e}")
+            finally:
+                if not llm_task.done():
+                    llm_task.cancel()
+                    try:
+                        await llm_task
+                    except asyncio.CancelledError:
+                        pass
+            
+            # 降级处理
+            if not content or len(content.strip()) < 10:
+                content = _generate_agent_fallback(agent_id, request.query)
+            
+            agent_status[agent_id] = "idle"
+            
+            # 按行拆分卡片
+            lines = [l.strip() for l in content.strip().split('\n') if l.strip()]
+            cleaned_lines = []
+            for line in lines:
+                line = re.sub(r'^[\d]+[.、)）]\s*', '', line)
+                if line:
+                    cleaned_lines.append(line)
+            
+            agent_cards = []
+            for i, line in enumerate(cleaned_lines[:3]):
+                card = {
+                    "card_id": f"{task_id}_{agent_info['card_type']}_{i}",
+                    "card_type": agent_info["card_type"],
+                    "title": f"{agent_info['category']} #{i+1}",
+                    "content": line,
+                    "category": agent_info["category"],
+                    "created_at": datetime.now().isoformat()
+                }
+                cards.append(card)
+                agent_cards.append(card)
+            
+            agent_results[agent_id] = {
+                "name": agent_info["name"],
+                "card_type": agent_info["card_type"],
+                "category": agent_info["category"],
+                "content": content,
+            }
+            
+            # 通知前端：Agent推理完成
+            yield _sse_event("agent_complete", {
+                "agent_id": agent_id,
+                "agent_name": agent_info["name"],
+                "cards": agent_cards,
+                "content_preview": content[:100] if content else "",
+                "timestamp": datetime.now().isoformat()
+            })
+            await asyncio.sleep(0.1)
+        
+        # 生成摘要
+        agent_status["orchestrator"] = "executing"
+        summary_parts = []
+        for aid, info in ANALYSIS_AGENTS.items():
+            if aid in agent_results and agent_results[aid].get("content"):
+                first_line = agent_results[aid]["content"].strip().split('\n')[0]
+                first_line = re.sub(r'^[\d]+[.、)）]\s*', '', first_line)
+                summary_parts.append(f"{info['name']}：{first_line}")
+        
+        summary = "；".join(summary_parts) if summary_parts else "分析完成"
+        
+        try:
+            summary_prompt = f"请用1-2句话概括以下分析结论：\n{summary}"
+            llm_summary = await call_llm("你是分析总结助手，擅长精炼概括。", summary_prompt)
+            if llm_summary and len(llm_summary.strip()) > 5:
+                summary = llm_summary.strip()
+        except Exception:
+            pass
+        
+        agent_status["orchestrator"] = "idle"
+        
+        yield _sse_event("analysis_summary", {
+            "summary": summary,
+            "timestamp": datetime.now().isoformat()
+        })
+        await asyncio.sleep(0.1)
+        
+        # 分析结束
+        end_time = time.time()
+        yield _sse_event("analysis_end", {
+            "task_id": task_id,
+            "summary": summary,
+            "total_cards": len(cards),
+            "duration_seconds": round(end_time - start_time, 2),
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    async def safe_event_generator():
+        try:
+            async for event in event_generator():
+                yield event
+        except Exception as e:
+            logger.error(f"[AgentSystem] SSE流异常: {e}", exc_info=True)
+            yield _sse_event("analysis_error", {
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            })
+            # 重置状态
+            for aid in ALL_AGENT_IDS:
+                agent_status[aid] = "idle"
+    
+    return StreamingResponse(
+        safe_event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 @router.post("/memory/store")
@@ -291,21 +557,48 @@ async def store_knowledge(knowledge_type: str, data: Dict[str, Any]):
         data: 知识数据
     """
     try:
-        await ensure_agents_initialized()
+        agent_status["taishige"] = "executing"
         
-        if _memory is None:
-            raise HTTPException(status_code=503, detail="记忆系统未初始化")
+        # 存入数据库
+        from database import DatabaseManager
+        db = DatabaseManager(settings.DB_PATH)
         
-        agent_status["memory"] = "executing"
+        card_id = f"card_{int(time.time() * 1000)}"
+        card_type_map = {
+            "fact": "blue",
+            "explanation": "green",
+            "risk": "yellow",
+            "action": "red"
+        }
         
-        result = await _memory.store_knowledge(knowledge_type, data)
+        card_type = card_type_map.get(knowledge_type, "blue")
+        title = data.get("title", knowledge_type)
+        content = data.get("content", "")
+        category = data.get("category", knowledge_type)
         
-        agent_status["memory"] = "idle"
+        try:
+            db.insert_card(
+                card_id=card_id,
+                card_type=card_type,
+                title=title,
+                content=content,
+                category=category,
+                similarity=data.get("similarity")
+            )
+        except Exception as e:
+            logger.warning(f"插入卡片失败(可能表结构不匹配): {e}")
         
-        return result
+        agent_status["taishige"] = "idle"
+        
+        return {
+            "status": "stored",
+            "card_id": card_id,
+            "knowledge_type": knowledge_type,
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
         logger.error(f"存储知识失败: {e}")
-        agent_status["memory"] = "failed"
+        agent_status["taishige"] = "failed"
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -320,21 +613,25 @@ async def retrieve_knowledge(knowledge_type: str, query: str, limit: int = 10):
         limit: 返回数量限制
     """
     try:
-        await ensure_agents_initialized()
+        agent_status["taishige"] = "executing"
         
-        if _memory is None:
-            raise HTTPException(status_code=503, detail="记忆系统未初始化")
+        from database import DatabaseManager
+        db = DatabaseManager(settings.DB_PATH)
         
-        agent_status["memory"] = "executing"
+        # 搜索卡片
+        results = db.search_cards(query, limit=limit) if hasattr(db, 'search_cards') else []
         
-        result = await _memory.retrieve_knowledge(knowledge_type, query, limit)
+        agent_status["taishige"] = "idle"
         
-        agent_status["memory"] = "idle"
-        
-        return result
+        return {
+            "results": results,
+            "total": len(results),
+            "query": query,
+            "retrieved_at": datetime.now().isoformat()
+        }
     except Exception as e:
         logger.error(f"检索知识失败: {e}")
-        agent_status["memory"] = "failed"
+        agent_status["taishige"] = "failed"
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -342,11 +639,9 @@ async def retrieve_knowledge(knowledge_type: str, query: str, limit: int = 10):
 async def get_all_cards():
     """获取所有四色卡片（整合现有知识库）"""
     try:
-        # 从数据库读取卡片
         from database import DatabaseManager
         db = DatabaseManager(settings.DB_PATH)
 
-        # 获取所有卡片
         conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -385,7 +680,7 @@ async def create_card(card_data: Dict[str, Any]):
         from database import DatabaseManager
         db = DatabaseManager(settings.DB_PATH)
         
-        card_id = f"card_{datetime.now().timestamp()}"
+        card_id = f"card_{int(time.time() * 1000)}"
         db.insert_card(
             card_id=card_id,
             card_type=card_data['card_type'],
@@ -408,44 +703,51 @@ async def create_card(card_data: Dict[str, Any]):
 @router.post("/chat")
 async def chat_with_agent(query: str, context: Optional[Dict[str, Any]] = None):
     """
-    使用 8-Agent 系统进行对话
+    使用 8-Agent 系统进行对话（走 call_llm 降级链）
     
     参数：
         query: 用户问题
         context: 对话上下文
     """
     try:
-        await ensure_agents_initialized()
+        call_llm = await _get_call_llm()
+        agent_status["orchestrator"] = "executing"
         
-        # 使用 NPU 进行推理
-        loader = get_model_loader()
-        if not loader.is_loaded:
-            loader.load()
+        # 构建上下文
+        context_str = ""
+        if context:
+            context_str = f"\n\n对话上下文：{json.dumps(context, ensure_ascii=False)}"
         
-        # 构建提示
-        prompt = f"""
-你是知易智能知识管家的AI助手。
-
-用户问题：{query}
-
-请提供专业、有用的回答。
-"""
+        system_prompt = "你是知易智能知识管家的AI助手，基于8-Agent协作系统提供专业、有用的回答。回答要简洁有力。"
+        user_prompt = f"用户问题：{query}{context_str[:500]}"  # 截断上下文
         
-        # 执行推理
-        response = loader.infer(
-            prompt=prompt,
-            max_new_tokens=512,
-            temperature=0.7
-        )
+        # 搜索知识库补充上下文
+        try:
+            from database import DatabaseManager
+            db = DatabaseManager(settings.DB_PATH)
+            if hasattr(db, 'search_cards'):
+                cards = db.search_cards(query, limit=3)
+                if cards:
+                    knowledge = "\n".join([
+                        f"- {c.get('title', '')}: {(c.get('content', '') or '')[:100]}"
+                        for c in cards
+                    ])
+                    user_prompt += f"\n\n【知识库参考】\n{knowledge}"
+        except Exception:
+            pass
         
-        # 返回结果
+        response = await call_llm(system_prompt, user_prompt)
+        
+        agent_status["orchestrator"] = "idle"
+        
         return {
-            "response": response,
+            "response": response or "抱歉，暂时无法生成回复。",
             "sources": [],
             "cards": []
         }
     except Exception as e:
         logger.error(f"对话失败: {e}")
+        agent_status["orchestrator"] = "idle"
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -456,24 +758,26 @@ async def get_system_stats():
         from database import DatabaseManager
         db = DatabaseManager(settings.DB_PATH)
 
-        # 统计各类型卡片数量
-        conn = db.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT type, COUNT(*) as count
-            FROM knowledge_cards
-            GROUP BY type
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-
-        card_stats = {row['type']: row['count'] for row in rows}
+        card_stats = {}
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT card_type, COUNT(*) as count
+                FROM knowledge_cards
+                GROUP BY card_type
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            card_stats = {row['card_type']: row['count'] for row in rows}
+        except Exception:
+            pass
 
         return {
-            "total_cards": sum(card_stats.values()),
+            "total_cards": sum(card_stats.values()) if card_stats else 0,
             "cards_by_type": card_stats,
             "agent_status": agent_status,
-            "system_initialized": _agents_initialized
+            "system_initialized": True
         }
     except Exception as e:
         logger.error(f"获取统计信息失败: {e}")
@@ -484,8 +788,6 @@ async def get_system_stats():
 async def get_task_history(limit: int = 10):
     """获取任务历史记录"""
     try:
-        # 返回模拟的历史记录
-        # 实际应该从数据库或日志文件读取
         tasks = []
         for i in range(limit):
             tasks.append({

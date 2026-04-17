@@ -2,10 +2,10 @@
 # 知易智能知识管家 - 骁龙X Elite AIPC端侧AI应用
 # ============================================================
 # 硬件平台: 骁龙® X Elite (X1E-84-100)
-# SDK版本: QNN SDK v2.37 / v2.38 / v2.42 (多版本支持)
+# SDK版本: QNN SDK v2.37 / v2.42 (多版本支持)
 # Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用NPU
 # 模型: 支持多个QNN版本的模型
-# 模型目录: C:\D\zhiyi\models (自动下载脚本放置位置)
+# 模型目录: {PROJECT_ROOT}/models (自动下载脚本放置位置)
 # ============================================================
 
 from pydantic_settings import BaseSettings
@@ -19,12 +19,7 @@ PROJECT_ROOT = BACKEND_DIR.parent.absolute()
 
 # 模型基础目录 - 支持多位置查找
 MODEL_BASE_DIRS = [
-    PROJECT_ROOT / "models",           # 自动下载脚本位置
-    Path("C:/model"),                  # 原配置位置（兼容性）
-    Path("C:/model/models_2.42"),
-    Path("C:/model/models_2.37"),
-    Path("C:/model/models_2.38"),
-    Path("C:/model/models_2.34"),
+    PROJECT_ROOT / "models",           # 当前项目位置（所有模型都在这）
 ]
 
 class Settings(BaseSettings):
@@ -41,7 +36,7 @@ class Settings(BaseSettings):
 
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "llama3.2-3b"  # 默认模型（轻量快速）
-    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37")
+    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37")
     AUTO_LOAD_MODEL: bool = False  # 禁用启动时预加载，避免阻塞服务启动
 
     # QNN配置
@@ -64,35 +59,31 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"  # 忽略额外的环境变量（如QAI_LIBS_PATH等）
+        # 防止系统环境变量 DEBUG=release 导致 pydantic bool 解析失败
+        # 使用 ZHIYI_ 前缀来避免与系统环境变量冲突
+        env_prefix = "ZHIYI_"
 
 # ============================================================
 # 多模型注册表
 # ============================================================
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
-    # === 纯文本模型 ===
-    "gemma4": {
-        "api_endpoint": "http://localhost:11434",
-        "method": "POST",
-        "type": "api",
-        "description": "Gemma 4 - 通过本地API服务访问的模型",
-        "performance": "high",
-    },
+    # === 纯文本模型（已移除 llama3.1-8b，NPU加载失败）===
     "llama3.2-3b": {
-        "path": str(PROJECT_ROOT / "models" / "models_2.37" / "llama3.2-3b-8380-qnn2.37"),
+        "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
         "qnn_version": "2.37",
         "type": "chat",
         "context_length": 8192,
         "description": "Llama 3.2 3B - 轻量级聊天模型，速度快",
         "performance": "fast",
-        "recommended": True,
+        "recommended": True
     },
     "qwen2.0-7b": {
         "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
         "qnn_version": "2.34",
         "type": "chat",
         "context_length": 8192,
-        "description": "Qwen 2.0 7B SSD - 中文优化模型",
-        "performance": "medium",
+        "description": "Qwen 2.0 7B - 中文优化模型",
+        "performance": "medium"
     },
 
     # === 视觉模型 ===
@@ -103,17 +94,30 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "context_length": 8192,
         "description": "Qwen 2.5 VL 3B - 多模态视觉语言模型",
         "requires_py312": True,
-        "requires_image": True,
+        "requires_image": True
     },
 
-    # === Reranker 模型 ===
-    "qwen3-reranker": {
-        "path": str(PROJECT_ROOT / "models" / "qwen3-reranker-8380-2.38"),
-        "qnn_version": "2.38",
-        "type": "reranker",
-        "description": "Qwen3 Reranker - 重排序模型",
-        "performance": "high",
+    # === Ollama 远程模型 ===
+    "gemma4": {
+        "path": "",  # Ollama 不需要本地路径
+        "type": "ollama",
+        "ollama_model": "gemma4:latest",
+        "ollama_url": "http://localhost:11434",
+        "context_length": 131072,
+        "description": "Gemma 4 8B (Ollama) - 高质量大模型，适合复杂任务和技能调用",
+        "performance": "slow",
+        "recommended": False
     },
+
+    # === 嵌入模型 ===
+    "bge-base-zh": {
+        "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),
+        "qnn_version": "2.38",
+        "type": "embedding",
+        "dimension": 768,
+        "description": "BGE Base 中文 - 文本嵌入模型",
+        "performance": "high"
+    }
 }
 
 
@@ -138,12 +142,34 @@ def find_model_path(model_key: str) -> str:
     # 返回主路径（即使不存在）
     return primary_path
 
-# QNN SDK 版本路径映射
+# QNN SDK 版本路径映射 - 每个版本按优先级查找
+# 注意：QAIRT 2.45 SDK 向下兼容 v73 模型，精确版本优先，新版本 fallback
+def _find_qnn_sdk_path(version: str) -> str:
+    """查找指定版本的 QNN SDK DLL 路径"""
+    # 版本号到目录名的映射（优先精确版本，然后 fallback 到兼容的新版本）
+    version_dirs = {
+        "2.34": ["2.34.0.250626", "2.45.40.260406", "2.42.0.251225"],
+        "2.37": ["2.37.1.250807", "2.45.40.260406", "2.42.0.251225"],
+        "2.42": ["2.42.0.251225", "2.45.40.260406"],
+        "2.45": ["2.45.40.260406"],
+    }
+    for vdir in version_dirs.get(version, ["2.45.40.260406"]):
+        # 优先 arm64x-windows-msvc（ARM64EC，与原始版本一致，兼容性更好）
+        p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "arm64x-windows-msvc"
+        if p.exists():
+            return str(p)
+        # 备选 aarch64-windows-msvc（原生 ARM64）
+        p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc"
+        if p.exists():
+            return str(p)
+    # fallback 到 2.45 arm64x
+    return str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc")
+
 QNN_SDK_PATHS: Dict[str, str] = {
-    "2.34": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.37": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.38": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),  # 兼容
-    "2.42": str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc"),
+    "2.34": _find_qnn_sdk_path("2.34"),
+    "2.37": _find_qnn_sdk_path("2.37"),
+    "2.42": _find_qnn_sdk_path("2.42"),
+    "2.45": _find_qnn_sdk_path("2.45"),
 }
 
 
@@ -155,8 +181,8 @@ def find_qnn_sdk_path(version: str) -> str:
         if Path(sdk_path).exists():
             return sdk_path
 
-    # 默认返回 v2.42 路径
-    default_path = str(PROJECT_ROOT / "QAIRT" / "2.42.0.251225" / "lib" / "aarch64-windows-msvc")
+    # 默认返回 v2.45 路径（优先 arm64x）
+    default_path = str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc")
     if Path(default_path).exists():
         return default_path
 

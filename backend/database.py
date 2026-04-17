@@ -219,7 +219,16 @@ class DatabaseManager:
                 )
             """)
             
-            # 10. 知识卡片关联专题字段
+            # 检查并添加 knowledge_cards 表的缺失字段
+            try:
+                cursor.execute("SELECT * FROM knowledge_cards LIMIT 1")
+                columns = [desc[0] for desc in cursor.description]
+                for col, col_type in [("type", "TEXT"), ("category", "TEXT"), ("similarity", "REAL")]:
+                    if col not in columns:
+                        cursor.execute(f"ALTER TABLE knowledge_cards ADD COLUMN {col} {col_type}")
+            except:
+                pass
+            
             try:
                 cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN project_id INTEGER")
             except:
@@ -1106,19 +1115,28 @@ class DatabaseManager:
 
     def update_team_project(self, project_id: int, **kwargs) -> bool:
         """更新团队项目"""
+        # 驼峰转蛇形命名字段映射
+        field_mapping = {
+            'startDate': 'start_date',
+            'endDate': 'end_date',
+            'assignedMembers': 'assigned_members',
+        }
+        
         with self.get_connection() as conn:
             cursor = conn.cursor()
             updates = []
             values = []
             for key, value in kwargs.items():
-                if key == 'assigned_members':
+                # 转换字段名
+                db_key = field_mapping.get(key, key)
+                if db_key == 'assigned_members':
                     updates.append('assigned_members = ?')
                     values.append(json.dumps(value) if value else '[]')
-                elif key == 'tasks':
+                elif db_key == 'tasks':
                     updates.append('tasks_json = ?')
                     values.append(json.dumps(value) if value else '[]')
                 else:
-                    updates.append(f'{key} = ?')
+                    updates.append(f'{db_key} = ?')
                     values.append(value)
             values.append(datetime.now().isoformat())
             values.append(project_id)

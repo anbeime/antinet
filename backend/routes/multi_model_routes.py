@@ -65,6 +65,7 @@ class InferenceRequest(BaseModel):
     model_id: Optional[str] = Field(None, description="模型ID（可选）")
     max_tokens: int = Field(default=512, description="最大生成长度")
     temperature: float = Field(default=0.7, description="温度参数")
+    system_prompt: Optional[str] = Field(None, description="系统提示词（可选）")
 
 
 # ==================== 路由 ====================
@@ -158,7 +159,7 @@ async def switch_model(request: SwitchModelRequest):
 
     # 真正执行模型切换（使用全局单例，确保卸载的是真正加载的模型）
     try:
-        from models.model_loader import NPUModelLoader, APIModelLoader, _global_model_loader
+        from models.model_loader import NPUModelLoader, _global_model_loader
         import models.model_loader as ml_module
 
         # 卸载旧模型（使用全局实例，它才持有真正加载的模型）
@@ -231,7 +232,8 @@ async def multi_model_inference(request: InferenceRequest):
         response = loader.infer(
             prompt=request.prompt,
             max_new_tokens=request.max_tokens,
-            temperature=request.temperature
+            temperature=request.temperature,
+            system_prompt=request.system_prompt
         )
 
         return {

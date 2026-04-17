@@ -12,7 +12,7 @@ import logging
 import json
 import time
 import httpx
-from pathlib import Path
+import os
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ AGENT_MAPPING = {
         "description": "监控系统安全状态，识别潜在威胁和风险，收集内外部情报",
         "color": "from-red-500 to-red-600",
         "pixel_id": "xingyusi",
-        "system_prompt": "你是「锦衣卫」，负责安全与情报收集。你的职责是识别议题中的潜在风险、威胁和安全隐患，提出预警。发言要简洁有力，100字以内。"
+        system_prompt: "你是「锦衣卫」，负责安全与情报收集。发言要简洁有力，80字以内。只输出风险点，禁止重复背景信息和角色描述。"
     },
     "tongzhengsi": {
         "backend_id": "fact_generator",
@@ -64,7 +64,7 @@ AGENT_MAPPING = {
         "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
         "color": "from-green-500 to-green-600",
         "pixel_id": "tongzhengsi",
-        "system_prompt": "你是「通政司」，负责信息与通讯。你的职责是梳理议题中的关键事实、数据和信息，确保讨论基于准确的信息基础。发言要简洁有力，100字以内。"
+        system_prompt: "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
     },
     "jianchayuan": {
         "backend_id": "interpreter",
@@ -74,7 +74,7 @@ AGENT_MAPPING = {
         "description": "监督各项操作和流程的执行情况，进行合规性审计",
         "color": "from-purple-500 to-purple-600",
         "pixel_id": "jianchayuan",
-        "system_prompt": "你是「监察院」，负责监督与审计。你的职责是审视议题中的合规性、流程规范性，指出可能的漏洞和改进空间。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「监察院」，负责监督与审计。你的职责是审视议题中的合规性、流程规范性，指出漏洞和改进空间。严格限制：必须用中文，60字以内，只说问题点，不要重复背景。"
     },
     "mijuanfang": {
         "backend_id": "preprocessor",
@@ -84,7 +84,7 @@ AGENT_MAPPING = {
         "description": "专门负责非结构化知识的整理、归档、索引和检索",
         "color": "from-indigo-500 to-indigo-600",
         "pixel_id": "mijuanfang",
-        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑和参考依据。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑。严格限制：必须用中文，60字以内，只引用事实，不要重复背景。"
     },
     "chengxiangfu": {
         "backend_id": "action_advisor",
@@ -94,7 +94,7 @@ AGENT_MAPPING = {
         "description": "制定战略规划，提供高层决策建议，协调各方资源",
         "color": "from-yellow-500 to-yellow-600",
         "pixel_id": "canmousi",
-        "system_prompt": "你是「丞相府」，负责战略规划与决策。你的职责是从战略高度分析议题，提出可执行的方案和建议。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「丞相府」，负责战略规划与决策。你的职责是从战略高度分析议题，提出可执行的方案和建议。严格限制：必须用中文，60字以内，只说方案要点，不要重复背景。"
     },
     "junjichu": {
         "backend_id": "messenger",
@@ -104,7 +104,7 @@ AGENT_MAPPING = {
         "description": "负责任务执行、跨部门协调和进度跟踪",
         "color": "from-orange-500 to-orange-600",
         "pixel_id": "yichuansi",
-        "system_prompt": "你是「军机处」，负责执行与协调。你的职责是将讨论成果转化为具体的执行计划，明确分工和时间节点。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「军机处」，负责执行与协调。你的职责是将讨论成果转化为具体执行计划，明确分工和时间节点。严格限制：必须用中文，60字以内，只说执行要点，不要重复背景。"
     },
     "zhihuishi": {
         "backend_id": "orchestrator",
@@ -114,7 +114,7 @@ AGENT_MAPPING = {
         "description": "统筹全局，做出最终裁决，确保各方协同高效运转",
         "color": "from-teal-500 to-teal-600",
         "pixel_id": "orchestrator",
-        "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。严格限制：必须用中文，60字以内，只说决策要点，不要重复背景。"
     }
 }
 
@@ -122,18 +122,77 @@ import re
 
 # ==================== 工具函数 ====================
 
+def _compress_round_discussion(speeches: list) -> str:
+    """压缩一轮讨论，提炼关键信息供下一轮使用"""
+    if not speeches or len(speeches) < 2:
+        return ""
+    
+    # 只取最后8条发言
+    recent = speeches[-8:]
+    lines = []
+    for s in recent:
+        name = s.get("agent_name", "")
+        speech = s.get("speech", "")[:80]
+        if speech:
+            lines.append(f"{name}: {speech}")
+    
+    if not lines:
+        return ""
+    
+    # 用换行连接，每条不超过80字
+    return " | ".join(lines[:4])
+
+
 def clean_speech_text(text: str) -> str:
-    """清理speech中的无意义标记"""
+    """清理speech中的无意义标记和提示词残留"""
     if not text:
         return ""
-    # 移除HTML标签
+    
+    # 1. 移除HTML标签
     text = re.sub(r'<[^>]+>', '', text)
-    # 移除AI标记
+    
+    # 2. 移除AI标记
     text = re.sub(r'<\|im_end\|>', '', text)
     text = re.sub(r'<\|im_start\|>[^<]*', '', text)
-    # 移除多余空白
+    
+    # 3. 移除 "--- 讨论记录结束 ---" 之后的内容
+    end_marker = "--- 讨论记录结束 ---"
+    if end_marker in text:
+        idx = text.find(end_marker)
+        after = text[idx + len(end_marker):].strip()
+        # 移除"重要："开头的提示
+        if after.startswith("重要："):
+            first_period = after.find("。")
+            if first_period > 0:
+                after = after[first_period + 1:].strip()
+        text = after
+    
+    # 4. 移除 "_ assistant" 标记及其后内容
+    if "_ assistant" in text:
+        idx = text.find("_ assistant")
+        text = text[:idx].strip()
+    
+    # 5. 移除角色描述（多智能体提示词残留）
+    role_keywords = ["太史阁\n历史记录与反思官", "锦衣卫\n安全与情报收集官", 
+                     "东厂\n信息分析与预警官", "西厂\n决策支持与建议官", "内阁\n统筹协调与决策官"]
+    for keyword in role_keywords:
+        if keyword in text:
+            idx = text.find(keyword)
+            text = text[:idx].strip()
+    
+    # 6. 移除 "你是「" 开头的角色描述
+    if "你是「" in text:
+        idx = text.find("你是「")
+        prev_newline = text.rfind('\n', 0, idx)
+        if prev_newline > 0:
+            text = text[:prev_newline].strip()
+        else:
+            text = text[:idx].strip()
+    
+    # 7. 移除多余空白
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
+    
     return text
 
 
@@ -171,55 +230,304 @@ def search_related_cards(query: str, limit: int = 5) -> str:
         return ""
 
 
+# ==================== 视觉模型调用 ====================
+
+async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[str]:
+    """
+    使用视觉模型分析图片，降级策略：
+    外部视觉模型(8910) → Ollama视觉模型 → 返回None
+    
+    注意：不调用自身的 HTTP 接口（会死锁），不在 async 中直接调用 NPU 推理。
+    """
+    import tempfile
+    import base64 as b64mod
+    
+    # 保存临时文件
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+            tmp_file.write(b64mod.b64decode(image_base64))
+            tmp_file_path = tmp_file.name
+    except Exception as e:
+        logger.error(f"保存临时图片失败: {e}")
+        return None
+    
+    try:
+        # 方式1: 外部视觉模型服务（端口8910，独立进程）
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                with open(tmp_file_path, "rb") as f:
+                    response = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "qwen2.5vl3b-8380-2.42",
+                            "messages": [
+                                {"role": "user", "content": f"请详细描述这张图片的内容，重点关注与「{topic}」相关的信息，提取关键事实和数据。"}
+                            ],
+                            "max_tokens": 512,
+                            "temperature": 0.7,
+                            "top_p": 0.9
+                        },
+                        timeout=60.0
+                    )
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        logger.info(f"[Meeting] 视觉模型(8910)分析成功: {len(content)}字")
+                        return content.strip()
+        except Exception as e:
+            logger.debug(f"[Meeting] 外部视觉服务(8910)不可用: {e}")
+        
+        # 方式2: Ollama 视觉模型降级（依次尝试已安装的多模态模型）
+        ollama_vision_models = ["llava:13b", "gemma4:latest"]  # 按优先级尝试
+        for vision_model in ollama_vision_models:
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        "http://localhost:11434/api/chat",
+                        json={
+                            "model": vision_model,
+                            "messages": [
+                                {"role": "user", "content": f"请详细描述这张图片的内容，重点关注与「{topic}」相关的信息。"}
+                            ],
+                            "stream": False
+                        }
+                    )
+                    if response.status_code == 200:
+                        result = response.json()
+                        content = result.get("message", {}).get("content", "").strip()
+                        if content:
+                            logger.info(f"[Meeting] Ollama {vision_model} 分析成功: {len(content)}字")
+                            return content
+            except Exception as e:
+                logger.debug(f"[Meeting] Ollama {vision_model} 不可用: {e}")
+                
+    finally:
+        try:
+            os.unlink(tmp_file_path)
+        except Exception:
+            pass
+    
+    logger.info("[Meeting] 视觉分析全部不可用")
+    return None
+
+
 # ==================== LLM 调用 ====================
+
+# 全局降级状态：如果某层失败，标记时间戳，短时间内不再尝试
+_degrade_state = {
+    "npu_last_fail": 0,        # NPU 上次失败时间
+    "ollama_last_fail": 0,     # Ollama 上次失败时间
+    "vision_last_fail": 0,     # 视觉模型(8910)上次失败时间
+    "skip_npu_until": 0,       # 跳过 NPU 直到该时间
+    "skip_ollama_until": 0,    # 跳过 Ollama 直到该时间
+    "skip_vision_until": 0,    # 跳过视觉模型直到该时间
+}
+_DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
+
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
     """
-    调用LLM生成回复。
-    优先使用本地 NPU 推理接口 /api/npu/analyze（已注册在同一个 8000 端口）。
-    如果 NPU 不可用，尝试直接导入 NPU 模型加载器进行推理。
+    调用LLM生成回复，降级策略（按优先级排序）：
+    层1: NPU qwen2.0-7b（中文最强）
+    层2: NPU llama3.2-3b（快速备用）
+    层3: Ollama gemma4（智能备用）
+    层4: 视觉模型（兜底）
     """
-    combined_prompt = f"{system_prompt}\n\n{user_prompt}"
 
-    # 方式1: 调用本地 NPU 推理接口
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                "http://127.0.0.1:8000/api/npu/analyze",
-                json={
-                    "query": combined_prompt,
-                    "max_tokens": 512,  # 会议讨论需要充分表达
-                    "temperature": 0.7   # 使用标准温度
-                }
+    import time as _time
+    now = _time.time()
+
+    # ============ 层1: NPU qwen2.0-7b（中文最强） ============
+    if now > _degrade_state["skip_npu_until"]:
+        try:
+            from models.model_loader import get_model_loader
+            import asyncio as _asyncio
+
+            # 直接用 qwen2.0-7b，中文优化，能力最强
+            model_key = "qwen2.0-7b"
+            logger.info(f"[Meeting] 层1使用模型: {model_key}")
+            loader = get_model_loader(model_key)
+
+            # 检查是否已加载
+            if not loader.is_loaded:
+                logger.info(f"[Meeting] 模型未加载，正在加载...")
+                loader.load()
+                logger.info(f"[Meeting] 模型加载完成，is_loaded={loader.is_loaded}")
+
+            # NPU推理是同步阻塞调用，放到线程池+超时保护
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            logger.info(f"[Meeting] 层1准备推理: combined_prompt前100字={repr(combined_prompt[:100])}")
+            
+            loop = _asyncio.get_event_loop()
+            raw_output = await _asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
+                ),
+                timeout=timeout
             )
-            response.raise_for_status()
-            result = response.json()
-            if result.get("success"):
-                raw = result.get("raw_output", "").strip()
-                if raw:
-                    return raw
-    except Exception as e:
-        logger.warning(f"NPU接口调用失败: {e}")
+            
+            logger.info(f"[Meeting] 层2推理完成: raw_output长度={len(raw_output) if raw_output else 0}, 内容前100字={repr(raw_output[:100]) if raw_output else 'None'}")
 
-    # 方式2: 直接调用 NPU 模型加载器（进程内调用，避免 HTTP 开销）
-    try:
-        from models.model_loader import NPUModelLoader, get_model_loader
-        from routes.model_router import select_model
-        model_key = select_model(combined_prompt)
-        loader = get_model_loader(model_key)
-        loader.load()
-        # 使用默认参数 instead of custom ones to avoid SetParams failures
-        # The model's config files already contain appropriate defaults
-        # Also ensure we're not passing corrupted prompts by sanitizing the input
-        clean_prompt = combined_prompt.strip()
-        if not clean_prompt:
-            return ""
-        raw_output = loader.infer(prompt=clean_prompt)
-        if raw_output and raw_output.strip():
-            return raw_output.strip()
-    except Exception as e:
-        logger.warning(f"NPU直接推理失败: {e}")
+            # 清理特殊 token
+            if raw_output:
+                for tok in ['<|im_end|>', '<|im_start|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
+                    raw_output = raw_output.replace(tok, '')
+                raw_output = raw_output.strip()
 
+            if raw_output and len(raw_output) > 5:
+                logger.info(f"[Meeting] NPU进程内调用生成成功: {len(raw_output)}字")
+                return raw_output
+            else:
+                logger.warning(f"[Meeting] NPU推理返回空或过短: '{raw_output}'")
+        except Exception as e:
+            logger.warning(f"[Meeting] NPU qwen2.0-7b失败: {type(e).__name__}: {e}")
+            _degrade_state["npu_last_fail"] = now
+            _degrade_state["skip_npu_until"] = now + _DEGRADE_COOLDOWN
+
+    # ============ 层2: NPU llama3.2-3b（快速备用） ============
+    if now > _degrade_state["skip_npu_until"]:
+        try:
+            from models.model_loader import get_model_loader
+            import asyncio as _asyncio
+
+            model_key = "llama3.2-3b"
+            logger.info(f"[Meeting] 层2使用模型: {model_key}, max_tokens={max_tokens}")
+            loader = get_model_loader(model_key)
+
+            if not loader.is_loaded:
+                logger.info(f"[Meeting] 层2模型未加载正在加载...")
+                loader.load()
+                logger.info(f"[Meeting] 层2模型加载完成")
+
+            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
+            logger.info(f"[Meeting] 层2准备推理")
+
+            loop = _asyncio.get_event_loop()
+            raw_output = await _asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
+                ),
+                timeout=timeout
+            )
+
+            logger.info(f"[Meeting] 层2推理完成: {len(raw_output) if raw_output else 0}字")
+
+            if raw_output:
+                for tok in ['<|im_end|>', '<|im_start|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
+                    raw_output = raw_output.replace(tok, '')
+                raw_output = raw_output.strip()
+
+            if raw_output and len(raw_output) > 5:
+                logger.info(f"[Meeting] NPU llama3.2-3b生成成功: {len(raw_output)}字")
+                return raw_output
+        except Exception as e:
+            logger.warning(f"[Meeting] NPU llama3.2-3b失败: {type(e).__name__}: {e}")
+
+    # ============ 层3: Ollama gemma4（智能备用） ============
+    if now > _degrade_state["skip_ollama_until"]:
+        # 3a: 尝试 gemma4:latest
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    "http://localhost:11434/api/chat",
+                    json={
+                        "model": "gemma4:latest",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": max_tokens
+                        }
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                content = result.get("message", {}).get("content", "").strip()
+                if content:
+                    logger.info(f"[Meeting] Ollama gemma4:latest 生成成功: {len(content)}字")
+                    return content
+        except Exception as e:
+            logger.debug(f"[Meeting] Ollama gemma4:latest 不可用: {e}")
+
+        # 3b: 尝试 gpt-oss:20b（备选模型）
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    "http://localhost:11434/api/chat",
+                    json={
+                        "model": "gpt-oss:20b",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.7,
+                            "num_predict": max_tokens
+                        }
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                content = result.get("message", {}).get("content", "").strip()
+                if content:
+                    logger.info(f"[Meeting] Ollama gpt-oss:20b 生成成功: {len(content)}字")
+                    return content
+        except Exception as e:
+            logger.debug(f"[Meeting] Ollama gpt-oss:20b 也不可用: {e}")
+            _degrade_state["ollama_last_fail"] = now
+            _degrade_state["skip_ollama_until"] = now + _DEGRADE_COOLDOWN
+
+    # ============ 层4: 视觉模型（兜底） ============
+    if now > _degrade_state["skip_vision_until"]:
+        try:
+            # 截断过长的输入：3B模型有效上下文约2000中文字
+            _MAX_8910_CHARS = 1800
+            _truncated_system = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
+            _remaining_chars = _MAX_8910_CHARS - len(_truncated_system)
+            _truncated_user = user_prompt[:_remaining_chars] if len(user_prompt) > _remaining_chars else user_prompt
+            if len(user_prompt) > _remaining_chars:
+                logger.debug(f"[Meeting] 8910输入过长({len(user_prompt)}字)，截断至{_remaining_chars}字")
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "qwen2.5vl3b-8380-2.42",
+                        "messages": [
+                            {"role": "system", "content": _truncated_system},
+                            {"role": "user", "content": _truncated_user}
+                        ],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.7,
+                        "top_p": 0.9
+                    }
+                )
+                response.raise_for_status()
+                result = response.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content:
+                    logger.info(f"[Meeting] 视觉模型(8910)生成成功: {len(content)}字")
+                    return content
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400:
+                logger.debug(f"[Meeting] 视觉模型(8910)拒绝请求(输入过长或格式问题)")
+            else:
+                logger.debug(f"[Meeting] 视觉模型(8910)服务错误({e.response.status_code})，冻结{_DEGRADE_COOLDOWN}秒")
+                _degrade_state["vision_last_fail"] = now
+                _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
+        except Exception as e:
+            logger.debug(f"[Meeting] 视觉模型(8910)不可用: {e}")
+            _degrade_state["vision_last_fail"] = now
+            _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
+
+    logger.info("[Meeting] 所有LLM不可用，使用角色降级回复")
     return ""
 
 
@@ -229,6 +537,7 @@ class MeetingRequest(BaseModel):
     context: str = Field(default="", description="背景信息")
     card_ids: List[str] = Field(default_factory=list, description="相关卡片ID")
     rounds: int = Field(default=3, ge=1, le=5, description="讨论轮数")
+    image_data: Optional[str] = Field(default=None, description="Base64编码的图片数据（可选）")
 
 
 class AgentSpeech(BaseModel):
@@ -413,14 +722,14 @@ async def create_meeting_stream(request: MeetingRequest):
                  # 构建上下文：包含前面所有Agent的发言
                  context_parts = [f"会议主题：{request.topic}"]
                  if request.context:
-                     context_parts.append(f"背景信息：{request.context}")
+                     context_parts.append(f"背景信息：{request.context[:300]}")  # 截断背景信息
                  context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
 
                  if all_speeches:
                      context_parts.append("\n--- 此前的讨论记录 ---")
-                     for prev in all_speeches[-16:]:  # 最多保留最近16条，避免上下文过长
-                         clean_text = clean_speech_text(prev['speech'])
-                         context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{clean_text}")
+                     for prev in all_speeches[-8:]:  # 减少到8条历史，3B模型上下文有限
+                         clean_text = clean_speech_text(prev['speech'])[:80]  # 截断每条发言
+                         context_parts.append(f"【{prev['agent_name']}】：{clean_text}")
                      context_parts.append("--- 讨论记录结束 ---\n")
 
                  user_prompt = "\n".join(context_parts)
@@ -448,8 +757,37 @@ async def create_meeting_stream(request: MeetingRequest):
                      except Exception as e:
                          logger.warning(f"密卷房知识库搜索失败: {e}")
 
+                     # 如果有图片数据，使用视觉模型分析
+                     if request.image_data:
+                         try:
+                             vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
+                             if vision_result:
+                                 user_prompt += f"\n\n【图片分析结果】{vision_result}"
+                                 logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
+                         except Exception as e:
+                             logger.warning(f"密卷房视觉分析失败: {e}")
+
                  # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
-                 speech_content = await call_llm(system_prompt, user_prompt)
+                 # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
+                 llm_task = asyncio.create_task(call_llm(system_prompt, user_prompt))
+                 speech_content = None
+                 try:
+                     while not llm_task.done():
+                         done, _ = await asyncio.wait({llm_task}, timeout=5.0)
+                         if done:
+                             speech_content = llm_task.result()
+                             break
+                         # LLM还在思考，发送心跳保持连接
+                         yield _sse_heartbeat()
+                 except Exception as e:
+                     logger.warning(f"[Meeting] LLM调用异常: {e}")
+                 finally:
+                     if not llm_task.done():
+                         llm_task.cancel()
+                         try:
+                             await llm_task
+                         except asyncio.CancelledError:
+                             pass
 
                  if not speech_content:
                      # LLM不可用时的智能降级：基于角色生成有意义的回复
@@ -511,7 +849,21 @@ async def create_meeting_stream(request: MeetingRequest):
         decision_prompt_parts.append("1. ...")
 
         decision_system = "你是八府巡按的总指挥使，负责综合各方意见做出最终裁决。请严格按照要求的格式输出。"
-        decision_text = await call_llm(decision_system, "\n".join(decision_prompt_parts))
+        # 决策生成也加心跳保护
+        llm_task = asyncio.create_task(call_llm(decision_system, "\n".join(decision_prompt_parts)))
+        decision_text = None
+        try:
+            while not llm_task.done():
+                done, _ = await asyncio.wait({llm_task}, timeout=5.0)
+                if done:
+                    decision_text = llm_task.result()
+                    break
+                yield _sse_heartbeat()
+        except Exception as e:
+            logger.warning(f"[Meeting] 决策LLM调用异常: {e}")
+        finally:
+            if not llm_task.done():
+                llm_task.cancel()
 
         if not decision_text:
             decision_text = _generate_fallback_decision(request.topic, all_speeches)
@@ -563,8 +915,20 @@ async def create_meeting_stream(request: MeetingRequest):
             "timestamp": datetime.now().isoformat()
         })
 
+    async def safe_event_generator():
+        """带异常捕获的SSE生成器包装"""
+        try:
+            async for event in event_generator():
+                yield event
+        except Exception as e:
+            logger.error(f"[Meeting] SSE流异常: {e}", exc_info=True)
+            yield _sse_event("meeting_error", {
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            })
+
     return StreamingResponse(
-        event_generator(),
+        safe_event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -604,11 +968,14 @@ async def create_meeting(request: MeetingRequest):
                 context_parts.append(f"背景信息：{request.context}")
             context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
 
+            # 通政司每轮压缩讨论要点，其他agent只看压缩后的摘要
             if all_speeches:
-                context_parts.append("\n--- 此前的讨论记录 ---")
-                for prev in all_speeches[-16:]:
-                    context_parts.append(f"【{prev['agent_name']}（{prev['agent_title']}）】：{prev['speech']}")
-                context_parts.append("--- 讨论记录结束 ---\n")
+                # 通政司发言后生成摘要，其他agent使用
+                compressed_summary = _compress_round_discussion(all_speeches)
+                if compressed_summary:
+                    context_parts.append(f"\n--- 本轮讨论摘要（通政司整理）---")
+                    context_parts.append(compressed_summary)
+                    context_parts.append("--- 摘要结束 ---\n")
 
             # 密卷房：自动搜索知识库
             card_reference = ""
@@ -735,6 +1102,11 @@ def _sse_event(event_type: str, data: dict) -> str:
     """构造SSE事件字符串"""
     json_data = json.dumps(data, ensure_ascii=False)
     return f"event: {event_type}\ndata: {json_data}\n\n"
+
+
+def _sse_heartbeat() -> str:
+    """构造SSE心跳注释（浏览器会忽略SSE注释，但保持连接活跃）"""
+    return f": heartbeat {int(time.time())}\n\n"
 
 
 def _generate_role_based_fallback(
