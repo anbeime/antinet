@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/report", tags=["report"])
+router = APIRouter(prefix="/api/automation", tags=["automation"])
 
 OUTPUT_DIR = Path("./data/exports")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

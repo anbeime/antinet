@@ -110,6 +110,8 @@ class DatabaseManager:
                     content TEXT NOT NULL,
                     card_type TEXT DEFAULT 'blue',
                     category TEXT,
+                    topic_id INTEGER,  -- 关联的专题ID
+                    related_topics TEXT,  -- JSON数组，关联的其他专题
                     similarity REAL DEFAULT 0.0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP

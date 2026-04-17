@@ -15,7 +15,7 @@ from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/knowledge", tags=["知识管理"])
+router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 
 # 创建数据库管理器实例
@@ -810,3 +810,66 @@ async def import_knowledge(html_dir: str):
         import traceback
         logger.error(f"导入失败: {e}\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"导入失败: {str(e)}")
+
+
+# ========== 专题关联接口 ==========
+
+class CardTopicLink(BaseModel):
+    """卡片专题关联"""
+    card_id: int
+    topic_id: int
+
+
+@router.post("/cards/link-topic")
+async def link_card_to_topic(link: CardTopicLink):
+    """将卡片关联到专题"""
+    try:
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE knowledge_cards 
+                SET topic_id = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (link.topic_id, link.card_id))
+            conn.commit()
+            return {"success": True, "message": f"卡片 {link.card_id} 已关联到专题 {link.topic_id}"}
+    except Exception as e:
+        logger.error(f"关联失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/cards/by-topic/{topic_id}")
+async def get_cards_by_topic(topic_id: int):
+    """获取专题下的所有卡片"""
+    try:
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, title, content, card_type, category, topic_id, created_at
+                FROM knowledge_cards 
+                WHERE topic_id = ?
+                ORDER BY created_at DESC
+            """, (topic_id,))
+            cards = [dict(row) for row in cursor.fetchall()]
+            return {"topic_id": topic_id, "cards": cards, "count": len(cards)}
+    except Exception as e:
+        logger.error(f"查询失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/cards/{card_id}/topics")
+async def get_card_topics(card_id: int):
+    """获取卡片关联的专题"""
+    try:
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT topic_id FROM knowledge_cards WHERE id = ?
+            """, (card_id,))
+            row = cursor.fetchone()
+            if row:
+                return {"card_id": card_id, "topic_id": row[0]}
+            return {"card_id": card_id, "topic_id": None}
+    except Exception as e:
+        logger.error(f"查询失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
