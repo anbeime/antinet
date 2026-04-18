@@ -9,18 +9,20 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 尝试导入 pypdf
-try:
-    from pypdf import PdfReader
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-    logger.warning("pypdf 未安装，PDF 功能不可用")
-    
-    # 创建占位符类
-    class PdfReader:
-        def __init__(self, *args, **kwargs):
-            raise ImportError("pypdf 未安装，请运行: pip install pypdf")
+# 尝试导入 pypdf (延迟导入避免与pydantic冲突)
+PDF_AVAILABLE = False
+PdfReader = None
+
+def _lazy_load_pypdf():
+    global PDF_AVAILABLE, PdfReader
+    if PDF_AVAILABLE:
+        return
+    try:
+        from pypdf import PdfReader as _PdfReader
+        PdfReader = _PdfReader
+        PDF_AVAILABLE = True
+    except ImportError:
+        logger.warning("pypdf 未安装，PDF 功能不可用")
 
 
 class SimplePDFProcessor:
@@ -29,6 +31,7 @@ class SimplePDFProcessor:
     def __init__(self):
         """初始化处理器"""
         self.logger = logging.getLogger(__name__)
+        _lazy_load_pypdf()  # 延迟加载pypdf
     
     def extract_text(self, pdf_path: str, preserve_layout: bool = False) -> Dict[str, Any]:
         """

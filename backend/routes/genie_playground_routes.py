@@ -19,79 +19,66 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
 
-# 可用模型列表
-# NPU 模型: GenieAPIService 一次只能加载一个，切换需重启
-# Ollama 模型: 通过 Ollama 服务运行
+# ==================== 动态获取真实可用的模型 ====================
 
-AVAILABLE_MODELS = {
-    "qwen2.5vl3b": {
-        "name": "Qwen 2.5 VL 3B",
-        "type": "vision",
-        "description": "多模态视觉语言模型, 启动视觉模型服务.bat 默认加载此模型",
-        "context_length": 2048,
-        "has_weights": True,
-        "config_path": "models/qwen2.5vl3b-8380-2.42/config.json",
-    },
-    "Qwen2.0-7B-SSD": {
-        "name": "Qwen 2.0 7B (SSD)",
-        "type": "chat",
-        "description": "中文优化模型 (Speculative Decoding), 需重启GenieAPIService加载",
-        "context_length": 4096,
-        "has_weights": True,
-        "config_path": "models/Qwen2.0-7B-SSD-8380-2.34/config.json",
-    },
-    "llama3.2-3b": {
-        "name": "Llama 3.2 3B",
-        "type": "chat",
-        "description": "Meta Llama 3.2 3B 轻量模型, 需重启GenieAPIService加载",
-        "context_length": 4096,
-        "has_weights": True,
-        "config_path": "models/llama3.2-3b-8380-qnn2.37/config.json",
-    },
-    "bge-base-zh": {
-        "name": "BGE Base Chinese",
-        "type": "embedding",
-        "description": "中文嵌入模型, 不支持对话",
-        "context_length": 512,
-        "has_weights": True,
-        "config_path": "models/bge-base-zh-v1.5-qnn-8380/config.json",
-    },
-    # === Ollama 远程模型 ===
-    "glm-5.1-cloud": {
-        "name": "GLM-5.1 Cloud",
-        "type": "ollama",
-        "description": "智谱GLM-5.1 云端大模型, 需要Ollama Pro订阅",
-        "context_length": 128000,
-        "has_weights": True,
-        "ollama_model": "glm-5.1:cloud",
-        "ollama_url": "http://localhost:11434",
-    },
-    "gemma4": {
-        "name": "Gemma 4 8B",
-        "type": "ollama",
-        "description": "Google Gemma 4 8B, 通过Ollama本地运行",
-        "context_length": 131072,
-        "has_weights": True,
-        "ollama_model": "gemma4:latest",
-        "ollama_url": "http://localhost:11434",
-    },
-    "gpt-oss-20b": {
-        "name": "GPT-OSS 20B",
-        "type": "ollama",
-        "description": "开源大模型 20B, 通过Ollama本地运行",
-        "context_length": 8192,
-        "has_weights": True,
-        "ollama_model": "gpt-oss:20b",
-        "ollama_url": "http://localhost:11434",
-    },
-}
+async def get_genie_available_models() -> Dict[str, Dict]:
+    """从 GenieAPIService (端口8910) 获取真正可用的模型"""
+    models = {}
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{GENIE_SERVICE_URL}/v1/models")
+            if response.status_code == 200:
+                data = response.json()
+                for model in data.get("data", []):
+                    model_id = model.get("id", "")
+                    if model_id:
+                        # 根据模型名称判断类型
+                        model_type = "chat"
+                        if "vl" in model_id.lower() or "vision" in model_id.lower():
+                            model_type = "vision"
+                        elif "embed" in model_id.lower():
+                            model_type = "embedding"
+                        
+                        models[model_id] = {
+                            "name": model_id,
+                            "type": model_type,
+                            "description": f"NPU 端侧模型 - 通过 GenieAPIService (8910) 调用",
+                            "context_length": 4096,
+                            "has_weights": True,
+                            "service": "genie",
+                            "root_url": GENIE_SERVICE_URL,
+                        }
+    except Exception as e:
+        logger.warning(f"无法连接到 GenieAPIService: {e}")
+    
+    return models
+
+
+async def get_available_models() -> Dict[str, Dict]:
+    """获取所有可用模型（从 GenieAPIService 真实获取）"""
+    # 从 GenieAPIService 获取真实可用的模型
+    genie_models = await get_genie_available_models()
+    
+    if genie_models:
+        logger.info(f"[GeniePlayground] 从8910获取到 {len(genie_models)} 个模型: {list(genie_models.keys())}")
+        return genie_models
+    
+    logger.warning("[GeniePlayground] 无法从8910获取模型，返回空列表")
+    return {}
+
+
+# ==================== 旧版兼容 ====================
+# 仅保留基础模型配置，实际可用模型由 get_available_models() 动态获取
+
+AVAILABLE_MODELS = {}  # 动态获取，不使用静态配置
 
 
 # ==================== 数据模型 ====================
 
 class GenieChatRequest(BaseModel):
     """Genie 聊天请求"""
-    model: str = Field(default="qwen2.5vl3b", description="模型ID")
+    model: str = Field(default="qwen2.5vl3b-8380-2.42", description="模型ID")
     messages: List[Dict[str, Any]] = Field(..., description="消息列表")
     stream: bool = Field(default=False, description="是否流式输出")
     temperature: float = Field(default=0.7, description="温度参数")
@@ -102,7 +89,7 @@ class GenieChatRequest(BaseModel):
 
 class GenieVisionChatRequest(BaseModel):
     """Genie 视觉聊天请求（前端传 base64 图片）"""
-    model: str = Field(default="qwen2.5vl3b", description="模型ID")
+    model: str = Field(default="qwen2.5vl3b-8380-2.42", description="模型ID")
     text: str = Field(..., description="文本提示")
     image_base64: Optional[str] = Field(None, description="图片base64编码")
     image_mime: Optional[str] = Field(default="jpeg", description="图片MIME类型")
@@ -113,29 +100,45 @@ class GenieVisionChatRequest(BaseModel):
     max_tokens: int = Field(default=2048, description="最大token数")
 
 
-# ==================== 路由 ====================
-
-@router.get("/models")
-async def list_genie_models():
-    """列出 GenieAPIService 支持的所有模型"""
+@router.get("/models-v2")
+async def list_genie_models_v2():
+    """列出所有可用模型（从 GenieAPIService 真实获取）"""
+    import time
     models = []
-    for model_id, info in AVAILABLE_MODELS.items():
-        models.append({
-            "id": model_id,
-            "name": info["name"],
-            "type": info["type"],
-            "description": info["description"],
-            "context_length": info["context_length"],
-            "has_weights": info.get("has_weights", False),
-            "config_path": info.get("config_path", ""),
-            "available": True,
-        })
-    return {"models": models, "total": len(models)}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{GENIE_SERVICE_URL}/v1/models")
+            if response.status_code == 200:
+                data = response.json()
+                for model in data.get("data", []):
+                    model_id = model.get("id", "")
+                    if model_id:
+                        model_type = "chat"
+                        if "vl" in model_id.lower() or "vision" in model_id.lower():
+                            model_type = "vision"
+                        elif "embed" in model_id.lower():
+                            model_type = "embedding"
+                        
+                        models.append({
+                            "id": model_id,
+                            "name": model_id,
+                            "type": model_type,
+                            "description": f"NPU 端侧模型 - 通过 GenieAPIService (8910) 调用",
+                            "context_length": 4096,
+                            "has_weights": True,
+                            "config_path": "",
+                            "service": "genie",
+                            "available": True,
+                        })
+    except Exception as e:
+        logger.error(f"获取模型失败: {e}")
+    
+    return {"models": models, "total": len(models), "version": "v2", "timestamp": int(time.time())}
 
 
 @router.get("/service-status")
 async def check_genie_service():
-    """检查 GenieAPIService 是否可用，并获取其已加载的模型"""
+    """检查各服务的可用状态"""
     # 检查 GenieAPIService (NPU)
     genie_available = False
     genie_loaded = []
@@ -155,22 +158,35 @@ async def check_genie_service():
     
     # 检查 Ollama 服务
     ollama_available = False
+    ollama_models = []
     try:
         async with httpx.AsyncClient(timeout=5.0, proxy=None) as client:
             response = await client.get("http://localhost:11434/api/tags")
-            ollama_available = response.status_code == 200
+            if response.status_code == 200:
+                ollama_available = True
+                data = response.json()
+                ollama_models = [m.get("name", "") for m in data.get("models", [])]
     except:
         pass
     
     is_vision = "vl" in genie_current.lower() or "vision" in genie_current.lower()
     
+    # 获取从 GenieAPIService 真实获取的模型
+    available = await get_available_models()
+    
     return {
-        "available": genie_available,
-        "service_url": GENIE_SERVICE_URL,
-        "loaded_models": genie_loaded,
-        "current_model": genie_current,
-        "current_model_type": "vision" if is_vision else "chat",
-        "ollama_available": ollama_available,
+        "services": {
+            "genie": {
+                "available": genie_available,
+                "url": GENIE_SERVICE_URL,
+                "loaded_models": genie_loaded,
+                "current_model": genie_current,
+                "current_model_type": "vision" if is_vision else "chat",
+                "model_count": len(genie_loaded)
+            }
+        },
+        "available_models": list(available.keys()),
+        "hint": f"请启动 GenieAPIService (端口 {GENIE_SERVICE_URL.replace('http://','')})" if not genie_available else ""
     }
 
 
@@ -189,93 +205,26 @@ async def get_loaded_model_name() -> str | None:
     return None
 
 
-async def _ollama_chat(model_id: str, model_info: dict, messages: list, temperature: float = 0.7, max_tokens: int = 2048) -> str:
-    """使用 Ollama API 进行聊天"""
-    ollama_model = model_info.get("ollama_model", model_id)
-    ollama_url = model_info.get("ollama_url", "http://localhost:11434")
-    
-    # 转换消息格式 - Ollama 格式
-    ollama_messages = []
-    for msg in messages:
-        ollama_messages.append({
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", "")
-        })
-    
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": ollama_model,
-                    "messages": ollama_messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens
-                    }
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-            content = result.get("message", {}).get("content", "")
-            if content:
-                return content.strip()
-            return ""
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=500, detail=f"Ollama 错误: {e.response.text[:200]}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ollama 调用失败: {str(e)}")
-
-
-async def _check_ollama_available(model_info: dict) -> bool:
-    """检查 Ollama 服务是否可用"""
-    ollama_url = model_info.get("ollama_url", "http://localhost:11434")
-    try:
-        async with httpx.AsyncClient(timeout=5.0, proxy=None) as client:
-            response = await client.get(f"{ollama_url}/api/tags")
-            return response.status_code == 200
-    except:
-        return False
-
-
 @router.post("/chat")
 async def genie_chat(request: GenieChatRequest):
     """通过 GenieAPIService 进行聊天（非流式）"""
-    if request.model not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}")
-
-    model_info = AVAILABLE_MODELS[request.model]
+    available = await get_available_models()
     
-    # 检查是否是 Ollama 模型
-    if model_info.get("type") == "ollama":
-        ollama_available = await _check_ollama_available(model_info)
-        if not ollama_available:
-            raise HTTPException(status_code=503, detail="Ollama 服务未启动，请先运行: ollama serve")
-        try:
-            content = await _ollama_chat(request.model, model_info, request.messages, request.temperature, request.max_tokens)
-            return {
-                "success": True,
-                "model": request.model,
-                "response": content,
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Ollama 调用失败: {str(e)}")
+    if request.model not in available:
+        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}. 可用模型: {list(available.keys())}")
 
-    # 获取 GenieAPIService 当前实际加载的模型名
     loaded_model = await get_loaded_model_name()
     if not loaded_model:
-        raise HTTPException(status_code=503, detail="GenieAPIService 不可用或未加载模型")
+        raise HTTPException(status_code=503, detail="GenieAPIService 不可用，请确保服务已启动 (端口 8910)")
 
     request_data = {
-        "model": loaded_model,  # 使用服务端实际加载的模型名
+        "model": loaded_model,
         "messages": request.messages,
         "stream": False,
         "size": request.max_tokens,
         "temp": request.temperature,
         "top_k": request.top_k,
         "top_p": request.top_p,
-        
     }
 
     try:
@@ -293,9 +242,15 @@ async def genie_chat(request: GenieChatRequest):
                     "success": True,
                     "model": request.model,
                     "response": content,
-                    "raw": result,
                 }
             return {"success": True, "model": request.model, "response": str(result), "raw": result}
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="GenieAPIService 超时")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="GenieAPIService 超时")
@@ -307,44 +262,27 @@ async def genie_chat(request: GenieChatRequest):
 
 @router.post("/chat/stream")
 async def genie_chat_stream(request: GenieChatRequest):
-    """通过 GenieAPIService 进行流式聊天"""
-    if request.model not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}")
-
-    model_info = AVAILABLE_MODELS[request.model]
+    """通过 GenieAPIService 进行聊天（流式）"""
+    available = await get_available_models()
     
-    # 检查是否是 Ollama 模型
-    if model_info.get("type") == "ollama":
-        ollama_available = await _check_ollama_available(model_info)
-        if not ollama_available:
-            raise HTTPException(status_code=503, detail="Ollama 服务未启动，请先运行: ollama serve")
-        # Ollama 不支持流式，直接返回
-        try:
-            content = await _ollama_chat(request.model, model_info, request.messages, request.temperature, request.max_tokens)
-            async def ollama_stream():
-                yield f"data: {json.dumps({'content': content, 'model': request.model})}\n\n"
-                yield f"data: [DONE]\n\n"
-            return StreamingResponse(ollama_stream(), media_type="text/event-stream")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Ollama 调用失败: {str(e)}")
+    if request.model not in available:
+        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}. 可用模型: {list(available.keys())}")
 
-    # 获取 GenieAPIService 当前实际加载的模型名
     loaded_model = await get_loaded_model_name()
     if not loaded_model:
-        raise HTTPException(status_code=503, detail="GenieAPIService 不可用或未加载模型")
+        raise HTTPException(status_code=503, detail="GenieAPIService 不可用，请确保服务已启动 (端口 8910)")
 
     request_data = {
-        "model": loaded_model,  # 使用服务端实际加载的模型名
+        "model": loaded_model,
         "messages": request.messages,
         "stream": True,
         "size": request.max_tokens,
         "temp": request.temperature,
         "top_k": request.top_k,
         "top_p": request.top_p,
-        
     }
 
-    async def event_generator():
+async def event_generator():
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
@@ -366,7 +304,7 @@ async def genie_chat_stream(request: GenieChatRequest):
                                     delta = data["choices"][0].get("delta", {})
                                     content = delta.get("content", "")
                                 if content:
-                                    yield f"data: {json.dumps({'content': content, 'model': request.model})}\n\n"
+                                    yield f"data: {json.dumps({'content': content})}\n\n"
                             except json.JSONDecodeError:
                                 pass
         except httpx.TimeoutException:
@@ -382,38 +320,37 @@ async def genie_chat_stream(request: GenieChatRequest):
 @router.post("/vision-chat")
 async def genie_vision_chat(request: GenieVisionChatRequest):
     """通过 GenieAPIService 进行视觉聊天（图文混合）"""
-    if request.model not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}")
+    available = await get_available_models()
+    
+    if request.model not in available:
+        raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}. 可用模型: {list(available.keys())}")
 
-    model_info = AVAILABLE_MODELS[request.model]
-    if model_info["type"] != "vision":
-        raise HTTPException(status_code=400, detail=f"模型 {request.model} 不支持视觉功能，请使用 vision 类型模型")
+    model_info = available[request.model]
+    if model_info.get("type") != "vision":
+        raise HTTPException(status_code=400, detail=f"模型 {request.model} 不支持视觉功能")
 
-    # 获取 GenieAPIService 当前实际加载的模型名
+    # 通过 GenieAPIService 调用
     loaded_model = await get_loaded_model_name()
     if not loaded_model:
-        raise HTTPException(status_code=503, detail="GenieAPIService 不可用或未加载模型")
+        raise HTTPException(status_code=503, detail="GenieAPIService 不可用，请确保服务已启动 (端口 8910)")
 
-    # 检查当前加载的是否是视觉模型
     if "vl" not in loaded_model.lower() and "vision" not in loaded_model.lower():
         raise HTTPException(
             status_code=400,
             detail=f"当前加载的模型是 {loaded_model}，不是视觉模型。请重启 GenieAPIService 加载视觉模型(qwen2.5vl3b)。"
         )
 
-    # 构建 OpenAI 视觉格式消息
+    user_content = [
+        {"type": "text", "text": request.text},
+    ]
+    
     if request.image_base64:
-        user_content = [
-            {"type": "text", "text": request.text},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/{request.image_mime};base64,{request.image_base64}"
-                }
+        user_content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/{request.image_mime};base64,{request.image_base64}"
             }
-        ]
-    else:
-        user_content = request.text
+        })
 
     messages = [
         {"role": "system", "content": "You are a helpful assistant."},
@@ -421,14 +358,13 @@ async def genie_vision_chat(request: GenieVisionChatRequest):
     ]
 
     request_data = {
-        "model": loaded_model,  # 使用服务端实际加载的模型名
+        "model": loaded_model,
         "messages": messages,
         "stream": False,
         "size": request.max_tokens,
         "temp": request.temperature,
         "top_k": request.top_k,
         "top_p": request.top_p,
-        
     }
 
     try:

@@ -12,7 +12,8 @@ from pathlib import Path
 import shutil
 import zipfile
 
-from tools.pdf_processor import PDFProcessor, PDF_AVAILABLE
+# 延迟导入避免pypdf与pydantic冲突
+from tools.pdf_processor import SimplePDFProcessor
 
 # 使用稳定的四色卡片处理器来处理所有PDF操作
 try:
@@ -24,10 +25,7 @@ except ImportError:
 router = APIRouter(prefix="/api/pdf", tags=["PDF处理"])
 
 # 初始化 PDF 处理器
-if PDF_AVAILABLE:
-    pdf_processor = PDFProcessor()
-else:
-    pdf_processor = None
+pdf_processor = SimplePDFProcessor()
 
 # 初始化四色卡片处理器
 if FOUR_COLOR_AVAILABLE and PDF_AVAILABLE:

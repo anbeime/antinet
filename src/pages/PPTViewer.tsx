@@ -1,0 +1,234 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { 
+  Presentation, Upload, Download, ChevronLeft, ChevronRight,
+  Play, Pause, Maximize2, Grid, List, FilePlus
+} from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
+
+interface SlideData {
+  title: string;
+  content: string[];
+  type: 'title' | 'content' | 'list';
+}
+
+interface PPTViewerProps {
+  slides?: SlideData[];
+}
+
+const defaultSlides: SlideData[] = [
+  { title: '欢迎', content: ['智能报表分析系统', '数据驱动决策'], type: 'title' },
+  { title: '数据概览', content: ['总销售额: 125,000', '增长率: 15%', '客户数: 1,234'], type: 'list' },
+  { title: '销售趋势', content: ['1月: 12,500', '2月: 15,800', '3月: 18,200', '4月: 14,300'], type: 'list' },
+  { title: '核心发现', content: ['华东地区表现最佳', '线上渠道增长迅速', '新产品好评如潮'], type: 'content' },
+  { title: '行动计划', content: ['加大华东投入', '拓展线上渠道', '优化产品线'], type: 'list' },
+  { title: '谢谢', content: ['如有疑问，欢迎交流'], type: 'title' },
+];
+
+const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
+  useTheme();
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [viewMode, setViewMode] = useState<'slide' | 'outline'>('slide');
+  const [playInterval, setPlayInterval] = useState<NodeJS.Timeout | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const totalSlides = slides.length;
+
+  useEffect(() => {
+    if (isPlaying) {
+      const interval = setInterval(() => {
+        setCurrentSlide(prev => (prev + 1) % totalSlides);
+      }, 3000);
+      setPlayInterval(interval);
+    } else if (playInterval) {
+      clearInterval(playInterval);
+      setPlayInterval(null);
+    }
+    return () => {
+      if (playInterval) clearInterval(playInterval);
+    };
+  }, [isPlaying, totalSlides]);
+
+  const handlePrev = () => {
+    setCurrentSlide((currentSlide - 1 + totalSlides) % totalSlides);
+  };
+
+  const handleNext = () => {
+    setCurrentSlide((currentSlide + 1) % totalSlides);
+  };
+
+  const handleFirst = () => setCurrentSlide(0);
+  const handleLast = () => setCurrentSlide(totalSlides - 1);
+
+  const togglePlay = () => setIsPlaying(!isPlaying);
+
+  const themeColors = {
+    blue: { bg: 'bg-blue-600', text: 'text-blue-600' },
+    purple: { bg: 'bg-purple-600', text: 'text-purple-600' },
+    green: { bg: 'bg-green-600', text: 'text-green-600' },
+    red: { bg: 'bg-red-600', text: 'text-red-600' },
+  };
+
+  const colorThemes = Object.keys(themeColors);
+  const currentTheme = colorThemes[currentSlide % colorThemes.length];
+  const theme = themeColors[currentTheme as keyof typeof themeColors];
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-900">
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <Presentation className="w-5 h-5 text-blue-400" />
+          <span className="text-white font-medium">PPT 演示查看器</span>
+          <span className="text-gray-400 text-sm">
+            ({(currentSlide + 1)} / {totalSlides})
+          </span>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setViewMode(viewMode === 'slide' ? 'outline' : 'slide')}
+            className="p-2 hover:bg-gray-700 rounded text-gray-300"
+            title={viewMode === 'slide' ? '大纲视图' : '幻灯片视图'}
+          >
+            {viewMode === 'slide' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+          </button>
+
+          <div className="w-px h-6 bg-gray-600" />
+
+          <button
+            onClick={togglePlay}
+            className={`p-2 rounded ${isPlaying ? 'bg-red-500' : 'bg-gray-700'} text-white hover:opacity-80`}
+            title={isPlaying ? '暂停' : '自动播放'}
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+
+          <button onClick={handleFirst} className="p-2 hover:bg-gray-700 rounded text-gray-300" title="第一页">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          <button onClick={handlePrev} className="p-2 hover:bg-gray-700 rounded text-gray-300" title="上一页">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          
+          <button onClick={handleNext} className="p-2 hover:bg-gray-700 rounded text-gray-300" title="下一页">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+          
+          <button onClick={handleLast} className="p-2 hover:bg-gray-700 rounded text-gray-300" title="最后一页">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+
+          <div className="w-px h-6 bg-gray-600" />
+
+          <label className="cursor-pointer flex items-center space-x-1 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600">
+            <Upload className="w-4 h-4" />
+            <span className="text-sm">导入</span>
+            <input type="file" accept=".pptx" className="hidden" />
+          </label>
+        </div>
+      </header>
+
+      <main className="flex-1 flex overflow-hidden">
+        {viewMode === 'slide' ? (
+          <div className="flex-1 flex items-center justify-center p-8">
+            <div className="w-full max-w-4xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden">
+              <div className={`h-full flex flex-col ${theme.bg} p-8`}>
+                <div className="flex-1 flex flex-col justify-center">
+                  <motion.div
+                    key={currentSlide}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    {slides[currentSlide].type === 'title' ? (
+                      <div className="text-center">
+                        <h2 className="text-4xl font-bold text-white mb-4">
+                          {slides[currentSlide].title}
+                        </h2>
+                        <p className="text-xl text-white/80">
+                          {slides[currentSlide].content[0]}
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <h2 className="text-3xl font-bold text-white mb-6">
+                          {slides[currentSlide].title}
+                        </h2>
+                        <ul className="space-y-3">
+                          {slides[currentSlide].content.map((item, idx) => (
+                            <motion.li
+                              key={idx}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.1 }}
+                              className="flex items-center text-white text-lg"
+                            >
+                              <span className="w-3 h-3 bg-white rounded-full mr-3" />
+                              {item}
+                            </motion.li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </motion.div>
+                </div>
+                
+                <div className="flex justify-between items-center text-white/60 text-sm">
+                  <span>幻灯片 {currentSlide + 1} / {totalSlides}</span>
+                  <span>智能报表系统</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {slides.map((slide, idx) => (
+                <motion.div
+                  key={idx}
+                  whileHover={{ scale: 1.02 }}
+                  onClick={() => setCurrentSlide(idx)}
+                  className={`aspect-video rounded-lg cursor-pointer overflow-hidden ${
+                    currentSlide === idx ? 'ring-4 ring-blue-500' : ''
+                  } bg-white shadow`}
+                >
+                  <div className={`h-full flex flex-col ${theme.bg} p-2`}>
+                    <span className="text-white/60 text-xs">{(idx + 1).toString().padStart(2, '0')}</span>
+                    <h3 className="text-white text-sm font-medium truncate">
+                      {slide.title}
+                    </h3>
+                    <span className="text-white/60 text-xs mt-auto">
+                      {slide.content.length} 项
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <footer className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center space-x-2">
+          <input
+            type="range"
+            min={0}
+            max={totalSlides - 1}
+            value={currentSlide}
+            onChange={(e) => setCurrentSlide(parseInt(e.target.value))}
+            className="w-32"
+          />
+        </div>
+        
+        <div className="flex items-center space-x-4 text-sm text-gray-400">
+          <span>{slides[currentSlide].title}</span>
+          <span>按空格键 {isPlaying ? '暂停' : '播放'}</span>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default PPTViewer;

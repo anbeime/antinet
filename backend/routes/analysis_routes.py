@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/analysis", tags=["数据分析"])
+router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 
 
 @router.post("/upload-and-analyze")

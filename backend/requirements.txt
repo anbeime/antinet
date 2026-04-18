@@ -35,6 +35,12 @@ loguru==0.7.2
 # 任务调度
 apscheduler>=3.10.0
 
+# 报表自动化
+openpyxl==3.1.2
+reportlab==4.0.9
+python-pptx==0.6.23
+pillow>=10.0.0  # 图片处理，用于PDF生成
+
 # ===== QAI AppBuilder（必需，手动安装） =====
 #
 # 在AIPC上运行以下命令：

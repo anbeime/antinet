@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
 
@@ -514,9 +514,43 @@ const PPTAnalysis: React.FC = () => {
               </div>
             </motion.div>
           </div>
-        )}
+)}
+
+        {/* 其他在线查看入口 */}
+        <div className="mt-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+          <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button 
+              onClick={() => window.open('http://localhost:3000/office-docs', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 dark:text-green-400">在线表格</span>
+            </button>
+            <button 
+              onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
+            >
+              <FileText className="w-4 h-4 text-red-600" />
+              <span className="text-red-700 dark:text-red-400">PDF查看器</span>
+            </button>
+            <button 
+              onClick={() => window.open('http://localhost:3000/report-automation', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors text-sm"
+            >
+              <Sparkles className="w-4 h-4 text-purple-600" />
+              <span className="text-purple-700 dark:text-purple-400">报表生成</span>
+            </button>
+            <button 
+              onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
+            >
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 dark:text-blue-400">Excel分析</span>
+            </button>
+          </div>
+        </div>
       </div>
-      
     </div>
   );
 };

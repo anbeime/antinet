@@ -188,6 +188,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入知识管理路由: {e}")
 
+# 注册智能知识中枢路由
+try:
+    from routes.knowledge_center_routes import router as knowledge_center_router
+    app.include_router(knowledge_center_router)  # 智能知识中枢路由
+    logger.info("[OK] 智能知识中枢路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入智能知识中枢路由: {e}")
+
 # 注册专题研究路由
 try:
     from routes.research_routes import router as research_router
@@ -260,6 +268,23 @@ try:
 
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
+
+# 注册 PPT 处理路由
+try:
+    from routes.ppt_routes import router as ppt_router
+    app.include_router(ppt_router)  # PPT 处理路由
+    logger.info("[OK] PPT 处理路由已注册")
+
+except Exception as e:
+    logger.warning(f"无法导入 PPT 处理路由: {e}")
+
+# 注册报表自动化路由
+try:
+    from routes.report_routes import router as report_router
+    app.include_router(report_router, prefix="/api/automation", tags=["automation"])  # 报表自动化路由
+    logger.info("[OK] 报表自动化路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入报表自动化路由: {e}")
 
 # 注册 GTD 任务管理路由
 try:
