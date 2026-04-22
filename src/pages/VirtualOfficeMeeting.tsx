@@ -336,9 +336,14 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'history' | 'agents' | 'tasks' | 'health'>('new');
   const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
+  const [agentList, setAgentList] = useState<any[]>([]);
+  const [taskList, setTaskList] = useState<any[]>([]);
+  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
+  const [showMessageModal, setShowMessageModal] = useState(false);
   const meetingTimerRef = useRef<any>(null);
   const pollTimerRef = useRef<any>(null);
 
@@ -411,6 +416,12 @@ const VirtualOfficeMeeting: React.FC = () => {
   useEffect(() => {
     if (activeTab === 'history') {
       fetchMeetingHistory();
+    } else if (activeTab === 'agents') {
+      fetch(`${BACKEND_URL}/agents`).then(r => r.json()).then(d => setAgentList(d.agents || [])).catch(console.error);
+    } else if (activeTab === 'tasks') {
+      fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
+    } else if (activeTab === 'health') {
+      fetch(`${BACKEND_URL}/health`).then(r => r.json()).then(d => setHealthStatus(d)).catch(console.error);
     }
   }, [activeTab]);
 
@@ -1014,7 +1025,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
         {/* ========== 右侧栏 65% ========== */}
         <div className="flex-1 flex flex-col gap-5 min-w-0 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setActiveTab('new')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -1031,6 +1042,33 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             >
               <History className="w-4 h-4" />
               历史会议
+            </button>
+            <button
+              onClick={() => setActiveTab('agents')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === 'agents' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Agent列表
+            </button>
+            <button
+              onClick={() => setActiveTab('tasks')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              协作任务
+            </button>
+            <button
+              onClick={() => setActiveTab('health')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === 'health' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
+              }`}
+            >
+              <Monitor className="w-4 h-4" />
+              系统状态
             </button>
           </div>
 
@@ -1108,6 +1146,124 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       )}
                     </div>
                   ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'agents' && (
+            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+                <Users className="w-4 h-4 text-gray-400" />
+                <span className="text-white font-medium text-sm">Agent 列表</span>
+                <span className="text-gray-500 text-xs ml-auto">{agentList.length} 个</span>
+              </div>
+              <div className="p-4 space-y-3">
+                {agentList.length === 0 ? (
+                  <div className="text-gray-500 text-sm text-center py-8">暂无 Agent 数据</div>
+                ) : (
+                  agentList.map((agent: any) => (
+                    <div key={agent.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: `linear-gradient(135deg, ${agent.color?.split(' ')?.[0] || '#3b82f6'}, ${agent.color?.split(' ')?.[2] || '#2563eb'})` }}>
+                          {agent.avatar || '🤖'}
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-white font-medium">{agent.name}</div>
+                          <div className="text-gray-500 text-xs">{agent.title}</div>
+                        </div>
+                      </div>
+                      {agent.description && (
+                        <div className="mt-2 text-gray-400 text-sm">{agent.description}</div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+                <MessageSquare className="w-4 h-4 text-gray-400" />
+                <span className="text-white font-medium text-sm">协作任务</span>
+                <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个</span>
+              </div>
+              <div className="p-4 space-y-3">
+                {taskList.length === 0 ? (
+                  <div className="text-gray-500 text-sm text-center py-8">暂无协作任务</div>
+                ) : (
+                  taskList.map((task: any) => (
+                    <div key={task.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-medium">{task.title}</div>
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          task.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                          task.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
+                          'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          {task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待处理'}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-gray-400 text-sm">{task.description}</div>
+                      <div className="mt-2 flex items-center gap-4 text-gray-500 text-xs">
+                        <span>指派给: {task.assignee}</span>
+                        <span>优先级: {task.priority}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'health' && (
+            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+                <Monitor className="w-4 h-4 text-gray-400" />
+                <span className="text-white font-medium text-sm">系统状态</span>
+              </div>
+              <div className="p-4">
+                {!healthStatus ? (
+                  <div className="text-gray-500 text-sm text-center py-8">加载中...</div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
+                      <span className="text-gray-400">服务状态</span>
+                      <span className={healthStatus.status === 'ok' ? 'text-green-400' : 'text-yellow-400'}>
+                        {healthStatus.status === 'ok' ? '正常运行' : '部分异常'}
+                      </span>
+                    </div>
+                    {healthStatus.models && (
+                      <div className="p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
+                        <div className="text-gray-400 text-xs mb-2">模型状态</div>
+                        {Object.entries(healthStatus.models).map(([name, status]: [string, any]) => (
+                          <div key={name} className="flex items-center justify-between py-1">
+                            <span className="text-gray-300 text-sm">{name}</span>
+                            <span className={status.loaded ? 'text-green-400 text-xs' : 'text-gray-500 text-xs'}>
+                              {status.loaded ? '已加载' : '未加载'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {healthStatus.resources && (
+                      <div className="p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
+                        <div className="text-gray-400 text-xs mb-2">资源使用</div>
+                        <div className="flex gap-4">
+                          <div>
+                            <span className="text-gray-500 text-xs">GPU</span>
+                            <div className="text-white text-sm">{healthStatus.resources.gpu_usage?.toFixed(1) || 0}%</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 text-xs">内存</span>
+                            <div className="text-white text-sm">{healthStatus.resources.memory_usage?.toFixed(1) || 0}%</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

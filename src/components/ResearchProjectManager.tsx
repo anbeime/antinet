@@ -789,7 +789,7 @@ const ProjectDetailPanel: React.FC<{
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[9990] bg-gray-50 dark:bg-gray-900 flex flex-col" style={{ margin: 0 }}>
+      <div className="fixed inset-0 z-[9990] bg-gray-50 dark:bg-gray-900 flex flex-col overflow-y-auto" style={{ margin: 0 }}>
         {/* 顶部导航栏 */}
         <div className={`flex-shrink-0 ${colorOpt.bg} dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm`}>
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -1360,11 +1360,11 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
       {/* ===== 创建专题弹窗（Portal） ===== */}
       {showCreateModal && (
         <Portal>
-          <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/50" style={{ margin: 0, padding: '24px' }}>
+          <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/50 overflow-y-auto" style={{ margin: 0, padding: '24px' }}>
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden my-8"
               style={{ width: '90vw', maxWidth: '480px' }}
             >
               <div className="flex justify-between items-center px-6 py-5 border-b border-gray-200 dark:border-gray-700">
@@ -1448,15 +1448,15 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
       {/* ===== 编辑专题弹窗（Portal） ===== */}
       {showEditModal && editingProject && (
         <Portal>
-          <div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/50" style={{ margin: 0, padding: '24px' }}>
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden"
-              style={{ width: '90vw', maxWidth: '480px' }}
-            >
-              <div className="flex justify-between items-center px-6 py-5 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-xl font-bold">编辑专题</h3>
+<div className="fixed inset-0 z-[9990] flex items-center justify-center bg-black/50 overflow-y-auto" style={{ margin: 0, padding: '24px' }}>
+          <motion.div
+            initial={{ scale: 0.92, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl overflow-hidden my-8"
+            style={{ width: '90vw', maxWidth: '480px' }}
+          >
+            <div className="flex justify-between items-center px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-xl font-bold">编辑专题</h3>
                 <button onClick={() => setShowEditModal(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl">
                   <X className="w-5 h-5" />
                 </button>
