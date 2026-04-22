@@ -17,6 +17,14 @@ except ImportError:
     EXCEL_AVAILABLE = False
 
 try:
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+try:
     from pypdf import PdfReader
     PYPDF_AVAILABLE = True
 except ImportError:
@@ -399,6 +407,46 @@ class PDFourColorProcessor:
         except Exception as e:
             result["error"] = str(e)
             logger.error(f"Excel 导出失败: {e}", exc_info=True)
+        
+        return result
+
+    def export_to_docx(self, cards: List[Dict[str, Any]], output_path: str) -> Dict[str, Any]:
+        """将卡片导出为 Word 文档"""
+        result = {"success": False, "output_path": output_path, "error": None}
+        
+        if not DOCX_AVAILABLE:
+            result["error"] = "python-docx 未安装，请运行: pip install python-docx"
+            return result
+        
+        try:
+            doc = Document()
+            doc.add_heading('四色知识卡片', 0)
+            
+            color_map = {
+                "fact": ("事实", RGBColor(0, 82, 204)),
+                "explanation": ("解释", RGBColor(0, 153, 0)),
+                "risk": ("风险", RGBColor(255, 192, 0)),
+                "action": ("行动", RGBColor(192, 0, 0))
+            }
+            
+            for card in cards:
+                card_type = card.get("type", "fact")
+                type_name, type_color = color_map.get(card_type, ("事实", RGBColor(0, 0, 0)))
+                
+                para = doc.add_paragraph()
+                run = para.add_run(f"[{type_name}] {card.get('title', '')}")
+                run.font.bold = True
+                run.font.color.rgb = type_color
+                
+                doc.add_paragraph(card.get("content", "")[:500])
+                doc.add_paragraph("")
+            
+            doc.save(output_path)
+            result["success"] = True
+            logger.info(f"Word 导出成功: {output_path}")
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"Word 导出失败: {e}")
         
         return result
 

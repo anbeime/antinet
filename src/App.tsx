@@ -21,45 +21,35 @@ import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
 import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
-import { useState } from "react";
-import { AuthContext } from '@/contexts/authContext';
-
+import { AuthProvider } from '@/contexts/authContext';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  const logout = () => {
-    setIsAuthenticated(false);
-  };
-
   return (
-      <AuthContext.Provider
-        value={{ isAuthenticated, setIsAuthenticated, logout }}
-      >
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/npu-analysis" element={<NPUAnalysis />} />
-          <Route path="/npu-dashboard" element={<NPUDashboard />} />
-          <Route path="/pdf-analysis" element={<PDFAnalysis />} />
-          <Route path="/ppt-analysis" element={<PPTAnalysis />} />
-          <Route path="/excel-analysis" element={<ExcelAnalysis />} />
-          <Route path="/report-automation" element={<ReportAutomation />} />
-          <Route path="/office-docs" element={<OfficeDocs />} />
-          <Route path="/pdf-viewer" element={<PDFViewer />} />
-          <Route path="/ppt-viewer" element={<PPTViewer />} />
-          <Route path="/mindmap" element={<MindMap />} />
-          <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />
-          <Route path="/data-management" element={<DataManagement />} />
-          <Route path="/batch-process" element={<BatchProcess />} />
-          <Route path="/agent-system" element={<AgentSystem />} />
-          <Route path="/skill-center" element={<SkillCenter />} />
-          <Route path="/multi-model" element={<MultiModel />} />
-          <Route path="/format-converter" element={<FormatConverter />} />
-          <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
-          <Route path="/gtd-tasks" element={<GTDTaskManager />} />
-          <Route path="/genie-playground" element={<GeniePlayground />} />
-          <Route path="/genie-npu-test" element={<GenieNPUTest />} />
-        </Routes>
-      </AuthContext.Provider>
+    <AuthProvider>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/npu-analysis" element={<NPUAnalysis />} />
+        <Route path="/npu-dashboard" element={<NPUDashboard />} />
+        <Route path="/pdf-analysis" element={<PDFAnalysis />} />
+        <Route path="/ppt-analysis" element={<PPTAnalysis />} />
+        <Route path="/excel-analysis" element={<ExcelAnalysis />} />
+        <Route path="/report-automation" element={<ReportAutomation />} />
+        <Route path="/office-docs" element={<OfficeDocs />} />
+        <Route path="/pdf-viewer" element={<PDFViewer />} />
+        <Route path="/ppt-viewer" element={<PPTViewer />} />
+        <Route path="/mindmap" element={<MindMap />} />
+        <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />
+        <Route path="/data-management" element={<DataManagement />} />
+        <Route path="/batch-process" element={<BatchProcess />} />
+        <Route path="/agent-system" element={<AgentSystem />} />
+        <Route path="/skill-center" element={<SkillCenter />} />
+        <Route path="/multi-model" element={<MultiModel />} />
+        <Route path="/format-converter" element={<FormatConverter />} />
+        <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
+        <Route path="/gtd-tasks" element={<GTDTaskManager />} />
+        <Route path="/genie-playground" element={<GeniePlayground />} />
+        <Route path="/genie-npu-test" element={<GenieNPUTest />} />
+      </Routes>
+    </AuthProvider>
   );
 }

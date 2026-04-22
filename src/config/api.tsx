@@ -80,6 +80,28 @@ export const API_ENDPOINTS = {
 
   // 系统
   HEALTH: '/api/health',
+
+  // P0: 双向链接
+  BACKLINKS_ADD: '/api/backlinks/add',
+  BACKLINKS_REMOVE: '/api/backlinks/remove',
+  BACKLINKS_CARD_BACKLINKS: '/api/backlinks/card/{card_id}/backlinks',
+  BACKLINKS_CARD_FORWARDLINKS: '/api/backlinks/card/{card_id}/forwardlinks',
+  BACKLINKS_CARD_GRAPH: '/api/backlinks/card/{card_id}/graph',
+  BACKLINKS_CARD_STATS: '/api/backlinks/stats/{card_id}',
+  BACKLINKS_HEALTH: '/api/backlinks/health',
+
+  // P0: 日历整合
+  CALENDAR_EVENTS: '/api/integration/calendar/events',
+  CALENDAR_EVENTS_ALL: '/api/integration/calendar/events/all',
+  CALENDAR_EVENT_BY_ID: '/api/integration/calendar/events/{event_id}',
+  CALENDAR_CARD_EVENTS: '/api/integration/calendar/card/{card_id}/events',
+
+  // P0: 卡片-任务关联
+  CARD_CREATE_TASK: '/api/integration/card/create-task',
+  CARD_TASKS: '/api/integration/card/{card_id}/tasks',
+  TASK_CARDS: '/api/integration/task/{task_id}/cards',
+  CARD_TASK_RELATION: '/api/integration/card/{card_id}/task/{task_id}',
+  INTEGRATION_HEALTH: '/api/integration/health',
 };
 
 // 辅助函数：构建URL

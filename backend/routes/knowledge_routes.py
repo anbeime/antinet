@@ -4,18 +4,225 @@
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
+from datetime import datetime
 import logging
 import tempfile
 import os
 import re
+import json
 
 from config import settings
 from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
+router = APIRouter(prefix="/api/knowledge", tags=["knowledge", "知识网络"])
+
+
+# ==================== 知识网络入口 ====================
+
+class NetworkCardsRequest(BaseModel):
+    """知识网络卡片请求"""
+    topic: str = Field(..., description="主题/查询词")
+    color_filter: Optional[str] = Field(default=None, description="颜色过滤: blue/green/yellow/red")
+    mode: str = Field(default="auto", description="模式: auto(自动生成)|manual(手动选择)")
+    limit: int = Field(default=20, description="返回数量")
+
+
+class NetworkSuggestion(BaseModel):
+    """网络建议"""
+    card_id: str
+    card_type: str
+    title: str
+    content: str
+    category: str
+    reason: str  # 为什么推荐这张卡片
+
+
+class NetworkGenerateRequest(BaseModel):
+    """网络生成请求"""
+    topic: str
+    card_ids: Optional[List[str]] = Field(default=None, description="手动选择的卡片ID")
+    auto_generate: bool = Field(default=True, description="是否自动生成相关卡片")
+    target_type: str = Field(default="both", description="目标: kg(图谱)|mindmap(导图)|both")
+
+
+@router.post("/network/cards")
+async def get_network_cards(request: NetworkCardsRequest):
+    """
+    知识网络 - 获取相关卡片
+    根据主题查找或生成相关卡片
+    """
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if request.color_filter:
+            cursor.execute("""
+                SELECT card_id, card_type, title, content, category, created_at
+                FROM knowledge_cards
+                WHERE (title LIKE ? OR content LIKE ?) 
+                AND card_type = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, [f"%{request.topic}%", f"%{request.topic}%", request.color_filter, request.limit])
+        else:
+            cursor.execute("""
+                SELECT card_id, card_type, title, content, category, created_at
+                FROM knowledge_cards
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, [f"%{request.topic}%", f"%{request.topic}%", request.limit])
+        
+        rows = cursor.fetchall()
+        cards = []
+        for row in rows:
+            cards.append({
+                "card_id": row["card_id"],
+                "card_type": row["card_type"],
+                "title": row["title"],
+                "content": row["content"],
+                "category": row["category"],
+                "created_at": row["created_at"],
+                "reason": f"与主题「{request.topic}」相关"
+            })
+        
+        return {
+            "topic": request.topic,
+            "cards": cards,
+            "total": len(cards),
+            "mode": request.mode
+        }
+    finally:
+        conn.close()
+
+
+@router.post("/network/suggest")
+async def suggest_network_cards(topic: str, limit: int = 10):
+    """
+    知识网络 - AI联想推荐卡片
+    基于主题智能推荐相关卡片
+    """
+    try:
+        from routes import auto_card
+        auto_card.set_db_manager(db_manager)
+        
+        suggestions = auto_card.analyze_and_suggest_cards(topic, f"智能推荐与「{topic}」相关的知识卡片", threshold=0.3)
+        
+        return {
+            "topic": topic,
+            "suggestions": [
+                {
+                    "title": s.title,
+                    "content": s.content,
+                    "type": s.card_type,
+                    "reason": _get_type_reason(s.card_type)
+                }
+                for s in suggestions[:limit]
+            ],
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.warning(f"[KnowledgeNetwork] 建议失败: {e}")
+        return {"topic": topic, "suggestions": [], "error": str(e)}
+
+
+@router.post("/network/generate")
+async def generate_network(request: NetworkGenerateRequest):
+    """
+    知识网络 - 生成知识网络
+    将选中的卡片（手动或自动）生成知识图谱或思维导图
+    """
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        created_entities = []
+        created_relations = []
+        
+        # 获取选中的卡片或自动搜索
+        if request.card_ids:
+            placeholders = ",".join(["?" for _ in request.card_ids])
+            cursor.execute(f"""
+                SELECT card_id, card_type, title, content
+                FROM knowledge_cards
+                WHERE card_id IN ({placeholders})
+            """, request.card_ids)
+        else:
+            cursor.execute("""
+                SELECT card_id, card_type, title, content
+                FROM knowledge_cards
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY RANDOM()
+                LIMIT 12
+            """, [f"%{request.topic}%", f"%{request.topic}%"])
+        
+        cards = cursor.fetchall()
+        
+        # 1. 创建图谱实体
+        if request.target_type in ("kg", "both"):
+            for card in cards[:12]:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO kg_entities (entity_id, name, entity_type, description)
+                    VALUES (?, ?, ?, ?)
+                """, [f"card_{card['card_id']}", card["title"][:50], card["card_type"], card["content"][:200]])
+                created_entities.append(f"card_{card['card_id']}")
+            
+            # 创建主题实体
+            cursor.execute("""
+                INSERT OR IGNORE INTO kg_entities (entity_id, name, entity_type, description)
+                VALUES (?, ?, ?, ?)
+            """, [f"topic_{request.topic[:20]}", request.topic[:50], "主题", request.topic])
+            created_entities.append(f"topic_{request.topic[:20]}")
+            
+            # 建立关系
+            for entity_id in created_entities[1:]:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                    VALUES (?, ?, ?, ?)
+                """, [f"rel_{created_entities[0][-10:]}_{entity_id[-10:]}", created_entities[0], entity_id, "关联"])
+                created_relations.append(f"rel_{created_entities[0][-10:]}_{entity_id[-10:]}")
+        
+        # 2. 创建思维导图
+        if request.target_type in ("mindmap", "both"):
+            root_node = {
+                "id": f"root_{int(datetime.now().timestamp())}",
+                "text": request.topic,
+                "children": [],
+                "color": "#8b5cf6"
+            }
+            
+            for i, card in enumerate(cards[:12]):
+                color_map = {"blue": "#3b82f6", "green": "#22c55e", "yellow": "#eab308", "red": "#ef4444"}
+                root_node["children"].append({
+                    "id": f"node_{i}",
+                    "text": card["title"][:30],
+                    "children": [],
+                    "color": color_map.get(card["card_type"], "#8b5cf6")
+                })
+            
+            cursor.execute("""
+                INSERT INTO mindmaps (name, root_node, created_at)
+                VALUES (?, ?, datetime('now'))
+            """, [f"知识网络-{request.topic[:20]}", json.dumps(root_node)])
+            mindmap_id = cursor.lastrowid
+        
+        conn.commit()
+        
+        return {
+            "status": "generated",
+            "topic": request.topic,
+            "entities_created": len(created_entities),
+            "relations_created": len(created_relations),
+            "mindmap_id": mindmap_id if request.target_type in ("mindmap", "both") else None
+        }
+    except Exception as e:
+        logger.error(f"[KnowledgeNetwork] 生成失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 # 创建数据库管理器实例
@@ -93,6 +300,8 @@ class KnowledgeCard(BaseModel):
     url: Optional[str] = None
     category: Optional[str] = None
     project_id: Optional[int] = None  # 关联的专题ID
+    related_cards: Optional[List[int]] = []  # 关联的卡片ID列表
+    address: Optional[str] = None  # Antinet 地址
 
     def get_valid_category(self) -> str:
         """获取有效的 category"""
@@ -177,10 +386,22 @@ async def get_cards(
     params.extend([limit, offset])
 
     cursor.execute(query, params)
-    cards = [dict(row) for row in cursor.fetchall()]
+    columns = [description[0] for description in cursor.description]
+    cards = []
+    for row in cursor.fetchall():
+        card_dict = dict(zip(columns, row))
+        # 解析 related_cards JSON
+        if card_dict.get('related_cards'):
+            try:
+                card_dict['related_cards'] = json.loads(card_dict['related_cards'])
+            except:
+                card_dict['related_cards'] = []
+        else:
+            card_dict['related_cards'] = []
+        cards.append(card_dict)
 
     conn.close()
-    return cards
+    return {"cards": cards}
 
 
 @router.get("/cards/{card_id}")
@@ -233,21 +454,51 @@ async def create_card(card: KnowledgeCard):
         # 自动生成标题（如果未提供）
         card_title = card.get_or_generate_title()
         
+        # 自动生成地址（如果未提供）
+        card_address = card.address
+        if not card_address:
+            type_prefix = {'blue': 'A', 'green': 'B', 'yellow': 'C', 'red': 'D'}
+            prefix = type_prefix.get(card.type, 'X')
+            cursor.execute("SELECT COUNT(*) FROM knowledge_cards WHERE card_type = ?", (card.type,))
+            count = cursor.fetchone()[0] + 1
+            card_address = f"{prefix}{count}"
+        
         # 使用正确的字段名 card_type（与数据库表结构一致）
+        related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
         cursor.execute('''
-            INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO knowledge_cards (card_type, title, content, category, project_id, related_cards, address)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             card.type,
             card_title,
             card.content,
             valid_category,
-            card.project_id
+            card.project_id,
+            related_cards_json,
+            card_address
         ))
+
+        new_card_id = cursor.lastrowid
+
+        # 同步双向链接到 card_backlinks 表
+        if card.related_cards:
+            try:
+                for target_id in card.related_cards:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (new_card_id, target_id, 'manual'))
+                    # 双向
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (target_id, new_card_id, 'manual'))
+            except Exception as e:
+                logger.warning(f"同步backlinks失败（非致命）: {e}")
 
         conn.commit()
 
-        logger.info(f"[CREATE_CARD] 插入成功，lastrowid={cursor.lastrowid}")
+        logger.info(f"[CREATE_CARD] 插入成功，lastrowid={new_card_id}")
 
         # 获取新插入的卡片
         cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (cursor.lastrowid,))
@@ -289,19 +540,63 @@ async def update_card(card_id: int, card: KnowledgeCard):
             conn.close()
             raise HTTPException(status_code=404, detail="卡片不存在")
 
-        # 更新卡片
+        # 更新卡片 — 保留未被显式传入的字段（如 project_id）
+        related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
+        # 如果 project_id 未传入（None），保留数据库中的现有值
+        existing_project_id = dict(existing_card).get('project_id') if existing_card else None
+        final_project_id = card.project_id if card.project_id is not None else existing_project_id
+        # 如果 address 未传入，保留现有值
+        existing_address = dict(existing_card).get('address') if existing_card else None
+        final_address = card.address if card.address else existing_address
+        
         cursor.execute('''
             UPDATE knowledge_cards 
-            SET card_type = ?, title = ?, content = ?, category = ?, project_id = ?
+            SET card_type = ?, title = ?, content = ?, category = ?, project_id = ?, related_cards = ?, address = ?
             WHERE id = ?
         ''', (
             card.type,
             card.title,
             card.content,
             card.category,
-            card.project_id,
+            final_project_id,
+            related_cards_json,
+            final_address,
             card_id
         ))
+
+        # 同步双向链接到 card_backlinks 表
+        if card.related_cards is not None:
+            try:
+                # 获取旧关联（从 backlinks 表）
+                cursor.execute("""
+                    SELECT target_card_id FROM card_backlinks WHERE source_card_id = ? AND link_text = 'manual'
+                """, (card_id,))
+                old_related = set(row[0] for row in cursor.fetchall())
+                
+                new_related = set(card.related_cards)
+                
+                # 新增关联
+                for target_id in (new_related - old_related):
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (card_id, target_id, 'manual'))
+                    # 双向：目标卡片也链接回来
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (target_id, card_id, 'manual'))
+                
+                # 移除关联
+                for target_id in (old_related - new_related):
+                    cursor.execute("""
+                        DELETE FROM card_backlinks 
+                        WHERE ((source_card_id = ? AND target_card_id = ?) 
+                           OR (source_card_id = ? AND target_card_id = ?))
+                           AND link_text = 'manual'
+                    """, (card_id, target_id, target_id, card_id))
+            except Exception as e:
+                logger.warning(f"同步backlinks失败（非致命）: {e}")
 
         conn.commit()
 
@@ -411,6 +706,161 @@ async def search_cards(request: SearchRequest):
     except Exception as e:
         logger.error(f"搜索失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
+
+
+# ==================== VCP TagMemo 风格标签系统 ====================
+
+class TagUpdateRequest(BaseModel):
+    """标签更新请求"""
+    card_id: int
+    tags: Optional[List[str]] = None
+    core_tags: Optional[List[str]] = None
+    tag_weights: Optional[Dict[str, float]] = None
+
+
+class RecallRequest(BaseModel):
+    """智能召回请求"""
+    query: str
+    memory_type: str = "light"  
+    core_tags_boost: bool = True
+    limit: int = 10
+
+
+@router.get("/tags")
+async def get_all_tags():
+    """获取所有标签（含权重统计）- TagMemo 风格"""
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    all_tags = {}
+    all_core_tags = {}
+    
+    cursor.execute("SELECT id, tags, core_tags, tag_weights FROM knowledge_cards")
+    for row in cursor.fetchall():
+        card_id, tags_json, core_tags_json, weights_json = row
+        
+        try:
+            tags = json.loads(tags_json) if tags_json else []
+            for tag in tags:
+                all_tags[tag] = all_tags.get(tag, 0) + 1
+        except:
+            pass
+        
+        try:
+            core_tags = json.loads(core_tags_json) if core_tags_json else []
+            for tag in core_tags:
+                all_core_tags[tag] = all_core_tags.get(tag, 0) + 1
+        except:
+            pass
+    
+    conn.close()
+    
+    return {
+        "tags": [{"name": k, "count": v} for k, v in sorted(all_tags.items(), key=lambda x: -x[1])],
+        "core_tags": [{"name": k, "count": v} for k, v in sorted(all_core_tags.items(), key=lambda x: -x[1])]
+    }
+
+
+@router.post("/cards/{card_id}/tags")
+async def update_card_tags(card_id: int, request: TagUpdateRequest):
+    """更新卡片标签 - TagMemo 风格"""
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM knowledge_cards WHERE id = ?", (card_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="卡片不存在")
+    
+    updates = []
+    params = []
+    
+    if request.tags is not None:
+        updates.append("tags = ?")
+        params.append(json.dumps(request.tags))
+    
+    if request.core_tags is not None:
+        updates.append("core_tags = ?")
+        params.append(json.dumps(request.core_tags))
+    
+    if request.tag_weights is not None:
+        updates.append("tag_weights = ?")
+        params.append(json.dumps(request.tag_weights))
+    
+    if updates:
+        updates.append("updated_at = ?")
+        params.append(datetime.now().isoformat())
+        params.append(card_id)
+        
+        cursor.execute(f"UPDATE knowledge_cards SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    
+    conn.close()
+    return {"success": True, "message": "标签已更新"}
+
+
+@router.post("/recall")
+async def recall_cards(request: RecallRequest):
+    """智能召回 - TagMemo LIF-Router 风格"""
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    query = request.query.lower()
+    cards = []
+    
+    if request.memory_type == "light":
+        cursor.execute('''
+            SELECT id, title, content, tags, core_tags, tag_weights, coherence_score, access_count
+            FROM knowledge_cards
+            WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
+            ORDER BY CASE WHEN core_tags LIKE ? THEN 0 ELSE 1 END, access_count DESC
+            LIMIT ?
+        ''', (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', request.limit))
+    elif request.memory_type == "deep":
+        cursor.execute('''
+            SELECT id, title, content, tags, core_tags, tag_weights, coherence_score, access_count
+            FROM knowledge_cards
+            WHERE title LIKE ? OR content LIKE ? OR tags LIKE ? OR core_tags LIKE ?
+            ORDER BY coherence_score DESC, access_count DESC
+            LIMIT ?
+        ''', (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', request.limit))
+    else:
+        cursor.execute('''
+            SELECT id, title, content, tags, core_tags, tag_weights, coherence_score, access_count
+            FROM knowledge_cards
+            WHERE (title LIKE ? OR content LIKE ?) AND (tags LIKE ? OR core_tags LIKE ?)
+            ORDER BY (coherence_score * 0.5 + access_count * 0.1) DESC
+            LIMIT ?
+        ''', (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', request.limit))
+    
+    for row in cursor.fetchall():
+        cards.append({
+            "id": row[0], "title": row[1], "content": row[2],
+            "tags": json.loads(row[3]) if row[3] else [],
+            "core_tags": json.loads(row[4]) if row[4] else [],
+            "tag_weights": json.loads(row[5]) if row[5] else {},
+            "coherence_score": row[6] or 0.0, "access_count": row[7] or 0
+        })
+    
+    conn.close()
+    return {"memory_type": request.memory_type, "query": request.query, "results": cards, "count": len(cards)}
+
+
+@router.post("/cards/{card_id}/access")
+async def track_card_access(card_id: int):
+    """追踪卡片访问"""
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE knowledge_cards 
+        SET access_count = COALESCE(access_count, 0) + 1, last_accessed = ?
+        WHERE id = ?
+    """, (datetime.now().isoformat(), card_id))
+    
+    conn.commit()
+    conn.close()
+    return {"success": True}
 
 
 @router.get("/sources")
@@ -822,17 +1272,18 @@ class CardTopicLink(BaseModel):
 
 @router.post("/cards/link-topic")
 async def link_card_to_topic(link: CardTopicLink):
-    """将卡片关联到专题"""
+    """将卡片关联到专题 — 同时写入 project_id 和 topic_id 以保证兼容"""
     try:
-        with db_manager.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE knowledge_cards 
-                SET topic_id = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (link.topic_id, link.card_id))
-            conn.commit()
-            return {"success": True, "message": f"卡片 {link.card_id} 已关联到专题 {link.topic_id}"}
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE knowledge_cards 
+            SET project_id = ?, topic_id = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (link.topic_id, link.topic_id, link.card_id))
+        conn.commit()
+        conn.close()
+        return {"success": True, "message": f"卡片 {link.card_id} 已关联到专题 {link.topic_id}"}
     except Exception as e:
         logger.error(f"关联失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -840,18 +1291,19 @@ async def link_card_to_topic(link: CardTopicLink):
 
 @router.get("/cards/by-topic/{topic_id}")
 async def get_cards_by_topic(topic_id: int):
-    """获取专题下的所有卡片"""
+    """获取专题下的所有卡片 — 同时匹配 project_id 和 topic_id"""
     try:
-        with db_manager.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, title, content, card_type, category, topic_id, created_at
-                FROM knowledge_cards 
-                WHERE topic_id = ?
-                ORDER BY created_at DESC
-            """, (topic_id,))
-            cards = [dict(row) for row in cursor.fetchall()]
-            return {"topic_id": topic_id, "cards": cards, "count": len(cards)}
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, content, card_type, category, project_id, topic_id, created_at
+            FROM knowledge_cards 
+            WHERE project_id = ? OR topic_id = ?
+            ORDER BY created_at DESC
+        """, (topic_id, topic_id))
+        cards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"topic_id": topic_id, "cards": cards, "count": len(cards)}
     except Exception as e:
         logger.error(f"查询失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -859,17 +1311,19 @@ async def get_cards_by_topic(topic_id: int):
 
 @router.get("/cards/{card_id}/topics")
 async def get_card_topics(card_id: int):
-    """获取卡片关联的专题"""
+    """获取卡片关联的专题 — 优先返回 project_id，兼容 topic_id"""
     try:
-        with db_manager.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT topic_id FROM knowledge_cards WHERE id = ?
-            """, (card_id,))
-            row = cursor.fetchone()
-            if row:
-                return {"card_id": card_id, "topic_id": row[0]}
-            return {"card_id": card_id, "topic_id": None}
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT project_id, topic_id FROM knowledge_cards WHERE id = ?
+        """, (card_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            project_id = row[0] or row[1]  # 优先 project_id，兼容 topic_id
+            return {"card_id": card_id, "topic_id": project_id}
+        return {"card_id": card_id, "topic_id": None}
     except Exception as e:
         logger.error(f"查询失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { teamMemberService, activityService, analyticsService } from '../services/dataService';
 import { toast } from 'sonner';
+import { AuthContext } from '../contexts/authContext';
 import { 
   PieChart, 
   Pie, 
@@ -136,6 +137,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
+  const { userInfo } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports'>('integration');
   
   // 数据状态
@@ -305,8 +307,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     const message: CollaborationMessage = {
       id: Date.now(),
-      user: '当前用户',
-      avatar: '👤',
+      user: userInfo.name || '匿名用户',
+      avatar: userInfo.avatar || '👤',
       content: newMessage,
       timestamp: new Date().toLocaleString('zh-CN')
     };
@@ -326,8 +328,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     const reply: CollaborationMessage = {
       id: Date.now(),
-      user: '当前用户',
-      avatar: '👤',
+      user: userInfo.name || '匿名用户',
+      avatar: userInfo.avatar || '👤',
       content: replyContent,
       timestamp: new Date().toLocaleString('zh-CN')
     };

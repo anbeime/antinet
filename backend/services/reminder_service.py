@@ -4,6 +4,7 @@
 """
 import sqlite3
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,28 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"
+
+
+def send_windows_notification(title: str, message: str):
+    """发送 Windows Toast 通知"""
+    try:
+        from win10toast_click import ToastNotifier
+        import threading
+        
+        def show_toast():
+            toaster = ToastNotifier()
+            toaster.show_toast(
+                title=title,
+                msg=message,
+                duration=10,
+                threaded=False
+            )
+        
+        thread = threading.Thread(target=show_toast, daemon=True)
+        thread.start()
+        logger.info(f"已发送 Windows 通知: {title}")
+    except Exception as e:
+        logger.warning(f"无法发送 Windows 通知: {e}")
 
 
 class ReminderService:
@@ -92,7 +115,14 @@ class ReminderService:
     
     def send_reminder(self, task: dict):
         """发送提醒通知"""
+        title = f"任务提醒: {task['title']}"
+        message = f"到期时间: {task.get('due_date', '未设置')}"
+        if task.get('description'):
+            message += f"\n{task['description'][:50]}..."
+        
         logger.info(f"提醒任务: {task['title']} (到期: {task['due_date']})")
+        
+        send_windows_notification(title, message)
         
         try:
             conn = sqlite3.connect(DB_PATH)

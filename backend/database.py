@@ -102,7 +102,7 @@ class DatabaseManager:
                 )
             """)
 
-            # 6. 知识卡片表
+            # 6. 知识卡片表 - VCP TagMemo 风格 (增强版)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS knowledge_cards (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,8 +110,26 @@ class DatabaseManager:
                     content TEXT NOT NULL,
                     card_type TEXT DEFAULT 'blue',
                     category TEXT,
-                    topic_id INTEGER,  -- 关联的专题ID
-                    related_topics TEXT,  -- JSON数组，关联的其他专题
+                    topic_id INTEGER,
+                    related_topics TEXT,
+                    
+                    -- TagMemo 风格标签系统
+                    tags TEXT DEFAULT '[]',  -- JSON数组: 普通标签
+                    core_tags TEXT DEFAULT '[]',  -- JSON数组: 核心标签(虚拟召回/权重豁免)
+                    tag_weights TEXT DEFAULT '{}',  -- JSON对象: {tag: weight}
+                    
+                    -- 语义记忆相关
+                    memory_type TEXT DEFAULT 'light',  -- light/deep/mesh
+                    coherence_score REAL DEFAULT 0.0,  -- 相干性分析分数
+                    last_accessed TEXT,
+                    access_count INTEGER DEFAULT 0,
+                    
+                    -- 关联知识
+                    related_cards TEXT DEFAULT '[]',  -- JSON数组
+                    
+                    -- 向量嵌入 (简化版)
+                    embedding TEXT,
+                    
                     similarity REAL DEFAULT 0.0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -235,20 +253,61 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN project_id INTEGER")
             except:
                 pass
+            
+            # VCP TagMemo 风格字段迁移
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN tags TEXT DEFAULT '[]'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN core_tags TEXT DEFAULT '[]'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN tag_weights TEXT DEFAULT '{}'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN memory_type TEXT DEFAULT 'light'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN coherence_score REAL DEFAULT 0.0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN last_accessed TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN access_count INTEGER DEFAULT 0")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN related_cards TEXT DEFAULT '[]'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN embedding TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN address TEXT")
+            except:
+                pass
+            
+            # 数据修复：将 topic_id 有值但 project_id 为空的卡片统一
+            try:
+                cursor.execute("UPDATE knowledge_cards SET project_id = topic_id WHERE project_id IS NULL AND topic_id IS NOT NULL")
+            except:
+                pass
+            try:
+                cursor.execute("UPDATE knowledge_cards SET topic_id = project_id WHERE topic_id IS NULL AND project_id IS NOT NULL")
+            except:
+                pass
 
-            # 8. 知识库卡片表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS knowledge_cards (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    type TEXT CHECK(type IN ('blue', 'green', 'yellow', 'red')),
-                    category TEXT CHECK(category IS NULL OR category IN ('事实', '解释', '风险', '行动')),
-                    similarity REAL DEFAULT 0.0,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            # 注意：knowledge_cards 表已在上方 (#6) 定义，此处不再重复创建
+            # 旧版 (#8) 定义缺少 tags/core_tags/tag_weights/memory_type 等字段，已通过 ALTER TABLE 迁移
 
             # 11. 会议记录表
             cursor.execute("""
@@ -268,9 +327,101 @@ class DatabaseManager:
                     start_time TEXT NOT NULL,
                     end_time TEXT NOT NULL,
                     duration_seconds REAL NOT NULL,
+                    project_id INTEGER,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # 迁移：为会议表添加 project_id 字段
+            try:
+                cursor.execute("ALTER TABLE meetings ADD COLUMN project_id INTEGER")
+            except:
+                pass
+
+            # 12. 思维导图表 - 支持节点与卡片关联
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS mindmaps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    root_node TEXT NOT NULL,  -- JSON: 根节点及整个树结构
+                    created_by TEXT,
+                    card_ids TEXT DEFAULT '[]',  -- 关联的卡片ID列表
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 12.1 思维导图节点关联表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS mindmap_node_cards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mindmap_id INTEGER NOT NULL,
+                    node_id TEXT NOT NULL,
+                    card_id INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (mindmap_id) REFERENCES mindmaps(id) ON DELETE CASCADE,
+                    FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+                    UNIQUE(mindmap_id, node_id, card_id)
+                )
+            """)
+
+            # 13. 任务-笔记双向链接关联表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_task_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    card_id INTEGER NOT NULL,
+                    task_id INTEGER NOT NULL,
+                    relation_type TEXT NOT NULL,  -- extracted_from: 任务从笔记提取; referenced: 笔记引用任务
+                    extract_paragraph TEXT,  -- 提取的原文段落
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+                    FOREIGN KEY (task_id) REFERENCES gtd_tasks(id) ON DELETE CASCADE,
+                    UNIQUE(card_id, task_id)
+                )
+            """)
+
+            # 14. 日历事件表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS calendar_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    start_time TEXT NOT NULL,  -- ISO 8601 格式
+                    end_time TEXT NOT NULL,
+                    is_all_day BOOLEAN DEFAULT 0,
+                    location TEXT,
+                    category TEXT DEFAULT 'default',
+                    color TEXT,
+                    source_card_id INTEGER,  -- 来源笔记卡片
+                    source_paragraph TEXT,  -- 来源笔记段落
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    is_completed BOOLEAN DEFAULT 0,
+                    FOREIGN KEY (source_card_id) REFERENCES knowledge_cards(id) ON DELETE SET NULL
+                )
+            """)
+
+            # 15. 卡片反向链接表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_backlinks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_card_id INTEGER NOT NULL,
+                    target_card_id INTEGER NOT NULL,
+                    link_text TEXT,
+                    link_type TEXT DEFAULT 'manual',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(source_card_id, target_card_id),
+                    FOREIGN KEY (source_card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+                    FOREIGN KEY (target_card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE
+                )
+            """)
+            
+            # 迁移：为 card_backlinks 添加 link_type 字段
+            try:
+                cursor.execute("ALTER TABLE card_backlinks ADD COLUMN link_type TEXT DEFAULT 'manual'")
+            except:
+                pass
 
             conn.commit()
 
@@ -684,17 +835,19 @@ class DatabaseManager:
             return members
 
     def add_team_member(self, name: str, role: str, avatar: str = '👤',
-                        email: Optional[str] = None, contribution: int = 0) -> Dict[str, Any]:
+                        email: Optional[str] = None, contribution: int = 0,
+                        permissions: Optional[List[str]] = None) -> Dict[str, Any]:
         """添加团队成员"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             now = datetime.now().isoformat()
+            perms = json.dumps(permissions or ['read', 'write'])
             cursor.execute("""
                 INSERT INTO team_members (name, role, avatar, online, join_date,
                                           last_active, permissions, contribution, email)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (name, role, avatar, True, now, now,
-                  json.dumps(['read', 'write']), contribution, email))
+                  perms, contribution, email))
             member_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM team_members WHERE id = ?", (member_id,))
@@ -714,8 +867,12 @@ class DatabaseManager:
             updates = []
             values = []
             for key, value in kwargs.items():
-                updates.append(f"{key} = ?")
-                values.append(value)
+                if key == 'permissions' and isinstance(value, list):
+                    updates.append("permissions = ?")
+                    values.append(json.dumps(value))
+                else:
+                    updates.append(f"{key} = ?")
+                    values.append(value)
             values.append(member_id)
             cursor.execute(f"UPDATE team_members SET {', '.join(updates)}, updated_at = ? WHERE id = ?",
                           values + [datetime.now().isoformat()])
@@ -761,10 +918,6 @@ class DatabaseManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (name, description, json.dumps(members or []), owner,
                   now, now, 0, is_public))
-            space_id = cursor.lastrowid
-            conn.commit()
-            cursor.execute("SELECT * FROM knowledge_spaces WHERE id = ?", (space_id,))
-            return dict(cursor.fetchone())
             space_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM knowledge_spaces WHERE id = ?", (space_id,))
@@ -1130,6 +1283,79 @@ class DatabaseManager:
             conn.commit()
             return cursor.rowcount > 0
 
+    def get_research_project_stats(self, project_id: int) -> Dict[str, Any]:
+        """获取专题统计信息"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            stats = {}
+            # 卡片统计
+            cursor.execute("""
+                SELECT card_type, COUNT(*) as cnt FROM knowledge_cards
+                WHERE project_id = ? GROUP BY card_type
+            """, (project_id,))
+            card_stats = {row['card_type']: row['cnt'] for row in cursor.fetchall()}
+            stats['cards'] = card_stats
+            stats['total_cards'] = sum(card_stats.values())
+
+            # 任务统计
+            cursor.execute("""
+                SELECT COUNT(*) as total,
+                       SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
+                FROM gtd_tasks WHERE source_type = 'project' AND source_id = ?
+            """, (project_id,))
+            row = cursor.fetchone()
+            task_total = row['total'] if row else 0
+            task_completed = row['completed'] if row else 0
+            stats['tasks'] = {'total': task_total, 'completed': task_completed,
+                              'pending': task_total - task_completed}
+            stats['task_progress'] = round(task_completed / task_total * 100) if task_total > 0 else 0
+
+            # 日历事件统计
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM calendar_events
+                WHERE source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+            """, (project_id,))
+            cal_row = cursor.fetchone()
+            stats['calendar_events'] = cal_row['cnt'] if cal_row else 0
+
+            # 反向链接统计
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM card_backlinks
+                WHERE target_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+                   OR source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+            """, (project_id, project_id))
+            row = cursor.fetchone()
+            stats['backlinks'] = row['cnt'] if row else 0
+
+            return stats
+
+    def add_audit_log(self, event_type: str, actor: str, resource: str,
+                      action: str, result: str = 'success', details: str = None):
+        """添加审计日志"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO audit_logs (event_type, actor, resource, action, result, details)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (event_type, actor, resource, action, result, details))
+            conn.commit()
+
+    def check_member_permission(self, member_id: int, required_permission: str) -> bool:
+        """检查成员是否拥有指定权限"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT permissions FROM team_members WHERE id = ?", (member_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            perms = row['permissions']
+            if isinstance(perms, str):
+                try:
+                    perms = json.loads(perms)
+                except:
+                    perms = []
+            return 'admin' in perms or required_permission in perms
+
     # ========== 团队协作项目管理 ==========
     def get_all_team_projects(self) -> List[Dict[str, Any]]:
         """获取所有团队项目"""
@@ -1319,3 +1545,432 @@ class DatabaseManager:
             cursor.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    # ========== 思维导图管理 ==========
+    def save_mindmap(self, name: str, root_node: Dict, description: str = None, 
+                   created_by: str = None, card_ids: List[int] = None) -> Dict[str, Any]:
+        """保存思维导图"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO mindmaps (name, description, root_node, created_by, card_ids)
+                VALUES (?, ?, ?, ?, ?)
+            """, (name, description, json.dumps(root_node, ensure_ascii=False), 
+                  created_by, json.dumps(card_ids or [])))
+            mindmap_id = cursor.lastrowid
+            conn.commit()
+            return self.get_mindmap(mindmap_id)
+
+    def get_mindmap(self, mindmap_id: int) -> Optional[Dict[str, Any]]:
+        """获取思维导图"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM mindmaps WHERE id = ?", (mindmap_id,))
+            row = cursor.fetchone()
+            if row:
+                m = dict(row)
+                m['root_node'] = json.loads(m['root_node'])
+                m['card_ids'] = json.loads(m['card_ids']) if m['card_ids'] else []
+                m['cards'] = self._get_cards_for_mindmap(mindmap_id, m['root_node'])
+                return m
+            return None
+
+    def get_all_mindmaps(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """获取所有思维导图"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM mindmaps ORDER BY updated_at DESC LIMIT ?", (limit,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def update_mindmap(self, mindmap_id: int, name: str = None, root_node: Dict = None,
+                    description: str = None) -> Optional[Dict[str, Any]]:
+        """更新思维导图"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+            if name:
+                updates.append("name = ?")
+                params.append(name)
+            if root_node:
+                updates.append("root_node = ?")
+                params.append(json.dumps(root_node, ensure_ascii=False))
+            if description:
+                updates.append("description = ?")
+                params.append(description)
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            params.append(mindmap_id)
+            
+            cursor.execute(f"UPDATE mindmaps SET {', '.join(updates)} WHERE id = ?", params)
+            conn.commit()
+            return self.get_mindmap(mindmap_id)
+
+    def delete_mindmap(self, mindmap_id: int) -> bool:
+        """删除思维导图"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM mindmaps WHERE id = ?", (mindmap_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def _get_cards_for_mindmap(self, mindmap_id: int, node: Dict) -> List[Dict]:
+        """递归获取节点关联的卡片"""
+        cards = []
+        node_id = node.get('id')
+        if node_id:
+            cursor = self.get_connection().cursor()
+            cursor.execute("""
+                SELECT k.* FROM knowledge_cards k
+                JOIN mindmap_node_cards m ON k.id = m.card_id
+                WHERE m.mindmap_id = ? AND m.node_id = ?
+            """, (mindmap_id, node_id))
+            for row in cursor.fetchall():
+                cards.append(dict(row))
+        
+        for child in node.get('children', []):
+            cards.extend(self._get_cards_for_mindmap(mindmap_id, child))
+        return cards
+
+    def link_card_to_node(self, mindmap_id: int, node_id: str, card_id: int) -> bool:
+        """关联卡片到思维导图节点"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO mindmap_node_cards (mindmap_id, node_id, card_id)
+                    VALUES (?, ?, ?)
+                """, (mindmap_id, node_id, card_id))
+                conn.commit()
+                return cursor.rowcount > 0
+            except:
+                return False
+
+    def unlink_card_from_node(self, mindmap_id: int, node_id: str, card_id: int) -> bool:
+        """取消关联卡片与思维导图节点"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM mindmap_node_cards 
+                WHERE mindmap_id = ? AND node_id = ? AND card_id = ?
+            """, (mindmap_id, node_id, card_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_node_cards(self, mindmap_id: int, node_id: str) -> List[Dict]:
+        """获取节点关联的卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT k.* FROM knowledge_cards k
+                JOIN mindmap_node_cards m ON k.id = m.card_id
+                WHERE m.mindmap_id = ? AND m.node_id = ?
+            """, (mindmap_id, node_id))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_card_mindmaps(self, card_id: int) -> List[Dict]:
+        """获取卡片关联的思维导图和节点"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT m.id, m.name, mnc.node_id, mnc.created_at
+                FROM mindmaps m
+                JOIN mindmap_node_cards mnc ON m.id = mnc.mindmap_id
+                WHERE mnc.card_id = ?
+                ORDER BY mnc.created_at DESC
+            """, (card_id,))
+            rows = cursor.fetchall()
+            result = {}
+            for row in rows:
+                mid = row['id']
+                if mid not in result:
+                    result[mid] = {'id': mid, 'name': row['name'], 'nodes': []}
+                result[mid]['nodes'].append({'node_id': row['node_id'], 'created_at': row['created_at']})
+            return list(result.values())
+
+    # ========== 任务-笔记双向链接 ==========
+    def create_task_from_card(self, card_id: int, title: str, description: str = None, 
+                               priority: str = 'high', category: str = 'inbox', 
+                               due_date: str = None, extract_paragraph: str = None) -> Dict[str, Any]:
+        """从知识卡片创建GTD任务，建立双向链接"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 创建GTD任务
+            cursor.execute("""
+                INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id)
+                VALUES (?, ?, ?, ?, ?, 'card', ?)
+            """, (title, description, priority, category, due_date, card_id))
+            task_id = cursor.lastrowid
+            
+            # 创建双向链接关系
+            if extract_paragraph is not None:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO card_task_relations (card_id, task_id, relation_type, extract_paragraph)
+                    VALUES (?, ?, 'extracted_from', ?)
+                """, (card_id, task_id, extract_paragraph))
+            else:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO card_task_relations (card_id, task_id, relation_type)
+                    VALUES (?, ?, 'extracted_from')
+                """, (card_id, task_id))
+            
+            conn.commit()
+            
+            # 获取创建的任务
+            cursor.execute("SELECT * FROM gtd_tasks WHERE id = ?", (task_id,))
+            return dict(cursor.fetchone())
+
+    def get_tasks_for_card(self, card_id: int) -> List[Dict[str, Any]]:
+        """获取知识卡片关联的所有任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT t.*, r.relation_type, r.extract_paragraph
+                FROM gtd_tasks t
+                JOIN card_task_relations r ON t.id = r.task_id
+                WHERE r.card_id = ?
+                ORDER BY t.created_at DESC
+            """, (card_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_cards_for_task(self, task_id: int) -> List[Dict[str, Any]]:
+        """获取任务关联的所有知识卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT k.*, r.relation_type, r.extract_paragraph
+                FROM knowledge_cards k
+                JOIN card_task_relations r ON k.id = r.card_id
+                WHERE r.task_id = ?
+                ORDER BY k.created_at DESC
+            """, (task_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def remove_card_task_relation(self, card_id: int, task_id: int) -> bool:
+        """移除卡片和任务的关联"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM card_task_relations WHERE card_id = ? AND task_id = ?
+            """, (card_id, task_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 日历事件 ==========
+    def add_calendar_event(self, title: str, description: str = None,
+                         start_time: str = None, end_time: str = None,
+                         is_all_day: bool = False, location: str = None,
+                         category: str = 'default', color: str = None,
+                         source_card_id: int = None, source_paragraph: str = None) -> Dict[str, Any]:
+        """添加日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO calendar_events (
+                    title, description, start_time, end_time, is_all_day,
+                    location, category, color, source_card_id, source_paragraph
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (title, description, start_time, end_time,
+                  1 if is_all_day else 0, location, category, color,
+                  source_card_id, source_paragraph))
+            event_id = cursor.lastrowid
+            conn.commit()
+            
+            cursor.execute("SELECT * FROM calendar_events WHERE id = ?", (event_id,))
+            return dict(cursor.fetchone())
+
+    def get_calendar_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """获取日期范围内的日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM calendar_events
+                WHERE (start_time BETWEEN ? AND ? OR end_time BETWEEN ? AND ?)
+                   OR (start_time <= ? AND end_time >= ?)
+                ORDER BY start_time ASC
+            """, (start_date, end_date, start_date, end_date, start_date, end_date))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_all_calendar_events(self) -> List[Dict[str, Any]]:
+        """获取所有日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM calendar_events
+                ORDER BY start_time ASC
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_calendar_event(self, event_id: int) -> Optional[Dict[str, Any]]:
+        """获取单个日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM calendar_events WHERE id = ?", (event_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def update_calendar_event(self, event_id: int, **kwargs) -> bool:
+        """更新日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            values = []
+            for key, value in kwargs.items():
+                if key == 'is_all_day':
+                    updates.append(f"{key} = ?")
+                    values.append(1 if value else 0)
+                else:
+                    updates.append(f"{key} = ?")
+                    values.append(value)
+            updates.append("updated_at = datetime('now')")
+            values.append(event_id)
+            
+            cursor.execute(f"UPDATE calendar_events SET {', '.join(updates)} WHERE id = ?", values)
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_calendar_event(self, event_id: int) -> bool:
+        """删除日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_events_by_source_card(self, card_id: int) -> List[Dict[str, Any]]:
+        """获取知识卡片关联的所有日历事件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM calendar_events
+                WHERE source_card_id = ?
+                ORDER BY start_time ASC
+            """, (card_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ========== 卡片双向链接 ==========
+    def add_backlink(self, source_card_id: int, target_card_id: int, link_text: str = None, link_type: str = 'manual') -> bool:
+        """添加双向链接：从 source_card 链接到 target_card"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                # 如果已存在同方向的链接，更新 link_type 和 link_text
+                cursor.execute("""
+                    SELECT id, link_type FROM card_backlinks 
+                    WHERE source_card_id = ? AND target_card_id = ?
+                """, (source_card_id, target_card_id))
+                existing = cursor.fetchone()
+                if existing:
+                    # 更新现有链接的link_type（优先保留更具体的类型）
+                    type_priority = {'supports': 5, 'contradicts': 4, 'examples': 3, 'background': 2, 'same_project': 1, 'manual': 0}
+                    old_priority = type_priority.get(existing['link_type'] or 'manual', 0)
+                    new_priority = type_priority.get(link_type or 'manual', 0)
+                    if new_priority > old_priority:
+                        cursor.execute("""
+                            UPDATE card_backlinks SET link_type = ?, link_text = ? 
+                            WHERE source_card_id = ? AND target_card_id = ?
+                        """, (link_type, link_text, source_card_id, target_card_id))
+                        conn.commit()
+                    return True
+                else:
+                    cursor.execute("""
+                        INSERT INTO card_backlinks (source_card_id, target_card_id, link_text, link_type)
+                        VALUES (?, ?, ?, ?)
+                    """, (source_card_id, target_card_id, link_text, link_type))
+                    conn.commit()
+                    return cursor.rowcount > 0
+            except:
+                return False
+
+    def remove_backlink(self, source_card_id: int, target_card_id: int) -> bool:
+        """移除双向链接"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM card_backlinks 
+                WHERE source_card_id = ? AND target_card_id = ?
+            """, (source_card_id, target_card_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_backlinks(self, card_id: int) -> List[Dict[str, Any]]:
+        """获取指向本卡片的所有反向链接（哪些卡片链接到了我）"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT k.id, k.title, k.card_type, k.created_at, r.link_text, r.link_type
+                FROM knowledge_cards k
+                JOIN card_backlinks r ON k.id = r.source_card_id
+                WHERE r.target_card_id = ?
+                ORDER BY k.created_at DESC
+            """, (card_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_forwardlinks(self, card_id: int) -> List[Dict[str, Any]]:
+        """获取从本卡片发出的所有正向链接（我链接到了哪些卡片）"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT k.id, k.title, k.card_type, k.created_at, r.link_text, r.link_type
+                FROM knowledge_cards k
+                JOIN card_backlinks r ON k.id = r.target_card_id
+                WHERE r.source_card_id = ?
+                ORDER BY k.created_at DESC
+            """, (card_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_backlink_graph(self, card_id: int, max_depth: int = 2) -> Dict[str, Any]:
+        """获取卡片的双向链接图谱（用于可视化）"""
+        # 获取当前卡片信息
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+            current = cursor.fetchone()
+            if not current:
+                return {"nodes": [], "links": []}
+            
+            nodes = [{
+                "id": current["id"],
+                "title": current["title"],
+                "type": current.get("card_type", current.get("type", "blue")),
+                "is_current": True
+            }]
+            
+            links = []
+            
+            # 获取反向链接
+            backlinks = self.get_backlinks(card_id)
+            for bl in backlinks:
+                nodes.append({
+                    "id": bl["id"],
+                    "title": bl["title"],
+                    "type": bl["card_type"],
+                    "is_current": False
+                })
+                links.append({
+                    "source": bl["id"],
+                    "target": card_id,
+                    "type": "backlink"
+                })
+            
+            # 获取正向链接
+            forwardlinks = self.get_forwardlinks(card_id)
+            for fl in forwardlinks:
+                nodes.append({
+                    "id": fl["id"],
+                    "title": fl["title"],
+                    "type": fl["card_type"],
+                    "is_current": False
+                })
+                links.append({
+                    "source": card_id,
+                    "target": fl["id"],
+                    "type": "forwardlink"
+                })
+            
+            return {
+                "nodes": nodes,
+                "links": links
+            }

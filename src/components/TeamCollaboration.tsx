@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -31,10 +31,14 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
-  Calendar
+  Calendar,
+  Brain,
+  GitBranch
 } from 'lucide-react';
 import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
+import { AuthContext } from '../contexts/authContext';
+import * as echarts from 'echarts';
 import { 
   PieChart, 
   Pie, 
@@ -527,7 +531,8 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects'>('integration');
+  const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap'>('integration');
   
   // 数据状态
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -706,8 +711,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
           id: m.id || idx + 1,
           avatar: m.avatar || '👤',
           online: m.online ?? Math.random() > 0.5,
-          contribution: m.contribution || Math.floor(Math.random() * 100)
+          contribution: m.contribution || Math.floor(Math.random() * 100),
+          permissions: m.permissions || ['read', 'write']
         })));
+
+        // 同步当前用户权限：匹配到团队成员则使用其权限
+        const matchedMember = members.find((m: any) => m.name === userInfo.name);
+        if (matchedMember && matchedMember.permissions) {
+          updatePermissions(matchedMember.permissions, matchedMember.role, matchedMember.id);
+        }
 
         // 从后端加载项目数据
         try {
@@ -774,11 +786,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
   // ========== 团队成员管理 ==========
   const handleAddMember = () => {
-    setEditingMember({ id: 0, name: '', role: '', email: '', avatar: '👤', online: false, contribution: 0 });
+    if (!hasPermission('admin') && !hasPermission('write')) {
+      toast.error('权限不足：需要管理或编辑权限才能添加成员');
+      return;
+    }
+    setEditingMember({ id: 0, name: '', role: '', email: '', avatar: '👤', online: false, contribution: 0, permissions: ['read', 'write'] });
     setIsMemberModalOpen(true);
   };
 
   const handleEditMember = (member: TeamMember) => {
+    if (!hasPermission('admin') && !hasPermission('write')) {
+      toast.error('权限不足：需要管理或编辑权限才能编辑成员');
+      return;
+    }
     setEditingMember({ ...member });
     setIsMemberModalOpen(true);
   };
@@ -789,14 +809,18 @@ const TeamCollaborationEnhanced: React.FC = () => {
     try {
       if (editingMember.id === 0) {
         // 添加新成员
-        const newMember = await teamMemberService.add(editingMember);
+        const newMember = await teamMemberService.add(editingMember, userInfo.name);
         setTeamMembers([...teamMembers, { ...newMember, id: newMember.id || Date.now() }]);
         toast.success('成员添加成功');
       } else {
         // 更新成员
-        await teamMemberService.update(editingMember.id, editingMember);
+        await teamMemberService.update(editingMember.id, editingMember, userInfo.name);
         setTeamMembers(teamMembers.map(m => m.id === editingMember.id ? editingMember : m));
         toast.success('成员更新成功');
+        // 如果修改的是自己，同步权限到 AuthContext
+        if (editingMember.name === userInfo.name && editingMember.permissions) {
+          updatePermissions(editingMember.permissions, editingMember.role, editingMember.id);
+        }
       }
       setIsMemberModalOpen(false);
       setEditingMember(null);
@@ -806,14 +830,18 @@ const TeamCollaborationEnhanced: React.FC = () => {
   };
 
   const handleDeleteMember = async (id: number) => {
+    if (!hasPermission('admin')) {
+      toast.error('权限不足：仅管理员可删除成员');
+      return;
+    }
     if (!confirm('确定要删除这个成员吗？')) return;
     
     try {
-      await teamMemberService.delete(id);
+      await teamMemberService.delete(id, userInfo.name);
       setTeamMembers(teamMembers.filter(m => m.id !== id));
       toast.success('成员删除成功');
-    } catch (err) {
-      toast.error('删除成员失败');
+    } catch (err: any) {
+      toast.error(err?.message || '删除成员失败');
     }
   };
 
@@ -855,8 +883,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     const message: CollaborationMessage = {
       id: Date.now(),
-      user: '当前用户',
-      avatar: '👤',
+      user: userInfo.name || '匿名用户',
+      avatar: userInfo.avatar || '👤',
       content: newMessage,
       timestamp: new Date().toLocaleString('zh-CN')
     };
@@ -876,8 +904,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     const reply: CollaborationMessage = {
       id: Date.now(),
-      user: '当前用户',
-      avatar: '👤',
+      user: userInfo.name || '匿名用户',
+      avatar: userInfo.avatar || '👤',
       content: replyContent,
       timestamp: new Date().toLocaleString('zh-CN')
     };
@@ -1219,6 +1247,32 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <FileCheck size={18} className="mr-2" />
             <span>项目管理</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('knowledge-graph')}
+          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+            activeTab === 'knowledge-graph'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+          }`}
+        >
+          <div className="flex items-center justify-center">
+            <GitBranch size={18} className="mr-2" />
+            <span>知识图谱</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('mindmap')}
+          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+            activeTab === 'mindmap'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+          }`}
+        >
+          <div className="flex items-center justify-center">
+            <Brain size={18} className="mr-2" />
+            <span>思维导图</span>
           </div>
         </button>
       </div>
@@ -1845,11 +1899,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 className="lg:col-span-1 space-y-4"
               >
                 <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">项目列表</h3>
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                  <h3 className="font-semibold mb-3">团队项目</h3>
+                  <div className="space-y-3 max-h-[200px] overflow-y-auto">
                     {projects.map(project => (
                       <div 
-                        key={project.id}
+                        key={`team-${project.id}`}
                         onClick={() => setSelectedProject(project)}
                         className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                           selectedProject?.id === project.id 
@@ -1887,6 +1941,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
                       </div>
                     ))}
                   </div>
+
+                  {/* 专题研究入口 */}
+                  <h3 className="font-semibold mt-4 mb-3 flex items-center">
+                    <span className="text-lg mr-1.5">📚</span>专题研究
+                  </h3>
+                  <UnifiedResearchList />
                 </div>
               </motion.div>
 
@@ -2024,6 +2084,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* 知识图谱 */}
+        {activeTab === 'knowledge-graph' && <KnowledgeGraphPanel userInfo={userInfo} />}
+        
+        {/* 思维导图 */}
+        {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>
 
       {/* 成员编辑弹窗 */}
@@ -2086,6 +2152,45 @@ const TeamCollaborationEnhanced: React.FC = () => {
               className="mr-2"
             />
             <label htmlFor="online" className="text-sm">在线状态</label>
+          </div>
+          {/* 权限设置 */}
+          <div>
+            <label className="block text-sm font-medium mb-2">权限设置</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'read', label: '查看', desc: '可查看内容' },
+                { key: 'write', label: '编辑', desc: '可编辑内容' },
+                { key: 'comment', label: '评论', desc: '可发表评论' },
+                { key: 'admin', label: '管理', desc: '完全控制权' },
+              ].map(perm => (
+                <label key={perm.key} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors
+                  ${(editingMember?.permissions || ['read', 'write']).includes(perm.key) 
+                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30' 
+                    : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                  <input
+                    type="checkbox"
+                    checked={(editingMember?.permissions || ['read', 'write']).includes(perm.key)}
+                    onChange={(e) => {
+                      setEditingMember(prev => {
+                        if (!prev) return prev;
+                        const perms = prev.permissions || ['read', 'write'];
+                        return {
+                          ...prev,
+                          permissions: e.target.checked 
+                            ? [...perms, perm.key] 
+                            : perms.filter((p: string) => p !== perm.key)
+                        };
+                      });
+                    }}
+                    className="rounded"
+                  />
+                  <div>
+                    <div className="text-sm font-medium">{perm.label}</div>
+                    <div className="text-xs text-gray-500">{perm.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
           <div className="flex justify-end space-x-2 pt-4">
             <button 
@@ -2459,6 +2564,449 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         </div>
       </EditModal>
+    </div>
+  );
+};
+
+interface KnowledgeGraphPanelProps {
+  userInfo: { id: string; name: string; avatar: string; color: string };
+}
+
+const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) => {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
+  const [cards, setCards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCards = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/knowledge/cards?limit=100');
+        const data = await res.json();
+        setCards(Array.isArray(data) ? data : (data.cards || []));
+      } catch (e) {
+        console.error('Failed to load cards:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCards();
+  }, []);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    
+    if (chartInstanceRef.current) {
+      chartInstanceRef.current.dispose();
+    }
+
+    const chart = echarts.init(chartRef.current);
+    chartInstanceRef.current = chart;
+
+    const colorMap: Record<string, string> = {
+      'blue': '#3b82f6',
+      'green': '#22c55e', 
+      'yellow': '#eab308',
+      'red': '#ef4444'
+    };
+
+    const nodes = cards.map((card: any, idx: number) => ({
+      id: String(card.id),
+      name: card.title || `卡片${card.id}`,
+      category: card.card_type || 'blue',
+      symbolSize: 40 + (card.content?.length || 0) / 50,
+      itemStyle: {
+        color: colorMap[card.card_type] || colorMap['blue']
+      }
+    }));
+
+    nodes.push({
+      id: 'user',
+      name: userInfo.name || '当前用户',
+      category: 'user',
+      symbolSize: 50,
+      itemStyle: { color: '#8b5cf6' }
+    });
+
+    const links: any[] = [];
+    for (let i = 0; i < cards.length; i++) {
+      if (i > 0 && i < cards.length) {
+        links.push({ source: String(cards[i].id), target: String(cards[Math.max(0, i-1)].id), label: '关联' });
+      }
+    }
+    const userCardIdx = Math.floor(cards.length / 2);
+    if (cards.length > 0) {
+      links.push({ source: 'user', target: String(cards[userCardIdx].id), label: '创建' });
+    }
+
+    const categories = [
+      { name: '蓝色卡片' },
+      { name: '绿色卡片' },
+      { name: '黄色卡片' },
+      { name: '红色卡片' },
+      { name: '用户' }
+    ];
+
+    const option = {
+      tooltip: { trigger: 'item', formatter: '{b}' },
+      legend: { data: categories.map(c => c.name), top: 10 },
+      series: [{
+        type: 'graph',
+        layout: 'force',
+        data: nodes.map(node => ({
+          ...node,
+          label: { show: true, fontSize: 11 }
+        })),
+        links,
+        categories,
+        roam: true,
+        forceRepulsion: 500,
+        linkDistance: 120,
+        lineStyle: { color: 'source', curveness: 0.1 }
+      }]
+    };
+
+    chart.setOption(option);
+
+    return () => {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+    };
+  }, [cards, userInfo]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold mb-2">团队知识图谱</h2>
+          <p className="text-gray-600 dark:text-gray-300">基于4色卡片构建的知识网络</p>
+        </div>
+        <button 
+          onClick={() => window.location.reload()}
+          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+        >
+          <RefreshCw size={18} className="mr-2" />
+          刷新图谱
+        </button>
+      </div>
+      
+      {loading ? (
+        <div className="text-center py-8">加载中...</div>
+      ) : (
+        <>
+          <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+            <div ref={chartRef} className="w-full h-[500px]" />
+          </div>
+          <div className="flex items-center justify-between text-sm text-gray-500">
+            <span>当前用户: {userInfo.avatar} {userInfo.name || '匿名'}</span>
+            <span>共 {cards.length} 张知识卡片</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+interface MindMapPanelProps {
+  userInfo: { id: string; name: string; avatar: string; color: string };
+}
+
+const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
+  const [cards, setCards] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCards = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
+        const data = await res.json();
+        setCards(Array.isArray(data) ? data : (data.cards || []));
+      } catch (e) {
+        console.error('Failed to load cards:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCards();
+  }, []);
+
+  const colorMap: Record<string, string> = {
+    'blue': '#3b82f6',
+    'green': '#22c55e',
+    'yellow': '#eab308',
+    'red': '#ef4444'
+  };
+
+  const buildMindMap = () => {
+    if (cards.length === 0) {
+      return {
+        id: 'root',
+        text: userInfo.name ? `${userInfo.name}的思维导图` : '团队思维导图',
+        children: [],
+        collapsed: false,
+        color: '#8b5cf6'
+      };
+    }
+
+    const byType: Record<string, any[]> = {};
+    cards.forEach(card => {
+      const type = card.card_type || 'blue';
+      if (!byType[type]) byType[type] = [];
+      byType[type].push(card);
+    });
+
+    const typeNames: Record<string, string> = {
+      'blue': '蓝色卡片',
+      'green': '绿色卡片',
+      'yellow': '黄色卡片',
+      'red': '红色卡片'
+    };
+
+    const children = Object.entries(byType).map(([type, typeCards]) => ({
+      id: `type-${type}`,
+      text: typeNames[type] || type,
+      color: colorMap[type] || '#3b82f6',
+      collapsed: false,
+      children: typeCards.slice(0, 10).map(card => ({
+        id: `card-${card.id}`,
+        text: card.title?.slice(0, 20) || `卡片${card.id}`,
+        children: [],
+        collapsed: false,
+        color: colorMap[type] || '#3b82f6'
+      }))
+    }));
+
+    return {
+      id: 'root',
+      text: userInfo.name ? `${userInfo.name}的思维导图` : '团队思维导图',
+      children,
+      collapsed: false,
+      color: '#8b5cf6'
+    };
+  };
+
+  const [root, setRoot] = useState(buildMindMap);
+  const [selectedNode, setSelectedNode] = useState<string | null>('root');
+  const [editingNode, setEditingNode] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+
+  useEffect(() => {
+    setRoot(buildMindMap());
+  }, [cards, userInfo.name]);
+
+  const nodeColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#06b6d4'];
+
+  const addChildNode = (parentId: string) => {
+    const newNode = {
+      id: `node-${Date.now()}`,
+      text: '新主题',
+      children: [],
+      collapsed: false,
+      color: nodeColors[Math.floor(Math.random() * nodeColors.length)]
+    };
+    
+    const addToParent = (node: typeof root): typeof root => {
+      if (node.id === parentId) {
+        return { ...node, children: [...node.children, newNode] };
+      }
+      return { ...node, children: node.children.map(addToParent) };
+    };
+    
+    setRoot(addToParent(root));
+  };
+
+  const deleteNode = (nodeId: string) => {
+    if (nodeId === 'root') return;
+    
+    const deleteFromTree = (node: typeof root): typeof root => ({
+      ...node,
+      children: node.children.filter(c => c.id !== nodeId).map(deleteFromTree)
+    });
+    
+    setRoot(deleteFromTree(root));
+    setSelectedNode(null);
+  };
+
+  const updateNodeText = (nodeId: string, newText: string) => {
+    const updateInTree = (node: typeof root): typeof root => {
+      if (node.id === nodeId) {
+        return { ...node, text: newText };
+      }
+      return { ...node, children: node.children.map(updateInTree) };
+    };
+    
+    setRoot(updateInTree(root));
+    setEditingNode(null);
+  };
+
+  const renderNode = (node: typeof root, isRoot: boolean = false) => {
+    const isSelected = selectedNode === node.id;
+    const isEditing = editingNode === node.id;
+
+    return (
+      <div key={node.id} className="flex flex-col items-center">
+        <div
+          onClick={() => setSelectedNode(node.id)}
+          onDoubleClick={() => { setEditingNode(node.id); setEditText(node.text); }}
+          className={`px-4 py-2 rounded-lg cursor-pointer transition-all ${
+            isSelected ? 'ring-2 ring-blue-500' : ''
+          }`}
+          style={{ backgroundColor: node.color + '20', border: `2px solid ${node.color}` }}
+        >
+          {isEditing ? (
+            <input
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onBlur={() => updateNodeText(node.id, editText)}
+              onKeyDown={(e) => e.key === 'Enter' && updateNodeText(node.id, editText)}
+              autoFocus
+              className="bg-transparent border-none outline-none text-center"
+            />
+          ) : (
+            <span className="font-medium">{node.text}</span>
+          )}
+        </div>
+        
+        {node.children.length > 0 && !node.collapsed && (
+          <div className="flex items-start space-x-4 mt-4">
+            {node.children.map(child => (
+              <div key={child.id} className="flex flex-col items-center">
+                <div className="w-0.5 h-4 bg-gray-300" />
+                <div className="mt-2">{renderNode(child)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {isSelected && !isRoot && (
+          <div className="flex space-x-2 mt-2">
+            <button
+              onClick={() => addChildNode(node.id)}
+              className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              + 子节点
+            </button>
+            <button
+              onClick={() => deleteNode(node.id)}
+              className="px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600"
+            >
+              删除
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-xl font-bold mb-2">团队思维导图</h2>
+          <p className="text-gray-600 dark:text-gray-300">基于4色卡片分类的思维导图</p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <span className="text-sm text-gray-500">
+            当前用户: {userInfo.avatar} {userInfo.name || '匿名'}
+          </span>
+          <button
+            onClick={() => addChildNode('root')}
+            className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+          >
+            <Plus size={18} className="mr-2" />
+            添加分支
+          </button>
+        </div>
+      </div>
+      
+      {loading ? (
+        <div className="text-center py-8">加载中...</div>
+      ) : (
+        <>
+          <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 min-h-[500px] overflow-auto">
+            <div className="flex justify-center">
+              {renderNode(root, true)}
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between text-sm text-gray-500">
+            <p>💡 双击节点编辑文字，点击节点添加/删除子节点</p>
+            <span>共 {cards.length} 张知识卡片</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ========== 专题研究列表组件（嵌入团队项目管理面板） ==========
+const UnifiedResearchList: React.FC = () => {
+  const [researchProjects, setResearchProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadResearch = async () => {
+      try {
+        const { researchProjectService } = await import('../services/dataService');
+        const projects = await researchProjectService.getAll();
+        setResearchProjects(projects);
+      } catch {
+        setResearchProjects([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadResearch();
+  }, []);
+
+  const colorMap: Record<string, string> = {
+    blue: 'bg-blue-100 text-blue-800 border-blue-200',
+    green: 'bg-green-100 text-green-800 border-green-200',
+    yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    red: 'bg-red-100 text-red-800 border-red-200',
+    purple: 'bg-purple-100 text-purple-800 border-purple-200',
+  };
+
+  if (loading) {
+    return <div className="text-center py-4 text-sm text-gray-400">加载中...</div>;
+  }
+
+  if (researchProjects.length === 0) {
+    return (
+      <div className="text-center py-4 text-sm text-gray-400">
+        暂无专题研究，请在 GTD → 专题研究中创建
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+      {researchProjects.map(project => (
+        <div
+          key={`research-${project.id}`}
+          onClick={() => {
+            // 导航到 GTD 中的专题研究
+            const event = new CustomEvent('navigateToResearch', { detail: { projectId: project.id } });
+            window.dispatchEvent(event);
+          }}
+          className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-750 ${
+            colorMap[project.color || 'blue'] || colorMap.blue
+          } border`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>{project.icon || '📚'}</span>
+              <span className="font-medium text-sm">{project.name}</span>
+            </div>
+            <span className="text-xs opacity-70">专题</span>
+          </div>
+          {project.description && (
+            <p className="text-xs opacity-60 mt-1 truncate">{project.description}</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 };

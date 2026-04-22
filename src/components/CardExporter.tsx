@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Download, FileText, FileSpreadsheet, FileType, Loader, ChevronDown } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, FileType, Loader, ChevronDown, Eye } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 // 定义卡片类型
 interface KnowledgeCard {
@@ -26,6 +27,7 @@ interface CardExporterProps {
   variant?: 'buttons' | 'dropdown' | 'split';
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  showPPTVPreview?: boolean;
 }
 
 const API_BASE = 'http://localhost:8000';
@@ -41,11 +43,13 @@ const CardExporter: React.FC<CardExporterProps> = ({
   onExportError,
   variant = 'buttons',
   size = 'md',
-  className = ''
+  className = '',
+  showPPTVPreview = true
 }) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportFormat, setExportFormat] = useState<'word' | 'excel'>('word');
   const [showDropdown, setShowDropdown] = useState(false);
+  const navigate = useNavigate();
 
   // 尺寸配置
   const sizeConfig = {
@@ -237,6 +241,37 @@ const CardExporter: React.FC<CardExporterProps> = ({
           )}
           <span>导出 Excel</span>
         </button>
+
+        {cards.length > 0 && (
+          <>
+            <button
+              onClick={() => navigate('/office-docs')}
+              className={`
+                flex items-center ${sizeConfig[size].gap} ${sizeConfig[size].button}
+                bg-orange-500 hover:bg-orange-600 text-white rounded-lg 
+                transition-colors
+              `}
+              title="在线查看 Excel"
+            >
+              <Eye className={sizeConfig[size].icon} />
+              <span>在线预览</span>
+            </button>
+            {showPPTVPreview && (
+              <button
+                onClick={() => navigate('/ppt-viewer')}
+                className={`
+                  flex items-center ${sizeConfig[size].gap} ${sizeConfig[size].button}
+                  bg-red-500 hover:bg-red-600 text-white rounded-lg 
+                  transition-colors
+                `}
+                title="在线查看 PPT"
+              >
+                <Eye className={sizeConfig[size].icon} />
+                <span>PPT预览</span>
+              </button>
+            )}
+          </>
+        )}
       </div>
     );
   }
@@ -296,6 +331,36 @@ const CardExporter: React.FC<CardExporterProps> = ({
                   <div className="text-xs text-gray-500">数据表格格式</div>
                 </div>
               </button>
+              {cards.length > 0 && (
+                <button
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate('/office-docs');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+                >
+                  <Eye className="w-5 h-5 text-orange-600" />
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">在线预览</div>
+                    <div className="text-xs text-gray-500">在页面中查看 Excel</div>
+                  </div>
+                </button>
+              )}
+              {cards.length > 0 && showPPTVPreview && (
+                <button
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate('/ppt-viewer');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+                >
+                  <Eye className="w-5 h-5 text-red-600" />
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">PPT预览</div>
+                    <div className="text-xs text-gray-500">在线演示文稿</div>
+                  </div>
+                </button>
+              )}
             </div>
           </>
         )}
@@ -354,6 +419,36 @@ const CardExporter: React.FC<CardExporterProps> = ({
                   <div className="text-xs text-gray-500">数据表格格式</div>
                 </div>
               </button>
+              {cards.length > 0 && (
+                <button
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate('/office-docs');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+                >
+                  <Eye className="w-5 h-5 text-orange-600" />
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">在线预览</div>
+                    <div className="text-xs text-gray-500">在页面中查看</div>
+                  </div>
+                </button>
+              )}
+              {cards.length > 0 && showPPTVPreview && (
+                <button
+                  onClick={() => {
+                    setShowDropdown(false);
+                    navigate('/ppt-viewer');
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+                >
+                  <Eye className="w-5 h-5 text-red-600" />
+                  <div>
+                    <div className="font-medium text-gray-900 dark:text-white">PPT预览</div>
+                    <div className="text-xs text-gray-500">在线演示文稿</div>
+                  </div>
+                </button>
+              )}
             </div>
           </>
         )}

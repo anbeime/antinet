@@ -19,6 +19,30 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
 
+# ==================== model_loader 直接调用 ====================
+_model_loader = None
+
+def get_model_loader():
+    """获取 model_loader 实例（直接调用 NPU，更快）"""
+    global _model_loader
+    if _model_loader is None:
+        try:
+            from models.model_loader import get_model_loader
+            _model_loader = get_model_loader("qwen2.0-7b")
+        except Exception as e:
+            logger.warning(f"model_loader 初始化失败: {e}")
+    return _model_loader
+
+def infer_with_model_loader(prompt: str, max_new_tokens: int = 512, temperature: float = 0.7) -> Optional[str]:
+    """使用 model_loader 直接调用 NPU"""
+    loader = get_model_loader()
+    if loader and loader.is_loaded:
+        try:
+            return loader.infer(prompt=prompt, max_new_tokens=max_new_tokens, temperature=temperature)
+        except Exception as e:
+            logger.error(f"model_loader 推理失败: {e}")
+    return None
+
 # ==================== 动态获取真实可用的模型 ====================
 
 async def get_genie_available_models() -> Dict[str, Dict]:
@@ -72,6 +96,12 @@ async def get_available_models() -> Dict[str, Dict]:
 # 仅保留基础模型配置，实际可用模型由 get_available_models() 动态获取
 
 AVAILABLE_MODELS = {}  # 动态获取，不使用静态配置
+
+
+@router.get("/models")
+async def list_genie_models():
+    """列出所有可用模型（兼容前端 /models 接口）"""
+    return await list_genie_models_v2()
 
 
 # ==================== 数据模型 ====================
@@ -174,7 +204,21 @@ async def check_genie_service():
     # 获取从 GenieAPIService 真实获取的模型
     available = await get_available_models()
     
+    # 检查 model_loader 状态
+    loader = get_model_loader()
+    model_loader_available = loader is not None and loader.is_loaded
+    model_loader_model = loader.model_name if loader else None
+    
+    # 前端兼容字段（扁平化）
     return {
+        "available": genie_available,
+        "ollama_available": ollama_available,
+        "loaded_models": genie_loaded,
+        "current_model": genie_current,
+        "current_model_type": "vision" if is_vision else "chat",
+        "model_count": len(genie_loaded),
+        "model_loader_available": model_loader_available,
+        "model_loader_model": model_loader_model,
         "services": {
             "genie": {
                 "available": genie_available,
@@ -183,6 +227,10 @@ async def check_genie_service():
                 "current_model": genie_current,
                 "current_model_type": "vision" if is_vision else "chat",
                 "model_count": len(genie_loaded)
+            },
+            "model_loader": {
+                "available": model_loader_available,
+                "model": model_loader_model
             }
         },
         "available_models": list(available.keys()),
@@ -207,12 +255,44 @@ async def get_loaded_model_name() -> str | None:
 
 @router.post("/chat")
 async def genie_chat(request: GenieChatRequest):
-    """通过 GenieAPIService 进行聊天（非流式）"""
+    """通过 model_loader 直接调用 NPU（优先）或 GenieAPIService"""
     available = await get_available_models()
     
     if request.model not in available:
         raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}. 可用模型: {list(available.keys())}")
 
+    # 优先使用 model_loader 直接调用 NPU（更快）
+    loader = get_model_loader()
+    if loader and loader.is_loaded:
+        try:
+            # 构建对话提示词
+            messages = request.messages
+            prompt_parts = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    prompt_parts.append(f"System: {content}")
+                elif role == "user":
+                    prompt_parts.append(f"User: {content}")
+                elif role == "assistant":
+                    prompt_parts.append(f"Assistant: {content}")
+            
+            prompt = "\n".join(prompt_parts) + "\nAssistant:"
+            
+            result = loader.infer(prompt=prompt, max_new_tokens=request.max_tokens, temperature=request.temperature)
+            if result:
+                logger.info(f"[GeniePlayground] 使用 model_loader 直接推理成功")
+                return {
+                    "success": True,
+                    "model": request.model,
+                    "response": result.strip(),
+                    "source": "model_loader"
+                }
+        except Exception as e:
+            logger.warning(f"model_loader 推理失败，回退到 HTTP: {e}")
+
+    # 回退：使用 GenieAPIService HTTP 调用
     loaded_model = await get_loaded_model_name()
     if not loaded_model:
         raise HTTPException(status_code=503, detail="GenieAPIService 不可用，请确保服务已启动 (端口 8910)")
@@ -252,22 +332,51 @@ async def genie_chat(request: GenieChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="GenieAPIService 超时")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
-
 
 @router.post("/chat/stream")
 async def genie_chat_stream(request: GenieChatRequest):
-    """通过 GenieAPIService 进行聊天（流式）"""
+    """通过 model_loader 直接调用 NPU（优先）或 GenieAPIService（流式）"""
     available = await get_available_models()
     
     if request.model not in available:
         raise HTTPException(status_code=400, detail=f"不支持的模型: {request.model}. 可用模型: {list(available.keys())}")
 
+    # 优先使用 model_loader 直接调用 NPU（非流式，转为一次性返回）
+    loader = get_model_loader()
+    if loader and loader.is_loaded:
+        try:
+            messages = request.messages
+            prompt_parts = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    prompt_parts.append(f"System: {content}")
+                elif role == "user":
+                    prompt_parts.append(f"User: {content}")
+                elif role == "assistant":
+                    prompt_parts.append(f"Assistant: {content}")
+            
+            prompt = "\n".join(prompt_parts) + "\nAssistant:"
+            
+            result = loader.infer(prompt=prompt, max_new_tokens=request.max_tokens, temperature=request.temperature)
+            if result:
+                logger.info(f"[GeniePlayground] 使用 model_loader 直接推理（流式模拟）")
+                
+                async def model_loader_stream():
+                    content = result.strip()
+                    for i in range(0, len(content), 10):
+                        chunk = content[i:i+10]
+                        yield f"data: {json.dumps({'content': chunk})}\n\n"
+                        await asyncio.sleep(0.05)
+                    yield f"data: [DONE]\n\n"
+                
+                import asyncio
+                return StreamingResponse(model_loader_stream(), media_type="text/event-stream")
+        except Exception as e:
+            logger.warning(f"model_loader 推理失败，回退到 HTTP: {e}")
+
+    # 回退：使用 GenieAPIService HTTP 流式调用
     loaded_model = await get_loaded_model_name()
     if not loaded_model:
         raise HTTPException(status_code=503, detail="GenieAPIService 不可用，请确保服务已启动 (端口 8910)")
@@ -282,7 +391,7 @@ async def genie_chat_stream(request: GenieChatRequest):
         "top_p": request.top_p,
     }
 
-async def event_generator():
+    async def event_generator():
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(

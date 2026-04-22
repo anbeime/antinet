@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
+import KnowledgeGraph from '@/components/KnowledgeGraph';
 
 interface KnowledgeCard {
   id: string;
@@ -16,10 +18,11 @@ interface KnowledgeCard {
 
 const API_BASE = 'http://localhost:8000';
 
-type TabType = 'text' | 'cards';
+type TabType = 'text' | 'cards' | 'project';
 type ThemeType = 'professional' | 'creative' | 'minimal';
 
 const PPTAnalysis: React.FC = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>('text');
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [isExporting, setIsExporting] = useState(false);
@@ -58,11 +61,18 @@ const PPTAnalysis: React.FC = () => {
 感谢大家的支持！`);
   const [pptTitle, setPptTitle] = useState('我的演示文稿');
   const [selectedTheme, setSelectedTheme] = useState<ThemeType>('professional');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selectedProject, setSelectedProject] = useState<number | null>(null);
+  const [narrativeTemplate, setNarrativeTemplate] = useState<string>('problem-analysis-solution');
+  const [projectCards, setProjectCards] = useState<any[]>([]);
+  const [projectCardsLoading, setProjectCardsLoading] = useState(false);
+  const [showGraph, setShowGraph] = useState(false);
   
   // 检查PPT服务状态
   useEffect(() => {
     checkPPTStatus();
     loadKnowledgeCards();
+    loadProjects();
   }, []);
 
   const checkPPTStatus = async () => {
@@ -88,10 +98,100 @@ const PPTAnalysis: React.FC = () => {
       const response = await fetch(`${API_BASE}/api/knowledge/cards`);
       if (response.ok) {
         const data = await response.json();
-        setCards(data);
+        // 兼容: 可能返回 {cards: [...]} 或 [...]
+        const cardList = Array.isArray(data) ? data : (data.cards || data.data || []);
+        setCards(cardList);
       }
     } catch (error) {
       console.error('加载知识卡片失败:', error);
+      setCards([]);
+    }
+  };
+
+  // 加载专题列表
+  const loadProjects = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/research/projects`);
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data || []);
+      }
+    } catch (error) {
+      console.error('加载专题失败:', error);
+    }
+  };
+
+  // 加载专题下的卡片
+  const loadProjectCards = async (projectId: number) => {
+    setProjectCardsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/research/projects/${projectId}/cards`);
+      if (response.ok) {
+        const data = await response.json();
+        setProjectCards(Array.isArray(data) ? data : []);
+      } else {
+        setProjectCards([]);
+      }
+    } catch (error) {
+      console.error('加载专题卡片失败:', error);
+      setProjectCards([]);
+    } finally {
+      setProjectCardsLoading(false);
+    }
+  };
+
+  // 选择专题时加载卡片
+  useEffect(() => {
+    if (selectedProject) {
+      loadProjectCards(selectedProject);
+      setShowGraph(false);
+    } else {
+      setProjectCards([]);
+    }
+  }, [selectedProject]);
+
+  // 从专题生成PPT
+  const generatePPTFromProject = async () => {
+    if (!selectedProject) {
+      toast.error('请选择专题');
+      return;
+    }
+    
+    setIsExporting(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/ppt/export/collection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProject,
+          narrative_template: narrativeTemplate,
+          title: projects.find(p => p.id === selectedProject)?.name || '专题报告'
+        })
+      });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        const fileName = `${projects.find(p => p.id === selectedProject)?.name || '专题'}.pptx`;
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast.success('PPT生成成功！');
+      } else {
+        const error = await response.json();
+        toast.error(`生成失败: ${error.detail || '未知错误'}`);
+      }
+    } catch (error) {
+      console.error('生成PPT失败:', error);
+      toast.error('生成PPT失败，请检查后端服务');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -123,17 +223,29 @@ const PPTAnalysis: React.FC = () => {
         const blob = await response.blob();
         const fileName = `${pptTitle}.pptx`;
         
-        // 直接下载，不显示预览弹窗
-        const url = window.URL.createObjectURL(blob);
+        // 保存到 sessionStorage 供预览页面使用（创建单独的URL，不销毁）
+        const previewUrl = URL.createObjectURL(blob);
+        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
+        sessionStorage.setItem('lastPPTFileName', fileName);
+        
+        // 创建下载链接（单独的URL）
+        const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = downloadUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
         
-        toast.success('PPT已生成并下载！');
+        // 延迟销毁下载URL，保留预览URL
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+        
+        toast.success('PPT已生成！', {
+          action: {
+            label: '在线查看',
+            onClick: () => navigate('/ppt-viewer')
+          }
+        });
       } else {
         const error = await response.json();
         toast.error(`生成失败: ${error.detail || '未知错误'}`);
@@ -184,17 +296,29 @@ const PPTAnalysis: React.FC = () => {
         const blob = await response.blob();
         const fileName = 'Antinet 四色卡片分析报告.pptx';
         
-        // 直接下载，不显示预览弹窗
-        const url = window.URL.createObjectURL(blob);
+        // 保存到 sessionStorage 供预览页面使用（创建单独的URL，不销毁）
+        const previewUrl = URL.createObjectURL(blob);
+        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
+        sessionStorage.setItem('lastPPTFileName', fileName);
+        
+        // 创建下载链接（单独的URL）
+        const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = downloadUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
         
-        toast.success('PPT已导出并下载！');
+        // 延迟销毁下载URL，保留预览URL
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
+        
+        toast.success('PPT已导出！', {
+          action: {
+            label: '在线查看',
+            onClick: () => navigate('/ppt-viewer')
+          }
+        });
       } else {
         const error = await response.json();
         toast.error(`导出失败: ${error.detail || '未知错误'}`);
@@ -281,14 +405,24 @@ const PPTAnalysis: React.FC = () => {
               <FileText className="w-4 h-4" />
               <span>卡片导出</span>
             </button>
+            <button
+              onClick={() => setActiveTab('project')}
+              className={`flex-1 flex items-center justify-center space-x-2 py-2 px-4 rounded-md transition-all ${
+                activeTab === 'project'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+            >
+              <Presentation className="w-4 h-4" />
+              <span>专题导出</span>
+            </button>
           </div>
-        </motion.div>
+</motion.div>
 
         {/* Content based on active tab */}
         {activeTab === 'text' ? (
           // 文本转PPT面板
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Panel - Input */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -306,7 +440,7 @@ const PPTAnalysis: React.FC = () => {
                 />
               </div>
 
-              {/* Theme Selection - 使用新的主题选择器 */}
+              {/* Theme Selection */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
                 <ThemeSelector
                   selectedTheme={selectedTheme}
@@ -323,15 +457,8 @@ const PPTAnalysis: React.FC = () => {
                   className="w-full h-96 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm resize-none"
                   placeholder="输入内容，支持 Markdown 格式..."
                 />
-                <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
-                  <div><code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">#</code> 一级标题（标题页）</div>
-                  <div><code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">##</code> 二级标题（新页面）</div>
-                  <div><code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">-</code> 或 <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">*</code> 无序列表</div>
-                  <div><code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">1.</code> 有序列表</div>
-                </div>
               </div>
 
-              {/* Generate Button */}
               <button
                 onClick={generatePPTFromText}
                 disabled={!textContent.trim() || isExporting || pptAvailable === false}
@@ -342,67 +469,73 @@ const PPTAnalysis: React.FC = () => {
               </button>
             </motion.div>
 
-            {/* Right Panel - Preview */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700"
             >
               <h3 className="text-lg font-semibold mb-6 flex items-center">
-                <Presentation className="w-5 h-5 mr-2 text-purple-500" />
+                <Eye className="w-5 h-5 mr-2 text-purple-500" />
                 使用说明
               </h3>
-
-              <div className="space-y-6">
+              <div className="space-y-4">
                 <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-4">
-                  <h4 className="font-semibold text-purple-700 dark:text-purple-300 mb-3">
-                    ✨ 功能特点
-                  </h4>
-                  <ul className="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                    <li>• 支持 Markdown 语法，快速排版</li>
-                    <li>• 三种精美主题，适应不同场景</li>
-                    <li>• 自动生成专业布局</li>
+                  <h4 className="font-semibold text-purple-700 dark:text-purple-300 mb-3">✨ 智能生成</h4>
+                  <ul className="text-sm space-y-1 text-gray-700 dark:text-gray-300">
+                    <li>• 输入内容即可生成完整PPT</li>
+                    <li>• 支持Markdown语法</li>
+                    <li>• 多种主题风格可选</li>
                     <li>• 秒级生成，即时下载</li>
                   </ul>
                 </div>
-
                 <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">
-                    📝 Markdown 语法
-                  </h4>
+                  <h4 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">📝 Markdown 语法</h4>
                   <div className="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                    <div className="flex items-start space-x-2">
-                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">#</code>
-                      <span>一级标题 → 创建标题页</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">##</code>
-                      <span>二级标题 → 创建新页面</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">###</code>
-                      <span>三级标题 → 页面小标题</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">-</code>
-                      <span>无序列表（项目符号）</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">1.</code>
-                      <span>有序列表（编号）</span>
-                    </div>
+                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">#</code><span>一级标题</span></div>
+                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">##</code><span>二级标题</span></div>
+                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">-</code><span>无序列表</span></div>
                   </div>
                 </div>
-
-                <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-4">
-                  <h4 className="font-semibold text-green-700 dark:text-green-300 mb-3">
-                    🎯 主题说明
-                  </h4>
-                  <ul className="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                    <li><strong>Professional:</strong> 适合商务汇报、项目提案</li>
-                    <li><strong>Creative:</strong> 适合产品发布、市场营销</li>
-                    <li><strong>Minimal:</strong> 适合技术分享、学术报告</li>
-                  </ul>
+              </div>
+            </motion.div>
+          </div>
+        ) : activeTab === 'project' ? (
+          // 专题导出面板
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center"><Presentation className="w-5 h-5 mr-2 text-purple-500" />选择专题</h3>
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {projects.length === 0 ? <p className="text-gray-500 text-center py-4">暂无专题</p> : projects.map(p => (
+                    <div key={p.id} onClick={() => setSelectedProject(p.id)} className={`p-4 rounded-lg cursor-pointer border-2 ${selectedProject === p.id ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-purple-300'}`}>
+                      <div className="flex items-center space-x-3"><span className="text-2xl">{p.icon || '📁'}</span><div><p className="font-medium">{p.name}</p><p className="text-sm text-gray-500">{p.description || '无描述'}</p></div></div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center"><Sparkles className="w-5 h-5 mr-2 text-purple-500" />叙事模板</h3>
+                <div className="space-y-2">
+                  {[{id:'problem-analysis-solution',name:'问题-分析-方案'},{id:'timeline',name:'时间线'},{id:'compare-contrast',name:'对比分析'},{id:'swot-analysis',name:'SWOT分析'}].map(t => (
+                    <label key={t.id} className={`flex items-center p-3 rounded-lg cursor-pointer ${narrativeTemplate === t.id ? 'bg-purple-50 border-2 border-purple-500' : 'bg-gray-50 border-2 border-transparent'}`}>
+                      <input type="radio" name="nt" value={t.id} checked={narrativeTemplate === t.id} onChange={(e) => setNarrativeTemplate(e.target.value)} className="mr-3" />
+                      <div><p className="font-medium">{t.name}</p></div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <button onClick={generatePPTFromProject} disabled={!selectedProject || isExporting} className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 rounded-lg disabled:opacity-50">
+                {isExporting ? <Loader className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                <span>{isExporting ? '生成中...' : '从专题生成PPT'}</span>
+              </button>
+            </motion.div>
+            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center"><Eye className="w-5 h-5 mr-2 text-purple-500" />功能说明</h3>
+                <div className="space-y-4">
+                  <div className="bg-blue-50 rounded-lg p-4"><h4 className="font-semibold text-blue-700 mb-2">📚 专题导出</h4><p className="text-sm">从专题一键生成完整PPT</p></div>
+                  <div className="bg-green-50 rounded-lg p-4"><h4 className="font-semibold text-green-700 mb-2">🎯 叙事模板</h4><p className="text-sm">问题-分析-方案/时间线/对比/SWOT</p></div>
+                  <div className="bg-purple-50 rounded-lg p-4"><h4 className="font-semibold text-purple-700 mb-2">✨ 自动生成</h4><p className="text-sm">封面→目录→章节→内容→总结</p></div>
                 </div>
               </div>
             </motion.div>
@@ -449,7 +582,7 @@ const PPTAnalysis: React.FC = () => {
                         className={`p-3 rounded-lg cursor-pointer transition-all ${
                           selectedCards.has(card.id)
                             ? 'bg-purple-50 dark:bg-purple-900/30 border-2 border-purple-500'
-                            : 'bg-gray-50 dark:bg-gray-700/50 border border-transparent hover:border-purple-300'
+                            : 'bg-gray-50 dark:bg-gray-700/50 border-2 border-transparent hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-start space-x-3">
@@ -459,11 +592,19 @@ const PPTAnalysis: React.FC = () => {
                             onChange={() => toggleCardSelection(card.id)}
                             className="mt-1"
                           />
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{card.title}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                              {card.content}
-                            </p>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                card.category === '事实' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                                card.category === '解释' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                                card.category === '风险' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300'
+                              }`}>
+                                {card.category}
+                              </span>
+                              <span className="font-medium truncate">{card.title}</span>
+                            </div>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{card.content}</p>
                           </div>
                         </div>
                       </motion.div>
@@ -472,40 +613,74 @@ const PPTAnalysis: React.FC = () => {
                 </div>
               </div>
 
-              {/* Export Button */}
               <button
                 onClick={exportCardsToPPT}
                 disabled={selectedCards.size === 0 || isExporting || pptAvailable === false}
-                className="w-full flex items-center justify-center space-x-2 bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               >
                 {isExporting ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                <span>{isExporting ? '导出中...' : '导出为PPT'}</span>
+                <span>{isExporting ? '导出中...' : `导出 ${selectedCards.size} 张卡片为PPT`}</span>
               </button>
             </motion.div>
 
-            {/* Right Panel - Preview */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700"
             >
-              <h3 className="text-lg font-semibold mb-6 flex items-center">
-                <Presentation className="w-5 h-5 mr-2 text-purple-500" />
-                PPT预览
-              </h3>
+              {/* Export Summary */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-semibold mb-4 flex items-center">
+                  <CheckCircle className="w-5 h-5 mr-2 text-green-500" />
+                  导出预览
+                </h3>
 
-              <div className="space-y-6">
-                {/* Export Info */}
-                <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-4">
-                  <h4 className="font-semibold text-purple-700 dark:text-purple-300 mb-2">
-                    导出信息
-                  </h4>
-                  <div className="text-sm space-y-1">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">卡片数量:</span>
+                <div className="space-y-4">
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                    <h4 className="font-medium mb-3">卡片统计</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="text-center p-2 bg-blue-50 dark:bg-blue-900/30 rounded">
+                        <div className="text-2xl font-bold text-blue-600">
+                          {selectedCards.size === 0 ? 0 : cards.filter(c => selectedCards.has(c.id) && c.category === '事实').length}
+                        </div>
+                        <div className="text-xs text-gray-500">事实卡片</div>
+                      </div>
+                      <div className="text-center p-2 bg-green-50 dark:bg-green-900/30 rounded">
+                        <div className="text-2xl font-bold text-green-600">
+                          {selectedCards.size === 0 ? 0 : cards.filter(c => selectedCards.has(c.id) && c.category === '解释').length}
+                        </div>
+                        <div className="text-xs text-gray-500">解释卡片</div>
+                      </div>
+                      <div className="text-center p-2 bg-red-50 dark:bg-red-900/30 rounded">
+                        <div className="text-2xl font-bold text-red-600">
+                          {selectedCards.size === 0 ? 0 : cards.filter(c => selectedCards.has(c.id) && c.category === '风险').length}
+                        </div>
+                        <div className="text-xs text-gray-500">风险卡片</div>
+                      </div>
+                      <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-900/30 rounded">
+                        <div className="text-2xl font-bold text-yellow-600">
+                          {selectedCards.size === 0 ? 0 : cards.filter(c => selectedCards.has(c.id) && c.category === '行动').length}
+                        </div>
+                        <div className="text-xs text-gray-500">行动卡片</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-4">
+                    <h4 className="font-medium mb-2">生成内容</h4>
+                    <ul className="text-sm space-y-1 text-gray-700 dark:text-gray-300">
+                      <li>• 自动生成封面页和目录页</li>
+                      <li>• 每张卡片生成独立页面</li>
+                      <li>• 自动分类和颜色标注</li>
+                      <li>• 包含总结页</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 dark:text-gray-400">选中卡片:</span>
                       <span className="font-medium">{selectedCards.size}</span>
                     </div>
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center mt-2">
                       <span className="text-gray-600 dark:text-gray-400">幻灯片数:</span>
                       <span className="font-medium">{selectedCards.size + 2}</span>
                     </div>
@@ -514,34 +689,34 @@ const PPTAnalysis: React.FC = () => {
               </div>
             </motion.div>
           </div>
-)}
+        )}
 
         {/* 其他在线查看入口 */}
         <div className="mt-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <button 
+            <button
               onClick={() => window.open('http://localhost:3000/office-docs', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
               <FileSpreadsheet className="w-4 h-4 text-green-600" />
               <span className="text-green-700 dark:text-green-400">在线表格</span>
             </button>
-            <button 
+            <button
               onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
             >
               <FileText className="w-4 h-4 text-red-600" />
               <span className="text-red-700 dark:text-red-400">PDF查看器</span>
             </button>
-            <button 
+            <button
               onClick={() => window.open('http://localhost:3000/report-automation', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors text-sm"
             >
               <Sparkles className="w-4 h-4 text-purple-600" />
               <span className="text-purple-700 dark:text-purple-400">报表生成</span>
             </button>
-            <button 
+            <button
               onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
             >

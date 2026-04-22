@@ -86,24 +86,27 @@ export const teamMemberService = {
   },
 
   // 添加团队成员
-  add: async (member: Omit<TeamMember, 'id'>): Promise<TeamMember> => {
-    return apiCall<TeamMember>('/team-members', {
+  add: async (member: Omit<TeamMember, 'id'>, actor?: string): Promise<TeamMember> => {
+    const params = actor ? `?actor=${encodeURIComponent(actor)}` : '';
+    return apiCall<TeamMember>(`/team-members${params}`, {
       method: 'POST',
       body: JSON.stringify(member),
     });
   },
 
   // 更新团队成员
-  update: async (id: number, member: Partial<TeamMember>): Promise<void> => {
-    return apiCall<void>(`/team-members/${id}`, {
+  update: async (id: number, member: Partial<TeamMember>, actor?: string): Promise<void> => {
+    const params = actor ? `?actor=${encodeURIComponent(actor)}` : '';
+    return apiCall<void>(`/team-members/${id}${params}`, {
       method: 'PUT',
       body: JSON.stringify(member),
     });
   },
 
   // 删除团队成员
-  delete: async (id: number): Promise<void> => {
-    return apiCall<void>(`/team-members/${id}`, {
+  delete: async (id: number, actor?: string): Promise<void> => {
+    const params = actor ? `?actor=${encodeURIComponent(actor)}` : '';
+    return apiCall<void>(`/team-members/${id}${params}`, {
       method: 'DELETE',
     });
   },
@@ -223,6 +226,8 @@ export interface GtdTask {
   is_completed?: boolean;
   reminder_enabled?: boolean;
   remind_at?: string;
+  source_type?: string;  // 'card' | 'project' | 'meeting' | null
+  source_id?: number;    // 来源对象ID
 }
 
 export const gtdTaskService = {
@@ -465,5 +470,88 @@ export const projectService = {
     return apiCall<void>(`/team-projects/${id}`, {
       method: 'DELETE',
     });
+  },
+};
+
+// ========== 权限检查API ==========
+export const permissionService = {
+  // 检查成员权限
+  check: async (memberId: number, permission: string): Promise<{has_permission: boolean}> => {
+    return apiCall<{has_permission: boolean}>('/check-permission', {
+      method: 'POST',
+      body: JSON.stringify({ member_id: memberId, permission }),
+    });
+  },
+};
+
+// ========== 审计日志API ==========
+export interface AuditLog {
+  id?: number;
+  timestamp?: string;
+  event_type: string;
+  actor: string;
+  resource: string;
+  action: string;
+  result?: string;
+  details?: string;
+}
+
+export const auditLogService = {
+  // 获取审计日志
+  getLogs: async (params?: { limit?: number; event_type?: string; actor?: string }): Promise<AuditLog[]> => {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.event_type) query.set('event_type', params.event_type);
+    if (params?.actor) query.set('actor', params.actor);
+    return apiCall<AuditLog[]>(`/audit-logs?${query.toString()}`);
+  },
+};
+
+// ========== 专题研究扩展服务（统计+工作流） ==========
+export const researchStatsService = {
+  // 获取专题统计
+  getStats: async (projectId: number): Promise<{
+    cards: Record<string, number>;
+    total_cards: number;
+    tasks: { total: number; completed: number; pending: number };
+    task_progress: number;
+    calendar_events: number;
+    backlinks: number;
+  }> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/stats`);
+    if (!response.ok) throw new Error('获取专题统计失败');
+    return response.json();
+  },
+
+  // 获取专题日历事件
+  getCalendarEvents: async (projectId: number): Promise<any[]> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/calendar-events`);
+    if (!response.ok) throw new Error('获取专题日历事件失败');
+    return response.json();
+  },
+
+  // 获取专题工作流概览
+  getWorkflow: async (projectId: number): Promise<{
+    project: ResearchProject;
+    cards: any[];
+    tasks: any[];
+    unconverted_cards: any[];
+    calendar_events: any[];
+    backlinks: any[];
+  }> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/workflow`);
+    if (!response.ok) throw new Error('获取专题工作流失败');
+    return response.json();
+  },
+
+  // 获取统一项目列表
+  getUnifiedProjects: async (): Promise<{
+    research_projects: any[];
+    team_projects: any[];
+    total: number;
+  }> => {
+    const response = await fetch(`${RESEARCH_API_BASE}/unified-projects`);
+    if (!response.ok) throw new Error('获取统一项目列表失败');
+    return response.json();
   },
 };

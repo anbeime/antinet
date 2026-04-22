@@ -64,7 +64,7 @@ const ReportAutomation: React.FC = () => {
     setResults(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/report/generate', {
+      const response = await fetch('http://localhost:8000/api/automation/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

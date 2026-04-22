@@ -145,16 +145,31 @@ async def get_team_members():
 
 
 @router.post("/team-members", response_model=TeamMember)
-async def add_team_member(member: TeamMember):
-    """添加团队成员"""
+async def add_team_member(member: TeamMember, actor: Optional[str] = None):
+    """添加团队成员（需要admin权限）"""
     try:
         db = get_db_manager()
+        # 权限检查：admin才能添加成员
+        if actor:
+            actor_member = next((m for m in db.get_all_team_members() if m.get('name') == actor), None)
+            if actor_member and 'admin' not in (actor_member.get('permissions') or []):
+                raise HTTPException(status_code=403, detail="需要admin权限才能添加成员")
+        
         new_member = db.add_team_member(
             name=member.name,
             role=member.role,
             avatar=member.avatar,
             email=member.email,
-            contribution=member.contribution
+            contribution=member.contribution,
+            permissions=member.permissions
+        )
+        # 审计日志
+        db.add_audit_log(
+            event_type='team_member',
+            actor=actor or 'system',
+            resource=f'team_member:{new_member.get("id")}',
+            action='create',
+            details=f'添加成员: {member.name}'
         )
         return new_member
     except Exception as e:
@@ -163,20 +178,41 @@ async def add_team_member(member: TeamMember):
 
 
 @router.put("/team-members/{member_id}")
-async def update_team_member(member_id: int, member: TeamMember):
-    """更新团队成员信息"""
+async def update_team_member(member_id: int, member: TeamMember, actor: Optional[str] = None):
+    """更新团队成员信息（admin可修改任何成员，非admin只能修改自己基本信息）"""
     try:
         db = get_db_manager()
-        success = db.update_team_member(
-            member_id,
-            name=member.name,
-            role=member.role,
-            avatar=member.avatar,
-            contribution=member.contribution,
-            email=member.email
-        )
+        # 权限检查：修改权限字段需要admin
+        if member.permissions is not None and actor:
+            actor_member = next((m for m in db.get_all_team_members() if m.get('name') == actor), None)
+            if actor_member and 'admin' not in (actor_member.get('permissions') or []):
+                raise HTTPException(status_code=403, detail="需要admin权限才能修改成员权限")
+        
+        update_kwargs = {}
+        if member.name is not None:
+            update_kwargs['name'] = member.name
+        if member.role is not None:
+            update_kwargs['role'] = member.role
+        if member.avatar is not None:
+            update_kwargs['avatar'] = member.avatar
+        if member.contribution is not None:
+            update_kwargs['contribution'] = member.contribution
+        if member.email is not None:
+            update_kwargs['email'] = member.email
+        if member.permissions is not None:
+            update_kwargs['permissions'] = member.permissions
+
+        success = db.update_team_member(member_id, **update_kwargs)
         if not success:
             raise HTTPException(status_code=404, detail="成员不存在")
+        # 审计日志
+        db.add_audit_log(
+            event_type='team_member',
+            actor=actor or 'system',
+            resource=f'team_member:{member_id}',
+            action='update',
+            details=f'更新成员信息: {update_kwargs}'
+        )
         return {"success": True, "message": "更新成功"}
     except HTTPException:
         raise
@@ -186,13 +222,34 @@ async def update_team_member(member_id: int, member: TeamMember):
 
 
 @router.delete("/team-members/{member_id}")
-async def delete_team_member(member_id: int):
-    """删除团队成员"""
+async def delete_team_member(member_id: int, actor: Optional[str] = None):
+    """删除团队成员（需要admin权限）"""
     try:
         db = get_db_manager()
+        # 权限检查：admin才能删除成员
+        if actor:
+            actor_member = next((m for m in db.get_all_team_members() if m.get('name') == actor), None)
+            if actor_member and 'admin' not in (actor_member.get('permissions') or []):
+                raise HTTPException(status_code=403, detail="需要admin权限才能删除成员")
+        
+        # 检查是否是最后一个 admin
+        members = db.get_all_team_members()
+        admin_count = sum(1 for m in members if 'admin' in (m.get('permissions') or []))
+        target = next((m for m in members if m.get('id') == member_id), None)
+        if target and 'admin' in (target.get('permissions') or []) and admin_count <= 1:
+            raise HTTPException(status_code=400, detail="不能删除最后一个管理员")
+
         success = db.delete_team_member(member_id)
         if not success:
             raise HTTPException(status_code=404, detail="成员不存在")
+        # 审计日志
+        db.add_audit_log(
+            event_type='team_member',
+            actor=actor or 'system',
+            resource=f'team_member:{member_id}',
+            action='delete',
+            details=f'删除成员'
+        )
         return {"success": True, "message": "删除成功"}
     except HTTPException:
         raise
@@ -512,16 +569,67 @@ async def update_team_project(project_id: int, project: Dict[str, Any]):
 
 
 @router.delete("/team-projects/{project_id}")
-async def delete_team_project(project_id: int):
+async def delete_team_project(project_id: int, actor: Optional[str] = None):
     """删除团队项目"""
     try:
         db = get_db_manager()
         success = db.delete_team_project(project_id)
         if not success:
             raise HTTPException(status_code=404, detail="项目不存在")
+        db.add_audit_log(
+            event_type='team_project',
+            actor=actor or 'system',
+            resource=f'team_project:{project_id}',
+            action='delete',
+            details='删除团队项目'
+        )
         return {"success": True, "message": "删除成功"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"删除团队项目失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 权限检查API ==========
+class PermissionCheckRequest(BaseModel):
+    """权限检查请求"""
+    member_id: int
+    permission: str
+
+@router.post("/check-permission")
+async def check_permission(data: PermissionCheckRequest):
+    """检查成员权限"""
+    try:
+        db = get_db_manager()
+        has_perm = db.check_member_permission(data.member_id, data.permission)
+        return {"has_permission": has_perm, "member_id": data.member_id, "permission": data.permission}
+    except Exception as e:
+        logger.error(f"权限检查失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 审计日志API ==========
+@router.get("/audit-logs")
+async def get_audit_logs(limit: int = 50, event_type: Optional[str] = None,
+                         actor: Optional[str] = None):
+    """获取审计日志"""
+    try:
+        db = get_db_manager()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM audit_logs WHERE 1=1"
+            params = []
+            if event_type:
+                query += " AND event_type = ?"
+                params.append(event_type)
+            if actor:
+                query += " AND actor = ?"
+                params.append(actor)
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"获取审计日志失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

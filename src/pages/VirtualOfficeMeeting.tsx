@@ -732,7 +732,7 @@ const VirtualOfficeMeeting: React.FC = () => {
 
   // 保存到任务归档
   const saveToArchive = async () => {
-    if (!meetingResult) return;
+    if (!meetingResult || meetingResult.length === 0) return;
     
     const summary = meetingResult[meetingResult.length - 1]?.summary || '';
     const decision = meetingResult[meetingResult.length - 1]?.decision || '';
@@ -752,7 +752,7 @@ ${decision}
 ${actionItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}
 
 【详细讨论】
-${meetingResult.slice(0, -1).map((round: any, i: number) => 
+${(meetingResult || []).slice(0, -1).map((round: any, i: number) => 
   `--- 第${i + 1}轮 (${round.theme}) ---\n${round.speeches?.map((s: any) => `【${s.agent_name}】${s.speech}`).join('\n')}`
 ).join('\n\n')}`;
 
@@ -1234,7 +1234,7 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
                   <div className="flex items-center gap-2">
                     <Crown className="w-4 h-4 text-yellow-500" />
                     <span className="text-white font-medium text-sm">会议纪要</span>
-                    <span className="text-gray-500 text-xs">· {meetingResult.length} 轮讨论</span>
+                    <span className="text-gray-500 text-xs">· {(meetingResult || []).length} 轮讨论</span>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1258,7 +1258,7 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
 
                 {/* 讨论轮次 */}
                 <div className="p-4 space-y-3">
-                  {meetingResult.map((round: any) => (
+                  {(meetingResult || []).map((round: any) => (
                     <div key={round.round} className="rounded-lg border border-gray-700/40 overflow-hidden">
                       {/* 轮次标题 */}
                       <button
@@ -1273,7 +1273,7 @@ ${meetingResult.slice(0, -1).map((round: any, i: number) =>
                             {round.round}
                           </div>
                           <span className="text-white text-sm font-medium">{round.title}</span>
-                          <span className="text-gray-500 text-xs">{round.discussions.length} 条发言</span>
+                          <span className="text-gray-500 text-xs">{(round.discussions || []).length} 条发言</span>
                         </div>
                         {expandedRounds.has(round.round)
                           ? <ChevronUp className="w-4 h-4 text-gray-500" />

@@ -8,6 +8,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Callable
 from enum import Enum
 import logging
@@ -24,6 +25,23 @@ router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"
 
 # 数据库管理器
 db_manager = None
+
+# 知识图谱管理器
+from routes import knowledge_graph, conversation_context
+from routes import vector_search, auto_card
+kg_manager = None
+context_manager = None
+
+# 新增：启用对话链功能
+ENABLE_CONTEXT_CHAIN = True
+
+# 对话链管理器
+def set_db_manager(manager):
+    """设置数据库管理器"""
+    global db_manager, kg_manager
+    db_manager = manager
+    knowledge_graph.set_db_manager(manager)
+    logger.info("[Chat] 知识图谱模块已连接")
 
 # 技能注册表
 skill_registry: Dict[str, Dict[str, Any]] = {}
@@ -148,6 +166,9 @@ class ChatResponse(BaseModel):
     response: str
     scene_type: SceneType = SceneType.GENERAL
     cards: List[CardReference] = Field(default_factory=list)
+    kg_entities: List[Dict[str, Any]] = Field(default_factory=list)
+    chain_id: Optional[str] = None
+    card_suggestions: List[Dict[str, Any]] = Field(default_factory=list)
     skill_result: Optional[SkillResult] = None
     image_analysis: Optional[ImageAnalysisResult] = None
     suggested_questions: List[str] = Field(default_factory=list)
@@ -375,10 +396,37 @@ TTS_VOICES = {
 }
 
 
-# ============ 场景检测 ============
+# ============ 场景检测 (LLM+正则混合) ============
+
+async def detect_scene_llm(query: str, call_llm) -> SceneType:
+    """使用LLM进行意图识别，补充正则匹配"""
+    prompt = f"""请判断用户意图属于以下哪种场景（只需返回场景名称）：
+- CARD_SEARCH: 搜索知识卡片、知识库
+- CARD_CREATE: 创建新的知识卡片
+- MINDMAP: 思维导图相关
+- KG_QUERY: 知识图谱查询
+- CHAT: 普通聊天对话
+- PPT_CREATE: 生成PPT
+- ANALYSIS: 数据分析
+
+用户问题：{query[:100]}
+只需返回最匹配的场景名称，不要其他内容。"""
+    
+    try:
+        result = await call_llm("你是意图识别助手。", prompt)
+        if result:
+            result = result.strip().upper()
+            for st in SceneType:
+                if st.name in result or st.value in result:
+                    return st
+    except Exception as e:
+        logger.warning(f"[Scene] LLM识别失败: {e}")
+    
+    return SceneType.GENERAL
+
 
 def detect_scene(query: str) -> SceneType:
-    """检测用户查询的场景类型"""
+    """检测用户查询的场景类型（正则优先）"""
     query_lower = query.lower()
     
     for scene_type, patterns in SCENE_PATTERNS.items():
@@ -450,6 +498,77 @@ def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
     except Exception as e:
         logger.error(f"搜索卡片失败: {e}")
         return []
+
+
+# ============ 混合搜索：知识卡片 + 知识图谱 ============
+
+@dataclass
+class HybridSearchResult:
+    """混合搜索结果"""
+    cards: List[CardReference]
+    kg_entities: List[Any]
+    context_summary: str
+
+
+def hybrid_search_all(query: str, limit: int = 5) -> HybridSearchResult:
+    """
+    混合搜索：同时搜索知识卡片和知识图谱
+    返回统一格式的结果
+    """
+    # 搜索知识卡片
+    cards = search_cards_semantic(query, limit)
+    
+    # 搜索知识图谱
+    kg_entities = []
+    try:
+        kg_entities = knowledge_graph.search_entities(query, limit)
+    except Exception as e:
+        logger.warning(f"知识图谱搜索失败: {e}")
+    
+    # 构建上下文摘要
+    summary_parts = []
+    if cards:
+        summary_parts.append(f"📋 找到 {len(cards)} 张知识卡片")
+    if kg_entities:
+        summary_parts.append(f"🔗 找到 {len(kg_entities)} 个知识实体")
+    
+    context_summary = " | ".join(summary_parts) if summary_parts else "未找到相关内容"
+    
+    return HybridSearchResult(
+        cards=cards,
+        kg_entities=kg_entities,
+        context_summary=context_summary
+    )
+
+
+def generate_hybrid_response(query: str, result: HybridSearchResult) -> str:
+    """生成混合搜索响应"""
+    parts = []
+    
+    # 知识卡片结果
+    if result.cards:
+        parts.append(f"📋 **知识卡片** (共 {len(result.cards)} 张):")
+        for i, card in enumerate(result.cards[:3], 1):
+            type_emoji = {"blue": "📘", "green": "📗", "yellow": "📙", "red": "📕"}.get(card.card_type, "📄")
+            parts.append(f"  {type_emoji} {card.title}")
+            parts.append(f"     {card.content[:80]}...")
+        if len(result.cards) > 3:
+            parts.append(f"  还有 {len(result.cards)-3} 张...")
+    
+    # 知识图谱结果
+    if result.kg_entities:
+        parts.append(f"\n🔗 **知识图谱** (共 {len(result.kg_entities)} 个实体):")
+        for i, entity in enumerate(result.kg_entities[:3], 1):
+            parts.append(f"  • {entity.name} ({entity.entity_type})")
+            if entity.description:
+                parts.append(f"    {entity.description[:60]}")
+        if len(result.kg_entities) > 3:
+            parts.append(f"  还有 {len(result.kg_entities)-3} 个...")
+    
+    if not result.cards and not result.kg_entities:
+        return f"关于「{query}」，我在知识库中没有找到相关信息。"
+    
+    return "\n".join(parts)
 
 
 def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str]:
@@ -925,18 +1044,19 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["response"] = "深度思考服务暂时不可用，请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。\n\n安装方法：\n1. 安装 Ollama: https://ollama.ai\n2. 运行: ollama pull gemma4"
             
         else:
-            # 通用对话 - 搜索相关卡片，生成有意义的回复
-            cards = search_cards_semantic(query, limit=5)
-            if cards:
-                response_data["cards"] = cards[:3]
-                # 基于卡片内容生成回复
-                card_descriptions = []
-                for c in cards[:3]:
-                    type_name = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}.get(c.card_type, "信息")
-                    card_descriptions.append(f"【{type_name}】{c.title}：{c.content[:100]}")
-                response_data["response"] = f"关于「{query}」，我找到以下相关信息：\n\n" + "\n".join(f"• {desc}" for desc in card_descriptions)
+            # 通用对话 - 使用混合搜索（知识卡片 + 知识图谱）
+            result = hybrid_search_all(query, limit=5)
+            
+            if result.cards or result.kg_entities:
+                # 有搜索结果，用混合搜索结果生成回复
+                response_data["cards"] = result.cards[:3]
+                response_data["kg_entities"] = [
+                    {"id": e.id, "name": e.name, "type": e.entity_type, "description": e.description}
+                    for e in result.kg_entities[:3]
+                ]
+                response_data["response"] = generate_hybrid_response(query, result)
             else:
-                # 无匹配卡片时，优先使用 Ollama（适合复杂任务），回退到 NPU
+                # 无匹配时，优先使用 Ollama（适合复杂任务），回退到 NPU
                 ai_reply = _try_ollama_generate(query, user_id)
                 used_model = "ollama"
                 if not ai_reply:
@@ -949,6 +1069,13 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["response"] = f"关于「{query}」，我暂时没有找到相关信息。您可以尝试换个关键词搜索，或者在知识库中创建相关卡片来丰富知识。"
         
         response_data["suggested_questions"] = generate_suggested_questions(scene_type, request.context)
+        
+        # 自动提取卡片建议（不自动创建）
+        try:
+            suggestions = auto_card.suggest_cards_api(query, response_data.get("response", ""))
+            response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
+        except Exception as e:
+            logger.warning(f"卡片建议失败: {e}")
         
         # 记录助手回复到记忆系统
         memory_manager.add_message(user_id, "assistant", response_data.get("response", ""))

@@ -48,6 +48,7 @@ import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import ChatButton from '@/components/ChatButton';
+import WikiEditor from '@/components/WikiEditor';
 
 
 // 定义卡片类型
@@ -70,6 +71,7 @@ interface KnowledgeCard {
   address: string;
   createdAt: string;
   relatedCards: string[];
+  projectId?: number | null;
 }
 
 // 卡片类型映射
@@ -198,11 +200,14 @@ const Home: React.FC = () => {
         },
         body: JSON.stringify({
           type: cardData.color,
-          title: cardData.title,
+          title: cardData.title || undefined,
           content: cardData.content,
           category: cardData.color === 'blue' ? '事实' : 
                     cardData.color === 'green' ? '解释' : 
-                    cardData.color === 'yellow' ? '风险' : '行动'
+                    cardData.color === 'yellow' ? '风险' : '行动',
+          address: cardData.address || undefined,
+          project_id: cardData.projectId || undefined,
+          related_cards: (cardData.relatedCards || []).map(Number).filter((id: number) => !isNaN(id))
         })
       });
 
@@ -220,7 +225,8 @@ const Home: React.FC = () => {
         color: newCard.card_type || cardData.color,
         address: newCard.address || cardData.address,
         createdAt: newCard.created_at || new Date().toISOString(),
-        relatedCards: []
+        relatedCards: Array.isArray(newCard.related_cards) ? newCard.related_cards.map(String) : [],
+        projectId: newCard.project_id ?? cardData.projectId ?? null
       };
       
       setCards(prevCards => [formattedCard, ...prevCards]);
@@ -303,7 +309,8 @@ const Home: React.FC = () => {
           color: card.card_type || card.type,
           address: card.address || '',
           createdAt: card.created_at,
-          relatedCards: []
+          relatedCards: Array.isArray(card.related_cards) ? card.related_cards.map(String) : [],
+          projectId: card.project_id ?? null
         }));
         setCards(formattedCards);
         
@@ -401,10 +408,14 @@ const Home: React.FC = () => {
   React.useEffect(() => {
     const loadCardsFromAPI = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
         if (response.ok) {
-          const apiCards = await response.json();
-          // 转换后端数据格式到前端格式
+          const data = await response.json();
+          const apiCards = data.cards || data || [];
+          if (!Array.isArray(apiCards)) {
+            console.error('API返回格式错误:', data);
+            return;
+          }
           const formattedCards = apiCards.map((card: any) => ({
             id: String(card.id),
             title: card.title,
@@ -412,14 +423,14 @@ const Home: React.FC = () => {
             color: card.card_type || (card.category === '事实' ? 'blue' : card.category === '解释' ? 'green' : card.category === '风险' ? 'yellow' : 'red'),
             address: card.address || '',
             createdAt: card.created_at,
-            relatedCards: []
+            relatedCards: Array.isArray(card.related_cards) ? card.related_cards.map(String) : [],
+            projectId: card.project_id ?? null
           }));
           setCards(formattedCards);
           console.log('从API加载卡片:', formattedCards.length);
         }
       } catch (error) {
         console.error('从API加载卡片失败:', error);
-        // 降级到localStorage
         const savedCards = localStorage.getItem('antinet_cards');
         if (savedCards) {
           try {
@@ -446,11 +457,16 @@ const Home: React.FC = () => {
       
       try {
         // 从知识卡片API获取真实数据
-        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
         if (!response.ok) throw new Error('API请求失败');
-        const rawCards = await response.json();
+        const data = await response.json();
+        const rawCards = data.cards || data || [];
         
-        // 转换数据格式
+        if (!Array.isArray(rawCards)) {
+          console.error('API返回格式错误:', data);
+          throw new Error('数据格式错误');
+        }
+        
         const cards = rawCards.map((c: any) => ({
           ...c,
           color: c.card_type || (c.category === '事实' ? 'blue' : c.category === '解释' ? 'green' : c.category === '风险' ? 'yellow' : 'red')
@@ -517,8 +533,29 @@ const Home: React.FC = () => {
     // 更新选中的卡片
     setSelectedCard(cardWithValidRelations);
     
-    // 调试信息 - 可以帮助确认关联卡片是否被正确保存
-    console.log('Updated card with relations:', cardWithValidRelations.relatedCards);
+    // 持久化到后端API
+    try {
+      const cardId = parseInt(updatedCard.id);
+      if (!isNaN(cardId)) {
+        const categoryMap: Record<string, string> = {
+          blue: '事实', green: '解释', yellow: '风险', red: '行动'
+        };
+        await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: updatedCard.color,
+            title: updatedCard.title,
+            content: updatedCard.content,
+            category: categoryMap[updatedCard.color] || '事实',
+            project_id: updatedCard.projectId ?? undefined,
+            related_cards: cardWithValidRelations.relatedCards.map(Number).filter(id => !isNaN(id))
+          })
+        });
+      }
+    } catch (err) {
+      console.error('同步关联卡片到后端失败:', err);
+    }
   };
 
   // 防止 TS6133 警告 - 实际使用 knowledgeStats
@@ -598,6 +635,15 @@ const Home: React.FC = () => {
             >
               <Users size={18} />
               <span>八府巡按 · 虚拟会议</span>
+            </button>
+
+            {/* 知识网络 */}
+            <button
+              onClick={() => setActiveTab('wiki-editor')}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'wiki-editor' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+            >
+              <Network size={18} />
+              <span>知识网络</span>
             </button>
 
             {/* 文档中心下拉菜单 */}
@@ -1027,16 +1073,27 @@ const Home: React.FC = () => {
                     </p>
                   </div>
                 </div>
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
-                  onClick={() => openCreateModal()}
-                >
-                  <PlusCircle size={16} />
-                  <span>新建卡片</span>
-                </motion.button>
-               </div>
+                <div className="flex items-center space-x-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
+                    onClick={() => setActiveTab('ppt-analysis')}
+                  >
+                    <Presentation size={16} />
+                    <span>生成PPT</span>
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
+                    onClick={() => openCreateModal()}
+                  >
+                    <PlusCircle size={16} />
+                    <span>新建卡片</span>
+                  </motion.button>
+                </div>
+              </div>
                <div className="mb-6 relative">
                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                  <input
@@ -1150,6 +1207,11 @@ const Home: React.FC = () => {
         {/* 智能问答视图 */}
         {activeTab === 'data-analysis' && (
           <DataAnalysisPanel />
+        )}
+
+        {/* 知识网络视图 */}
+        {activeTab === 'wiki-editor' && (
+          <WikiEditor />
         )}
 
         {/* PPT生成视图 */}

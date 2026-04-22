@@ -80,38 +80,48 @@ async def generate_report(request: ReportDataRequest):
         raise HTTPException(status_code=503, detail="报表服务不可用")
     
     try:
-        result = service.generate_full_report(
-            data=request.data,
-            config={
+        if not request.data:
+            raise HTTPException(status_code=400, detail="数据不能为空")
+        
+        config = {
                 'title': request.title,
-                'filename': request.filename,
                 **(request.config or {})
             }
+        if request.filename:
+            config['filename'] = request.filename
+        result = service.generate_full_report(
+            data=request.data,
+            config=config
         )
+        
+        excel_path = result.get('excel')
+        pdf_path = result.get('pdf')
+        ppt_path = result.get('ppt')
         
         return {
             "status": "success",
             "message": "报表生成成功",
             "files": {
                 "excel": {
-                    "path": result['excel'],
-                    "download_url": f"/api/report/download/excel?file={Path(result['excel']).name}"
+                    "path": str(excel_path) if excel_path else '',
+                    "download_url": f"/api/report/download/excel?file={excel_path.name}" if excel_path else ''
                 },
                 "pdf": {
-                    "path": result['pdf'],
-                    "download_url": f"/api/report/download/pdf?file={Path(result['pdf']).name}"
+                    "path": str(pdf_path) if pdf_path else '',
+                    "download_url": f"/api/report/download/pdf?file={pdf_path.name}" if pdf_path else ''
                 },
                 "ppt": {
-                    "path": result['ppt'],
-                    "download_url": f"/api/report/download/ppt?file={Path(result['ppt']).name}"
+                    "path": str(ppt_path) if ppt_path else '',
+                    "download_url": f"/api/report/download/ppt?file={ppt_path.name}" if ppt_path else ''
                 }
             },
-            "timestamp": result['timestamp']
+            "timestamp": result.get('timestamp', datetime.now().isoformat())
         }
-        
     except Exception as e:
-        logger.error(f"生成报表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"生成报表失败: {str(e)}")
+        logger.error(f"报表生成失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"报表生成失败: {str(e)}")
 
 
 @router.post("/export")

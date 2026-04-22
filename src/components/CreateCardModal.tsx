@@ -186,17 +186,13 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
   const validateForm = (): boolean => {
     const newErrors: Partial<Record<keyof CardFormData, string>> = {};
     
-    if (!formData.title.trim()) {
-      newErrors.title = '请输入卡片标题';
-    }
+    // 标题留空时后端会自动生成，不要求必填
     
     if (!formData.content.trim()) {
       newErrors.content = '请输入卡片内容';
     }
     
-    if (!formData.address.trim()) {
-      newErrors.address = '请输入卡片地址';
-    }
+    // 地址可自动生成，不要求必填
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -207,7 +203,14 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     e.preventDefault();
     
     if (validateForm()) {
-      onSave({ ...formData, projectId });
+      onSave({
+        ...formData,
+        projectId,
+        // 如果标题为空，自动从内容生成
+        title: formData.title.trim() || extractTitle(formData.content),
+        // 如果地址为空，自动生成
+        address: formData.address.trim() || generateAddressSuggestion()
+      });
       onClose();
       toast('卡片创建成功！', {
         icon: <CheckCircle size={16} />,
@@ -334,7 +337,10 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           
           {/* 卡片标题 */}
           <div>
-            <label htmlFor="title" className="block text-sm font-medium mb-2">卡片标题 *</label>
+            <label htmlFor="title" className="block text-sm font-medium mb-2">
+              卡片标题
+              <span className="text-xs text-gray-400 ml-2 font-normal">（留空自动从内容生成）</span>
+            </label>
             <input
               id="title"
               name="title"
@@ -363,7 +369,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               id="content"
               name="content"
               value={formData.content}
-              onChange={handleChange}
+              onChange={(e) => handleContentChange(e.target.value)}
               placeholder="输入卡片内容..."
               rows={5}
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none ${
@@ -382,7 +388,10 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           
           {/* 卡片地址 */}
           <div>
-            <label htmlFor="address" className="block text-sm font-medium mb-2">卡片地址 *</label>
+            <label htmlFor="address" className="block text-sm font-medium mb-2">
+              卡片地址
+              <span className="text-xs text-gray-400 ml-2 font-normal">（可自动生成）</span>
+            </label>
             <div className="flex space-x-2">
               <input
                 id="address"

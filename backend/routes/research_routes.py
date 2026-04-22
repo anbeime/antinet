@@ -133,10 +133,88 @@ async def get_project(project_id: int):
 
 class CardCreateRequest(BaseModel):
     """创建卡片请求"""
-    card_type: str  # blue/green/yellow/red
+    card_type: Optional[str] = None  # blue/green/yellow/red
+    type: Optional[str] = None  # 兼容前端传 type 字段
     title: Optional[str] = None
     content: str
     category: Optional[str] = None
+    related_cards: Optional[List[int]] = []
+
+
+@router.get("/projects/{project_id}/cards")
+async def get_project_cards(project_id: int):
+    """获取专题下的所有卡片（包含双向关联数据）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+        
+        cursor.execute("""
+            SELECT id, card_type, title, content, category, project_id,
+                   related_cards, created_at, updated_at
+            FROM knowledge_cards 
+            WHERE project_id = ?
+            ORDER BY created_at DESC
+        """, (project_id,))
+        rows = cursor.fetchall()
+        
+        card_ids = [row["id"] for row in rows]
+        
+        # 批量获取所有卡片的 backlink 数据
+        backlink_map = {}  # card_id -> set of related card_ids
+        if card_ids:
+            placeholders = ','.join(['?' for _ in card_ids])
+            # 正向链接：我链接到别人
+            cursor.execute(f"""
+                SELECT source_card_id, target_card_id FROM card_backlinks
+                WHERE source_card_id IN ({placeholders})
+            """, card_ids)
+            for row in cursor.fetchall():
+                sid = row["source_card_id"]
+                backlink_map.setdefault(sid, set()).add(row["target_card_id"])
+            # 反向链接：别人链接到我（也要体现为关联）
+            cursor.execute(f"""
+                SELECT source_card_id, target_card_id FROM card_backlinks
+                WHERE target_card_id IN ({placeholders})
+            """, card_ids)
+            for row in cursor.fetchall():
+                tid = row["target_card_id"]
+                backlink_map.setdefault(tid, set()).add(row["source_card_id"])
+        
+        cards = []
+        for row in rows:
+            # 解析 related_cards JSON
+            related_set = set()
+            if row["related_cards"]:
+                try:
+                    related_set = set(json.loads(row["related_cards"]))
+                except:
+                    pass
+            # 合并 backlink 数据
+            related_set |= backlink_map.get(row["id"], set())
+            
+            cards.append({
+                "id": row["id"],
+                "card_type": row["card_type"],
+                "title": row["title"],
+                "content": row["content"],
+                "category": row["category"],
+                "project_id": row["project_id"] if "project_id" in row.keys() else None,
+                "related_cards": list(related_set),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"]
+            })
+        
+        conn.close()
+        return cards
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取专题卡片失败: {str(e)}")
 
 
 @router.post("/projects/{project_id}/cards")
@@ -154,6 +232,9 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
         
         now = datetime.now().isoformat()
         
+        # 兼容前端传 type 字段
+        card_type = card.card_type or card.type or 'blue'
+        
         # 自动生成标题（如果未提供）
         card_title = card.title
         if not card_title or not card_title.strip():
@@ -169,7 +250,7 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
                     'yellow': '新风险',
                     'red': '新行动'
                 }
-                card_title = type_to_title.get(card.card_type, '新卡片')
+                card_title = type_to_title.get(card_type, '新卡片')
         
         # 确定分类
         valid_categories = {'事实', '解释', '风险', '行动'}
@@ -181,20 +262,70 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
                 'yellow': '风险',
                 'red': '行动'
             }
-            card_category = type_to_category.get(card.card_type, '事实')
+            card_category = type_to_category.get(card_type, '事实')
         
-        # 插入卡片
+        # 序列化 related_cards
+        related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
+        
+        # 插入卡片 — 同时写入 project_id 和 topic_id 保持兼容
         cursor.execute("""
-            INSERT INTO knowledge_cards (card_type, title, content, category, project_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (card.card_type, card_title, card.content, card_category, project_id, now, now))
+            INSERT INTO knowledge_cards (card_type, title, content, category, project_id, topic_id, related_cards, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (card_type, card_title, card.content, card_category, project_id, project_id, related_cards_json, now, now))
         
         card_id = cursor.lastrowid
+        
+        # 自动与同专题其他卡片建立双向链接（同专题 = 主题相关）
+        cursor.execute("""
+            SELECT id FROM knowledge_cards 
+            WHERE project_id = ? AND id != ?
+            ORDER BY created_at DESC LIMIT 20
+        """, (project_id, card_id))
+        sibling_ids = [row["id"] for row in cursor.fetchall()]
+        
+        for sibling_id in sibling_ids:
+            # 正向：新卡片 -> 兄弟卡片
+            cursor.execute("""
+                INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                VALUES (?, ?, ?)
+            """, (card_id, sibling_id, 'same_project'))
+            # 反向：兄弟卡片 -> 新卡片
+            cursor.execute("""
+                INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                VALUES (?, ?, ?)
+            """, (sibling_id, card_id, 'same_project'))
+        
+        # 同步 related_cards 到 card_backlinks
+        if card.related_cards:
+            for target_id in card.related_cards:
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (card_id, target_id, 'manual'))
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (target_id, card_id, 'manual'))
+                except Exception:
+                    pass
+        
         conn.commit()
         
-        # 获取新卡片
+        # 获取新卡片（含关联数据）
         cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
         row = cursor.fetchone()
+        
+        # 获取该卡片的 backlinks
+        related_set = set()
+        cursor.execute("""
+            SELECT target_card_id FROM card_backlinks WHERE source_card_id = ?
+            UNION
+            SELECT source_card_id FROM card_backlinks WHERE target_card_id = ?
+        """, (card_id, card_id))
+        for bl_row in cursor.fetchall():
+            related_set.add(bl_row[0])
+        
         conn.close()
         
         return {
@@ -204,6 +335,7 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
             "content": row["content"],
             "category": row["category"],
             "project_id": row["project_id"],
+            "related_cards": list(related_set),
             "created_at": row["created_at"]
         }
     except HTTPException:
@@ -218,6 +350,7 @@ class CardUpdateRequest(BaseModel):
     content: Optional[str] = None
     card_type: Optional[str] = None
     category: Optional[str] = None
+    related_cards: Optional[List[int]] = None
 
 
 @router.put("/projects/{project_id}/cards/{card_id}")
@@ -271,6 +404,59 @@ async def update_project_card(project_id: int, card_id: int, card: CardUpdateReq
             updates.append("category = ?")
             values.append(card.category)
         
+        if card.related_cards is not None:
+            updates.append("related_cards = ?")
+            values.append(json.dumps(card.related_cards))
+            
+            # 同步写入 card_backlinks 双向链接
+            try:
+                # 获取旧关联
+                cursor.execute("SELECT related_cards FROM knowledge_cards WHERE id = ?", (card_id,))
+                old_row = cursor.fetchone()
+                old_related = set()
+                if old_row and old_row["related_cards"]:
+                    try:
+                        old_related = set(json.loads(old_row["related_cards"]))
+                    except:
+                        pass
+                
+                # 也从 backlinks 表获取已有关联
+                cursor.execute("""
+                    SELECT target_card_id FROM card_backlinks WHERE source_card_id = ?
+                """, (card_id,))
+                for bl in cursor.fetchall():
+                    old_related.add(bl[0])
+                
+                new_related = set(card.related_cards)
+                
+                # 需要新增的关联
+                to_add = new_related - old_related
+                # 需要删除的关联（仅在 related_cards 字段中移除，不删 same_project 类型）
+                to_remove = old_related - new_related
+                
+                for target_id in to_add:
+                    # 正向：A -> B
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (card_id, target_id, 'manual'))
+                    # 双向：B -> A
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (target_id, card_id, 'manual'))
+                
+                for target_id in to_remove:
+                    # 只删除 manual 类型的关联，不删 same_project
+                    cursor.execute("""
+                        DELETE FROM card_backlinks 
+                        WHERE ((source_card_id = ? AND target_card_id = ?) 
+                           OR (source_card_id = ? AND target_card_id = ?))
+                           AND link_text = 'manual'
+                    """, (card_id, target_id, target_id, card_id))
+            except Exception as e:
+                print(f"同步backlinks失败（非致命）: {e}")
+        
         if not updates:
             conn.close()
             raise HTTPException(status_code=400, detail="没有要更新的内容")
@@ -306,6 +492,45 @@ async def update_project_card(project_id: int, card_id: int, card: CardUpdateReq
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新卡片失败: {str(e)}")
+
+
+@router.post("/cards/{card_id}/link-project")
+async def link_card_to_project(card_id: int, link_request: dict):
+    """将卡片关联到专题"""
+    try:
+        project_id = link_request.get("project_id")
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 检查卡片是否存在
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        card = cursor.fetchone()
+        if not card:
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+        
+        # 如果提供了 project_id，检查专题是否存在
+        if project_id is not None:
+            cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+            if not cursor.fetchone():
+                conn.close()
+                raise HTTPException(status_code=404, detail="专题不存在")
+        
+        # 更新卡片的 project_id 和 topic_id（保持兼容）
+        cursor.execute("""
+            UPDATE knowledge_cards 
+            SET project_id = ?, topic_id = ?, updated_at = ?
+            WHERE id = ?
+        """, (project_id, project_id, datetime.now().isoformat(), card_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": f"卡片已{'关联到专题' if project_id else '取消关联'}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"关联失败: {str(e)}")
 
 
 @router.delete("/projects/{project_id}/cards/{card_id}")
@@ -387,7 +612,7 @@ async def get_linkable_cards(project_id: int):
         
         # 获取不属于任何专题的卡片
         cursor.execute("""
-            SELECT id, card_type, title, content, created_at 
+            SELECT id, card_type, title, content, project_id, created_at 
             FROM knowledge_cards 
             WHERE project_id IS NULL OR project_id = ?
             ORDER BY created_at DESC
@@ -629,6 +854,117 @@ async def link_cards(card_id: int, target_card_id: int, relation_type: str = "ma
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"关联卡片失败: {str(e)}")
+
+
+@router.get("/cards/{card_id}/suggested-relations")
+async def get_suggested_relations(card_id: int, limit: int = 10):
+    """获取卡片的联想关联推荐（基于关键词相似度、同专题、已有链接的二级关联）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 获取当前卡片
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        card = cursor.fetchone()
+        if not card:
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+        
+        # 获取已有关联（不再推荐）
+        existing_related = set()
+        cursor.execute("""
+            SELECT target_card_id FROM card_backlinks WHERE source_card_id = ?
+            UNION
+            SELECT source_card_id FROM card_backlinks WHERE target_card_id = ?
+        """, (card_id, card_id))
+        for row in cursor.fetchall():
+            existing_related.add(row[0])
+        existing_related.add(card_id)  # 排除自己
+        
+        suggestions = []  # [(card_id, reason, score)]
+        
+        # 1. 同专题卡片（强关联）
+        if card["project_id"]:
+            cursor.execute("""
+                SELECT id, title, card_type, category FROM knowledge_cards
+                WHERE project_id = ? AND id != ?
+                ORDER BY created_at DESC LIMIT 20
+            """, (card["project_id"], card_id))
+            for row in cursor.fetchall():
+                if row["id"] not in existing_related:
+                    suggestions.append((row["id"], row["title"], row["card_type"], row["category"], "同专题", 3))
+        
+        # 2. 关键词相似卡片
+        import re
+        # 中文分词：简单按2-4字组合提取关键词
+        content_text = (card["title"] + " " + card["content"]).lower()
+        # 提取2-4字中文词组
+        cn_words = set(re.findall(r'[\u4e00-\u9fff]{2,4}', content_text))
+        # 提取英文单词
+        en_words = set(re.findall(r'[a-zA-Z]{3,}', content_text))
+        keywords = cn_words | en_words
+        # 过滤常见停用词
+        stopwords = {'的是', '在了', '和的', '这个', '一个', '不是', '没有', '我们', '他们', '可以', '因为', '所以', '但是', '如果', '那么', '虽然', '而且', '或者', '以及', '还是', '已经', '正在', '将会', '应该', '需要', '能够', '可能', '关于', '通过', '进行', '使用', '包括', '例如', '其中', '之间', '之后', '之前', '对于', '基于', '来自', 'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'was', 'had', 'has', 'her', 'him', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see', 'way', 'who', 'did', 'get', 'let', 'our', 'too', 'use'}
+        keywords -= stopwords
+        
+        if keywords:
+            cursor.execute("""
+                SELECT id, title, card_type, category, content FROM knowledge_cards
+                WHERE id != ? AND (project_id != ? OR project_id IS NULL)
+                ORDER BY created_at DESC LIMIT 100
+            """, (card_id, card["project_id"] or 0))
+            
+            for row in cursor.fetchall():
+                if row["id"] in existing_related:
+                    continue
+                other_text = (row["title"] + " " + row["content"]).lower()
+                other_cn = set(re.findall(r'[\u4e00-\u9fff]{2,4}', other_text))
+                other_en = set(re.findall(r'[a-zA-Z]{3,}', other_text))
+                other_keywords = (other_cn | other_en) - stopwords
+                
+                common = keywords & other_keywords
+                if len(common) >= 2:
+                    score = len(common)
+                    reason = f"关键词关联({','.join(list(common)[:3])})"
+                    suggestions.append((row["id"], row["title"], row["card_type"], row["category"], reason, min(score, 5)))
+        
+        # 3. 二级关联：已有关联的关联（朋友的朋友）
+        if existing_related - {card_id}:
+            first_level = list(existing_related - {card_id})[:10]
+            placeholders = ','.join(['?' for _ in first_level])
+            cursor.execute(f"""
+                SELECT DISTINCT k.id, k.title, k.card_type, k.category
+                FROM knowledge_cards k
+                JOIN card_backlinks bl ON (bl.target_card_id = k.id OR bl.source_card_id = k.id)
+                WHERE (bl.source_card_id IN ({placeholders}) OR bl.target_card_id IN ({placeholders}))
+                  AND k.id != ?
+                LIMIT 20
+            """, first_level + first_level + [card_id])
+            for row in cursor.fetchall():
+                if row["id"] not in existing_related and not any(s[0] == row["id"] for s in suggestions):
+                    suggestions.append((row["id"], row["title"], row["card_type"], row["category"], "二级关联", 2))
+        
+        # 去重并按分数排序
+        seen = set()
+        unique_suggestions = []
+        for s in sorted(suggestions, key=lambda x: -x[5]):
+            if s[0] not in seen:
+                seen.add(s[0])
+                unique_suggestions.append({
+                    "id": s[0],
+                    "title": s[1],
+                    "card_type": s[2],
+                    "category": s[3],
+                    "reason": s[4],
+                    "score": s[5]
+                })
+        
+        conn.close()
+        return {"suggestions": unique_suggestions[:limit]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取联想关联失败: {str(e)}")
 
 
 @router.get("/projects/{project_id}/knowledge-network")
@@ -972,49 +1308,11 @@ async def remove_task_from_project(project_id: int, task_id: int):
         raise HTTPException(status_code=500, detail=f"移除任务失败: {str(e)}")
 
 
-@router.get("/projects/{project_id}/cards")
-async def get_project_cards(project_id: int):
-    """获取专题相关的所有四色卡片"""
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        
-        # 检查专题是否存在
-        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
-        if not cursor.fetchone():
-            conn.close()
-            raise HTTPException(status_code=404, detail="专题研究不存在")
-        
-        # 获取专题相关的卡片
-        cursor.execute("""
-            SELECT * FROM knowledge_cards
-            WHERE project_id = ?
-            ORDER BY created_at DESC
-        """, (project_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        
-        cards = []
-        for row in rows:
-            cards.append({
-                "id": row["id"],
-                "card_type": row["card_type"],
-                "title": row["title"],
-                "content": row["content"],
-                "category": row["category"],
-                "project_id": row["project_id"],
-                "created_at": row["created_at"]
-            })
-        return cards
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取专题卡片失败: {str(e)}")
 
 
 @router.post("/projects/{project_id}/cards/{card_id}")
 async def add_card_to_project(project_id: int, card_id: int):
-    """将卡片关联到专题"""
+    """将卡片关联到专题（同时建立与同专题其他卡片的双向链接）"""
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -1037,6 +1335,25 @@ async def add_card_to_project(project_id: int, card_id: int):
             SET project_id = ?
             WHERE id = ?
         """, (project_id, card_id))
+        
+        # 建立与同专题其他卡片的双向链接
+        cursor.execute("""
+            SELECT id FROM knowledge_cards 
+            WHERE project_id = ? AND id != ?
+            ORDER BY created_at DESC LIMIT 20
+        """, (project_id, card_id))
+        sibling_ids = [row["id"] for row in cursor.fetchall()]
+        
+        for sibling_id in sibling_ids:
+            cursor.execute("""
+                INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                VALUES (?, ?, ?)
+            """, (card_id, sibling_id, 'same_project'))
+            cursor.execute("""
+                INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                VALUES (?, ?, ?)
+            """, (sibling_id, card_id, 'same_project'))
+        
         conn.commit()
         conn.close()
         
@@ -1096,3 +1413,223 @@ async def convert_card_to_task(card_id: int):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"转换任务失败: {str(e)}")
+
+
+# ========== 专题统计与工作流闭环 API ==========
+
+@router.get("/projects/{project_id}/stats")
+async def get_project_stats(project_id: int):
+    """获取专题统计信息（卡片、任务、日历事件、反向链接）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 检查专题是否存在
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+
+        stats = {}
+
+        # 卡片统计
+        cursor.execute("""
+            SELECT card_type, COUNT(*) as cnt FROM knowledge_cards
+            WHERE project_id = ? GROUP BY card_type
+        """, (project_id,))
+        card_stats = {row['card_type']: row['cnt'] for row in cursor.fetchall()}
+        stats['cards'] = card_stats
+        stats['total_cards'] = sum(card_stats.values())
+
+        # 任务统计
+        cursor.execute("""
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed
+            FROM gtd_tasks WHERE source_type = 'project' AND source_id = ?
+        """, (project_id,))
+        row = cursor.fetchone()
+        task_total = row['total'] if row else 0
+        task_completed = row['completed'] if row and row['completed'] else 0
+        stats['tasks'] = {'total': task_total, 'completed': task_completed,
+                          'pending': task_total - task_completed}
+        stats['task_progress'] = round(task_completed / task_total * 100) if task_total > 0 else 0
+
+        # 日历事件
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM calendar_events
+                WHERE source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+            """, (project_id,))
+            row = cursor.fetchone()
+            stats['calendar_events'] = row['cnt'] if row else 0
+        except:
+            stats['calendar_events'] = 0
+
+        # 反向链接
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) as cnt FROM card_backlinks
+                WHERE target_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+                   OR source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+            """, (project_id, project_id))
+            row = cursor.fetchone()
+            stats['backlinks'] = row['cnt'] if row else 0
+        except:
+            stats['backlinks'] = 0
+
+        conn.close()
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取统计信息失败: {str(e)}")
+
+
+@router.get("/projects/{project_id}/calendar-events")
+async def get_project_calendar_events(project_id: int):
+    """获取专题关联的日历事件"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        if not cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+
+        # 专题下卡片的日历事件
+        try:
+            cursor.execute("""
+                SELECT ce.* FROM calendar_events ce
+                WHERE ce.source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+                ORDER BY ce.start_time
+            """, (project_id,))
+            events = [dict(row) for row in cursor.fetchall()]
+        except:
+            # 专题任务的 due_date 作为日历事件
+            cursor.execute("""
+                SELECT id, title, due_date as start_time, 'task' as source,
+                       priority, is_completed
+                FROM gtd_tasks
+                WHERE source_type = 'project' AND source_id = ? AND due_date IS NOT NULL
+                ORDER BY due_date
+            """, (project_id,))
+            events = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+        return events
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取日历事件失败: {str(e)}")
+
+
+@router.get("/projects/{project_id}/workflow")
+async def get_project_workflow(project_id: int):
+    """获取专题工作流概览（闭环数据：卡片→任务→日历→链接）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM research_projects WHERE id = ?", (project_id,))
+        project = cursor.fetchone()
+        if not project:
+            conn.close()
+            raise HTTPException(status_code=404, detail="专题研究不存在")
+
+        workflow = {
+            'project': dict(project),
+            'cards': [],
+            'tasks': [],
+            'unconverted_cards': [],  # 红色(行动)卡片但还没转任务的
+            'calendar_events': [],
+            'backlinks': []
+        }
+
+        # 获取所有卡片
+        cursor.execute("SELECT * FROM knowledge_cards WHERE project_id = ?", (project_id,))
+        cards = [dict(row) for row in cursor.fetchall()]
+        workflow['cards'] = cards
+
+        # 获取任务
+        cursor.execute("""
+            SELECT * FROM gtd_tasks WHERE source_type = 'project' AND source_id = ?
+            ORDER BY created_at DESC
+        """, (project_id,))
+        tasks = [dict(row) for row in cursor.fetchall()]
+        workflow['tasks'] = tasks
+
+        # 找出红色(行动)卡片但还没转任务的
+        task_source_ids = {t.get('source_id') for t in tasks if t.get('source_type') == 'card'}
+        workflow['unconverted_cards'] = [
+            c for c in cards
+            if c.get('card_type') == 'red' and c['id'] not in task_source_ids
+        ]
+
+        # 日历事件
+        try:
+            cursor.execute("""
+                SELECT ce.* FROM calendar_events ce
+                WHERE ce.source_card_id IN (SELECT id FROM knowledge_cards WHERE project_id = ?)
+                ORDER BY ce.start_time
+            """, (project_id,))
+            workflow['calendar_events'] = [dict(row) for row in cursor.fetchall()]
+        except:
+            pass
+
+        # 反向链接
+        try:
+            card_ids = [c['id'] for c in cards]
+            if card_ids:
+                placeholders = ','.join(['?' for _ in card_ids])
+                cursor.execute(f"""
+                    SELECT * FROM card_backlinks
+                    WHERE target_card_id IN ({placeholders})
+                       OR source_card_id IN ({placeholders})
+                """, card_ids + card_ids)
+                workflow['backlinks'] = [dict(row) for row in cursor.fetchall()]
+        except:
+            pass
+
+        conn.close()
+        return workflow
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取工作流失败: {str(e)}")
+
+
+# ========== 统一项目桥梁 API ==========
+
+@router.get("/unified-projects")
+async def get_unified_projects():
+    """获取统一项目列表（合并 research_projects 和 team_projects）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 专题研究
+        cursor.execute("""
+            SELECT id, name, description, color, icon, status, 'research' as source,
+                   created_at, updated_at
+            FROM research_projects WHERE status = 'active'
+        """)
+        research = [dict(row) for row in cursor.fetchall()]
+
+        # 团队项目
+        cursor.execute("""
+            SELECT id, name, description, status, priority, progress,
+                   start_date, end_date, 'team' as source,
+                   created_at, updated_at
+            FROM team_projects
+        """)
+        team = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+        return {
+            'research_projects': research,
+            'team_projects': team,
+            'total': len(research) + len(team)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取统一项目列表失败: {str(e)}")
