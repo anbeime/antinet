@@ -48,6 +48,7 @@ import FormatConverter from '@/pages/FormatConverter';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import ChatButton from '@/components/ChatButton';
+import LanguageSelector from '@/components/LanguageSelector';
 import WikiEditor from '@/components/WikiEditor';
 
 
@@ -744,14 +745,15 @@ const Home: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center space-x-4">
+<div className="flex items-center space-x-2">
+              <LanguageSelector />
               <button 
                 onClick={toggleTheme}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-              aria-label="切换主题"
-            >
-              {theme === 'light' ? '[暗]' : '[亮]'}
-            </button>
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+                aria-label="切换主题"
+              >
+                {theme === 'light' ? '[暗]' : '[亮]'}
+              </button>
             <div className="relative">
               <motion.button
                 whileHover={{ scale: 1.05 }}
