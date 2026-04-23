@@ -199,6 +199,15 @@ try:
 except Exception as e:
     logger.warning(f"无法导入思维导图路由: {e}")
 
+# 注册 Remotion 动态演示路由
+try:
+    from routes.remotion_routes import router as remotion_router
+    app.include_router(remotion_router)
+    remotion_routes.set_db_manager(db_manager)
+    logger.info("[OK] Remotion 动态演示路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 Remotion 路由: {e}")
+
 # 注册专题研究路由
 try:
     from routes.research_routes import router as research_router

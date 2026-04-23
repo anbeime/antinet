@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { 
   Brain, Plus, Trash2, Download, Save, RefreshCw, 
   ZoomIn, ZoomOut, ChevronRight, Loader, Link2, X,
-  FolderOpen, FileText
+  FolderOpen, FileText, Network
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -73,6 +73,9 @@ const MindMap: React.FC = () => {
   const [showCardModal, setShowCardModal] = useState(false);
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [nodeCards, setNodeCards] = useState<Record<string, KnowledgeCard[]>>({});
+  const [showNetworkPanel, setShowNetworkPanel] = useState(false);
+  const [networkTopic, setNetworkTopic] = useState('');
+  const [generating, setGenerating] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const nodeColors = [
@@ -89,9 +92,42 @@ const MindMap: React.FC = () => {
     try {
       const res = await fetch('/api/mindmap/');
       const data = await res.json();
-      setMindmaps(data);
+      setMindmaps(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('加载思维导图失败:', e);
+    }
+  };
+
+  const generateFromKnowledgeNetwork = async () => {
+    if (!networkTopic.trim()) return;
+    setGenerating(true);
+    try {
+      const res = await fetch('/api/knowledge/network/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: networkTopic,
+          card_ids: null,
+          auto_generate: true,
+          target_type: 'mindmap'
+        })
+      });
+      const data = await res.json();
+      if (data.mindmap_id) {
+        const res2 = await fetch(`/api/mindmap/${data.mindmap_id}`);
+        const mindmapData = await res2.json();
+        if (mindmapData?.root_node) {
+          setRoot(mindmapData.root_node);
+          setCurrentMindmapId(data.mindmap_id);
+          setMindmapName(mindmapData.name || `知识网络-${networkTopic}`);
+        }
+      }
+      setShowNetworkPanel(false);
+      loadMindmaps();
+    } catch (e) {
+      console.error('生成失败:', e);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -407,6 +443,14 @@ const MindMap: React.FC = () => {
             <FolderOpen className="w-4 h-4" />
             <span>加载</span>
           </button>
+          
+          <button
+            onClick={() => setShowNetworkPanel(true)}
+            className="w-full flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600"
+          >
+            <Network className="w-4 h-4" />
+            <span>从知识网络生成</span>
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-2 mb-4">
@@ -615,6 +659,41 @@ const MindMap: React.FC = () => {
             >
               关闭
             </button>
+          </div>
+        </div>
+      )}
+
+      {showNetworkPanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-[500px]">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <Network className="w-5 h-5 mr-2 text-purple-500" />
+              从知识网络生成思维导图
+            </h3>
+            <input
+              type="text"
+              value={networkTopic}
+              onChange={(e) => setNetworkTopic(e.target.value)}
+              placeholder="输入主题（如：Q2季度汇报）"
+              className="w-full px-4 py-2 border rounded-lg mb-4"
+              onKeyDown={(e) => e.key === 'Enter' && generateFromKnowledgeNetwork()}
+            />
+            <div className="flex space-x-2">
+              <button
+                onClick={generateFromKnowledgeNetwork}
+                disabled={generating || !networkTopic.trim()}
+                className="flex-1 flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 disabled:opacity-50"
+              >
+                {generating ? <Loader className="w-4 h-4 animate-spin" /> : <Network className="w-4 h-4" />}
+                <span>{generating ? '生成中...' : '生成导图'}</span>
+              </button>
+              <button
+                onClick={() => setShowNetworkPanel(false)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg"
+              >
+                取消
+              </button>
+            </div>
           </div>
         </div>
       )}

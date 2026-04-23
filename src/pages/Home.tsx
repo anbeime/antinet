@@ -25,7 +25,8 @@ import {
   Layers,
   ListTodo,
   Bot,
-  Users
+  Users,
+  Clapperboard
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -50,6 +51,9 @@ import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import ChatButton from '@/components/ChatButton';
 import LanguageSelector from '@/components/LanguageSelector';
 import WikiEditor from '@/components/WikiEditor';
+import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
+import MindMap from '@/pages/MindMap';
+import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 
 
 // 定义卡片类型
@@ -124,7 +128,7 @@ const cardTypeMap = {
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -693,7 +697,7 @@ const Home: React.FC = () => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'genie-playground'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'genie-playground', 'knowledge-network', 'remotion'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -713,6 +717,20 @@ const Home: React.FC = () => {
                 >
                   <Bot size={16} />
                   <span>Agent系统</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('knowledge-network')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'knowledge-network' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Network size={16} />
+                  <span>知识网络</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('remotion')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'remotion' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Clapperboard size={16} />
+                  <span>动态演示</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('skill-center')}
@@ -1644,6 +1662,32 @@ const Home: React.FC = () => {
         {/* 虚拟办公室会议视图 */}
         {activeTab === 'virtual-office-meeting' && (
           <VirtualOfficeMeeting />
+        )}
+
+        {/* 知识网络视图 */}
+        {activeTab === 'knowledge-network' && (
+          <div className="flex h-full">
+            <div className="flex-1 p-4">
+              <KnowledgeGraphView />
+            </div>
+          </div>
+        )}
+
+        {/* Remotion 动态演示视图 */}
+        {activeTab === 'remotion' && (
+          <div className="flex h-full p-4">
+            <div className="flex-1">
+              <RemotionGenerator 
+                cards={cards.filter(c => c.color).map(c => ({
+                  id: c.id,
+                  type: c.color as any,
+                  title: c.title,
+                  content: c.content
+                }))}
+                topic="智能分析报告"
+              />
+            </div>
+          </div>
         )}
         </main>
 
