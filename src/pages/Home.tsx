@@ -26,7 +26,12 @@ import {
   ListTodo,
   Bot,
   Users,
-  Clapperboard
+  Clapperboard,
+  FileSpreadsheet,
+  FileType,
+  BookOpen,
+  GitBranch,
+  BarChart3
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -54,6 +59,10 @@ import WikiEditor from '@/components/WikiEditor';
 import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
 import MindMap from '@/pages/MindMap';
 import RemotionGenerator from '@/components/remotion/RemotionGenerator';
+import PDFViewer from '@/pages/PDFViewer';
+import PPTViewer from '@/pages/PPTViewer';
+import ReportAutomation from '@/pages/ReportAutomation';
+import OfficeDocs from '@/pages/OfficeDocs';
 
 
 // 定义卡片类型
@@ -128,7 +137,7 @@ const cardTypeMap = {
 const Home: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph'>('dashboard');
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -642,38 +651,44 @@ const Home: React.FC = () => {
               <span>八府巡按 · 虚拟会议</span>
             </button>
 
-            {/* 知识网络 */}
-            <button
-              onClick={() => setActiveTab('wiki-editor')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'wiki-editor' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
-            >
-              <Network size={18} />
-              <span>知识网络</span>
-            </button>
-
             {/* 文档中心下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'excel-viewer', 'pdf-viewer', 'report-automation', 'mindmap', 'knowledge-graph', 'wiki-editor', 'knowledge-network', 'document-center', 'format-converter'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <FileText size={18} />
                 <span>文档中心</span>
                 <ChevronDown size={14} className="ml-1" />
               </button>
-              <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+              <div className="absolute top-full left-0 mt-0 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <button
+                  onClick={() => setActiveTab('document-center')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'document-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <BookOpen size={16} />
+                  <span>文档中心首页</span>
+                </button>
+                <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
                 <button
                   onClick={() => setActiveTab('pdf-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <FileText size={16} />
-                  <span>PDF分析</span>
+                  <span>PDF分析器</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('pdf-viewer')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-viewer' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Eye size={16} />
+                  <span>PDF查看器</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('ppt-analysis')}
                   className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Presentation size={16} />
-                  <span>PPT生成</span>
+                  <span>PPT分析/生成</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('excel-analysis')}
@@ -681,6 +696,50 @@ const Home: React.FC = () => {
                 >
                   <Table size={16} />
                   <span>Excel分析</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('excel-viewer')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-viewer' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <FileSpreadsheet size={16} />
+                  <span>在线表格</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('report-automation')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'report-automation' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <BarChart3 size={16} />
+                  <span>报表生成</span>
+                </button>
+                <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                <button
+                  onClick={() => setActiveTab('knowledge-graph')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'knowledge-graph' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <GitBranch size={16} />
+                  <span>知识图谱</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('mindmap')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'mindmap' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Brain size={16} />
+                  <span>思维导图</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('wiki-editor')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'wiki-editor' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <Network size={16} />
+                  <span>知识网络</span>
+                </button>
+                <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+                <button
+                  onClick={() => setActiveTab('format-converter')}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'format-converter' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                >
+                  <FileType size={16} />
+                  <span>格式转换</span>
                 </button>
               </div>
             </div>
@@ -697,7 +756,7 @@ const Home: React.FC = () => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'genie-playground', 'knowledge-network', 'remotion'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center', 'multi-model', 'genie-playground', 'remotion'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -719,15 +778,8 @@ const Home: React.FC = () => {
                   <span>Agent系统</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('knowledge-network')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'knowledge-network' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <Network size={16} />
-                  <span>知识网络</span>
-                </button>
-                <button
                   onClick={() => setActiveTab('remotion')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'remotion' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'remotion' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Clapperboard size={16} />
                   <span>动态演示</span>
@@ -1244,6 +1296,11 @@ const Home: React.FC = () => {
           <ExcelAnalysis />
         )}
 
+        {/* 在线表格视图 */}
+        {activeTab === 'excel-viewer' && (
+          <OfficeDocs initialFile="spreadsheet" />
+        )}
+
         {/* 数据管理视图 */}
         {activeTab === 'cards-management' && (
           <motion.div
@@ -1688,6 +1745,70 @@ const Home: React.FC = () => {
               />
             </div>
           </div>
+        )}
+
+        {/* 文档中心首页 */}
+        {activeTab === 'document-center' && (
+          <div className="flex h-full p-8">
+            <div className="max-w-4xl mx-auto">
+              <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
+                <BookOpen className="w-8 h-8 text-blue-500" />
+                文档中心
+              </h2>
+              <div className="grid grid-cols-3 gap-4">
+                <button onClick={() => setActiveTab('pdf-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <FileText className="w-10 h-10 text-red-500 mb-3" />
+                  <h3 className="font-semibold">PDF分析器</h3>
+                  <p className="text-sm text-gray-500">智能解析PDF文档</p>
+                </button>
+                <button onClick={() => setActiveTab('ppt-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Presentation className="w-10 h-10 text-orange-500 mb-3" />
+                  <h3 className="font-semibold">PPT生成</h3>
+                  <p className="text-sm text-gray-500">从卡片生成演示文稿</p>
+                </button>
+                <button onClick={() => setActiveTab('excel-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Table className="w-10 h-10 text-green-500 mb-3" />
+                  <h3 className="font-semibold">Excel分析</h3>
+                  <p className="text-sm text-gray-500">数据分析与可视化</p>
+                </button>
+                <button onClick={() => setActiveTab('report-automation')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <BarChart3 className="w-10 h-10 text-purple-500 mb-3" />
+                  <h3 className="font-semibold">报表生成</h3>
+                  <p className="text-sm text-gray-500">自动化报表输出</p>
+                </button>
+                <button onClick={() => setActiveTab('knowledge-graph')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <GitBranch className="w-10 h-10 text-blue-500 mb-3" />
+                  <h3 className="font-semibold">知识图谱</h3>
+                  <p className="text-sm text-gray-500">可视化知识网络</p>
+                </button>
+                <button onClick={() => setActiveTab('mindmap')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Brain className="w-10 h-10 text-pink-500 mb-3" />
+                  <h3 className="font-semibold">思维导图</h3>
+                  <p className="text-sm text-gray-500">结构化思维整理</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PDF查看器 */}
+        {activeTab === 'pdf-viewer' && (
+          <PDFViewer />
+        )}
+
+        {/* 报表生成 */}
+        {activeTab === 'report-automation' && (
+          <ReportAutomation />
+        )}
+
+        {/* 思维导图 */}
+        {activeTab === 'mindmap' && (
+          <MindMap />
+        )}
+
+        {/* 知识图谱 */}
+        {activeTab === 'knowledge-graph' && (
+          <KnowledgeGraphView />
         )}
         </main>
 

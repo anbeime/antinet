@@ -60,7 +60,7 @@ async def get_network_cards(request: NetworkCardsRequest):
     try:
         if request.color_filter:
             cursor.execute("""
-                SELECT card_id, card_type, title, content, category, created_at
+                SELECT id, card_type, title, content, category, created_at
                 FROM knowledge_cards
                 WHERE (title LIKE ? OR content LIKE ?) 
                 AND card_type = ?
@@ -69,7 +69,7 @@ async def get_network_cards(request: NetworkCardsRequest):
             """, [f"%{request.topic}%", f"%{request.topic}%", request.color_filter, request.limit])
         else:
             cursor.execute("""
-                SELECT card_id, card_type, title, content, category, created_at
+                SELECT id, card_type, title, content, category, created_at
                 FROM knowledge_cards
                 WHERE title LIKE ? OR content LIKE ?
                 ORDER BY created_at DESC
@@ -80,7 +80,7 @@ async def get_network_cards(request: NetworkCardsRequest):
         cards = []
         for row in rows:
             cards.append({
-                "card_id": row["card_id"],
+                "card_id": str(row["id"]),
                 "card_type": row["card_type"],
                 "title": row["title"],
                 "content": row["content"],
@@ -146,13 +146,13 @@ async def generate_network(request: NetworkGenerateRequest):
         if request.card_ids:
             placeholders = ",".join(["?" for _ in request.card_ids])
             cursor.execute(f"""
-                SELECT card_id, card_type, title, content
+                SELECT id, card_type, title, content
                 FROM knowledge_cards
-                WHERE card_id IN ({placeholders})
+                WHERE id IN ({placeholders})
             """, request.card_ids)
         else:
             cursor.execute("""
-                SELECT card_id, card_type, title, content
+                SELECT id, card_type, title, content
                 FROM knowledge_cards
                 WHERE title LIKE ? OR content LIKE ?
                 ORDER BY RANDOM()
@@ -164,11 +164,12 @@ async def generate_network(request: NetworkGenerateRequest):
         # 1. 创建图谱实体
         if request.target_type in ("kg", "both"):
             for card in cards[:12]:
+                card_id = card['id']
                 cursor.execute("""
                     INSERT OR IGNORE INTO kg_entities (entity_id, name, entity_type, description)
                     VALUES (?, ?, ?, ?)
-                """, [f"card_{card['card_id']}", card["title"][:50], card["card_type"], card["content"][:200]])
-                created_entities.append(f"card_{card['card_id']}")
+                """, [f"card_{card_id}", card["title"][:50], card["card_type"], card["content"][:200]])
+                created_entities.append(f"card_{card_id}")
             
             # 创建主题实体
             cursor.execute("""

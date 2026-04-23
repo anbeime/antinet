@@ -220,35 +220,18 @@ const PPTAnalysis: React.FC = () => {
       });
 
       if (response.ok) {
-        const blob = await response.blob();
-        const fileName = `${pptTitle}.pptx`;
+        const data = await response.json();
         
-        // 保存到 sessionStorage 供预览页面使用（创建单独的URL，不销毁）
-        const previewUrl = URL.createObjectURL(blob);
-        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
-        sessionStorage.setItem('lastPPTFileName', fileName);
-        
-        // 创建下载链接（单独的URL）
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // 延迟销毁下载URL，保留预览URL
-        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
-        
-        toast.success('PPT已生成！', {
-          action: {
-            label: '在线查看',
-            onClick: () => navigate('/ppt-viewer')
-          }
-        });
-      } else {
-        const error = await response.json();
-        toast.error(`生成失败: ${error.detail || '未知错误'}`);
+        if (data.success && data.filename) {
+          // 保存文件名到 sessionStorage，跳转到预览页时读取
+          sessionStorage.setItem('lastPPTFileName', data.filename);
+          
+          // 自动跳转到预览页面
+          window.location.href = '/ppt-viewer';
+        } else {
+          const error = await response.json();
+          toast.error(`生成失败: ${error.detail || '未知错误'}`);
+        }
       }
     } catch (error) {
       console.error('生成PPT失败:', error);
@@ -293,33 +276,23 @@ const PPTAnalysis: React.FC = () => {
       });
 
       if (response.ok) {
-        const blob = await response.blob();
-        const fileName = 'Antinet 四色卡片分析报告.pptx';
+        const data = await response.json();
         
-        // 保存到 sessionStorage 供预览页面使用（创建单独的URL，不销毁）
-        const previewUrl = URL.createObjectURL(blob);
-        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
-        sessionStorage.setItem('lastPPTFileName', fileName);
-        
-        // 创建下载链接（单独的URL）
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // 延迟销毁下载URL，保留预览URL
-        setTimeout(() => URL.revokeObjectURL(downloadUrl), 5000);
-        
-        toast.success('PPT已导出！', {
-          action: {
-            label: '在线查看',
-            onClick: () => navigate('/ppt-viewer')
-          }
-        });
-      } else {
+        if (data.success && data.filename) {
+          // 保存文件名
+          sessionStorage.setItem('lastPPTFileName', data.filename);
+          
+          // 提示下载（通过API获取文件）
+          toast.success('PPT导出成功！', {
+            action: {
+              label: '下载',
+              onClick: () => window.open(`${API_BASE}/api/ppt/file?filename=${data.filename}`, '_blank')
+            }
+          });
+          
+          // 自动跳转到预览页面
+          window.location.href = '/ppt-viewer';
+        } else {
         const error = await response.json();
         toast.error(`导出失败: ${error.detail || '未知错误'}`);
       }

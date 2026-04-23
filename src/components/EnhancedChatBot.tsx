@@ -12,7 +12,8 @@ import {
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
-  Upload, Mic, MicOff, Volume2, VolumeX
+  Upload, Mic, MicOff, Volume2, VolumeX,
+  Download, Eye
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -272,9 +273,20 @@ const MessageBubble: React.FC<{
                 <p className="text-sm" style={{ color: '#6b5a4e' }}>{skillResult.result}</p>
               )}
               {skillResult.file_path && (
-                <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: '#8b7355' }}>
-                  <FileText className="w-3 h-3" />
-                  <span className="truncate">{skillResult.file_path}</span>
+                <div className="flex items-center gap-2 mt-2">
+                  <FileText className="w-4 h-4" style={{ color: '#8b7355' }} />
+                  <span className="text-sm flex-1 truncate" style={{ color: '#6b5a4e' }}>{skillResult.file_path}</span>
+                  <button 
+                    onClick={() => {
+                      const fileName = skillResult.file_path?.split('/').pop() || '';
+                      navigate(`/ppt-viewer?file=${encodeURIComponent(fileName)}`);
+                    }}
+                    className="px-3 py-1 text-xs rounded flex items-center gap-1 hover:opacity-80"
+                    style={{ backgroundColor: '#b87333', color: 'white' }}
+                  >
+                    <Eye className="w-3 h-3" />
+                    立即查看
+                  </button>
                 </div>
               )}
             </div>

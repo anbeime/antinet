@@ -149,25 +149,85 @@ async def generate_ppt_from_text(request: TextToPPTRequest):
         from tools.ppt_processor import parse_markdown_content
         slides_data = parse_markdown_content(request.text)
         
+        # 保存到服务端目录供预览使用
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved_filename = f"{request.title.replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
+        saved_path = output_dir / saved_filename
+        
         # 根据主题生成 PPT
         processor.create_presentation_from_slides(
             slides_data=slides_data,
             title=request.title,
-            output_path=output_path,
+            output_path=str(saved_path),
             theme=request.theme
         )
         
-        # 返回文件
-        filename = f"{request.title.replace(' ', '_')}.pptx"
-        return FileResponse(
-            path=output_path,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        # 返回文件名和路径供预览使用
+        return {
+            "success": True,
+            "filename": saved_filename,
+            "title": request.title
+        }
         
     except Exception as e:
         logger.error(f"生成 PPT 失败: {e}")
         raise HTTPException(status_code=500, detail=f"生成 PPT 失败: {str(e)}")
+
+
+async def export_cards_to_ppt_internal(cards: List[Dict], title: str = "智能分析报告", include_summary: bool = True) -> Dict:
+    """内部函数：将卡片导出为 PPT，返回文件路径（供其他模块调用）"""
+    try:
+        if not PPTX_AVAILABLE:
+            return {"success": False, "error": "PPT 功能不可用"}
+        
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"{title[:20].replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
+        output_path = output_dir / filename
+        
+        if USE_ENHANCED:
+            processor = EnhancedPPTProcessor()
+        else:
+            processor = PPTProcessor()
+        
+        processor.create_presentation_from_cards(
+            cards=cards,
+            title=title,
+            output_path=str(output_path),
+            include_summary=include_summary
+        )
+        
+        return {
+            "success": True,
+            "output_path": str(output_path),
+            "filename": filename,
+            "preview_url": f"/ppt-viewer?file={filename}"
+        }
+    except Exception as e:
+        logger.error(f"导出卡片到 PPT 失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/file")
+async def get_ppt_file(filename: str):
+    """获取已生成的PPT文件"""
+    try:
+        output_dir = Path("C:/D/zhiyi/generated")
+        file_path = output_dir / filename
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+        
+        return FileResponse(
+            path=str(file_path),
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+    except Exception as e:
+        logger.error(f"获取PPT文件失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/export/cards")
@@ -177,9 +237,11 @@ async def export_cards_to_ppt(request: ExportCardsRequest):
         raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
-            output_path = tmp.name
+        # 保存到服务端目录
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved_filename = f"{request.title.replace(' ', '_')}_cards_{int(datetime.now().timestamp())}.pptx"
+        saved_path = output_dir / saved_filename
         
         # 使用 PPT 处理器
         if USE_ENHANCED:
@@ -202,17 +264,16 @@ async def export_cards_to_ppt(request: ExportCardsRequest):
         processor.create_presentation_from_cards(
             cards=cards_data,
             title=request.title,
-            output_path=output_path,
+            output_path=str(saved_path),
             include_summary=request.include_summary
         )
         
-        # 返回文件
-        filename = request.filename or f"{request.title.replace(' ', '_')}.pptx"
-        return FileResponse(
-            path=output_path,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        # 返回文件名供预览使用
+        return {
+            "success": True,
+            "filename": saved_filename,
+            "title": request.title
+        }
         
     except Exception as e:
         logger.error(f"导出卡片到 PPT 失败: {e}")
@@ -226,9 +287,11 @@ async def export_analysis_report(request: AnalysisReportRequest):
         raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
-            output_path = tmp.name
+        # 保存到服务端目录
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved_filename = f"{request.title.replace(' ', '_')}_report_{int(datetime.now().timestamp())}.pptx"
+        saved_path = output_dir / saved_filename
         
         # 使用 PPT 处理器
         if USE_ENHANCED:
@@ -261,16 +324,15 @@ async def export_analysis_report(request: AnalysisReportRequest):
             cards=cards_data,
             charts=charts_data,
             summary=request.summary,
-            output_path=output_path
+            output_path=str(saved_path)
         )
         
-        # 返回文件
-        filename = request.filename or f"{request.title.replace(' ', '_')}_report.pptx"
-        return FileResponse(
-            path=output_path,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        # 返回文件名
+        return {
+            "success": True,
+            "filename": saved_filename,
+            "title": request.title
+        }
         
     except Exception as e:
         logger.error(f"导出分析报告失败: {e}")
@@ -617,11 +679,10 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT k.*, GROUP_CONCAT(bl.target_card_id) as forward_link_ids
+                SELECT k.id, k.title, k.content, k.card_type, k.category, k.type,
+                       k.tags, k.related_cards, k.created_at
                 FROM knowledge_cards k
-                LEFT JOIN card_backlinks bl ON k.id = bl.source_card_id
                 WHERE k.project_id = ?
-                GROUP BY k.id
                 ORDER BY k.created_at ASC
             """, (request.project_id,))
             cards = [dict(row) for row in cursor.fetchall()]

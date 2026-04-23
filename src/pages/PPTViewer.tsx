@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Presentation, Upload, Download, ChevronLeft, ChevronRight,
   Play, Pause, Maximize2, Grid, List, FilePlus
@@ -27,6 +28,7 @@ const defaultSlides: SlideData[] = [
 
 const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   useTheme();
+  const [searchParams] = useSearchParams();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewMode, setViewMode] = useState<'slide' | 'outline'>('slide');
@@ -43,18 +45,39 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   const totalSlides = displaySlides?.length || 1;
   const currentSlideData = displaySlides?.[currentSlide] || displaySlides?.[0] || { title: '无内容', content: [], type: 'content' };
 
-  // 从 sessionStorage 加载上次生成的PPT
+  // 从 URL 参数加载 PPT 文件
+  useEffect(() => {
+    const fileParam = searchParams.get('file');
+    if (fileParam) {
+      const loadFromUrl = async () => {
+        try {
+          const response = await fetch(`/api/ppt/file?filename=${encodeURIComponent(fileParam)}`);
+          if (response.ok) {
+            const blob = await response.blob();
+            const file = new File([blob], fileParam, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+            await parsePPTX(file);
+          }
+        } catch (e) {
+          console.error('加载PPT失败:', e);
+        }
+      };
+      loadFromUrl();
+    }
+  }, [searchParams]);
+
+  // 从 sessionStorage 加载上次生成的PPT（通过后端API）
   useEffect(() => {
     const loadFromSession = async () => {
-      const pptUrl = sessionStorage.getItem('lastGeneratedPPT');
-      if (pptUrl) {
+      const fileName = sessionStorage.getItem('lastPPTFileName');
+      if (fileName) {
         try {
-          const response = await fetch(pptUrl);
-          const blob = await response.blob();
-          const file = new File([blob], sessionStorage.getItem('lastPPTFileName') || 'generated.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-          await parsePPTX(file);
+          const response = await fetch(`/api/ppt/file?filename=${encodeURIComponent(fileName)}`);
+          if (response.ok) {
+            const blob = await response.blob();
+            const file = new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+            await parsePPTX(file);
+          }
           // 清除 sessionStorage
-          sessionStorage.removeItem('lastGeneratedPPT');
           sessionStorage.removeItem('lastPPTFileName');
         } catch (e) {
           console.error('加载上次PPT失败:', e);

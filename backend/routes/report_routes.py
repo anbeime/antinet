@@ -104,15 +104,15 @@ async def generate_report(request: ReportDataRequest):
             "files": {
                 "excel": {
                     "path": str(excel_path) if excel_path else '',
-                    "download_url": f"/api/report/download/excel?file={excel_path.name}" if excel_path else ''
+                    "download_url": f"/api/report/download/excel?file={excel_path}" if excel_path else ''
                 },
                 "pdf": {
                     "path": str(pdf_path) if pdf_path else '',
-                    "download_url": f"/api/report/download/pdf?file={pdf_path.name}" if pdf_path else ''
+                    "download_url": f"/api/report/download/pdf?file={pdf_path}" if pdf_path else ''
                 },
                 "ppt": {
                     "path": str(ppt_path) if ppt_path else '',
-                    "download_url": f"/api/report/download/ppt?file={ppt_path.name}" if ppt_path else ''
+                    "download_url": f"/api/report/download/ppt?file={ppt_path}" if ppt_path else ''
                 }
             },
             "timestamp": result.get('timestamp', datetime.now().isoformat())

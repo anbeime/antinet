@@ -201,9 +201,9 @@ except Exception as e:
 
 # 注册 Remotion 动态演示路由
 try:
-    from routes.remotion_routes import router as remotion_router
-    app.include_router(remotion_router)
-    remotion_routes.set_db_manager(db_manager)
+    import routes.remotion_routes as remotion_routes_module
+    app.include_router(remotion_routes_module.router)
+    remotion_routes_module.set_db_manager(db_manager)
     logger.info("[OK] Remotion 动态演示路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 Remotion 路由: {e}")

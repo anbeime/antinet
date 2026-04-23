@@ -732,7 +732,7 @@ const ProjectDetailPanel: React.FC<{
 
       // 下载文件
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${project.name.replace(/\s+/g, '_')}.pptx`;
@@ -741,6 +741,7 @@ const ProjectDetailPanel: React.FC<{
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       toast.success('PPT导出成功');
+      window.location.href = 'http://localhost:3000/ppt-viewer';
     } catch (err: any) {
       toast.error(err.message || 'PPT导出失败');
     } finally {

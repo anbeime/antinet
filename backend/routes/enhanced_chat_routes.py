@@ -19,6 +19,9 @@ import tempfile
 import time
 from datetime import datetime
 
+from config import settings
+from database import DatabaseManager
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"])
@@ -1233,19 +1236,82 @@ async def get_memory_summary(user_id: str):
 
 def init_skills():
     """初始化默认技能"""
-    # PPT生成技能
-async def _ppt_handler(query, context):
-        return {
-            "result": "PPT生成成功",
-            "file_path": "/generated/presentation.pptx",
-            "metadata": {"slides": 10, "theme": "professional"}
-        }
+    async def _ppt_handler(query, context):
+        try:
+            topic = query or "智能分析报告"
+            
+            cards_data = []
+            if context.get("cards"):
+                cards_data = context["cards"]
+            else:
+                from database import DatabaseManager
+                db = DatabaseManager(settings.DB_PATH)
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, card_type, title, content, category
+                    FROM knowledge_cards
+                    WHERE title LIKE ? OR content LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT 12
+                """, [f"%{topic}%", f"%{topic}%"])
+                rows = cursor.fetchall()
+                for row in rows:
+                    cards_data.append({
+                        "type": row["card_type"],
+                        "title": row["title"],
+                        "content": [row["content"][:200]] if row["content"] else []
+                    })
+                conn.close()
+            
+            if not cards_data:
+                cards_data = [{"type": "blue", "title": topic, "content": [topic]}]
+            
+            from routes import ppt_routes
+            ppt_routes.set_db_manager(db_manager)
+            
+            cards_for_ppt = []
+            for card in cards_data:
+                cards_for_ppt.append({
+                    "type": card.get("type", "blue"),
+                    "title": card.get("title", "无标题")[:50],
+                    "content": card.get("content", []),
+                    "tags": [],
+                    "created_at": datetime.now().isoformat()
+                })
+            
+            result = await ppt_routes.export_cards_to_ppt_internal(
+                cards=cards_for_ppt,
+                title=topic,
+                include_summary=True
+            )
+            
+            if result.get("success"):
+                return {
+                    "result": f"PPT生成成功！包含 {len(cards_for_ppt)} 张幻灯片",
+                    "file_path": result.get("output_path", ""),
+                    "preview_url": f"/ppt-viewer?file={result.get('filename', '')}",
+                    "metadata": {"slides": len(cards_for_ppt), "theme": "professional"}
+                }
+            else:
+                return {
+                    "result": f"PPT生成失败: {result.get('error', '未知错误')}",
+                    "file_path": None
+                }
+        except Exception as e:
+            logger.error(f"PPT生成失败: {e}")
+            return {
+                "result": f"PPT生成失败: {str(e)}",
+                "file_path": None
+            }
+    
     async def _excel_handler(query, context):
         return {
             "result": "Excel分析完成",
             "file_path": "/generated/analysis.xlsx",
             "metadata": {"charts": 3, "sheets": 2}
         }
+    
     async def _word_handler(query, context):
         return {
             "result": "Word文档生成成功",
@@ -1313,7 +1379,7 @@ class DraftCreate(BaseModel):
     draft_type: str = Field(default="analysis", description="草稿类型: analysis/card_collection/draft_content")
     title: str
     content: Dict[str, Any] = Field(default_factory=dict, description="草稿内容")
-    cards: Optional[List[Dict[str, Any]] = Field(default=None, description="关联的卡片")
+    cards: Optional[List[Dict[str, Any]]] = Field(default=None, description="关联的卡片")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="元数据")
     user_id: str = Field(default="default_user")
 
@@ -1351,7 +1417,7 @@ async def create_draft(draft: DraftCreate):
             
             cursor.execute("""
                 INSERT INTO chat_drafts (draft_id, draft_type, title, content, cards, metadata, user_id, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')
             """, [
                 draft_id,
                 draft.draft_type,
