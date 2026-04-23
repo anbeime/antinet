@@ -25,18 +25,47 @@ const defaultSlides: SlideData[] = [
   { title: '谢谢', content: ['如有疑问，欢迎交流'], type: 'title' },
 ];
 
-const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
+const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   useTheme();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewMode, setViewMode] = useState<'slide' | 'outline'>('slide');
   const [playInterval, setPlayInterval] = useState<NodeJS.Timeout | null>(null);
+  const [loadedSlides, setLoadedSlides] = useState<SlideData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const totalSlides = slides.length;
+  const displaySlides = (loadedSlides && loadedSlides.length > 0) 
+    ? loadedSlides 
+    : (slides && slides.length > 0) 
+      ? slides 
+      : defaultSlides;
+  const totalSlides = displaySlides?.length || 1;
+  const currentSlideData = displaySlides?.[currentSlide] || displaySlides?.[0] || { title: '无内容', content: [], type: 'content' };
+
+  // 从 sessionStorage 加载上次生成的PPT
+  useEffect(() => {
+    const loadFromSession = async () => {
+      const pptUrl = sessionStorage.getItem('lastGeneratedPPT');
+      if (pptUrl) {
+        try {
+          const response = await fetch(pptUrl);
+          const blob = await response.blob();
+          const file = new File([blob], sessionStorage.getItem('lastPPTFileName') || 'generated.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+          await parsePPTX(file);
+          // 清除 sessionStorage
+          sessionStorage.removeItem('lastGeneratedPPT');
+          sessionStorage.removeItem('lastPPTFileName');
+        } catch (e) {
+          console.error('加载上次PPT失败:', e);
+        }
+      }
+    };
+    loadFromSession();
+  }, []);
 
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && totalSlides > 0) {
       const interval = setInterval(() => {
         setCurrentSlide(prev => (prev + 1) % totalSlides);
       }, 3000);
@@ -49,6 +78,82 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
       if (playInterval) clearInterval(playInterval);
     };
   }, [isPlaying, totalSlides]);
+
+const parsePPTX = async (file: File) => {
+    setIsLoading(true);
+    try {
+      const JSZip = await import('jszip');
+      const arrayBuffer = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      
+      let parsedSlides: SlideData[] = [];
+      
+      const slideFiles = Object.keys(zip.files)
+        .filter(name => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
+        .sort((a, b) => {
+          const numA = parseInt(a.match(/slide(\d+)\.xml/)?.[1] || '0');
+          const numB = parseInt(b.match(/slide(\d+)\.xml/)?.[1] || '0');
+          return numA - numB;
+        });
+       
+      for (const slideFile of slideFiles) {
+        const content = await zip.file(slideFile)?.async('string');
+        if (content) {
+          const lines: string[] = [];
+          let title = '';
+          
+          const linesMatch = content.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
+          if (linesMatch) {
+            for (let i = 0; i < linesMatch.length; i++) {
+              const match = linesMatch[i].match(/<a:t[^>]*>([^<]+)<\/a:t>/);
+              if (match && match[1]) {
+                const text = match[1].trim();
+                if (text) {
+                  if (i === 0) {
+                    title = text;
+                  } else {
+                    lines.push(text);
+                  }
+                }
+              }
+            }
+          }
+          
+          if (!title && lines.length > 0) {
+            title = lines[0].substring(0, 30);
+          }
+          
+          parsedSlides.push({
+            title: title || `Slide ${parsedSlides.length + 1}`,
+            content: lines.length > 0 ? lines : ['无内容'],
+            type: title ? 'content' : 'list'
+          });
+        }
+      }
+      
+      if (parsedSlides.length > 0) {
+        setLoadedSlides(parsedSlides);
+        setCurrentSlide(0);
+      } else {
+        alert('无法解析PPT内容，将使用示例数据');
+      }
+    } catch (error) {
+      console.error('解析PPTX失败:', error);
+      alert('解析失败: ' + error);
+    }
+    setIsLoading(false);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) {
+      await parsePPTX(file);
+    } else {
+      alert('请上传PPT文件(.pptx, .ppt)');
+    }
+  };
 
   const handlePrev = () => {
     setCurrentSlide((currentSlide - 1 + totalSlides) % totalSlides);
@@ -83,6 +188,18 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
           <span className="text-gray-400 text-sm">
             ({(currentSlide + 1)} / {totalSlides})
           </span>
+          <label className="ml-4 cursor-pointer">
+            <input
+              type="file"
+              accept=".pptx,.ppt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <span className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded">
+              <Upload className="w-4 h-4 inline mr-1" />
+              上传PPT
+            </span>
+          </label>
         </div>
 
         <div className="flex items-center space-x-2">
@@ -142,22 +259,22 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3 }}
                   >
-                    {slides[currentSlide].type === 'title' ? (
+                    {displaySlides[currentSlide].type === 'title' ? (
                       <div className="text-center">
                         <h2 className="text-4xl font-bold text-white mb-4">
-                          {slides[currentSlide].title}
+                          {displaySlides[currentSlide]?.title || ''}
                         </h2>
                         <p className="text-xl text-white/80">
-                          {slides[currentSlide].content[0]}
+                          {displaySlides[currentSlide]?.content?.[0] || ''}
                         </p>
                       </div>
                     ) : (
                       <div>
                         <h2 className="text-3xl font-bold text-white mb-6">
-                          {slides[currentSlide].title}
+                          {displaySlides[currentSlide]?.title || ''}
                         </h2>
                         <ul className="space-y-3">
-                          {slides[currentSlide].content.map((item, idx) => (
+                          {(displaySlides[currentSlide]?.content || []).map((item, idx) => (
                             <motion.li
                               key={idx}
                               initial={{ opacity: 0, x: -20 }}
@@ -185,7 +302,7 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
         ) : (
           <div className="flex-1 overflow-y-auto p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {slides.map((slide, idx) => (
+              {(displaySlides || []).map((slide, idx) => (
                 <motion.div
                   key={idx}
                   whileHover={{ scale: 1.02 }}
@@ -223,7 +340,7 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides = defaultSlides }) => {
         </div>
         
         <div className="flex items-center space-x-4 text-sm text-gray-400">
-          <span>{slides[currentSlide].title}</span>
+          <span>{displaySlides[currentSlide]?.title || ''}</span>
           <span>按空格键 {isPlaying ? '暂停' : '播放'}</span>
         </div>
       </footer>

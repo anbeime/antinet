@@ -33,6 +33,11 @@ class SimplePDFProcessor:
         self.logger = logging.getLogger(__name__)
         _lazy_load_pypdf()  # 延迟加载pypdf
     
+    @property
+    def available(self) -> bool:
+        """检查 PDF 功能是否可用"""
+        return PDF_AVAILABLE
+    
     def extract_text(self, pdf_path: str, preserve_layout: bool = False) -> Dict[str, Any]:
         """
         从 PDF 提取文本

@@ -178,23 +178,26 @@ if chat_router is not None:
     
     logger.info("[OK] 聊天机器人路由已注册")
 
+# 测试用简单端点
+@app.get("/api/test")
+async def test():
+    return {"status": "ok"}
+
 # 注册知识管理路由
 try:
     from routes.knowledge_routes import router as knowledge_router
     app.include_router(knowledge_router)  # 知识管理路由
-    # 设置knowledge_routes的数据库管理器
-    knowledge_router.db_manager = db_manager
     logger.info("[OK] 知识管理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入知识管理路由: {e}")
 
-# 注册智能知识中枢路由
+# 注册思维导图路由
 try:
-    from routes.knowledge_center_routes import router as knowledge_center_router
-    app.include_router(knowledge_center_router)  # 智能知识中枢路由
-    logger.info("[OK] 智能知识中枢路由已注册")
+    from routes.mindmap_routes import router as mindmap_router
+    app.include_router(mindmap_router)
+    logger.info("[OK] 思维导图路由已注册")
 except Exception as e:
-    logger.warning(f"无法导入智能知识中枢路由: {e}")
+    logger.warning(f"无法导入思维导图路由: {e}")
 
 # 注册专题研究路由
 try:
@@ -207,7 +210,7 @@ except Exception as e:
 # 注册 8-Agent 系统路由
 try:
     from routes.agent_routes import router as agent_router
-    app.include_router(agent_router)  # 8-Agent 系统路由（prefix已在router中定义）
+    app.include_router(agent_router)  # 8-Agent 系统路由
     logger.info("[OK] 8-Agent 系统路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 8-Agent 系统路由: {e}")
@@ -236,7 +239,7 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 Excel 导出路由: {e}")
 
-# 注册完整分析路由（数据 + 8-Agent + Excel）
+# 注册完整分析路由
 try:
     from routes.analysis_routes import router as analysis_router
     app.include_router(analysis_router)  # 完整分析路由
@@ -263,25 +266,17 @@ except Exception as e:
 # 注册 PPT 处理路由
 try:
     from routes.ppt_routes import router as ppt_router
+    from routes.ppt_routes import set_db_manager as set_ppt_db_manager
     app.include_router(ppt_router)  # PPT 处理路由
+    set_ppt_db_manager(db_manager)
     logger.info("[OK] PPT 处理路由已注册")
-
-except Exception as e:
-    logger.warning(f"无法导入 PPT 处理路由: {e}")
-
-# 注册 PPT 处理路由
-try:
-    from routes.ppt_routes import router as ppt_router
-    app.include_router(ppt_router)  # PPT 处理路由
-    logger.info("[OK] PPT 处理路由已注册")
-
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
 
 # 注册报表自动化路由
 try:
     from routes.report_routes import router as report_router
-    app.include_router(report_router, prefix="/api/automation", tags=["automation"])  # 报表自动化路由
+    app.include_router(report_router)  # 报表自动化路由 (prefix已在router中定义)
     logger.info("[OK] 报表自动化路由已注册")
 except Exception as e:
     logger.warning(f"无法导入报表自动化路由: {e}")
@@ -294,7 +289,31 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 GTD 任务管理路由: {e}")
 
-# 注册多模型路由
+# 注册双向链接路由
+try:
+    from routes.backlink_routes import router as backlink_router
+    app.include_router(backlink_router)
+    logger.info("[OK] 双向链接路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入双向链接路由: {e}")
+
+# 注册整合路由（任务-笔记双向链接 + 日历整合）
+try:
+    from routes.integration_routes import router as integration_router
+    app.include_router(integration_router)
+    logger.info("[OK] 整合路由（任务-笔记-日历）已注册")
+except Exception as e:
+    logger.warning(f"无法导入整合路由: {e}")
+
+# 注册 MOC 多维筛选路由
+try:
+    from routes.moc_routes import router as moc_router
+    app.include_router(moc_router)
+    logger.info("[OK] MOC多维筛选路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入MOC路由: {e}")
+
+# 注册多模型API路由
 try:
     from routes.multi_model_routes import router as multi_model_router
     app.include_router(multi_model_router)  # 多模型API路由
@@ -314,9 +333,9 @@ except Exception as e:
 try:
     from routes.genie_playground_routes import router as genie_playground_router
     app.include_router(genie_playground_router)  # Genie模型测试场路由
-    logger.info("[OK] Genie模型测试场路由已注册")
+    logger.info("[OK] Genie 模型测试场路由已注册")
 except Exception as e:
-    logger.warning(f"无法导入Genie模型测试场路由: {e}")
+    logger.warning(f"无法导入 Genie 模型测试场路由: {e}")
 
 # 注册8-Agent会议路由
 try:
@@ -331,634 +350,63 @@ except Exception as e:
 # 注册增强版聊天路由
 try:
     from routes.enhanced_chat_routes import router as enhanced_chat_router
+    from routes.enhanced_chat_routes import set_db_manager as set_chat_db_manager
     app.include_router(enhanced_chat_router)  # 增强版聊天路由
-    # 设置enhanced_chat_routes模块的数据库管理器
-    import routes.enhanced_chat_routes as enhanced_chat_routes_module
-    enhanced_chat_routes_module.db_manager = db_manager
-    logger.info("[OK] 增强版聊天路由已注册")
+    set_chat_db_manager(db_manager)
+    logger.info("[OK] 增强版聊天路由已注册 (含知识图谱)")
 except Exception as e:
     logger.warning(f"无法导入增强版聊天路由: {e}")
 
+# 注册对话上下文链路由
+try:
+    from routes.chat_context_routes import router as context_router
+    from routes.chat_context_routes import set_context_manager as set_ctx_mgr
+    from routes.conversation_context import context_manager as ctx_mgr
+    app.include_router(context_router)
+    set_ctx_mgr(ctx_mgr)
+    logger.info("[OK] 对话上下文链路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入对话上下文链路由: {e}")
 
-# 初始化 8-Agent 系统
-@app.on_event("startup")
-async def initialize_agent_system():
-    """初始化 8-Agent 系统"""
-    try:
-        logger.info("[AgentSystem] 8-Agent 系统已通过路由注册自动就绪")
+# 注册向量搜索模块
+try:
+    from routes.vector_search import set_db_manager as set_vec_db, init_on_startup
+    from routes.auto_card import set_db_manager as set_card_db
+    set_vec_db(db_manager)
+    set_card_db(db_manager)
+    logger.info("[OK] 向量搜索和自动卡片模块已注册")
+except Exception as e:
+    logger.warning(f"无法导入向量搜索模块: {e}")
 
-        # 初始化技能系统
-        logger.info("[SkillSystem] 正在初始化技能系统...")
-        from services.skill_system import get_skill_registry
-        skill_registry = get_skill_registry()
-        logger.info(f"[OK] 技能系统初始化完成，已注册 {len(skill_registry.skills)} 个技能")
+# Wiki 知识网络路由
+try:
+    from routes.wiki import router as wiki_router
+    app.include_router(wiki_router)
+    logger.info("[OK] Wiki知识网络路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入Wiki路由: {e}")
 
-        logger.info("[OK] 8-Agent 系统初始化完成")
-    except Exception as e:
-        logger.warning(f"8-Agent 系统初始化失败: {e}")
-        logger.info("系统将继续运行，但 8-Agent 功能可能不可用")
-
-
-class QueryRequest(BaseModel):
-    """数据查询请求"""
-    query: str = Field(..., description="自然语言查询")
-    data_source: str = Field(default="local", description="数据源")
-    context: Dict[str, Any] = Field(default_factory=dict, description="上下文信息")
-
-
-class FourColorCard(BaseModel):
-    """四色卡片"""
-    color: str = Field(..., description="卡片颜色: blue|green|yellow|red")
-    title: str = Field(..., description="卡片标题")
-    content: str = Field(..., description="卡片内容")
-    category: str = Field(..., description="类别: 事实|解释|风险|行动")
-
-
-class AnalysisResult(BaseModel):
-    """分析结果"""
-    query: str
-    facts: List[str] = Field(default_factory=list, description="事实卡片")
-    explanations: List[str] = Field(default_factory=list, description="解释卡片")
-    risks: List[str] = Field(default_factory=list, description="风险卡片")
-    actions: List[str] = Field(default_factory=list, description="行动卡片")
-    cards: List[FourColorCard] = Field(default_factory=list, description="生成的四色卡片")
-    visualizations: List[Dict] = Field(default_factory=list, description="可视化配置")
-    performance: Dict[str, float] = Field(default_factory=dict, description="性能指标")
-
-
-def load_model_if_needed():
-    """按需加载模型 - 使用全局单例，返回加载器实例"""
-    try:
-        from models.model_loader import get_model_loader
-        loader = get_model_loader()
-        logger.info(f"[DEBUG] loader.is_loaded before: {loader.is_loaded}")
-
-        # 检查是否已加载
-        if not loader.is_loaded:
-            logger.info("正在加载QNN模型...")
-            try:
-                loader.load()
-            except Exception as load_err:
-                logger.warning(f"loader.load() 抛出异常: {load_err}")
-                # 检查是否模型实例已存在（可能热重载后状态不一致）
-                if loader.model is not None:
-                    logger.info(f"模型实例已存在，手动设置 is_loaded=True")
-                    loader.is_loaded = True
-                else:
-                    # 重新抛出异常
-                    raise
-            
-            logger.info(f"[DEBUG] loader.is_loaded after load: {loader.is_loaded}")
-
-            if not loader.is_loaded:
-                # 再次检查 model 属性
-                if loader.model is not None:
-                    logger.info(f"模型实例存在但 is_loaded=False，修正状态")
-                    loader.is_loaded = True
-                else:
-                    raise RuntimeError("模型加载器返回但 is_loaded=False 且 model=None")
-
-            logger.info("[OK] 模型加载成功")
-        else:
-            logger.info("模型已加载，直接使用")
-
-        logger.info(f"[DEBUG] returning loader with is_loaded={loader.is_loaded}")
-        return loader
-
-    except Exception as e:
-        logger.error(f" 模型加载失败: {e}")
-        import traceback
-        logger.error(f"完整堆栈:\n{traceback.format_exc()}")
-        return None
-
-
-def real_inference(query: str, loader) -> Dict[str, Any]:
-    """真实NPU推理"""
-    logger.info(f"[NPU推理] 处理查询: {query}")
-
-    try:
-        # NPU推理 - 使用文本prompt
-        start_time = time.time()
-        response = loader.infer(
-            prompt=f"请分析以下数据查询并生成四色卡片分析结果: {query}",
-            max_new_tokens=512,
-            temperature=0.7
-        )
-
-        inference_time = (time.time() - start_time) * 1000
-
-        logger.info(f"  推理延迟: {inference_time:.2f}ms")
-
-        # 解析模型输出为四色卡片
-        # 将响应按句号分割成句子
-        sentences = [s.strip() for s in response.split('。') if s.strip()]
-        
-        # 分配句子到不同类别（简单启发式）
-        facts = []
-        explanations = []
-        risks = []
-        actions = []
-        
-        if sentences:
-            # 第一个句子作为事实
-            facts.append(sentences[0])
-            # 如果有更多句子，分配给其他类别
-            if len(sentences) > 1:
-                explanations.append(sentences[1])
-            if len(sentences) > 2:
-                risks.append(sentences[2])
-            if len(sentences) > 3:
-                actions.append(sentences[3])
-            # 剩余句子添加到事实中
-            if len(sentences) > 4:
-                facts.extend(sentences[4:])
-        else:
-            # 如果响应为空，抛出错误（模拟数据已被禁止）
-            logger.error("模型响应为空，推理失败")
-            raise RuntimeError("模型推理返回空响应，NPU推理失败")
-        
-        result = {
-            "facts": facts,
-            "explanations": explanations,
-            "risks": risks,
-            "actions": actions,
-            "inference_time_ms": inference_time
-        }
-
-        return result
-
-    except Exception as e:
-        logger.error(f"推理失败: {e}")
-        raise
-
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动事件"""
-    logger.info("=" * 60)
-    logger.info(f"{settings.APP_NAME} v{settings.APP_VERSION}")
-    logger.info("端侧智能数据中枢与协同分析平台")
-    logger.info("=" * 60)
-    logger.info(f"运行环境: {settings.QNN_DEVICE}")
-    logger.info(f"数据不出域: {settings.DATA_STAYS_LOCAL}")
-    logger.info("")
-
-    # 创建必要的目录
-    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-        # 检查是否自动加载模型（为 True 时启动时加载，False 时按需加载）
-    if settings.AUTO_LOAD_MODEL:
-        # 使用全局单例加载器（确保 /api/npu/status 能正确返回状态）
-        try:
-            logger.info("[startup_event] 开始初始化模型加载器...")
-            from models.model_loader import get_model_loader
-            loader = get_model_loader()
-            logger.info(f"[startup_event] get_model_loader() returned: {loader}")
-            logger.info(f"[startup_event] loader.is_loaded before load(): {loader.is_loaded}")
-
-            model = loader.load()
-            logger.info(f"[startup_event] loader.load() completed")
-            logger.info(f"[startup_event] loader.is_loaded after load(): {loader.is_loaded}")
-            logger.info(f"[startup_event] loader.model exists: {loader.model is not None}")
-
-            # 验证模型是否真的加载成功
-            if not loader.is_loaded:
-                logger.error(f"[startup_event] loader.is_loaded=False，但 load() 没有抛出异常")
-                raise RuntimeError("模型加载器报告 is_loaded=False，但未抛出异常")
-
-            logger.info("[OK] 全局模型加载器已初始化")
-            logger.info(f"  - 模型: {loader.model_config['name']}")
-            logger.info(f"  - 参数: {loader.model_config['params']}")
-            logger.info(f"  - 量化: {loader.model_config['quantization']}")
-            logger.info(f"  - 状态: 已加载")
-
-            # 验证全局变量
-            from models.model_loader import _global_model_loader
-            logger.info(f"[startup_event] _global_model_loader: {_global_model_loader}")
-            logger.info(f"[startup_event] _global_model_loader is loader: {_global_model_loader is loader}")
-
-        except ImportError as e:
-            logger.warning(f"NPU 模型加载器不可用: {e}")
-            logger.warning("NPU 功能将被禁用，但其他 API 仍可正常工作")
-        except Exception as e:
-            logger.error(f" 模型加载失败: {e}")
-            logger.error(f"错误类型: {type(e).__name__}")
-            import traceback
-            logger.error(f"完整堆栈:\n{traceback.format_exc()}")
-
-            # 特殊处理NPU设备创建错误
-            error_msg = str(e)
-            if "14001" in error_msg or "Failed to create device" in error_msg:
-                logger.error("")
-                logger.error("=" * 60)
-                logger.error("CRITICAL: NPU设备创建失败（错误代码14001）")
-                logger.error("=" * 60)
-                logger.error("")
-                logger.error("可能原因:")
-                logger.error("  1. NPU驱动未正确安装")
-                logger.error("  2. 另一个进程已占用NPU资源")
-                logger.error("  3. DLL版本不匹配")
-                logger.error("  4. 系统权限不足")
-                logger.error("")
-                logger.error("建议操作:")
-                logger.error("  1. 运行 fix_npu_device.bat 修复NPU占用")
-                logger.error("  2. 重启AIPC以完全释放NPU资源")
-                logger.error("  3. 检查Windows事件查看器 -> Windows日志 -> 应用")
-                logger.error("  4. 确认NPU驱动在设备管理器中正常运行")
-                logger.error("")
-                logger.error("临时方案:")
-                logger.error("  - 系统将忽略NPU错误继续启动")
-                logger.error("  - API仍可使用，但NPU推理功能不可用")
-                logger.error("=" * 60)
-                logger.error("")
-    else:
-        logger.info("[startup_event] AUTO_LOAD_MODEL=False，跳过启动时自动加载模型")
-        logger.info("[startup_event] 模型将在首次使用时按需加载")
-        # 不再吞掉异常，让问题暴露出来
-
-    # 启动任务提醒服务
-    try:
-        from services.reminder_service import start_reminder_service
-        start_reminder_service()
-        logger.info("[OK] 任务提醒服务已启动")
-    except Exception as e:
-        logger.warning(f"任务提醒服务启动失败: {e}")
-
-
-@app.get("/")
-async def root():
-    """根路径"""
-    try:
-        from models.model_loader import _global_model_loader
-        model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
-    except:
-        model_loaded = False
-
+# 调试端点
+@app.get("/api/debug/routes")
+async def debug_routes():
+    """调试端点 - 列出所有已注册的路由"""
+    all_routes = []
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            all_routes.append(route.path)
     return {
-        "app": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "description": "知易智能知识管家 - 后端API",
-        "status": "running",
-        "model_loaded": model_loaded,
-        "device": settings.QNN_DEVICE
+        "total_routes": len(all_routes),
+        "routes": sorted(all_routes)
     }
-
-
-@app.get("/api/health")
-async def health_check():
-    """健康检查 - 轻量级，不触发模型加载"""
-    logger.info("[/api/health] 开始健康检查")
-
-    try:
-        # 只检查模型加载器状态，不触发加载
-        is_loaded = False
-        try:
-            from models.model_loader import _global_model_loader
-            if _global_model_loader is not None:
-                is_loaded = _global_model_loader.is_loaded
-                logger.info(f"[/api/health] 模型状态: is_loaded={is_loaded}")
-            else:
-                logger.info("[/api/health] 模型加载器未初始化")
-        except ImportError:
-            logger.warning("[/api/health] 无法导入模型加载器")
-        except Exception as e:
-            logger.warning(f"[/api/health] 检查模型状态时出错: {e}")
-        
-        # 根据模型状态确定健康状态
-        status = "healthy" if is_loaded else "degraded"
-        
-        logger.info(f"[/api/health] 最终状态: {status}, model_loaded={is_loaded}")
-        
-    except Exception as e:
-        logger.error(f"[/api/health] 健康检查异常: {e}")
-        is_loaded = False
-        status = "degraded"
-    
-    return {
-        "status": status,
-        "model": settings.MODEL_NAME,
-        "model_loaded": is_loaded,
-        "device": settings.QNN_DEVICE,
-        "data_stays_local": settings.DATA_STAYS_LOCAL,
-        "qai_libs_path": os.environ.get('QAI_LIBS_PATH', 'Not set')
-    }
-
-
-@app.post("/api/analyze", response_model=AnalysisResult)
-async def analyze_data(request: QueryRequest):
-    """
-    数据分析接口 - 核心功能
-
-    接收自然语言查询,返回四色卡片分析结果
-    """
-    logger.info(f"收到分析请求: {request.query}")
-
-    try:
-        # 检查模型是否加载（不触发加载）
-        from models.model_loader import _global_model_loader
-        model_loaded = _global_model_loader is not None and _global_model_loader.is_loaded
-
-        if not model_loaded:
-            logger.warning("模型未加载，跳过NPU分析")
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "error": "模型未加载",
-                    "message": "NPU模型未加载，请先调用聊天或分析API触发模型加载",
-                    "model_loaded": False
-                }
-            )
-
-
-        # 如果模型已加载，返回模型实例
-        current_model = _global_model_loader.model
-
-        start_time = time.time()
-
-
-        # 执行NPU推理
-        raw_result = real_inference(request.query, current_model)
-        inference_time = raw_result.get("inference_time_ms", 0)
-
-        # 生成四色卡片
-        cards = []
-
-        # 蓝色卡片 - 事实
-        for fact in raw_result["facts"]:
-            cards.append(FourColorCard(
-                color="blue",
-                title="数据事实",
-                content=fact,
-                category="事实"
-            ))
-
-        # 绿色卡片 - 解释
-        for explanation in raw_result["explanations"]:
-            cards.append(FourColorCard(
-                color="green",
-                title="原因解释",
-                content=explanation,
-                category="解释"
-            ))
-
-        # 黄色卡片 - 风险
-        for risk in raw_result["risks"]:
-            cards.append(FourColorCard(
-                color="yellow",
-                title="风险预警",
-                content=risk,
-                category="风险"
-            ))
-
-        # 红色卡片 - 行动
-        for action in raw_result["actions"]:
-            cards.append(FourColorCard(
-                color="red",
-                title="行动建议",
-                content=action,
-                category="行动"
-            ))
-
-        # 生成可视化配置 (示例)
-        visualizations = [
-            {
-                "type": "bar",
-                "title": "数据分布",
-                "data": [
-                    {"name": "指标A", "value": 85},
-                    {"name": "指标B", "value": 72},
-                    {"name": "指标C", "value": 91}
-                ]
-            }
-        ]
-
-        total_time = (time.time() - start_time) * 1000
-
-        # 构建响应
-        result = AnalysisResult(
-            query=request.query,
-            facts=raw_result["facts"],
-            explanations=raw_result["explanations"],
-            risks=raw_result["risks"],
-            actions=raw_result["actions"],
-            cards=cards,
-            visualizations=visualizations,
-            performance={
-                "total_time_ms": total_time,
-                "inference_time_ms": inference_time,
-                "meets_target": float(inference_time < 2000)
-            }
-        )
-
-        logger.info(f"分析完成 (总耗时: {total_time:.2f}ms)")
-        logger.info(f"  生成卡片数: {len(cards)}")
-        logger.info(f"  NPU推理: {inference_time:.2f}ms")
-
-        return result
-
-    except Exception as e:
-        logger.error(f"分析失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/data/upload")
-async def upload_data(file: UploadFile = File(...)):
-    """
-    数据上传接口
-
-    上传数据文件进行本地化处理 (数据不出域)
-    """
-    logger.info(f"收到文件上传: {file.filename}")
-
-    # 验证文件大小
-    contents = await file.read()
-    if len(contents) > settings.MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"文件过大,最大支持 {settings.MAX_UPLOAD_SIZE/(1024**2)}MB"
-        )
-
-    # 保存到本地
-    upload_path = settings.DATA_DIR / "uploads" / file.filename
-    upload_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(upload_path, 'wb') as f:
-        f.write(contents)
-
-    logger.info(f"[OK] 文件已保存到本地: {upload_path}")
-    logger.info(f"  大小: {len(contents)/(1024**2):.2f}MB")
-
-    return {
-        "filename": file.filename,
-        "size_bytes": len(contents),
-        "saved_path": str(upload_path),
-        "data_stays_local": True  # 强调数据不出域
-    }
-
-
-@app.get("/api/performance/benchmark")
-async def run_benchmark():
-    """
-    性能基准测试
-
-    测试NPU推理性能并与CPU对比
-    """
-    logger.info("开始性能基准测试...")
-
-    results = {
-        "device": settings.QNN_DEVICE,
-        "model": settings.MODEL_NAME,
-        "performance_mode": "BURST",  # 已启用BURST性能模式以优化延迟
-        "tests": []
-    }
-
-    # 加载模型
-    current_model = load_model_if_needed()
-
-    if current_model is None:
-        logger.error("模型加载失败，无法进行基准测试")
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "error": "模型加载失败",
-                "message": "NPU模型未加载，无法进行基准测试",
-                "debug_info": {
-                    "model_path": str(settings.MODEL_PATH),
-                    "model_exists": os.path.exists(settings.MODEL_PATH)
-                },
-                "suggestions": [
-                    "1. 检查后端启动日志中的详细错误",
-                    "2. 确保模型文件完整",
-                    "3. 验证 DLL 依赖库是否正确"
-                ]
-            }
-        )
-
-    try:
-        import random
-        import string
-
-        # 生成随机单词列表用于创建不同长度的提示
-        word_list = [
-            '数据', '分析', '模型', '推理', '性能', '测试', '延迟', '吞吐', '优化', '加速',
-            '计算', '算法', '网络', '深度', '学习', '机器', '智能', '人工', '视觉', '语音',
-            '自然', '语言', '处理', '特征', '提取', '分类', '回归', '聚类', '降维', '增强',
-            '训练', '验证', '测试', '评估', '指标', '精度', '召回', '准确', '误差', '损失'
-        ]
-
-        # 测试不同输入长度（以单词数为近似）
-        for seq_len in [32, 64, 128, 256]:
-            # 创建包含seq_len个随机单词的提示
-            prompt_words = random.choices(word_list, k=seq_len)
-            prompt = ' '.join(prompt_words)
-
-            # 预热
-            for _ in range(3):
-                current_model.infer(prompt=prompt, max_new_tokens=32)
-
-            # 正式测试
-            latencies = []
-            for _ in range(10):
-                start = time.time()
-                current_model.infer(prompt=prompt, max_new_tokens=32)
-                latency = (time.time() - start) * 1000
-                latencies.append(latency)
-
-            avg_latency = sum(latencies) / len(latencies)
-            min_latency = min(latencies)
-            max_latency = max(latencies)
-
-            results["tests"].append({
-                "sequence_length": seq_len,
-                "avg_latency_ms": round(avg_latency, 2),
-                "min_latency_ms": round(min_latency, 2),
-                "max_latency_ms": round(max_latency, 2),
-                "throughput_qps": round(1000 / avg_latency, 2)
-            })
-
-            logger.info(f"  序列长度 {seq_len}: {avg_latency:.2f}ms")
-
-        # 计算总体平均延迟
-        overall_avg_latency = sum(test["avg_latency_ms"] for test in results["tests"]) / len(results["tests"])
-        results["overall_avg_latency_ms"] = round(overall_avg_latency, 2)
-        results["target_latency_ms"] = 500
-        results["meets_target"] = overall_avg_latency < 500
-        
-        logger.info(f"基准测试完成 - 总体平均延迟: {overall_avg_latency:.2f}ms, 目标: <500ms, 达标: {results['meets_target']}")
-        
-        return results
-
-    except Exception as e:
-        logger.error(f"基准测试失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
     import uvicorn
-
-    logger.info("启动开发服务器...")
     uvicorn.run(
         "main:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=False,  # 禁用热重载，避免状态丢失
-        workers=1,     # 确保单进程，避免多进程间的状态隔离
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
         log_level="info"
     )
-
-
-# ============================================================
-# Agent 兼容端点 - /generate
-# 用于 8-Agent 系统调用，与 GenieAPI 格式兼容
-# ============================================================
-
-class GenerateRequest(BaseModel):
-    """生成请求 - 与 GenieAPI 格式兼容"""
-    prompt: str = Field(..., description="输入提示")
-    model: str = Field(default="llama3.2-3b", description="模型名称")
-    max_tokens: int = Field(default=256, description="最大生成token数")
-    temperature: float = Field(default=0.7, description="温度参数")
-
-
-class GenerateResponse(BaseModel):
-    """生成响应 - 与 GenieAPI 格式兼容"""
-    response: str
-    done: bool = True
-
-
-@app.post("/generate", response_model=GenerateResponse)
-async def generate_text(request: GenerateRequest):
-    """
-    文本生成端点 - 与 GenieAPIService 格式兼容
-    用于 8-Agent 系统调用
-    """
-    try:
-        logger.info(f"[Generate] 收到请求: model={request.model}, prompt={request.prompt[:50]}...")
-        
-        # 导入模型加载器
-        from models.model_loader import NPUModelLoader
-        
-        # 创建模型加载器
-        loader = NPUModelLoader(request.model)
-        
-        # 加载模型（如未加载）
-        if not loader.is_loaded:
-            loader.load()
-        
-        # 执行推理
-        result = loader.infer(
-            request.prompt,
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature
-        )
-        
-        logger.info(f"[Generate] 推理完成, 输出长度: {len(result)}")
-        
-        return GenerateResponse(response=result, done=True)
-        
-    except Exception as e:
-        logger.error(f"[Generate] 推理失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# 聊天机器人简单路由 (chat_routes_simple.py 不存在，跳过)
 

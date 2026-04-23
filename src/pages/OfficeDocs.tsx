@@ -33,6 +33,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'pdf' | 'ppt' | 'docs'>('excel');
   const [isLoading, setIsLoading] = useState(false);
   const [showFileList, setShowFileList] = useState(true);
+  const [useSimpleTable, setUseSimpleTable] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const luckysheetRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +57,12 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   const loadLuckysheet = async () => {
     if (!luckysheetRef.current) return;
     
+    // 检查是否已经加载过
+    if (window.luckysheet) {
+      initLuckysheet();
+      return;
+    }
+    
     const linkCDN = (filename: string) => 
       `https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/plugins/css/${filename}`;
     const jsCDN = (filename: string) =>
@@ -64,18 +71,28 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     const mainJS = 'https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js';
 
     const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
+      // 检查是否已存在
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve();
+        return;
+      }
       const script = document.createElement('script');
       script.src = src;
       script.onload = () => resolve();
-      script.onerror = () => reject();
+      script.onerror = () => reject(new Error(`Failed to load: ${src}`));
       document.head.appendChild(script);
     });
 
     const loadCSS = (href: string) => new Promise<void>((resolve) => {
+      if (document.querySelector(`link[href="${href}"]`)) {
+        resolve();
+        return;
+      }
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = href;
       link.onload = () => resolve();
+      link.onerror = () => resolve(); // CSS 失败不阻塞
       document.head.appendChild(link);
     });
 
@@ -83,12 +100,22 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       setIsLoading(true);
       await loadCSS(mainCSS);
       await loadScript(mainJS);
+      
+      // 等待 luckysheet 初始化
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       setIsLoading(false);
       
-      initLuckysheet();
+      if (window.luckysheet) {
+        initLuckysheet();
+      } else {
+        throw new Error('Luckysheet not available');
+      }
     } catch (error) {
       console.error('加载Luckysheet失败:', error);
       setIsLoading(false);
+      // 使用简易表格替代
+      setUseSimpleTable(true);
     }
   };
 
@@ -109,7 +136,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
         data: [{
           name: 'Sheet1',
           color: '',
-          status: 1,
           order: 0,
           data: [
             ['日期', '销售额', '成本', '利润', '地区'],
@@ -120,7 +146,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
             ['2025-01-05', 16900, 10200, 6700, '北京'],
           ],
           config: {},
-          status: 1,
           zoom: 100,
           scroll: { x: 1, y: 1 }
         }]
@@ -135,33 +160,45 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     if (!file) return;
 
     setIsLoading(true);
-    const reader = new FileReader();
     
-    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      reader.onload = (e) => {
-        const data = e.target?.result;
-        if (data && window.luckysheet) {
-          try {
-            window.luckysheet.create({
-              container: 'luckysheet-container',
-              title: file.name,
-              lang: 'zh-CN',
-              data: [{
-                name: 'Sheet1',
-                data: [['加载中...']],
-                status: 1
-              }]
-            });
-          } catch (error) {
-            console.error('加载文件失败:', error);
-          }
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+      try {
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const luckysheetData = workbook.SheetNames.map((sheetName, index) => {
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+          
+          return {
+            name: sheetName,
+            color: '',
+            status: index === 0 ? 1 : 0,
+            order: index,
+            data: jsonData.length > 0 ? jsonData : [['']],
+            config: {},
+            zoom: 100,
+            scroll: { x: 1, y: 1 }
+          };
+        });
+
+        if (window.luckysheet && luckysheetRef.current) {
+          window.luckysheet.create({
+            container: 'luckysheet-container',
+            title: file.name,
+            lang: 'zh-CN',
+            data: luckysheetData
+          });
         }
-        setIsLoading(false);
-      };
-      reader.readAsArrayBuffer(file);
+      } catch (error) {
+        console.error('加载文件失败:', error);
+        alert('加载文件失败: ' + error);
+      }
+      setIsLoading(false);
     } else {
       setIsLoading(false);
-      alert('暂不支持此格式，请上传Excel文件');
+      alert('暂不支持此格式，请上传Excel文件(.xlsx, .xls, .csv)');
     }
   };
 
@@ -319,12 +356,50 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                 </div>
               )}
               
-              <div 
-                ref={luckysheetRef}
-                id="luckysheet-container"
-                className="luckysheet-container flex-1"
-                style={{ height: '100%' }}
-              />
+              {useSimpleTable ? (
+                <div className="flex-1 overflow-auto p-4 bg-white dark:bg-gray-800">
+                  <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+                    <table className="w-full border-collapse">
+                      <thead className="bg-gray-100 dark:bg-gray-700">
+                        <tr>
+                          <th className="border p-2 text-left">日期</th>
+                          <th className="border p-2 text-left">销售额</th>
+                          <th className="border p-2 text-left">成本</th>
+                          <th className="border p-2 text-left">利润</th>
+                          <th className="border p-2 text-left">地区</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { date: '2025-01-01', sales: 12500, cost: 8000, profit: 4500, region: '北京' },
+                          { date: '2025-01-02', sales: 15800, cost: 9500, profit: 6300, region: '上海' },
+                          { date: '2025-01-03', sales: 18200, cost: 11000, profit: 7200, region: '广州' },
+                          { date: '2025-01-04', sales: 14300, cost: 8800, profit: 5500, region: '深圳' },
+                          { date: '2025-01-05', sales: 16900, cost: 10200, profit: 6700, region: '北京' },
+                        ].map((row, i) => (
+                          <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td className="border p-2">{row.date}</td>
+                            <td className="border p-2">{row.sales.toLocaleString()}</td>
+                            <td className="border p-2">{row.cost.toLocaleString()}</td>
+                            <td className="border p-2 text-green-600">{row.profit.toLocaleString()}</td>
+                            <td className="border p-2">{row.region}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-center text-gray-500 text-sm mt-4">
+                    ⚠️ 在线表格加载失败，显示示例数据。请检查网络或浏览器设置。
+                  </p>
+                </div>
+              ) : (
+                <div 
+                  ref={luckysheetRef}
+                  id="luckysheet-container"
+                  className="luckysheet-container flex-1"
+                  style={{ height: '100%' }}
+                />
+              )}
             </div>
           )}
 

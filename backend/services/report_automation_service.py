@@ -47,14 +47,22 @@ except ImportError:
     logger.warning("ReportLab 不可用")
 
 try:
+    import sys
+    logger.info(f"Python path: {sys.path[:3]}")
     from pptx import Presentation
     from pptx.util import Inches, Pt
-    from pptx.dml.color import RgbColor
+    from pptx.dml.color import RGBColor
     from pptx.enum.text import PP_ALIGN
     PYTHON_PPTX_AVAILABLE = True
-except ImportError:
+    logger.info("python-pptx loaded successfully")
+except ImportError as e:
     PYTHON_PPTX_AVAILABLE = False
-    logger.warning("python-pptx 不可用")
+    import sys
+    logger.warning(f"python-pptx 不可用: {e}")
+    logger.warning(f"Python path: {sys.path[:3]}")
+except Exception as e:
+    PYTHON_PPTX_AVAILABLE = False
+    logger.warning(f"python-pptx 加载异常: {e}")
 
 
 class ReportAutomationService:
@@ -132,7 +140,7 @@ class ReportAutomationService:
             
         config = config or {}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = config.get('filename', f'report_{timestamp}.xlsx')
+        filename = config.get('filename') or f'report_{timestamp}.xlsx'
         output_path = self.output_dir / filename
         
         wb = Workbook()
@@ -287,7 +295,7 @@ class ReportAutomationService:
             
         config = config or {}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = config.get('filename', f'report_{timestamp}.pdf')
+        filename = config.get('filename') or f'report_{timestamp}.pdf'
         output_path = self.output_dir / filename
         
         doc = SimpleDocTemplate(
@@ -377,7 +385,7 @@ class ReportAutomationService:
             
         config = config or {}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = config.get('filename', f'report_{timestamp}.pptx')
+        filename = config.get('filename') or f'report_{timestamp}.pptx'
         output_path = self.output_dir / filename
         
         prs = Presentation()

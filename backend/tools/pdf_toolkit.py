@@ -28,6 +28,28 @@ except ImportError:
     PDF2IMAGE_AVAILABLE = False
     logger.warning("pdf2image 未安装，PDF 转图片功能不可用")
 
+
+def _get_poppler_path() -> str | None:
+    """自动查找 Poppler 路径（Windows）"""
+    import shutil
+    # 1. 检查 PATH 中是否有 pdftoppm
+    if shutil.which("pdftoppm"):
+        return None  # 已在 PATH 中，无需指定
+    # 2. 检查项目常见位置
+    project_root = Path(__file__).parent.parent.parent
+    candidates = [
+        project_root / "poppler" / "Library" / "bin",
+        project_root / "skills" / "poppler-25.12.0" / "Library" / "bin",
+        project_root / "tools" / "poppler" / "Library" / "bin",
+        project_root / "poppler-25.12.0" / "Library" / "bin",
+        Path("C:/poppler/Library/bin"),
+        Path("C:/poppler/bin"),
+    ]
+    for p in candidates:
+        if (p / "pdftoppm.exe").exists():
+            return str(p)
+    return None
+
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -271,13 +293,16 @@ class PDFToolkit:
                     last_page = int(pages)
 
             # 转换 PDF 为图片
-            images = convert_from_path(
-                str(input_path),
+            poppler_path = _get_poppler_path()
+            kwargs = dict(
                 dpi=dpi,
                 first_page=first_page,
                 last_page=last_page,
                 fmt=fmt
             )
+            if poppler_path:
+                kwargs['poppler_path'] = poppler_path
+            images = convert_from_path(str(input_path), **kwargs)
 
             output_files = []
             for i, image in enumerate(images):

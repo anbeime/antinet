@@ -176,14 +176,105 @@ def _sse_heartbeat() -> str:
 
 # ==================== 核心分析逻辑 ====================
 
+def _archive_cards_to_knowledge_network(cards: List[FourColorCard], query: str, task_id: str) -> Dict:
+    """
+    将分析生成的卡片自动归档入知识网络
+    1. 为每张卡片创建知识图谱实体
+    2. 建立卡片之间的关系（基于颜色类型）
+    3. 创建查询主题实体并关联相关卡片
+    """
+    from database import DatabaseManager
+    db = DatabaseManager(settings.DB_PATH)
+    
+    try:
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        # 1. 创建查询主题实体
+        topic_entity_id = f"topic_{task_id}"
+        topic_type = "分析主题"
+        cursor.execute("""
+            INSERT OR IGNORE INTO kg_entities (entity_id, name, entity_type, description, properties)
+            VALUES (?, ?, ?, ?, ?)
+        """, [topic_entity_id, query[:50], topic_type, query, json.dumps({"task_id": task_id})])
+        
+        # 2. 为每张卡片创建实体并建立关系
+        entity_ids_by_type = {"blue": [], "green": [], "yellow": [], "red": []}
+        
+        for card in cards:
+            content_hash = str(abs(hash(card.content[:20])))[:8]
+            entity_id = f"card_{task_id}_{card.card_type}_{content_hash}"
+            cursor.execute("""
+                INSERT OR IGNORE INTO kg_entities (entity_id, name, entity_type, description, properties)
+                VALUES (?, ?, ?, ?, ?)
+            """, [
+                entity_id,
+                card.title[:50],
+                card.category,
+                card.content[:200],
+                json.dumps({"card_id": card.card_id, "card_type": card.card_type})
+            ])
+            entity_ids_by_type[card.card_type].append(entity_id)
+            
+            # 3. 关联到主题
+            cursor.execute("""
+                INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                VALUES (?, ?, ?, ?)
+            """, [f"rel_{entity_id}", topic_entity_id, entity_id, "包含"])
+        
+        # 4. 建立卡片间关系（蓝色→解释、蓝色→风险、解释+风险→行动）
+        if entity_ids_by_type["blue"] and entity_ids_by_type["green"]:
+            for blue_id in entity_ids_by_type["blue"][:1]:
+                for green_id in entity_ids_by_type["green"][:1]:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                        VALUES (?, ?, ?, ?)
+                    """, [f"rel_{blue_id[-20:]}_{green_id[-20:]}", blue_id, green_id, "解释"])
+        
+        if entity_ids_by_type["blue"] and entity_ids_by_type["yellow"]:
+            for blue_id in entity_ids_by_type["blue"][:1]:
+                for yellow_id in entity_ids_by_type["yellow"][:1]:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                        VALUES (?, ?, ?, ?)
+                    """, [f"rel_{blue_id[-20:]}_{yellow_id[-20:]}", blue_id, yellow_id, "关联"])
+        
+        if entity_ids_by_type["green"] and entity_ids_by_type["yellow"] and entity_ids_by_type["red"]:
+            for gr_id in entity_ids_by_type["green"][:1]:
+                for yw_id in entity_ids_by_type["yellow"][:1]:
+                    for red_id in entity_ids_by_type["red"][:1]:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                            VALUES (?, ?, ?, ?)
+                        """, [f"rel_{gr_id[-20:]}_{yw_id[-20:]}_{red_id[-20:]}", gr_id, red_id, "触发"])
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO kg_relations (relation_id, source_id, target_id, relation_type)
+                            VALUES (?, ?, ?, ?)
+                        """, [f"rel_{yw_id[-20:]}_{red_id[-20:]}", yw_id, red_id, "触发"])
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "topic_entity_id": topic_entity_id,
+            "entities_created": sum(len(v) for v in entity_ids_by_type.values()),
+            "relations_created": len(cards)
+        }
+        
+    except Exception as e:
+        logger.warning(f"[AgentSystem] 归档入网失败: {e}")
+        return {"error": str(e)}
+
+
 async def _run_agent_analysis(query: str, context: str = "", material: str = None) -> Dict:
     """
-    运行4-Agent并行分析，生成四色卡片
+    运行4-Agent串行+并行混合管道分析，生成四色卡片
     
-    流程：
-    1. 通政司(蓝卡) + 监察院(绿卡) + 刑狱司(黄卡) + 参谋司(红卡) 并行推理
-    2. 汇总结果，生成摘要
-    3. 返回完整报告
+    管道流程（串行+并行混合）：
+    1. 通政司(蓝卡) 先行提取事实 — 串行，因为后续依赖事实
+    2. 监察院(绿卡) + 刑狱司(黄卡) 基于事实并行推理 — 并行，两者独立
+    3. 参谋司(红卡) 基于前三者出行动建议 — 串行，依赖综合分析
+    4. 汇总结果，自动归档入网，生成摘要
     """
     call_llm = await _get_call_llm()
     start_time = time.time()
@@ -192,9 +283,9 @@ async def _run_agent_analysis(query: str, context: str = "", material: str = Non
     # 构建用户提示词
     user_prompt_parts = [f"分析主题：{query}"]
     if context:
-        user_prompt_parts.append(f"背景信息：{context[:500]}")  # 截断背景，3B模型上下文有限
+        user_prompt_parts.append(f"背景信息：{context[:500]}")
     if material:
-        user_prompt_parts.append(f"原始素材：{material[:500]}")  # 限制素材长度
+        user_prompt_parts.append(f"原始素材：{material[:500]}")
     user_prompt_base = "\n".join(user_prompt_parts)
     
     # 更新状态
@@ -202,12 +293,15 @@ async def _run_agent_analysis(query: str, context: str = "", material: str = Non
         agent_status[aid] = "executing"
     agent_status["orchestrator"] = "executing"
     
-    # 并行调用4个Agent
-    async def _call_agent(agent_id: str, agent_info: dict) -> tuple:
+    # ========== 辅助函数 ==========
+    async def _call_agent(agent_id: str, agent_info: dict, extra_context: str = "") -> tuple:
         """调用单个Agent，返回 (agent_id, content)"""
         try:
             system_prompt = agent_info["system_prompt"]
-            user_prompt = user_prompt_base + "\n\n请基于以上信息，完成你的职责。"
+            user_prompt = user_prompt_base
+            if extra_context:
+                user_prompt += f"\n\n【前置分析结果】\n{extra_context[:400]}"
+            user_prompt += "\n\n请基于以上信息，完成你的职责。"
             
             result = await call_llm(system_prompt, user_prompt)
             return (agent_id, result or "")
@@ -215,48 +309,115 @@ async def _run_agent_analysis(query: str, context: str = "", material: str = Non
             logger.warning(f"[AgentSystem] {agent_info['name']}调用失败: {e}")
             return (agent_id, "")
     
-    # 并行执行4个Agent
-    tasks = [
-        _call_agent(aid, info)
-        for aid, info in ANALYSIS_AGENTS.items()
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # 收集结果
-    agent_results = {}
-    cards = []
-    summary_parts = []
-    
-    for result in results:
-        if isinstance(result, Exception):
-            logger.warning(f"[AgentSystem] Agent异常: {result}")
-            continue
-        
-        agent_id, content = result
-        agent_info = ANALYSIS_AGENTS[agent_id]
-        agent_status[agent_id] = "idle"
-        
-        # 如果LLM返回为空，生成降级内容
+    def _parse_agent_output(content: str, agent_id: str, agent_info: dict) -> list:
+        """将Agent输出解析为卡片列表"""
         if not content or len(content.strip()) < 10:
             content = _generate_agent_fallback(agent_id, query)
         
-        agent_results[agent_id] = {
-            "name": agent_info["name"],
-            "card_type": agent_info["card_type"],
-            "category": agent_info["category"],
-            "content": content,
-        }
-        
-        # 按行拆分为卡片
         lines = [l.strip() for l in content.strip().split('\n') if l.strip()]
-        # 去掉序号前缀
         cleaned_lines = []
         for line in lines:
             line = re.sub(r'^[\d]+[.、)）]\s*', '', line)
             if line:
                 cleaned_lines.append(line)
         
-        for i, line in enumerate(cleaned_lines[:3]):  # 最多3张卡片
+        parsed_cards = []
+        for i, line in enumerate(cleaned_lines[:3]):
+            parsed_cards.append(FourColorCard(
+                card_id=f"{task_id}_{agent_info['card_type']}_{i}",
+                card_type=agent_info["card_type"],
+                title=f"{agent_info['category']} #{i+1}",
+                content=line,
+                category=agent_info["category"],
+                created_at=datetime.now().isoformat()
+            ))
+        return parsed_cards, content, cleaned_lines
+    
+    # ========== 管道阶段1：通政司(事实) 先行 ==========
+    logger.info(f"[AgentSystem] 管道阶段1: 通政司提取事实")
+    fact_agent = ANALYSIS_AGENTS["tongzhengsi"]
+    fact_result = await _call_agent("tongzhengsi", fact_agent)
+    _, fact_content, fact_lines = _parse_agent_output(fact_result[1], "tongzhengsi", fact_agent)
+    agent_status["tongzhengsi"] = "idle"
+    
+    # 构建事实上下文，供后续Agent使用
+    fact_context = f"通政司提取的核心事实：{'；'.join(fact_lines[:3])}"
+    
+    # ========== 管道阶段2：监察院(解释) + 刑狱司(风险) 并行 ==========
+    logger.info(f"[AgentSystem] 管道阶段2: 监察院+刑狱司基于事实并行分析")
+    interp_agent = ANALYSIS_AGENTS["jianchayuan"]
+    risk_agent = ANALYSIS_AGENTS["xingyusi"]
+    
+    interp_task = _call_agent("jianchayuan", interp_agent, extra_context=fact_context)
+    risk_task = _call_agent("xingyusi", risk_agent, extra_context=fact_context)
+    
+    results_phase2 = await asyncio.gather(interp_task, risk_task, return_exceptions=True)
+    
+    # 解析阶段2结果
+    interp_content, risk_content = "", ""
+    interp_lines, risk_lines = [], []
+    
+    for result in results_phase2:
+        if isinstance(result, Exception):
+            logger.warning(f"[AgentSystem] 阶段2 Agent异常: {result}")
+            continue
+        aid, content = result
+        agent_info = ANALYSIS_AGENTS[aid]
+        agent_status[aid] = "idle"
+        _, parsed_content, parsed_lines = _parse_agent_output(content, aid, agent_info)
+        if aid == "jianchayuan":
+            interp_content = parsed_content
+            interp_lines = parsed_lines
+        elif aid == "xingyusi":
+            risk_content = parsed_content
+            risk_lines = parsed_lines
+    
+    # ========== 管道阶段3：参谋司(行动) 基于前三者 ==========
+    logger.info(f"[AgentSystem] 管道阶段3: 参谋司基于前三者出行动建议")
+    action_agent = ANALYSIS_AGENTS["canmousi"]
+    
+    # 构建综合上下文
+    combined_context = fact_context
+    if interp_lines:
+        combined_context += f"\n监察院的分析解释：{'；'.join(interp_lines[:2])}"
+    if risk_lines:
+        combined_context += f"\n刑狱司识别的风险：{'；'.join(risk_lines[:2])}"
+    
+    action_result = await _call_agent("canmousi", action_agent, extra_context=combined_context)
+    _, action_content, action_lines = _parse_agent_output(action_result[1], "canmousi", action_agent)
+    agent_status["canmousi"] = "idle"
+    
+    # ========== 汇总所有结果 ==========
+    all_parsed = {
+        "tongzhengsi": (fact_content, fact_lines, fact_agent),
+        "jianchayuan": (interp_content, interp_lines, interp_agent),
+        "xingyusi": (risk_content, risk_lines, risk_agent),
+        "canmousi": (action_content, action_lines, action_agent),
+    }
+    
+    agent_results = {}
+    cards = []
+    summary_parts = []
+    
+    for aid, (content, lines, agent_info) in all_parsed.items():
+        if not content or len(content.strip()) < 10:
+            content = _generate_agent_fallback(aid, query)
+        
+        agent_results[aid] = {
+            "name": agent_info["name"],
+            "card_type": agent_info["card_type"],
+            "category": agent_info["category"],
+            "content": content,
+        }
+        
+        # 重新解析卡片（使用可能的降级内容）
+        if not lines or (len(lines) == 1 and len(lines[0]) < 10):
+            fallback = _generate_agent_fallback(aid, query)
+            lines = [l.strip() for l in fallback.strip().split('\n') if l.strip()]
+            lines = [re.sub(r'^[\d]+[.、)）]\s*', '', l) for l in lines if l]
+            content = fallback
+        
+        for i, line in enumerate(lines[:3]):
             cards.append(FourColorCard(
                 card_id=f"{task_id}_{agent_info['card_type']}_{i}",
                 card_type=agent_info["card_type"],
@@ -266,30 +427,35 @@ async def _run_agent_analysis(query: str, context: str = "", material: str = Non
                 created_at=datetime.now().isoformat()
             ))
         
-        # 构建摘要
-        summary_parts.append(f"{agent_info['name']}：{cleaned_lines[0] if cleaned_lines else '分析完成'}")
+        summary_parts.append(f"{agent_info['name']}：{lines[0] if lines else '分析完成'}")
     
-    # 生成总结摘要
+    # ========== 自动归档入网 ==========
     agent_status["orchestrator"] = "idle"
     agent_status["taishige"] = "executing"
     
+    try:
+        await _archive_cards_to_knowledge_network(cards, query, task_id)
+        logger.info(f"[AgentSystem] {len(cards)}张卡片已自动归档入网")
+    except Exception as e:
+        logger.warning(f"[AgentSystem] 卡片归档入网失败(不影响主流程): {e}")
+    
+    # 生成总结摘要
     summary = "；".join(summary_parts) if summary_parts else "分析完成"
     
-    # 尝试用LLM生成更好的摘要
     try:
         summary_prompt = f"请用1-2句话概括以下分析结论：\n{summary}"
         llm_summary = await call_llm("你是分析总结助手，擅长精炼概括。", summary_prompt)
         if llm_summary and len(llm_summary.strip()) > 5:
             summary = llm_summary.strip()
     except Exception:
-        pass  # 摘要生成失败不影响主流程
+        pass
     
     agent_status["taishige"] = "idle"
     agent_status["yichuansi"] = "idle"
     
     end_time = time.time()
     
-    # 返回报告
+    pipeline_desc = "事实→(解释+风险)→行动"
     report = AnalysisReport(
         report_id=f"report_{task_id}",
         query=query,
@@ -299,12 +465,13 @@ async def _run_agent_analysis(query: str, context: str = "", material: str = Non
         performance={
             "inference_time": round(end_time - start_time, 2),
             "cards_generated": len(cards),
-            "agents_used": len([r for r in results if not isinstance(r, Exception)]),
+            "agents_used": len(all_parsed),
+            "pipeline": pipeline_desc,
         },
         created_at=datetime.now().isoformat()
     )
     
-    logger.info(f"[AgentSystem] 分析完成: {len(cards)}张卡片, 耗时{end_time - start_time:.1f}s")
+    logger.info(f"[AgentSystem] 管道分析完成: {len(cards)}张卡片, 耗时{end_time - start_time:.1f}s, 管道={pipeline_desc}")
     return report
 
 

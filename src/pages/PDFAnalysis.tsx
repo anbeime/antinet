@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   Upload,
@@ -21,6 +22,9 @@ import {
   Trash2,
   Clock,
   File,
+  Save,
+  Bookmark,
+  BookmarkCheck,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -78,13 +82,19 @@ const API_BASE = 'http://localhost:8000';
 
 const PDFAnalysis: React.FC = () => {
   useTheme();
+  const navigate = useNavigate();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [generatedCards, setGeneratedCards] = useState<KnowledgeCard[]>([]);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'history'>('extract');
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
+  const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
+  const [pptFile, setPptFile] = useState<File | null>(null);
+  const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 格式转换相关状态
@@ -127,6 +137,8 @@ const PDFAnalysis: React.FC = () => {
         setUploadedFile(file);
         setAnalysisResult(null);
         setGeneratedCards([]);
+        setSelectedCards(new Set());
+        setSavedCardIds(new Set());
       } else {
         toast.error('请选择 PDF 文件');
       }
@@ -185,7 +197,7 @@ const PDFAnalysis: React.FC = () => {
     }
   };
 
-  const handleExtractKnowledge = async () => {
+  const handleExtractKnowledge = async (useAI: boolean = false) => {
     if (!uploadedFile) {
       toast.error('请先上传 PDF 文件');
       return;
@@ -198,12 +210,29 @@ const PDFAnalysis: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      setProcessingStatus({ stage: 'analyze', progress: 30, message: '正在分析文档...' });
+      setProcessingStatus({ stage: 'analyze', progress: 30, message: useAI ? '正在AI智能分析...' : '正在分析文档...' });
       
-      const response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
-        method: 'POST',
-        body: formData
-      });
+      // 优先尝试智能 AI 卡片生成，如果失败则回退到规则生成
+      let response;
+      if (useAI) {
+        try {
+          response = await fetch(`${API_BASE}/api/pdf/generate/ai-cards`, {
+            method: 'POST',
+            body: formData
+          });
+        } catch (e) {
+          console.warn('AI卡片生成失败，回退到规则生成:', e);
+          response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+            method: 'POST',
+            body: formData
+          });
+        }
+      } else {
+        response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+          method: 'POST',
+          body: formData
+        });
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -236,14 +265,106 @@ const PDFAnalysis: React.FC = () => {
       });
 
       setGeneratedCards(cards);
+      setSelectedCards(new Set());
+      setSavedCardIds(new Set());
       setProcessingStatus({ stage: 'complete', progress: 100, message: '知识卡片生成完成' });
-      toast.success(`成功生成 ${cards.length} 张知识卡片！`);
+      toast.success(`成功生成 ${cards.length} 张知识卡片！${result.mode ? ` (${result.mode})` : ''}`);
     } catch (error) {
       console.error('知识提取失败:', error);
       toast.error('知识提取失败，请检查后端服务');
       setProcessingStatus({ stage: 'error', progress: 0, message: '处理失败' });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // 保存卡片到知识卡片系统
+  const saveCardsToSystem = async (cardsToSave: KnowledgeCard[]) => {
+    if (cardsToSave.length === 0) {
+      toast.warning('请选择要保存的卡片');
+      return;
+    }
+
+    setIsSaving(true);
+    let savedCount = 0;
+    let errorCount = 0;
+
+    const categoryMap: Record<string, string> = {
+      blue: '事实', green: '解释', yellow: '风险', red: '行动'
+    };
+
+    for (const card of cardsToSave) {
+      try {
+        const response = await fetch(`${API_BASE}/api/knowledge/cards`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: card.color,
+            title: card.title,
+            content: card.content,
+            category: categoryMap[card.color] || '事实',
+            address: card.address || undefined,
+          })
+        });
+
+        if (response.ok) {
+          savedCount++;
+          setSavedCardIds(prev => new Set(prev).add(card.id));
+        } else {
+          errorCount++;
+        }
+      } catch {
+        errorCount++;
+      }
+    }
+
+    setIsSaving(false);
+
+    if (savedCount > 0) {
+      toast.success(`成功保存 ${savedCount} 张卡片到知识卡片库！`);
+    }
+    if (errorCount > 0) {
+      toast.error(`${errorCount} 张卡片保存失败`);
+    }
+  };
+
+  // 保存全部卡片
+  const saveAllCards = () => {
+    const unsavedCards = generatedCards.filter(c => !savedCardIds.has(c.id));
+    if (unsavedCards.length === 0) {
+      toast.info('所有卡片已保存');
+      return;
+    }
+    saveCardsToSystem(unsavedCards);
+  };
+
+  // 保存选中的卡片
+  const saveSelectedCards = () => {
+    const cardsToSave = generatedCards.filter(c => selectedCards.has(c.id) && !savedCardIds.has(c.id));
+    if (cardsToSave.length === 0) {
+      toast.info('没有新的卡片需要保存');
+      return;
+    }
+    saveCardsToSystem(cardsToSave);
+  };
+
+  // 切换卡片选择
+  const toggleCardSelection = (cardId: string) => {
+    const newSelection = new Set(selectedCards);
+    if (newSelection.has(cardId)) {
+      newSelection.delete(cardId);
+    } else {
+      newSelection.add(cardId);
+    }
+    setSelectedCards(newSelection);
+  };
+
+  // 全选/取消全选
+  const toggleSelectAllCards = () => {
+    if (selectedCards.size === generatedCards.length) {
+      setSelectedCards(new Set());
+    } else {
+      setSelectedCards(new Set(generatedCards.map(c => c.id)));
     }
   };
 
@@ -284,7 +405,12 @@ const PDFAnalysis: React.FC = () => {
       document.body.removeChild(a);
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '合并完成' });
-      toast.success('PDF 合并成功！');
+      toast.success('PDF 合并成功！', {
+        action: {
+          label: '在线查看',
+          onClick: () => navigate('/pdf-viewer')
+        }
+      });
     } catch (error) {
       console.error('合并失败:', error);
       toast.error('PDF 合并失败');
@@ -329,7 +455,12 @@ const PDFAnalysis: React.FC = () => {
       document.body.removeChild(a);
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '拆分完成' });
-      toast.success('PDF 拆分成功！');
+      toast.success('PDF 拆分成功！', {
+        action: {
+          label: '在线查看',
+          onClick: () => navigate('/pdf-viewer')
+        }
+      });
     } catch (error) {
       console.error('拆分失败:', error);
       toast.error('PDF 拆分失败');
@@ -376,7 +507,12 @@ const PDFAnalysis: React.FC = () => {
       document.body.removeChild(a);
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '合并完成' });
-      toast.success('图片转 PDF 成功！');
+      toast.success('图片转 PDF 成功！', {
+        action: {
+          label: '在线查看',
+          onClick: () => navigate('/pdf-viewer')
+        }
+      });
     } catch (error) {
       console.error('合并失败:', error);
       toast.error('图片转 PDF 失败');
@@ -665,6 +801,17 @@ const PDFAnalysis: React.FC = () => {
       hoverBg: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30',
     },
     {
+      id: 'pptConvert' as const,
+      name: 'PPT转PDF',
+      icon: <FileDown size={20} />,
+      description: 'PPT 转换为 PDF',
+      color: 'from-purple-500 to-pink-500',
+      inactiveBg: 'bg-purple-50 dark:bg-purple-900/20',
+      inactiveBorder: 'border-purple-200 dark:border-purple-800',
+      inactiveText: 'text-purple-600 dark:text-purple-400',
+      hoverBg: 'hover:bg-purple-100 dark:hover:bg-purple-900/30',
+    },
+    {
       id: 'history' as const,
       name: '转换记录',
       icon: <History size={20} />,
@@ -788,6 +935,127 @@ const PDFAnalysis: React.FC = () => {
     );
   };
 
+  // ============ 渲染 PPT 转 PDF 面板 ============
+  const renderPPTConvertPanel = () => {
+    return (
+      <div className="lg:col-span-3 space-y-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold flex items-center">
+              <FileDown className="w-5 h-5 mr-2 text-purple-500" />
+              PPT 转 PDF
+            </h3>
+          </div>
+
+          <div className="border-2 border-dashed border-purple-300 dark:border-purple-600 rounded-xl p-8 text-center hover:border-purple-500 transition-colors">
+            <input
+              type="file"
+              accept=".pptx,.ppt"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setPptFile(file);
+                }
+              }}
+              className="hidden"
+              id="ppt-file-upload-main"
+            />
+            <label htmlFor="ppt-file-upload-main" className="cursor-pointer">
+              {pptFile ? (
+                <div className="flex flex-col items-center">
+                  <CheckCircle className="w-10 h-10 text-green-500 mb-2" />
+                  <p className="text-sm font-medium">{pptFile.name}</p>
+                  <p className="text-xs text-gray-500 mt-1">点击更换文件</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <FileDown className="w-10 h-10 text-purple-400 mb-2" />
+                  <p className="text-sm text-gray-600 dark:text-gray-400">点击选择 PPT 文件</p>
+                  <p className="text-xs text-gray-400 mt-1">支持 .pptx 格式</p>
+                </div>
+              )}
+            </label>
+          </div>
+
+          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+            💡 需要安装 <a href="https://www.libreoffice.org/download/download/" target="_blank" className="text-purple-500 hover:underline">LibreOffice</a>
+          </p>
+
+          <button
+            onClick={async () => {
+              if (!pptFile) {
+                toast.error('请先选择 PPT 文件');
+                return;
+              }
+              setIsProcessing(true);
+              try {
+                const formData = new FormData();
+                formData.append('file', pptFile);
+                
+                const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, {
+                  method: 'POST',
+                  body: formData
+                });
+                
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const url = URL.createObjectURL(blob);
+                  setConvertedPdfUrl(url);
+                  
+                  // 下载
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = pptFile.name.replace(/\.(pptx?)$/, '.pdf');
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  
+                  toast.success('PDF 转换成功！', {
+                    action: {
+                      label: '在线查看',
+                      onClick: () => window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank')
+                    }
+                  });
+                } else {
+                  const error = await response.json();
+                  toast.error(`转换失败: ${error.detail || '未知错误'}`);
+                }
+              } catch (error) {
+                console.error('转换失败:', error);
+                toast.error('转换失败，请安装 LibreOffice');
+              } finally {
+                setIsProcessing(false);
+              }
+            }}
+            disabled={!pptFile || isProcessing}
+            className="w-full mt-6 flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+          >
+            {isProcessing ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+            <span>{isProcessing ? '转换中...' : '转换为 PDF'}</span>
+          </button>
+
+          {/* 预览已转换的 PDF */}
+          {convertedPdfUrl && (
+            <div className="mt-6">
+              <h4 className="text-sm font-medium mb-2">PDF 预览</h4>
+              <iframe
+                src={convertedPdfUrl}
+                className="w-full h-96 border border-gray-300 dark:border-gray-600 rounded-lg"
+                title="PDF Preview"
+              />
+              <button
+                onClick={() => window.open('/pdf-viewer?url=' + encodeURIComponent(convertedPdfUrl), '_blank')}
+                className="mt-2 w-full py-2 text-sm text-purple-600 dark:text-purple-400 hover:underline"
+              >
+                在新窗口打开 →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ============ 渲染转换记录面板 ============
   const renderHistoryPanel = () => {
     return (
@@ -892,6 +1160,8 @@ const PDFAnalysis: React.FC = () => {
                 setUploadedFiles([]);
                 setAnalysisResult(null);
                 setGeneratedCards([]);
+                setSelectedCards(new Set());
+                setSavedCardIds(new Set());
                 setProcessingStatus(null);
               }}
               className={`p-3 rounded-xl text-center transition-all border ${
@@ -1026,14 +1296,24 @@ const PDFAnalysis: React.FC = () => {
                   )}
 
                   {activeFeature === 'generate' && (
-                    <button
-                      onClick={handleExtractKnowledge}
-                      disabled={!uploadedFile || isProcessing}
-                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                      生成知识卡片
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleExtractKnowledge(false)}
+                        disabled={!uploadedFile || isProcessing}
+                        className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
+                        生成知识卡片
+                      </button>
+                      <button
+                        onClick={() => handleExtractKnowledge(true)}
+                        disabled={!uploadedFile || isProcessing}
+                        className="w-full py-3 mt-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
+                        🤖 AI智能生成
+                      </button>
+                    </>
                   )}
 
                   {activeFeature === 'merge' && (
@@ -1066,6 +1346,53 @@ const PDFAnalysis: React.FC = () => {
                     >
                       {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileImage className="w-5 h-5 mr-2" />}
                       合并为 PDF
+                    </button>
+                  )}
+
+                  {activeFeature === 'pptConvert' && (
+                    <button
+                      onClick={async () => {
+                        if (!pptFile) {
+                          toast.error('请先选择 PPT 文件');
+                          return;
+                        }
+                        setIsProcessing(true);
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', pptFile);
+                          
+                          const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, {
+                            method: 'POST',
+                            body: formData
+                          });
+                          
+                          if (response.ok) {
+                            const blob = await response.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = pptFile.name.replace(/\.(pptx?)$/, '.pdf');
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                            toast.success('PDF 转换成功！');
+                          } else {
+                            const error = await response.json();
+                            toast.error(`转换失败: ${error.detail || '未知错误'}`);
+                          }
+                        } catch (error) {
+                          console.error('转换失败:', error);
+                          toast.error('转换失败，请安装 LibreOffice');
+                        } finally {
+                          setIsProcessing(false);
+                        }
+                      }}
+                      disabled={!pptFile || isProcessing}
+                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileDown className="w-5 h-5 mr-2" />}
+                      转换为 PDF
                     </button>
                   )}
 
@@ -1144,25 +1471,70 @@ const PDFAnalysis: React.FC = () => {
               {/* Knowledge Cards Result */}
               {activeFeature === 'generate' && generatedCards.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                  <h3 className="text-xl font-semibold mb-4 flex items-center">
-                    <Layers className="w-5 h-5 mr-2 text-purple-500" />
-                    知识卡片 ({generatedCards.length})
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-semibold flex items-center">
+                      <Layers className="w-5 h-5 mr-2 text-purple-500" />
+                      知识卡片 ({generatedCards.length})
+                    </h3>
+                    <div className="flex items-center space-x-2 text-sm">
+                      <span className="text-gray-500">已选: {selectedCards.size}/{generatedCards.length}</span>
+                      <button
+                        onClick={toggleSelectAllCards}
+                        className="text-purple-600 hover:text-purple-800 dark:text-purple-400 text-sm hover:underline"
+                      >
+                        {selectedCards.size === generatedCards.length ? '取消全选' : '全选'}
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {generatedCards.map((card) => {
                       const colors = cardColors[card.color];
+                      const isSelected = selectedCards.has(card.id);
+                      const isSaved = savedCardIds.has(card.id);
                       return (
                         <motion.div
                           key={card.id}
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
-                          className={`${colors.bg} ${colors.border} border rounded-xl p-4`}
+                          className={`${colors.bg} ${colors.border} border-2 rounded-xl p-4 transition-all cursor-pointer ${
+                            isSelected ? 'ring-2 ring-purple-500 shadow-md' : ''
+                          } ${isSaved ? 'opacity-70' : ''}`}
+                          onClick={() => toggleCardSelection(card.id)}
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors.badge}`}>
-                              {colors.label}
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleCardSelection(card.id)}
+                                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors.badge}`}>
+                                {colors.label}
+                              </span>
+                            </div>
+                            {isSaved && (
+                              <span className="flex items-center text-xs text-green-600 dark:text-green-400">
+                                <BookmarkCheck className="w-3.5 h-3.5 mr-1" />
+                                已保存
+                              </span>
+                            )}
+                            {!isSaved && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveCardsToSystem([card]);
+                                }}
+                                disabled={isSaving}
+                                className="text-xs text-purple-600 hover:text-purple-800 dark:text-purple-400 flex items-center space-x-1 hover:underline"
+                                title="保存此卡片到知识卡片库"
+                              >
+                                <Bookmark className="w-3.5 h-3.5" />
+                                <span>保存</span>
+                              </button>
+                            )}
                           </div>
                           <h4 className={`font-semibold mb-2 ${colors.text}`}>{card.title}</h4>
                           <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4">{card.content}</p>
@@ -1172,7 +1544,30 @@ const PDFAnalysis: React.FC = () => {
                     })}
                   </div>
 
-                  <div className="mt-6 flex justify-center">
+                  <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                    {/* 保存全部到卡片库 */}
+                    <button
+                      onClick={saveAllCards}
+                      disabled={isSaving || savedCardIds.size === generatedCards.length}
+                      className="flex items-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md font-medium"
+                    >
+                      {isSaving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      <span>{isSaving ? '保存中...' : savedCardIds.size === generatedCards.length ? '全部已保存' : '全部保存到卡片库'}</span>
+                    </button>
+
+                    {/* 保存选中卡片 */}
+                    {selectedCards.size > 0 && (
+                      <button
+                        onClick={saveSelectedCards}
+                        disabled={isSaving}
+                        className="flex items-center space-x-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md font-medium"
+                      >
+                        {isSaving ? <Loader className="w-4 h-4 animate-spin" /> : <Bookmark className="w-4 h-4" />}
+                        <span>保存选中 {selectedCards.size} 张卡片</span>
+                      </button>
+                    )}
+
+                    {/* 导出为PDF */}
                     <PDFExporter
                       cards={generatedCards}
                       title="Antinet 知识卡片导出"
@@ -1180,7 +1575,7 @@ const PDFAnalysis: React.FC = () => {
                       fileName={`antinet-cards-${Date.now()}.pdf`}
                     >
                       <FileDown className="w-4 h-4 mr-2 inline" />
-                      导出卡片为 PDF
+                      导出为 PDF
                     </PDFExporter>
                   </div>
                 </div>
@@ -1212,6 +1607,12 @@ const PDFAnalysis: React.FC = () => {
                       <Layers className="w-16 h-16 mx-auto text-purple-500 mb-4" />
                       <h3 className="text-lg font-semibold mb-2">四色知识卡片</h3>
                       <p className="text-gray-600 dark:text-gray-400">上传 PDF 文件，AI 自动生成蓝/绿/黄/红四色知识卡片</p>
+                    </>
+                  ) : activeFeature === 'pptConvert' ? (
+                    <>
+                      <FileDown className="w-16 h-16 mx-auto text-purple-500 mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">PPT 转 PDF</h3>
+                      <p className="text-gray-600 dark:text-gray-400">将 PowerPoint 演示文稿转换为 PDF</p>
                     </>
                   ) : (
                     <>
@@ -1361,6 +1762,9 @@ const PDFAnalysis: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {/* PPT 转 PDF 面板 */}
+              {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
             </motion.div>
           </div>
       </div>

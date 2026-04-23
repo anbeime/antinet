@@ -1,6 +1,7 @@
 """
-8-Agent协作会议路由（真实LLM版）
-使用SSE流式推送，每个Agent通过LLM真实推理发言，支持上下文累积讨论
+8-Agent协作会议路由（VCP 增强版）
+使用SSE流式推送，每个Agent通过LLM真实推理发言
+支持：多 Agent 协作通讯、任务委派、跨域代理
 """
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -20,21 +21,190 @@ router = APIRouter(prefix="/api/meeting", tags=["8-Agent会议"])
 
 _db_manager = None
 
-
 def set_db_manager(db_manager):
-    """设置数据库管理器"""
     global _db_manager
     _db_manager = db_manager
 
-
 def get_db_manager():
-    """获取数据库管理器"""
     if _db_manager is None:
         from database import DatabaseManager
         return DatabaseManager(settings.DB_PATH)
     return _db_manager
 
-# ==================== Agent 映射 ====================
+
+# ==================== VCP Agent协作增强功能 ====================
+
+class AgentDelegateRequest(BaseModel):
+    """任务委派请求 - VCP 风格"""
+    from_agent: str
+    to_agent: str
+    task_description: str
+    priority: str = "normal"  # low/normal/high/urgent
+    context: Optional[Dict[str, Any]] = None
+
+
+class AgentMessageRequest(BaseModel):
+    """Agent 间通讯请求"""
+    from_agent: str
+    to_agent: str
+    message: str
+    message_type: str = "text"  # text/task/result/alert
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class CollaborationTask(BaseModel):
+    """协作任务"""
+    id: str
+    title: str
+    description: str
+    assignee: str
+    status: str = "pending"  # pending/in_progress/completed/failed
+    priority: str = "normal"
+    created_at: str
+    due_at: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+
+
+# 任务存储 (内存中，可以持久化到数据库)
+_collab_tasks: Dict[str, CollaborationTask] = {}
+_agent_messages: List[Dict[str, Any]] = []
+# 用户干预队列 - meeting_id → List[intervention]
+_user_interventions: Dict[str, List[Dict[str, Any]]] = {}
+
+
+@router.post("/delegate")
+async def delegate_task(request: AgentDelegateRequest):
+    """
+    Agent 任务委派 - VCP AgentAssistant 风格
+    
+    支持 Agent 间任务分发、跨域代理
+    """
+    task_id = f"task_{int(time.time() * 1000)}"
+    
+    task = CollaborationTask(
+        id=task_id,
+        title=f"[委派] {request.task_description[:50]}",
+        description=request.task_description,
+        assignee=request.to_agent,
+        priority=request.priority,
+        created_at=datetime.now().isoformat()
+    )
+    
+    _collab_tasks[task_id] = task
+    
+    # 记录消息
+    _agent_messages.append({
+        "type": "delegate",
+        "from": request.from_agent,
+        "to": request.to_agent,
+        "task_id": task_id,
+        "message": f"委派任务: {request.task_description}",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    return {
+        "success": True,
+        "task_id": task_id,
+        "message": f"已向 {request.to_agent} 委派任务",
+        "task": {
+            "id": task.id,
+            "title": task.title,
+            "assignee": task.assignee,
+            "status": task.status,
+            "priority": task.priority
+        }
+    }
+
+
+@router.post("/message")
+async def send_agent_message(request: AgentMessageRequest):
+    """Agent 间通讯 - VCP 分布式通讯"""
+    
+    _agent_messages.append({
+        "type": request.message_type,
+        "from": request.from_agent,
+        "to": request.to_agent,
+        "message": request.message,
+        "metadata": request.metadata or {},
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    return {
+        "success": True,
+        "message": f"消息已发送给 {request.to_agent}"
+    }
+
+
+@router.get("/tasks")
+async def get_collaboration_tasks(
+    status: Optional[str] = None,
+    assignee: Optional[str] = None
+):
+    """获取协作任务列表"""
+    tasks = list(_collab_tasks.values())
+    
+    if status:
+        tasks = [t for t in tasks if t.status == status]
+    if assignee:
+        tasks = [t for t in tasks if t.assignee == assignee]
+    
+    return {
+        "tasks": [
+            {
+                "id": t.id,
+                "title": t.title,
+                "description": t.description,
+                "assignee": t.assignee,
+                "status": t.status,
+                "priority": t.priority,
+                "created_at": t.created_at,
+                "due_at": t.due_at,
+                "result": t.result
+            }
+            for t in tasks
+        ],
+        "count": len(tasks)
+    }
+
+
+@router.post("/tasks/{task_id}/complete")
+async def complete_task(task_id: str, result: Dict[str, Any]):
+    """完成任务"""
+    if task_id not in _collab_tasks:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
+    task = _collab_tasks[task_id]
+    task.status = "completed"
+    task.result = result
+    
+    # 通知原委派者
+    _agent_messages.append({
+        "type": "task_complete",
+        "task_id": task_id,
+        "result": result,
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    return {"success": True, "message": "任务已完成"}
+
+
+@router.get("/messages")
+async def get_agent_messages(
+    agent: Optional[str] = None,
+    limit: int = 20
+):
+    """获取 Agent 通讯历史"""
+    messages = _agent_messages
+    
+    if agent:
+        messages = [m for m in messages if m.get("from") == agent or m.get("to") == agent]
+    
+    messages = messages[-limit:]
+    
+    return {"messages": messages, "count": len(messages)}
+
+
+# ==================== 原有 Agent 映射 ====================
 AGENT_MAPPING = {
     "taishige": {
         "backend_id": "memory",
@@ -54,7 +224,7 @@ AGENT_MAPPING = {
         "description": "监控系统安全状态，识别潜在威胁和风险，收集内外部情报",
         "color": "from-red-500 to-red-600",
         "pixel_id": "xingyusi",
-        system_prompt: "你是「锦衣卫」，负责安全与情报收集。发言要简洁有力，80字以内。只输出风险点，禁止重复背景信息和角色描述。"
+        "system_prompt": "你是「锦衣卫」，负责安全与情报收集。发言要简洁有力，80字以内。只输出风险点，禁止重复背景信息和角色描述。"
     },
     "tongzhengsi": {
         "backend_id": "fact_generator",
@@ -64,7 +234,7 @@ AGENT_MAPPING = {
         "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
         "color": "from-green-500 to-green-600",
         "pixel_id": "tongzhengsi",
-        system_prompt: "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
+        "system_prompt": "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
     },
     "jianchayuan": {
         "backend_id": "interpreter",
@@ -255,20 +425,23 @@ async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[
         # 方式1: 外部视觉模型服务（端口8910，独立进程）
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                with open(tmp_file_path, "rb") as f:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "qwen2.5vl3b-8380-2.42",
-                            "messages": [
-                                {"role": "user", "content": f"请详细描述这张图片的内容，重点关注与「{topic}」相关的信息，提取关键事实和数据。"}
-                            ],
-                            "max_tokens": 512,
-                            "temperature": 0.7,
-                            "top_p": 0.9
-                        },
-                        timeout=60.0
-                    )
+                response = await client.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "qwen2.5vl3b-8380-2.42",
+                        "messages": [
+                            {"role": "user", "content": [
+                                {"type": "text", "text": f"请详细描述这张图片的内容，重点关注与「{topic}」相关的信息，提取关键事实和数据。"},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+                            ]}
+                        ],
+                        "size": 512,
+                        "temp": 0.7,
+                        "top_k": 40,
+                        "top_p": 0.9
+                    },
+                    timeout=60.0
+                )
                 if response.status_code == 200:
                     result = response.json()
                     content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -326,17 +499,31 @@ _degrade_state = {
 _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
 
 
-async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) -> str:
+async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0, 
+                    agent_id: str = None, task_type: str = "analysis", max_tokens: int = 150) -> str:
     """
     调用LLM生成回复，降级策略（按优先级排序）：
     层1: NPU qwen2.0-7b（中文最强）
     层2: NPU llama3.2-3b（快速备用）
     层3: Ollama gemma4（智能备用）
     层4: 视觉模型（兜底）
+    
+    闭环三增强：集成智能资源调度器
     """
-
+    _max_tokens = max_tokens  # 避免闭包捕获问题
     import time as _time
     now = _time.time()
+    
+    # 闭环三：尝试使用智能调度器选择模型
+    scheduler = None
+    try:
+        from services.resource_scheduler import get_resource_scheduler
+        scheduler = get_resource_scheduler()
+    except ImportError:
+        pass
+    
+    # 记录推理开始
+    inference_start = _time.time()
 
     # ============ 层1: NPU qwen2.0-7b（中文最强） ============
     if now > _degrade_state["skip_npu_until"]:
@@ -363,12 +550,12 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
                 ),
                 timeout=timeout
             )
             
-            logger.info(f"[Meeting] 层2推理完成: raw_output长度={len(raw_output) if raw_output else 0}, 内容前100字={repr(raw_output[:100]) if raw_output else 'None'}")
+            logger.info(f"[Meeting] 层1推理完成: raw_output长度={len(raw_output) if raw_output else 0}, 内容前100字={repr(raw_output[:100]) if raw_output else 'None'}")
 
             # 清理特殊 token
             if raw_output:
@@ -378,6 +565,10 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
 
             if raw_output and len(raw_output) > 5:
                 logger.info(f"[Meeting] NPU进程内调用生成成功: {len(raw_output)}字")
+                # 闭环三：记录成功推理
+                if scheduler:
+                    latency = _time.time() - inference_start
+                    scheduler.record_inference("qwen2.0-7b", latency, True, agent_id=agent_id)
                 return raw_output
             else:
                 logger.warning(f"[Meeting] NPU推理返回空或过短: '{raw_output}'")
@@ -385,6 +576,10 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             logger.warning(f"[Meeting] NPU qwen2.0-7b失败: {type(e).__name__}: {e}")
             _degrade_state["npu_last_fail"] = now
             _degrade_state["skip_npu_until"] = now + _DEGRADE_COOLDOWN
+            # 闭环三：记录推理失败
+            if scheduler:
+                latency = _time.time() - inference_start
+                scheduler.record_inference("qwen2.0-7b", latency, False, agent_id=agent_id)
 
     # ============ 层2: NPU llama3.2-3b（快速备用） ============
     if now > _degrade_state["skip_npu_until"]:
@@ -393,7 +588,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             import asyncio as _asyncio
 
             model_key = "llama3.2-3b"
-            logger.info(f"[Meeting] 层2使用模型: {model_key}, max_tokens={max_tokens}")
+            logger.info(f"[Meeting] 层2使用模型: {model_key}, max_tokens={_max_tokens}")
             loader = get_model_loader(model_key)
 
             if not loader.is_loaded:
@@ -408,7 +603,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=max_tokens, temperature=0.3)
+                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
                 ),
                 timeout=timeout
             )
@@ -422,9 +617,17 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
 
             if raw_output and len(raw_output) > 5:
                 logger.info(f"[Meeting] NPU llama3.2-3b生成成功: {len(raw_output)}字")
+                # 闭环三：记录成功推理
+                if scheduler:
+                    latency = _time.time() - inference_start
+                    scheduler.record_inference("llama3.2-3b", latency, True, agent_id=agent_id)
                 return raw_output
         except Exception as e:
             logger.warning(f"[Meeting] NPU llama3.2-3b失败: {type(e).__name__}: {e}")
+            # 闭环三：记录推理失败
+            if scheduler:
+                latency = _time.time() - inference_start
+                scheduler.record_inference("llama3.2-3b", latency, False, agent_id=agent_id)
 
     # ============ 层3: Ollama gemma4（智能备用） ============
     if now > _degrade_state["skip_ollama_until"]:
@@ -442,7 +645,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "num_predict": max_tokens
+                            "num_predict": _max_tokens
                         }
                     }
                 )
@@ -467,12 +670,13 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                             {"role": "user", "content": user_prompt}
                         ],
                         "stream": False,
-                        "options": {
+"options": {
                             "temperature": 0.7,
-                            "num_predict": max_tokens
+                            "num_predict": _max_tokens
                         }
                     }
                 )
+
                 response.raise_for_status()
                 result = response.json()
                 content = result.get("message", {}).get("content", "").strip()
@@ -504,8 +708,9 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
                             {"role": "system", "content": _truncated_system},
                             {"role": "user", "content": _truncated_user}
                         ],
-                        "max_tokens": max_tokens,
-                        "temperature": 0.7,
+                        "size": _max_tokens,
+                        "temp": 0.7,
+                        "top_k": 40,
                         "top_p": 0.9
                     }
                 )
@@ -528,6 +733,12 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0) 
             _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
 
     logger.info("[Meeting] 所有LLM不可用，使用角色降级回复")
+    
+    # 闭环三：记录推理失败
+    if scheduler:
+        latency = _time.time() - inference_start
+        scheduler.record_inference("fallback", latency, False, agent_id=agent_id)
+    
     return ""
 
 
@@ -655,6 +866,243 @@ async def delete_meeting_record(meeting_id: str):
     }
 
 
+# ==================== 闭环二：会议闭环API ====================
+
+class MeetingLinkProjectRequest(BaseModel):
+    """关联会议到专题"""
+    meeting_id: str
+    project_id: int
+
+
+class MeetingExtractTasksRequest(BaseModel):
+    """手动从会议提取任务"""
+    meeting_id: str
+    project_id: Optional[int] = None
+
+
+class UserInterventionRequest(BaseModel):
+    """用户干预请求 - 闭环二：增强会议交互"""
+    meeting_id: str
+    intervention_type: str = Field(..., description="干预类型: askFollowUp/provideAdditionalContext/adjustFocus/terminateBranch")
+    content: str = Field(default="", description="干预内容")
+    target_branch: Optional[str] = Field(default=None, description="终止分支: risk/explanation/action")
+
+
+@router.post("/link-project")
+async def link_meeting_to_project(request: MeetingLinkProjectRequest):
+    """将会议关联到专题"""
+    db = get_db_manager()
+    meeting = db.get_meeting(request.meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="会议不存在")
+    
+    project = db.get_research_project(request.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="专题不存在")
+    
+    # 更新会议的 project_id
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE meetings SET project_id = ? WHERE meeting_id = ?", 
+                         (request.project_id, request.meeting_id))
+            conn.commit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"关联失败: {str(e)}")
+    
+    return {
+        "success": True,
+        "meeting_id": request.meeting_id,
+        "project_id": request.project_id,
+        "message": f"会议已关联到专题「{project['name']}」"
+    }
+
+
+@router.post("/intervene")
+async def user_intervene(request: UserInterventionRequest):
+    """闭环二：用户在会议中干预
+    
+    支持的干预类型：
+    - askFollowUp: 追问某个问题
+    - provideAdditionalContext: 提供额外上下文信息
+    - adjustFocus: 调整分析方向
+    - terminateBranch: 提前终止某个分析分支
+    """
+    valid_types = ['askFollowUp', 'provideAdditionalContext', 'adjustFocus', 'terminateBranch']
+    if request.intervention_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"无效的干预类型，支持: {', '.join(valid_types)}")
+    
+    intervention = {
+        "type": request.intervention_type,
+        "content": request.content,
+        "target_branch": request.target_branch,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # 存储干预
+    if request.meeting_id not in _user_interventions:
+        _user_interventions[request.meeting_id] = []
+    _user_interventions[request.meeting_id].append(intervention)
+    
+    # 记录到Agent通讯
+    _agent_messages.append({
+        "type": "user_intervention",
+        "from": "user",
+        "to": "all",
+        "intervention": intervention,
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    return {
+        "success": True,
+        "meeting_id": request.meeting_id,
+        "intervention": intervention,
+        "message": "干预已发送，将在下一轮讨论中生效"
+    }
+
+
+@router.get("/interventions/{meeting_id}")
+async def get_meeting_interventions(meeting_id: str):
+    """获取会议的用户干预历史"""
+    interventions = _user_interventions.get(meeting_id, [])
+    return {
+        "meeting_id": meeting_id,
+        "interventions": interventions,
+        "total": len(interventions)
+    }
+
+
+@router.post("/extract-tasks")
+async def extract_tasks_from_meeting(request: MeetingExtractTasksRequest):
+    """手动从会议提取任务和卡片（如果自动提取失败或需要重新提取）"""
+    db = get_db_manager()
+    meeting = db.get_meeting(request.meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="会议不存在")
+    
+    action_items = meeting.get('action_items', [])
+    if isinstance(action_items, str):
+        try:
+            action_items = json.loads(action_items)
+        except:
+            action_items = [action_items]
+    
+    summary = meeting.get('summary', '')
+    decision = meeting.get('decision', '')
+    topic = meeting.get('topic', '')
+    
+    created_tasks = _auto_create_tasks_from_meeting(db, request.meeting_id, action_items, request.project_id)
+    created_cards = _auto_create_cards_from_meeting(db, request.meeting_id, topic, summary, decision, action_items, request.project_id)
+    
+    return {
+        "success": True,
+        "meeting_id": request.meeting_id,
+        "created_tasks": len(created_tasks),
+        "created_cards": len(created_cards),
+        "tasks": [{"id": t.get("id"), "title": t.get("title", "")[:50]} for t in created_tasks if t],
+        "cards": [{"id": c.get("id"), "title": c.get("title", "")[:50], "type": c.get("card_type", "")} for c in created_cards if c],
+    }
+
+
+@router.get("/history/{meeting_id}/autogen-status")
+async def get_meeting_autogen_status(meeting_id: str):
+    """查询会议的自动生成状态（已创建多少任务和卡片）"""
+    db = get_db_manager()
+    meeting = db.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="会议不存在")
+    
+    # 查找来源于此会议的GTD任务
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, priority, is_completed FROM gtd_tasks 
+            WHERE description LIKE ? AND source_type IN ('meeting', 'project')
+        """, (f'%{meeting_id}%',))
+        tasks = [dict(row) for row in cursor.fetchall()]
+        
+        # 查找来源于此会议的知识卡片
+        cursor.execute("""
+            SELECT id, title, card_type FROM knowledge_cards 
+            WHERE category = '会议生成' AND title LIKE ?
+        """, (f'%{meeting_id[:20]}%',))
+        # 更宽松的搜索
+        cursor.execute("""
+            SELECT id, title, card_type FROM knowledge_cards 
+            WHERE category = '会议生成'
+        """)
+        all_meeting_cards = [dict(row) for row in cursor.fetchall()]
+    
+    return {
+        "meeting_id": meeting_id,
+        "auto_generated_tasks": len(tasks),
+        "auto_generated_cards": len(all_meeting_cards),
+        "tasks": tasks[:10],
+        "cards": all_meeting_cards[:10],
+    }
+
+
+# ==================== 闭环三：智能资源调度API ====================
+
+@router.get("/resource/status")
+async def get_resource_status():
+    """获取NPU资源调度状态"""
+    try:
+        from services.resource_scheduler import get_resource_scheduler
+        scheduler = get_resource_scheduler()
+        return scheduler.get_npu_status()
+    except ImportError:
+        return {
+            "is_available": True,
+            "current_load": 0.0,
+            "active_inferences": 0,
+            "total_inferences": 0,
+            "avg_latency": 0.0,
+            "error_count": 0,
+            "concurrency_limit": 4,
+            "model_stats": {},
+            "scheduler_available": False,
+        }
+
+
+@router.post("/resource/select-model")
+async def select_optimal_model(
+    task_type: str = "analysis",
+    agent_id: Optional[str] = None,
+    prompt_length: int = 0,
+    has_image: bool = False,
+    prefer_chinese: bool = True
+):
+    """智能选择最优模型"""
+    try:
+        from services.resource_scheduler import get_resource_scheduler
+        scheduler = get_resource_scheduler()
+        
+        complexity = scheduler.estimate_complexity(
+            task_type=task_type,
+            agent_id=agent_id,
+            prompt_length=prompt_length,
+            has_image=has_image
+        )
+        
+        model = scheduler.select_model(complexity, prefer_chinese=prefer_chinese)
+        
+        return {
+            "selected_model": model.model_key,
+            "complexity": complexity.value,
+            "model_tier": model.tier.value,
+            "max_tokens": model.max_tokens,
+            "timeout": model.timeout,
+            "concurrency_limit": scheduler.adjust_concurrency(),
+        }
+    except ImportError:
+        return {
+            "selected_model": "qwen2.0-7b",
+            "complexity": "medium",
+            "fallback": True,
+        }
+
+
 @router.post("/discuss/stream")
 async def create_meeting_stream(request: MeetingRequest):
     """
@@ -734,6 +1182,25 @@ async def create_meeting_stream(request: MeetingRequest):
 
                  user_prompt = "\n".join(context_parts)
                  system_prompt = agent_info["system_prompt"]
+
+                 # 闭环二：注入用户干预
+                 pending_interventions = _user_interventions.get(meeting_id, [])
+                 if pending_interventions:
+                     intervention_texts = []
+                     for iv in pending_interventions:
+                         if iv["type"] == "askFollowUp":
+                             intervention_texts.append(f"【用户追问】{iv['content']}")
+                         elif iv["type"] == "provideAdditionalContext":
+                             intervention_texts.append(f"【用户提供额外信息】{iv['content']}")
+                         elif iv["type"] == "adjustFocus":
+                             intervention_texts.append(f"【用户调整方向】请将讨论重心转向：{iv['content']}")
+                         elif iv["type"] == "terminateBranch":
+                             branch_name = {"risk": "风险分析", "explanation": "深度解释", "action": "行动方案"}.get(iv.get("target_branch", ""), "该分支")
+                             intervention_texts.append(f"【用户终止分支】请跳过{branch_name}的讨论，转向其他方面")
+                     if intervention_texts:
+                         user_prompt += "\n\n--- 用户干预 ---\n" + "\n".join(intervention_texts) + "\n--- 干预结束 ---\n"
+                     # 清除已处理的干预
+                     _user_interventions[meeting_id] = []
 
                  # 添加明确的指令，防止重复输出角色描述，但允许引用观点
                  user_prompt += "\n\n重要：只回答问题，不要重复角色描述（System Prompt中的内容），但要引用或回应前面智能体提出的观点。"
@@ -904,6 +1371,22 @@ async def create_meeting_stream(request: MeetingRequest):
             logger.info(f"会议记录已保存: {meeting_id}")
         except Exception as e:
             logger.error(f"保存会议记录失败: {e}")
+
+        # 闭环二：自动从会议行动项创建GTD任务和知识卡片
+        try:
+            created_tasks = _auto_create_tasks_from_meeting(db, meeting_id, action_items)
+            created_cards = _auto_create_cards_from_meeting(db, meeting_id, request.topic, summary, decision, action_items)
+            if created_tasks or created_cards:
+                yield _sse_event("meeting_autogen", {
+                    "meeting_id": meeting_id,
+                    "created_tasks": len(created_tasks),
+                    "created_cards": len(created_cards),
+                    "task_ids": [t.get('id') for t in created_tasks if t],
+                    "card_ids": [c.get('id') for c in created_cards if c],
+                    "timestamp": datetime.now().isoformat()
+                })
+        except Exception as e:
+            logger.error(f"会议自动闭环失败: {e}")
 
         # 会议结束
         yield _sse_event("meeting_end", {
@@ -1081,6 +1564,14 @@ async def create_meeting(request: MeetingRequest):
     except Exception as e:
         logger.error(f"保存会议记录失败: {e}")
 
+    # 闭环二：自动从会议行动项创建GTD任务和知识卡片
+    autogen_result = {"tasks": [], "cards": []}
+    try:
+        autogen_result["tasks"] = _auto_create_tasks_from_meeting(db, meeting_id, action_items)
+        autogen_result["cards"] = _auto_create_cards_from_meeting(db, meeting_id, request.topic, summary, decision, action_items)
+    except Exception as e:
+        logger.error(f"会议自动闭环失败: {e}")
+
     return MeetingResponse(
         success=True,
         topic=request.topic,
@@ -1097,6 +1588,146 @@ async def create_meeting(request: MeetingRequest):
 
 
 # ==================== 辅助函数 ====================
+
+def _auto_create_tasks_from_meeting(db, meeting_id: str, action_items: list, project_id: int = None):
+    """闭环二：会议结束后自动从行动项创建GTD任务
+    
+    - 从会议 action_items 中提取任务
+    - 自动创建 GTD 任务并关联到来源会议
+    - 如果指定了 project_id，任务同时关联到专题
+    """
+    created_tasks = []
+    
+    for item in action_items:
+        if not item or not isinstance(item, str) or len(item.strip()) < 2:
+            continue
+        
+        # 简单的任务标题提取：取第一句或前50字符
+        task_title = item.strip().split('\n')[0][:100]
+        if len(task_title) < 2:
+            continue
+        
+        # 检查是否已存在相同标题的任务（避免重复创建）
+        try:
+            existing_tasks = db.get_gtd_tasks()
+            if any(t.get('title', '').strip() == task_title and t.get('source_type') == 'meeting' for t in existing_tasks):
+                continue
+        except:
+            pass
+        
+        # 根据关键词推断优先级
+        priority = 'medium'
+        high_keywords = ['紧急', '立即', '尽快', '关键', '重要', '优先']
+        low_keywords = ['可选', '后续', '待定', '参考']
+        if any(kw in item for kw in high_keywords):
+            priority = 'high'
+        elif any(kw in item for kw in low_keywords):
+            priority = 'low'
+        
+        try:
+            source_type = 'project' if project_id else 'meeting'
+            source_id = project_id if project_id else 0
+            
+            task = db.add_gtd_task(
+                title=task_title,
+                description=f"来源会议: {meeting_id}\n\n{item}",
+                priority=priority,
+                category='inbox',
+                source_type=source_type,
+                source_id=source_id
+            )
+            created_tasks.append(task)
+            logger.info(f"自动从会议创建GTD任务: {task_title[:30]}...")
+        except Exception as e:
+            logger.error(f"自动创建GTD任务失败: {e}")
+    
+    return created_tasks
+
+
+def _auto_create_cards_from_meeting(db, meeting_id: str, topic: str, summary: str, decision: str, action_items: list, project_id: int = None):
+    """闭环二：会议结束后自动从决策生成知识卡片
+    
+    - 从会议 summary 生成蓝色(事实)卡片
+    - 从会议 decision 生成绿色(解释)卡片
+    - 从 action_items 中的风险相关项生成黄色(风险)卡片
+    - 从 action_items 中的行动项生成红色(行动)卡片
+    """
+    created_cards = []
+    
+    card_data = []
+    
+    # 决策概要 → 绿色解释卡片
+    if summary and len(summary.strip()) > 5:
+        card_data.append({
+            'title': f'[会议纪要] {topic[:30]}',
+            'content': summary,
+            'card_type': 'green',
+        })
+    
+    # 决策内容 → 蓝色事实卡片
+    if decision and len(decision.strip()) > 5:
+        card_data.append({
+            'title': f'[会议决策] {topic[:30]}',
+            'content': decision,
+            'card_type': 'blue',
+        })
+    
+    # 行动项 → 红色行动卡片
+    for item in action_items:
+        if not item or not isinstance(item, str) or len(item.strip()) < 5:
+            continue
+        
+        # 判断是风险还是行动
+        risk_keywords = ['风险', '隐患', '挑战', '问题', '威胁', '注意']
+        if any(kw in item for kw in risk_keywords):
+            card_type = 'yellow'  # 风险卡片
+            title_prefix = '[风险识别]'
+        else:
+            card_type = 'red'  # 行动卡片
+            title_prefix = '[行动项]'
+        
+        card_data.append({
+            'title': f'{title_prefix} {item[:50]}',
+            'content': item,
+            'card_type': card_type,
+        })
+    
+    # 创建卡片
+    for data in card_data:
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    data['title'],
+                    data['content'],
+                    data['card_type'],
+                    '会议生成',
+                    project_id,
+                    json.dumps(['会议', '自动生成']),
+                    json.dumps([])
+                ))
+                card_id = cursor.lastrowid
+                conn.commit()
+                created_cards.append({**data, 'id': card_id})
+                logger.info(f"自动从会议创建知识卡片: {data['title'][:30]}...")
+        except Exception as e:
+            logger.error(f"自动创建知识卡片失败: {e}")
+    
+    # 如果创建了多张卡片，自动建立同专题链接
+    if len(created_cards) > 1 and project_id:
+        for i, card1 in enumerate(created_cards):
+            for card2 in created_cards[i+1:]:
+                try:
+                    db.add_backlink(card1['id'], card2['id'], '同专题会议', 'same_project')
+                    db.add_backlink(card2['id'], card1['id'], '同专题会议', 'same_project')
+                except:
+                    pass
+    
+    return created_cards
+
 
 def _sse_event(event_type: str, data: dict) -> str:
     """构造SSE事件字符串"""

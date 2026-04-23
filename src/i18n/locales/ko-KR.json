@@ -1,0 +1,59 @@
+{
+  "app": {
+    "title": "지의 AI 도우미",
+    "newMeeting": "새 회의",
+    "history": "이력",
+    "agents": "에이전트",
+    "tasks": "작업",
+    "health": "상태",
+    "startMeeting": "회의 시작",
+    "topic": "회의 주제",
+    "context": "배경 정보",
+    "rounds": "논의 라운드",
+    "meetingResult": "회의 결과",
+    "summary": "요약",
+    "decision": "결정 사항",
+    "actionItems": "실행 항목",
+    "saveToArchive": "보관함에 저장",
+    "newDiscussion": "새 논의"
+  },
+  "pixelOffice": {
+    "title": "픽셀 오피스",
+    "progress": "진행률"
+  },
+  "agents": {
+    "title": "에이전트 목록",
+    "noData": "에이전트 데이터 없음"
+  },
+  "tasks": {
+    "title": "협업 작업",
+    "noData": "작업 없음",
+    "completed": "완료",
+    "inProgress": "진행 중",
+    "pending": "대기 중",
+    "assignee": "담당자",
+    "priority": "우선순위"
+  },
+  "health": {
+    "title": "시스템 상태",
+    "loading": "로딩 중...",
+    "serviceStatus": "서비스 상태",
+    "running": "정상稼働",
+    "partial": "부분적 이상",
+    "modelStatus": "모델 상태",
+    "loaded": "로드됨",
+    "notLoaded": "미로드",
+    "resourceUsage": "리소스 사용률",
+    "gpu": "GPU",
+    "memory": "메모리"
+  },
+  "common": {
+    "confirm": "확인",
+    "cancel": "취소",
+    "save": "저장",
+    "delete": "삭제",
+    "edit": "편집",
+    "close": "닫기",
+    "loading": "로딩 중..."
+  }
+}

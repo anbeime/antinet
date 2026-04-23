@@ -1,0 +1,59 @@
+{
+  "app": {
+    "title": "Zhiyi AI Assistant",
+    "newMeeting": "New Meeting",
+    "history": "History",
+    "agents": "Agents",
+    "tasks": "Tasks",
+    "health": "Status",
+    "startMeeting": "Start Meeting",
+    "topic": "Meeting Topic",
+    "context": "Background",
+    "rounds": "Discussion Rounds",
+    "meetingResult": "Meeting Result",
+    "summary": "Summary",
+    "decision": "Decision",
+    "actionItems": "Action Items",
+    "saveToArchive": "Save to Archive",
+    "newDiscussion": "New Discussion"
+  },
+  "pixelOffice": {
+    "title": "Pixel Office",
+    "progress": "Progress"
+  },
+  "agents": {
+    "title": "Agent List",
+    "noData": "No Agent Data"
+  },
+  "tasks": {
+    "title": "Collaborative Tasks",
+    "noData": "No Tasks",
+    "completed": "Completed",
+    "inProgress": "In Progress",
+    "pending": "Pending",
+    "assignee": "Assigned To",
+    "priority": "Priority"
+  },
+  "health": {
+    "title": "System Status",
+    "loading": "Loading...",
+    "serviceStatus": "Service Status",
+    "running": "Running",
+    "partial": "Partial Issue",
+    "modelStatus": "Model Status",
+    "loaded": "Loaded",
+    "notLoaded": "Not Loaded",
+    "resourceUsage": "Resource Usage",
+    "gpu": "GPU",
+    "memory": "Memory"
+  },
+  "common": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "loading": "Loading..."
+  }
+}

@@ -167,7 +167,7 @@ const FormatConverter: React.FC = () => {
       t.id === task.id ? { ...t, progress: 20 } : t
     ));
 
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/cards`, {
       method: 'POST',
       body: formData
     });
@@ -265,7 +265,7 @@ const FormatConverter: React.FC = () => {
     ));
 
     // 分析 PDF 内容
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/cards`, {
       method: 'POST',
       body: formData
     });

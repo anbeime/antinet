@@ -15,7 +15,9 @@ import {
   Trash2,
   Edit,
   ArrowRight,
-  Share2
+  Share2,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
@@ -654,6 +656,30 @@ const GTDSystem: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{task.description || '无描述'}</p>
+                      {/* 闭环三：来源卡片/会议链接 */}
+                      {task.source_type && task.source_id && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              if (task.source_type === 'card') {
+                                // 跳转到主页并高亮该卡片
+                                window.location.hash = `/?highlightCard=${task.source_id}`;
+                              } else if (task.source_type === 'meeting') {
+                                // 查看会议详情
+                                window.location.hash = `/virtual-office-meeting?meetingId=${task.source_id}`;
+                              } else if (task.source_type === 'project') {
+                                // 跳转到专题
+                                window.location.hash = `/?projectId=${task.source_id}`;
+                              }
+                            }}
+                            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                          >
+                            <FileText size={10} />
+                            {task.source_type === 'card' ? '来源卡片' : task.source_type === 'meeting' ? '来源会议' : '来源专题'}
+                            <ExternalLink size={10} />
+                          </button>
+                        </div>
+                      )}
                       <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
                         <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
                         {task.due_date && (

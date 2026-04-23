@@ -172,7 +172,6 @@ class NPUInferenceCore:
                     logger.info("[OK] 已启用BURST性能模式 (via qai_hub_models)")
                 else:
                     # 方法2: 使用环境变量设置 BURST 模式
-                    import os
                     perf_mode = os.environ.get('QNN_PERFORMANCE_MODE', '').upper()
                     if perf_mode != 'BURST':
                         os.environ['QNN_PERFORMANCE_MODE'] = 'BURST'

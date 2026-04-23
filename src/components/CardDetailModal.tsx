@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import { backlinkService, cardTaskService, calendarEventService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent } from '../services/integrationService';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -14,6 +15,7 @@ interface KnowledgeCard {
   address: string;
   createdAt: string;
   relatedCards: string[];
+  projectId?: number | null;
 }
 
 interface CardDetailModalProps {
@@ -29,32 +31,32 @@ interface CardDetailModalProps {
 
 // 卡片类型映射
 const cardTypeMap = {
-  blue: { 
-    name: '核心概念', 
+  blue: {
+    name: '核心概念',
     color: 'bg-blue-500',
     hoverColor: 'bg-blue-600',
     textColor: 'text-blue-800',
     bgColor: 'bg-blue-50 dark:bg-blue-950/40',
     borderColor: 'border-blue-200 dark:border-blue-800'
   },
-  green: { 
-    name: '关联链接', 
+  green: {
+    name: '关联链接',
     color: 'bg-green-500',
     hoverColor: 'bg-green-600',
     textColor: 'text-green-800',
     bgColor: 'bg-green-50 dark:bg-green-950/40',
     borderColor: 'border-green-200 dark:border-green-800'
   },
-  yellow: { 
-    name: '参考来源', 
+  yellow: {
+    name: '参考来源',
     color: 'bg-yellow-500',
     hoverColor: 'bg-yellow-600',
     textColor: 'text-yellow-800',
     bgColor: 'bg-yellow-50 dark:bg-yellow-950/40',
     borderColor: 'border-yellow-200 dark:border-yellow-800'
   },
-  red: { 
-    name: '索引关键词', 
+  red: {
+    name: '索引关键词',
     color: 'bg-red-500',
     hoverColor: 'bg-red-600',
     textColor: 'text-red-800',
@@ -75,34 +77,61 @@ const formatDate = (dateString: string) => {
   }).format(date);
 };
 
-const CardDetailModal: React.FC<CardDetailModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  card, 
+const CardDetailModal: React.FC<CardDetailModalProps> = ({
+  isOpen,
+  onClose,
+  card,
   allCards,
   onDelete,
   onRelatedCardClick,
   onUpdateCard,
   onCreateRecommendedCard
 }) => {
-  // 控制更多洞察的显示/隐藏
+  // 原有状态
   const [showMoreInsights, setShowMoreInsights] = useState(false);
-  // 控制关联编辑模式
   const [isEditingRelations, setIsEditingRelations] = useState(false);
-  // 存储当前编辑中的关联列表
   const [editingRelatedCards, setEditingRelatedCards] = useState<string[]>([]);
-  // 搜索关联卡片的查询
   const [searchQuery, setSearchQuery] = useState('');
-  // 显示搜索建议
   const [showSuggestions, setShowSuggestions] = useState(false);
-  // 编辑模式
   const [isEditing, setIsEditing] = useState(false);
-  // 编辑中的标题和内容
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
 
+  // P0: 双向链接状态
+  const [backlinks, setBacklinks] = useState<BacklinkCard[]>([]);
+  const [forwardlinks, setForwardlinks] = useState<BacklinkCard[]>([]);
+  const [backlinkStats, setBacklinkStats] = useState<BacklinkStats | null>(null);
+  const [backlinksLoading, setBacklinksLoading] = useState(false);
+
+  // P0: 卡片关联任务状态
+  const [cardTasks, setCardTasks] = useState<TaskWithRelation[]>([]);
+  const [cardEvents, setCardEvents] = useState<CalendarEvent[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+
+  // P0: 创建任务弹窗
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [selectedText, setSelectedText] = useState('');
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('high');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [creatingTask, setCreatingTask] = useState(false);
+
+  // P0: 创建日历事件弹窗
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [newEventTitle, setNewEventTitle] = useState('');
+  const [newEventStartTime, setNewEventStartTime] = useState('');
+  const [newEventEndTime, setNewEventEndTime] = useState('');
+  const [newEventLocation, setNewEventLocation] = useState('');
+  const [creatingEvent, setCreatingEvent] = useState(false);
+
+  // Tab 切换
+  const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks'>('relations');
+
+  // 内容区引用（选中文本检测）
+  const contentRef = useRef<HTMLDivElement>(null);
+
   // 当卡片数据变化时，更新编辑中的关联列表
-  React.useEffect(() => {
+  useEffect(() => {
     if (card) {
       setEditingRelatedCards([...card.relatedCards]);
       setEditTitle(card.title);
@@ -110,13 +139,171 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card?.relatedCards, card?.title, card?.content]);
 
+  // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）
+  const mergedRelatedIds = useMemo(() => {
+    const ids = new Set<string>(card?.relatedCards || []);
+    // forwardlinks 是从 card_backlinks 表获取的"我引用了谁"
+    forwardlinks.forEach(fl => ids.add(String(fl.id)));
+    return Array.from(ids);
+  }, [card?.relatedCards, forwardlinks]);
+
+  // P0: 加载双向链接数据
+  const loadBacklinks = useCallback(async () => {
+    if (!card) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setBacklinksLoading(true);
+    try {
+      const [backData, forwardData, statsData] = await Promise.all([
+        backlinkService.getBacklinks(cardId),
+        backlinkService.getForwardlinks(cardId),
+        backlinkService.getStats(cardId),
+      ]);
+      setBacklinks(backData);
+      setForwardlinks(forwardData);
+      setBacklinkStats(statsData);
+    } catch (err) {
+      console.error('加载双向链接失败:', err);
+    } finally {
+      setBacklinksLoading(false);
+    }
+  }, [card]);
+
+  // P0: 加载卡片关联的任务和日历事件
+  const loadCardIntegrations = useCallback(async () => {
+    if (!card) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setTasksLoading(true);
+    try {
+      const [tasks, events] = await Promise.all([
+        cardTaskService.getTasksByCard(cardId),
+        calendarEventService.getByCardId(cardId),
+      ]);
+      setCardTasks(tasks);
+      setCardEvents(events);
+    } catch (err) {
+      console.error('加载卡片关联数据失败:', err);
+    } finally {
+      setTasksLoading(false);
+    }
+  }, [card]);
+
+  // 卡片打开时加载数据
+  useEffect(() => {
+    if (isOpen && card) {
+      loadBacklinks();
+      loadCardIntegrations();
+    }
+  }, [isOpen, card, loadBacklinks, loadCardIntegrations]);
+
+  // P0: 选中文本创建任务 — 检测选中文本
+  const handleTextSelect = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      setSelectedText(selection.toString().trim());
+    }
+  };
+
+  // P0: 打开创建任务弹窗
+  const openCreateTask = (extractText?: string) => {
+    const text = extractText || selectedText;
+    setNewTaskTitle(text.slice(0, 50) + (text.length > 50 ? '...' : ''));
+    setSelectedText(text);
+    setShowCreateTask(true);
+  };
+
+  // P0: 提交创建任务
+  const handleCreateTask = async () => {
+    if (!card || !newTaskTitle.trim()) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setCreatingTask(true);
+    try {
+      await cardTaskService.createTaskFromCard({
+        card_id: cardId,
+        title: newTaskTitle.trim(),
+        description: selectedText ? `选自卡片「${card.title}」` : undefined,
+        priority: newTaskPriority,
+        due_date: newTaskDueDate || undefined,
+        extract_paragraph: selectedText || undefined,
+      });
+      toast.success('任务已创建并关联到卡片');
+      setShowCreateTask(false);
+      setNewTaskTitle('');
+      setNewTaskPriority('high');
+      setNewTaskDueDate('');
+      setSelectedText('');
+      loadCardIntegrations();
+    } catch (err) {
+      toast.error('创建任务失败');
+      console.error(err);
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  // P0: 打开创建日历事件弹窗
+  const openCreateEvent = () => {
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60 * 1000);
+    const end = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    setNewEventTitle(card ? `来自: ${card.title}` : '');
+    setNewEventStartTime(start.toISOString().slice(0, 16));
+    setNewEventEndTime(end.toISOString().slice(0, 16));
+    setShowCreateEvent(true);
+  };
+
+  // P0: 提交创建日历事件
+  const handleCreateEvent = async () => {
+    if (!card || !newEventTitle.trim() || !newEventStartTime || !newEventEndTime) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setCreatingEvent(true);
+    try {
+      await calendarEventService.create({
+        title: newEventTitle.trim(),
+        start_time: newEventStartTime,
+        end_time: newEventEndTime,
+        location: newEventLocation || undefined,
+        source_card_id: cardId,
+        source_paragraph: selectedText || undefined,
+      });
+      toast.success('日历事件已创建');
+      setShowCreateEvent(false);
+      loadCardIntegrations();
+    } catch (err) {
+      toast.error('创建日历事件失败');
+      console.error(err);
+    } finally {
+      setCreatingEvent(false);
+    }
+  };
+
   // 如果没有卡片数据或模态框未打开，则不渲染
   if (!isOpen || !card) return null;
 
-  // 获取关联卡片的详细信息
-  const relatedCardsDetails = editingRelatedCards.map(id => 
-    allCards.find(c => c.id === id)
-  ).filter((card): card is KnowledgeCard => card !== undefined);
+  // 获取关联卡片的详细信息（展示用：合并 relatedCards + forwardlinks）
+  const relatedCardsDetails = mergedRelatedIds.map(id => {
+    const found = allCards.find(c => c.id === id);
+    if (found) return found;
+    // 如果在 allCards 中找不到，尝试从 forwardlinks/backlinks 中构造
+    const fl = forwardlinks.find(f => String(f.id) === id);
+    const bl = backlinks.find(b => String(b.id) === id);
+    const linkData = fl || bl;
+    if (linkData) {
+      return {
+        id: String(linkData.id),
+        color: (linkData.card_type || 'blue') as CardColor,
+        title: linkData.title,
+        content: '',
+        address: '',
+        createdAt: linkData.created_at || '',
+        relatedCards: []
+      } as KnowledgeCard;
+    }
+    return null;
+  }).filter((card): card is KnowledgeCard => card !== null);
 
   // 处理删除卡片
   const handleDelete = () => {
@@ -168,10 +355,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // 过滤可关联的卡片
   const filterAvailableCards = () => {
-    // 排除当前卡片和已经关联的卡片
-    return allCards.filter(availableCard => 
-      availableCard.id !== card.id && 
-      !editingRelatedCards.includes(availableCard.id) &&
+    return allCards.filter(availableCard =>
+      availableCard.id !== card.id &&
+      !mergedRelatedIds.includes(availableCard.id) &&
       availableCard.title.toLowerCase().includes(searchQuery.toLowerCase())
     );
   };
@@ -194,19 +380,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       ...card,
       relatedCards: editingRelatedCards
     };
-    
-    // 确保关联卡片数据不为undefined
     if (!updatedCard.relatedCards) {
       updatedCard.relatedCards = [];
     }
-    
-    // 调用父组件的更新函数
     onUpdateCard(updatedCard);
-    
-    // 退出编辑模式
     setIsEditingRelations(false);
-    
-    // 显示成功提示
+    // 重新加载双向链接数据以保持同步
+    setTimeout(() => loadBacklinks(), 500);
     toast('关联卡片已更新', {
       className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
     });
@@ -214,26 +394,47 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // 取消关联编辑
   const cancelRelationEdit = () => {
-    setEditingRelatedCards([...card.relatedCards]);
+    setEditingRelatedCards([...mergedRelatedIds]);
     setIsEditingRelations(false);
     setSearchQuery('');
     setShowSuggestions(false);
   };
 
+  // 获取卡片类型颜色
+  const getTypeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      blue: 'bg-blue-500',
+      green: 'bg-green-500',
+      yellow: 'bg-yellow-500',
+      red: 'bg-red-500',
+    };
+    return colors[type] || 'bg-gray-500';
+  };
+
+  const getTypeName = (type: string) => {
+    const names: Record<string, string> = {
+      blue: '核心概念',
+      green: '关联链接',
+      yellow: '参考来源',
+      red: '索引关键词',
+    };
+    return names[type] || type;
+  };
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
       onClick={onClose}
     >
-      <motion.div 
+      <motion.div
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-3xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
+        className="w-full max-w-4xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* 模态框头部 */}
@@ -252,16 +453,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <h2 className="text-xl font-bold">{card.title}</h2>
             )}
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2">
             {isEditing ? (
               <>
-                <button 
+                <button
                   className="px-3 py-1.5 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm"
                   onClick={cancelEditing}
                 >
                   取消
                 </button>
-                <button 
+                <button
                   className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
                   onClick={saveEditing}
                 >
@@ -270,21 +471,32 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               </>
             ) : (
               <>
-                <button 
+                {/* P0: 选中文本创建任务按钮 */}
+                {selectedText && (
+                  <button
+                    className="p-2 text-amber-600 hover:text-amber-700 dark:hover:text-amber-400 rounded-full hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                    aria-label="从选中文本创建任务"
+                    title={`创建任务: "${selectedText.slice(0, 20)}..."`}
+                    onClick={() => openCreateTask()}
+                  >
+                    <ListTodo size={18} />
+                  </button>
+                )}
+                <button
                   className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                   aria-label="分享"
                   onClick={handleShare}
                 >
                   <Share2 size={18} />
                 </button>
-                <button 
+                <button
                   className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                   aria-label="编辑"
                   onClick={startEditing}
                 >
                   <Edit2 size={18} />
                 </button>
-                <button 
+                <button
                   className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                   aria-label="删除"
                   onClick={handleDelete}
@@ -293,7 +505,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 </button>
               </>
             )}
-            <button 
+            <button
               onClick={onClose}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               aria-label="关闭"
@@ -302,7 +514,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             </button>
           </div>
         </div>
-        
+
         {/* 模态框内容 */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* 卡片基本信息 */}
@@ -317,8 +529,17 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   创建于 {formatDate(card.createdAt)}
                 </span>
               </div>
-              <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
-                {card.address}
+              <div className="flex items-center gap-2">
+                {/* P0: 链接统计徽章 */}
+                {backlinkStats && backlinkStats.total_links > 0 && (
+                  <span className="text-xs text-purple-600 dark:text-purple-400 px-2 py-0.5 bg-purple-50 dark:bg-purple-900/30 rounded-full flex items-center gap-1">
+                    <Link2 size={12} />
+                    {backlinkStats.total_links} 链接
+                  </span>
+                )}
+                <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
+                  {card.address}
+                </div>
               </div>
             </div>
             {isEditing ? (
@@ -329,152 +550,466 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 placeholder="输入卡片内容..."
               />
             ) : (
-              <p className="text-lg leading-relaxed whitespace-pre-line">{card.content}</p>
+              <div
+                ref={contentRef}
+                onMouseUp={handleTextSelect}
+                className="text-lg leading-relaxed whitespace-pre-line select-text"
+              >
+                {card.content}
+              </div>
+            )}
+            {/* P0: 选中文本提示条 */}
+            {!isEditing && selectedText && (
+              <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-between"
+              >
+                <span className="text-sm text-amber-700 dark:text-amber-300 truncate max-w-[70%]">
+                  已选: 「{selectedText.slice(0, 40)}{selectedText.length > 40 ? '...' : ''}」
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                    onClick={() => openCreateTask()}
+                  >
+                    <ListTodo size={12} /> 创建任务
+                  </button>
+                  <button
+                    className="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                    onClick={openCreateEvent}
+                  >
+                    <Calendar size={12} /> 创建日程
+                  </button>
+                </div>
+              </motion.div>
             )}
           </div>
-          
-          {/* 关联卡片 */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-semibold">关联卡片</h3>
-              {!isEditingRelations ? (
-                <button 
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
+
+          {/* P0: Tab 切换栏 */}
+          <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+            <button
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'relations'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('relations')}
+            >
+              关联卡片
+            </button>
+            <button
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'backlinks'
+                  ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('backlinks')}
+            >
+              <span className="flex items-center gap-1">
+                <Link2 size={14} />
+                双向链接
+                {backlinkStats && backlinkStats.total_links > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 text-xs rounded-full">
+                    {backlinkStats.total_links}
+                  </span>
+                )}
+              </span>
+            </button>
+            <button
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'tasks'
+                  ? 'border-green-500 text-green-600 dark:text-green-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('tasks')}
+            >
+              <span className="flex items-center gap-1">
+                <ListTodo size={14} />
+                任务与日程
+                {(cardTasks.length + cardEvents.length) > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300 text-xs rounded-full">
+                    {cardTasks.length + cardEvents.length}
+                  </span>
+                )}
+              </span>
+            </button>
+          </div>
+
+          {/* Tab 内容: 关联卡片 */}
+          {activeTab === 'relations' && (
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold">关联卡片</h3>
+                {!isEditingRelations ? (
+                  <button
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
                     onClick={() => {
+                      setEditingRelatedCards([...mergedRelatedIds]);
                       setIsEditingRelations(true);
-                      // 进入编辑模式时，延迟显示建议列表，确保DOM已更新
-                      setTimeout(() => {
-                        setShowSuggestions(true);
-                      }, 100);
+                      setTimeout(() => { setShowSuggestions(true); }, 100);
                     }}
                   >
-                  编辑关联 <Edit2 size={14} className="ml-1" />
-                </button>
+                    编辑关联 <Edit2 size={14} className="ml-1" />
+                  </button>
+                ) : (
+                  <div className="flex space-x-2">
+                    <button
+                      className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+                      onClick={cancelRelationEdit}
+                    >
+                      取消
+                    </button>
+                    <button
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                      onClick={saveRelationChanges}
+                    >
+                      保存
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {!isEditingRelations ? (
+                relatedCardsDetails.length > 0 ? (
+                  <div className="space-y-3">
+                    {relatedCardsDetails.map(relatedCard => (
+                      <motion.div
+                        key={relatedCard.id}
+                        whileHover={{ x: 5 }}
+                        className={`border ${cardTypeMap[relatedCard.color].borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-all`}
+                        onClick={() => onRelatedCardClick(relatedCard.id)}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center">
+                            <div className={`${cardTypeMap[relatedCard.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
+                            <div>
+                              <h4 className="font-medium">{relatedCard.title}</h4>
+                              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{relatedCard.content}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center">
+                            <span className={`text-xs ${cardTypeMap[relatedCard.color].color} text-white px-2 py-0.5 rounded-full mr-3`}>
+                              {relatedCard.address}
+                            </span>
+                            <ChevronRight size={16} className="text-gray-400" />
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+                    <p className="text-gray-500 dark:text-gray-400">暂无关联卡片</p>
+                  </div>
+                )
               ) : (
-                <div className="flex space-x-2">
-                  <button 
-                    className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
-                    onClick={cancelRelationEdit}
-                  >
-                    取消
-                  </button>
-                  <button 
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                    onClick={saveRelationChanges}
-                  >
-                    保存
-                  </button>
+                <div className="space-y-4">
+                  {editingRelatedCards.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {editingRelatedCards.map(cardId => {
+                        const rc = allCards.find(c => c.id === cardId);
+                        if (!rc) return null;
+                        return (
+                          <div
+                            key={rc.id}
+                            className="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-sm"
+                          >
+                            <div className={`${cardTypeMap[rc.color].color} w-2 h-2 rounded-full mr-2`}></div>
+                            <span>{rc.title}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeRelatedCard(rc.id)}
+                              className="ml-2 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setShowSuggestions(true);
+                      }}
+                      onFocus={() => setShowSuggestions(true)}
+                      onClick={() => setShowSuggestions(true)}
+                      placeholder="搜索要关联的卡片..."
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                    />
+
+                    {showSuggestions && filterAvailableCards().length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {filterAvailableCards().map(availableCard => (
+                          <button
+                            key={availableCard.id}
+                            type="button"
+                            onClick={() => addRelatedCard(availableCard.id)}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center"
+                          >
+                            <div className={`${cardTypeMap[availableCard.color].color} w-2 h-2 rounded-full mr-2`}></div>
+                            <Plus size={14} className="mr-2 text-blue-500" />
+                            <span>{availableCard.title}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+
+                    {showSuggestions && filterAvailableCards().length === 0 && (
+                      <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border rounded-lg shadow-lg p-4 text-sm text-gray-500 dark:text-gray-400">
+                        未找到匹配的卡片
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
-            
-            {!isEditingRelations ? (
-              // 查看模式
-              relatedCardsDetails.length > 0 ? (
-                <div className="space-y-3">
-                  {relatedCardsDetails.map(relatedCard => (
-                    <motion.div
-                      key={relatedCard.id}
-                      whileHover={{ x: 5 }}
-                      className={`border ${cardTypeMap[relatedCard.color].borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-all`}
-                      onClick={() => onRelatedCardClick(relatedCard.id)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center">
-                          <div className={`${cardTypeMap[relatedCard.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
-                          <div>
-                            <h4 className="font-medium">{relatedCard.title}</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{relatedCard.content}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center">
-                          <span className={`text-xs ${cardTypeMap[relatedCard.color].color} text-white px-2 py-0.5 rounded-full mr-3`}>
-                            {relatedCard.address}
-                          </span>
-                          <ChevronRight size={16} className="text-gray-400" />
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
+          )}
+
+          {/* P0: Tab 内容: 双向链接 */}
+          {activeTab === 'backlinks' && (
+            <div className="mb-6 space-y-4">
+              {backlinksLoading ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                  加载链接数据...
                 </div>
               ) : (
-                <div className="p-6 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
-                  <p className="text-gray-500 dark:text-gray-400">暂无关联卡片</p>
-                </div>
-              )
-            ) : (
-              // 编辑模式
-              <div className="space-y-4">
-                {/* 已关联卡片 */}
-                {editingRelatedCards.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {relatedCardsDetails.map(relatedCard => (
-                      <div 
-                        key={relatedCard.id}
-                        className="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-sm"
-                      >
-                        <div className={`${cardTypeMap[relatedCard.color].color} w-2 h-2 rounded-full mr-2`}></div>
-                        <span>{relatedCard.title}</span>
-                        <button 
-                          type="button"
-                          onClick={() => removeRelatedCard(relatedCard.id)}
-                          className="ml-2 p-0.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                        >
-                          <X size={12} />
-                        </button>
+                <>
+                  {/* 链接统计卡片 */}
+                  {backlinkStats && (
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-center border border-purple-100 dark:border-purple-800">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <ArrowLeft size={14} className="text-purple-500" />
+                          <span className="text-xs text-purple-600 dark:text-purple-400">反向链接</span>
+                        </div>
+                        <div className="text-xl font-bold text-purple-700 dark:text-purple-300">{backlinkStats.backlink_count}</div>
                       </div>
-                    ))}
-                  </div>
-                )}
-                
-                 {/* 搜索关联卡片 */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setShowSuggestions(true);
-                    }}
-                    onFocus={() => setShowSuggestions(true)}
-                    onClick={() => setShowSuggestions(true)}
-                    placeholder="搜索要关联的卡片..."
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
-                  />
-                  
-                  {/* 搜索建议下拉框 - 自动显示可选卡片 */}
-                  {showSuggestions && filterAvailableCards().length > 0 && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border rounded-lg shadow-lg max-h-60 overflow-y-auto"
-                    >
-                      {filterAvailableCards().map(availableCard => (
-                        <button
-                          key={availableCard.id}
-                          type="button"
-                          onClick={() => addRelatedCard(availableCard.id)}
-                          className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center"
-                        >
-                          <div className={`${cardTypeMap[availableCard.color].color} w-2 h-2 rounded-full mr-2`}></div>
-                          <Plus size={14} className="mr-2 text-blue-500" />
-                          <span>{availableCard.title}</span>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                  
-                  {showSuggestions && filterAvailableCards().length === 0 && (
-                    <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 border rounded-lg shadow-lg p-4 text-sm text-gray-500 dark:text-gray-400">
-                      未找到匹配的卡片
+                      <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg text-center border border-indigo-100 dark:border-indigo-800">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <ArrowRight size={14} className="text-indigo-500" />
+                          <span className="text-xs text-indigo-600 dark:text-indigo-400">正向链接</span>
+                        </div>
+                        <div className="text-xl font-bold text-indigo-700 dark:text-indigo-300">{backlinkStats.forwardlink_count}</div>
+                      </div>
+                      <div className="p-3 bg-violet-50 dark:bg-violet-900/20 rounded-lg text-center border border-violet-100 dark:border-violet-800">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <BarChart3 size={14} className="text-violet-500" />
+                          <span className="text-xs text-violet-600 dark:text-violet-400">总计</span>
+                        </div>
+                        <div className="text-xl font-bold text-violet-700 dark:text-violet-300">{backlinkStats.total_links}</div>
+                      </div>
                     </div>
                   )}
+
+                  {/* 反向链接列表（谁引用了我） */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                      <ArrowLeft size={14} className="text-purple-500" />
+                      被引用（反向链接）
+                    </h4>
+                    {backlinks.length > 0 ? (
+                      <div className="space-y-2">
+                        {backlinks.map(bl => (
+                          <div
+                            key={bl.id}
+                            className="flex items-center p-3 bg-purple-50/50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-800 rounded-lg cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-900/20 transition-colors"
+                            onClick={() => onRelatedCardClick(String(bl.id))}
+                          >
+                            <div className={`${getTypeColor(bl.card_type)} w-2.5 h-2.5 rounded-full mr-3`}></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{bl.title}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                                <span className={`${getTypeColor(bl.card_type)} text-white px-1.5 py-0.5 rounded text-[10px]`}>{getTypeName(bl.card_type)}</span>
+                                {bl.link_text && <span>· {bl.link_text}</span>}
+                              </div>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-400" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">暂无反向链接</p>
+                    )}
+                  </div>
+
+                  {/* 正向链接列表（我引用了谁） */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-1">
+                      <ArrowRight size={14} className="text-indigo-500" />
+                      引用了（正向链接）
+                    </h4>
+                    {forwardlinks.length > 0 ? (
+                      <div className="space-y-2">
+                        {forwardlinks.map(fl => (
+                          <div
+                            key={fl.id}
+                            className="flex items-center p-3 bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800 rounded-lg cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 transition-colors"
+                            onClick={() => onRelatedCardClick(String(fl.id))}
+                          >
+                            <div className={`${getTypeColor(fl.card_type)} w-2.5 h-2.5 rounded-full mr-3`}></div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{fl.title}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                                <span className={`${getTypeColor(fl.card_type)} text-white px-1.5 py-0.5 rounded text-[10px]`}>{getTypeName(fl.card_type)}</span>
+                                {fl.link_text && <span>· {fl.link_text}</span>}
+                              </div>
+                            </div>
+                            <ChevronRight size={14} className="text-gray-400" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 dark:text-gray-500 py-3 text-center">暂无正向链接</p>
+                    )}
+                  </div>
+
+                  {/* 查看图谱按钮 */}
+                  <button
+                    className="w-full py-2.5 text-sm text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 rounded-lg border border-purple-200 dark:border-purple-700 transition-colors flex items-center justify-center gap-2"
+                    onClick={() => {
+                      window.open(`/knowledge-graph?card=${card.id}`, '_blank');
+                    }}
+                  >
+                    <Link2 size={16} />
+                    查看链接图谱
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* P0: Tab 内容: 任务与日程 */}
+          {activeTab === 'tasks' && (
+            <div className="mb-6 space-y-4">
+              {tasksLoading ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <div className="animate-spin w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                  加载关联数据...
                 </div>
-              </div>
-            )}
-          </div>
-          
-           {/* AI分析建议 */}
+              ) : (
+                <>
+                  {/* 关联任务 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                        <ListTodo size={14} className="text-green-500" />
+                        关联任务 ({cardTasks.length})
+                      </h4>
+                      <button
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        onClick={() => openCreateTask(card.title)}
+                      >
+                        <Plus size={12} /> 新建任务
+                      </button>
+                    </div>
+                    {cardTasks.length > 0 ? (
+                      <div className="space-y-2">
+                        {cardTasks.map(task => (
+                          <div
+                            key={task.id}
+                            className={`p-3 border rounded-lg transition-colors ${
+                              task.is_completed
+                                ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60'
+                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${
+                                task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                              }`}></span>
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                                  {task.title}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] text-white ${
+                                    task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
+                                  }`}>
+                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                  </span>
+                                  {task.due_date && <span>截止: {task.due_date}</span>}
+                                  {task.extract_paragraph && (
+                                    <span className="truncate max-w-[200px]" title={task.extract_paragraph}>
+                                      源自: 「{task.extract_paragraph.slice(0, 20)}...」
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
+                        暂无关联任务
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 关联日历事件 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                        <Calendar size={14} className="text-blue-500" />
+                        关联日程 ({cardEvents.length})
+                      </h4>
+                      <button
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        onClick={openCreateEvent}
+                      >
+                        <Plus size={12} /> 新建日程
+                      </button>
+                    </div>
+                    {cardEvents.length > 0 ? (
+                      <div className="space-y-2">
+                        {cardEvents.map(event => (
+                          <div
+                            key={event.id}
+                            className="p-3 bg-blue-50/30 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-lg"
+                          >
+                            <div className="flex items-start gap-2">
+                              <Calendar size={14} className="mt-1 text-blue-500 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-medium ${event.is_completed ? 'line-through text-gray-400' : ''}`}>
+                                  {event.title}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                  <span>{new Date(event.start_time).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                  <span>→</span>
+                                  <span>{new Date(event.end_time).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  {event.location && (
+                                    <span className="flex items-center gap-0.5"><MapPin size={10} />{event.location}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
+                        暂无关联日程
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* AI分析建议 */}
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg p-6 border border-blue-100 dark:border-blue-800">
             <h3 className="text-lg font-semibold mb-3 text-blue-800 dark:text-blue-300">AI知识洞察</h3>
             <div className="space-y-3">
@@ -485,7 +1020,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 建议您进一步探索与"{card.title}"相关的最新研究和实践，以丰富这一核心概念的深度和广度。
               </p>
               <div className="mt-4 flex justify-end">
-                <button 
+                <button
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
                   onClick={() => setShowMoreInsights(!showMoreInsights)}
                 >
@@ -497,7 +1032,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             {/* 更多AI洞察详情 */}
             <motion.div
               initial={false}
-              animate={{ 
+              animate={{
                 height: showMoreInsights ? 'auto' : 0,
                 opacity: showMoreInsights ? 1 : 0
               }}
@@ -505,7 +1040,6 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               className="overflow-hidden"
             >
               <div className="pt-4 mt-4 border-t border-blue-200 dark:border-blue-700">
-                {/* 洞察维度1：知识重要性分析 */}
                 <div className="mb-4">
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">知识重要性分析</h4>
                   <div className="flex items-center justify-between mb-1">
@@ -515,12 +1049,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1.5">
                     <div className="h-full bg-blue-600 rounded-full" style={{ width: '85%' }}></div>
                   </div>
-                  <p className="mt-2 text-xs text-blue-700 dark:text-blue-400">
-                    这张卡片是您知识体系中的关键节点，与多个核心概念相关联，对整体知识网络的完整性有重要影响。
-                  </p>
                 </div>
 
-                {/* 洞察维度2：关联强度分析 */}
                 <div className="mb-4">
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">关联强度分析</h4>
                   <div className="grid grid-cols-2 gap-3">
@@ -531,10 +1061,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                           <span className="text-xs font-medium">{related.title}</span>
                         </div>
                         <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1">
-                          <div 
-                            className="h-full bg-blue-600 rounded-full" 
-                            style={{ width: `${80 - index * 10}%` }}
-                          ></div>
+                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${80 - index * 10}%` }}></div>
                         </div>
                         <span className="text-xs text-blue-600 dark:text-blue-400">{80 - index * 10}% 关联强度</span>
                       </div>
@@ -542,12 +1069,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   </div>
                 </div>
 
-                {/* 洞察维度3：知识空白识别 */}
                 <div className="mb-4">
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">知识空白识别</h4>
-                  <p className="text-xs text-blue-700 dark:text-blue-400 mb-2">
-                    系统检测到与"{card.title}"相关的以下知识空白：
-                  </p>
                   <ul className="space-y-2">
                     <li className="flex items-start">
                       <div className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 mr-2 mt-0.5 flex-shrink-0">
@@ -557,44 +1080,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                         缺乏与{card.title}相关的最新行业案例研究
                       </span>
                     </li>
-                    <li className="flex items-start">
-                      <div className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 mr-2 mt-0.5 flex-shrink-0">
-                        <Lightbulb size={10} />
-                      </div>
-                      <span className="text-xs text-blue-700 dark:text-blue-400">
-                        与实际项目应用的关联不足，建议添加具体实践案例
-                      </span>
-                    </li>
                   </ul>
                 </div>
 
-                {/* 洞察维度4：发展建议 */}
-                <div className="mb-4">
-                  <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">知识发展建议</h4>
-                  <div className="space-y-2">
-                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-100 dark:border-green-800">
-                      <p className="text-xs text-green-800 dark:text-green-300">
-                        <span className="font-medium">建议1:</span> 补充与"{card.title}"相关的最新研究成果和理论发展
-                      </p>
-                    </div>
-                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-100 dark:border-green-800">
-                      <p className="text-xs text-green-800 dark:text-green-300">
-                        <span className="font-medium">建议2:</span> 建立与实际项目的连接，添加应用案例和实践经验
-                      </p>
-                    </div>
-                    <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-100 dark:border-green-800">
-                      <p className="text-xs text-green-800 dark:text-green-300">
-                        <span className="font-medium">建议3:</span> 探索与"{card.title}"相关的交叉学科知识，拓展知识广度
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 洞察维度5：推荐相关卡片 */}
                 <div>
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">推荐相关卡片</h4>
                   <div className="space-y-2">
-                       {[
+                    {[
                       { title: "知识管理系统的最佳实践", reason: "补充方法论知识" },
                       { title: "AI在知识发现中的应用", reason: "拓展技术应用场景" },
                       { title: "组织学习与知识创新", reason: "增强理论深度" }
@@ -607,7 +1099,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                           <p className="text-xs font-medium">{rec.title}</p>
                           <p className="text-xs text-blue-600 dark:text-blue-400">{rec.reason}</p>
                         </div>
-                        <button 
+                        <button
                           className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                           onClick={() => onCreateRecommendedCard(rec.title, rec.reason)}
                         >
@@ -621,6 +1113,157 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             </motion.div>
           </div>
         </div>
+
+        {/* P0: 创建任务弹窗 */}
+        {showCreateTask && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20" onClick={() => setShowCreateTask(false)}>
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="w-[420px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <ListTodo size={18} className="text-green-500" />
+                从卡片创建任务
+              </h3>
+              {selectedText && (
+                <div className="mb-3 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded text-xs text-amber-700 dark:text-amber-300 max-h-20 overflow-y-auto">
+                  选中文本: 「{selectedText}」
+                </div>
+              )}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">任务标题</label>
+                  <input
+                    type="text"
+                    value={newTaskTitle}
+                    onChange={e => setNewTaskTitle(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-green-500 focus:outline-none"
+                    placeholder="输入任务标题..."
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">优先级</label>
+                    <select
+                      value={newTaskPriority}
+                      onChange={e => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none"
+                    >
+                      <option value="high">高</option>
+                      <option value="medium">中</option>
+                      <option value="low">低</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">截止日期</label>
+                    <input
+                      type="date"
+                      value={newTaskDueDate}
+                      onChange={e => setNewTaskDueDate(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    onClick={() => setShowCreateTask(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                    onClick={handleCreateTask}
+                    disabled={creatingTask || !newTaskTitle.trim()}
+                  >
+                    {creatingTask ? '创建中...' : '创建任务'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* P0: 创建日历事件弹窗 */}
+        {showCreateEvent && (
+          <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20" onClick={() => setShowCreateEvent(false)}>
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="w-[420px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <Calendar size={18} className="text-blue-500" />
+                创建日程事件
+              </h3>
+              {selectedText && (
+                <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded text-xs text-blue-700 dark:text-blue-300 max-h-20 overflow-y-auto">
+                  关联文本: 「{selectedText.slice(0, 60)}」
+                </div>
+              )}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">事件标题</label>
+                  <input
+                    type="text"
+                    value={newEventTitle}
+                    onChange={e => setNewEventTitle(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    placeholder="输入事件标题..."
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">开始时间</label>
+                    <input
+                      type="datetime-local"
+                      value={newEventStartTime}
+                      onChange={e => setNewEventStartTime(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">结束时间</label>
+                    <input
+                      type="datetime-local"
+                      value={newEventEndTime}
+                      onChange={e => setNewEventEndTime(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">地点</label>
+                  <input
+                    type="text"
+                    value={newEventLocation}
+                    onChange={e => setNewEventLocation(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 focus:outline-none"
+                    placeholder="可选..."
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    onClick={() => setShowCreateEvent(false)}
+                  >
+                    取消
+                  </button>
+                  <button
+                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                    onClick={handleCreateEvent}
+                    disabled={creatingEvent || !newEventTitle.trim() || !newEventStartTime || !newEventEndTime}
+                  >
+                    {creatingEvent ? '创建中...' : '创建日程'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );
