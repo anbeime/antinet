@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import {
   Users,
   MessageSquare,
@@ -327,6 +328,7 @@ const PixelOfficeCanvas: React.FC<{
 
 // ==================== 主页面组件 ====================
 const VirtualOfficeMeeting: React.FC = () => {
+  const { t } = useTranslation();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');

@@ -1,0 +1,59 @@
+{
+  "app": {
+    "title": "致一智能助手",
+    "newMeeting": "新建会议",
+    "history": "历史会议",
+    "agents": "Agent列表",
+    "tasks": "协作任务",
+    "health": "系统状态",
+    "startMeeting": "开始会议",
+    "topic": "会议主题",
+    "context": "背景信息",
+    "rounds": "讨论轮数",
+    "meetingResult": "会议结果",
+    "summary": "会议总结",
+    "decision": "会议决策",
+    "actionItems": "行动项",
+    "saveToArchive": "保存到归档",
+    "newDiscussion": "新建讨论"
+  },
+  "pixelOffice": {
+    "title": "像素办公室",
+    "progress": "进度"
+  },
+  "agents": {
+    "title": "Agent 列表",
+    "noData": "暂无 Agent 数据"
+  },
+  "tasks": {
+    "title": "协作任务",
+    "noData": "暂无协作任务",
+    "completed": "已完成",
+    "inProgress": "进行中",
+    "pending": "待处理",
+    "assignee": "指派给",
+    "priority": "优先级"
+  },
+  "health": {
+    "title": "系统状态",
+    "loading": "加载中...",
+    "serviceStatus": "服务状态",
+    "running": "正常运行",
+    "partial": "部分异常",
+    "modelStatus": "模型状态",
+    "loaded": "已加载",
+    "notLoaded": "未加载",
+    "resourceUsage": "资源使用",
+    "gpu": "GPU",
+    "memory": "内存"
+  },
+  "common": {
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "loading": "加载中..."
+  }
+}

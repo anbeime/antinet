@@ -1,0 +1,59 @@
+{
+  "app": {
+    "title": "致一AIアシスタント",
+    "newMeeting": "新規会議",
+    "history": "履歴",
+    "agents": "エージェント",
+    "tasks": "タスク",
+    "health": "状態",
+    "startMeeting": "会議開始",
+    "topic": "会議テーマ",
+    "context": "背景情報",
+    "rounds": "議論ラウンド",
+    "meetingResult": "会議結果",
+    "summary": "要約",
+    "decision": "決定事項",
+    "actionItems": "アクション項目",
+    "saveToArchive": "アーカイブに保存",
+    "newDiscussion": "新規議論"
+  },
+  "pixelOffice": {
+    "title": "ピクセルオフィス",
+    "progress": "進捗"
+  },
+  "agents": {
+    "title": "エージェント一覧",
+    "noData": "エージェントデータがありません"
+  },
+  "tasks": {
+    "title": "協力タスク",
+    "noData": "タスクがありません",
+    "completed": "完了",
+    "inProgress": "進行中",
+    "pending": "保留中",
+    "assignee": "担当者",
+    "priority": "優先度"
+  },
+  "health": {
+    "title": "システム状態",
+    "loading": "読み込み中...",
+    "serviceStatus": "サービス状態",
+    "running": "正常稼働",
+    "partial": "部分的異常",
+    "modelStatus": "モデル状態",
+    "loaded": "ロード済み",
+    "notLoaded": "未ロード",
+    "resourceUsage": "リソース使用率",
+    "gpu": "GPU",
+    "memory": "メモリ"
+  },
+  "common": {
+    "confirm": "確認",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "delete": "削除",
+    "edit": "編集",
+    "close": "閉じる",
+    "loading": "読み込み中..."
+  }
+}

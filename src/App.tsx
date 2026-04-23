@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router-dom";
+import "./i18n";
 import Home from "@/pages/Home";
 import NPUAnalysis from "@/pages/NPUAnalysis";
 import NPUDashboard from "@/pages/NPUDashboard";
