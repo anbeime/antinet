@@ -293,8 +293,9 @@ const PPTAnalysis: React.FC = () => {
           // 自动跳转到预览页面
           window.location.href = '/ppt-viewer';
         } else {
-        const error = await response.json();
-        toast.error(`导出失败: ${error.detail || '未知错误'}`);
+          const error = await response.json();
+          toast.error(`导出失败: ${error.detail || '未知错误'}`);
+        }
       }
     } catch (error) {
       console.error('导出PPT失败:', error);

@@ -135,9 +135,11 @@ async def generate_ppt_from_text(request: TextToPPTRequest):
         raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
-            output_path = tmp.name
+        # 保存到服务端目录供预览使用
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved_filename = f"{request.title.replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
+        saved_path = output_dir / saved_filename
         
         # 使用 PPT 处理器生成
         if USE_ENHANCED:
@@ -148,12 +150,6 @@ async def generate_ppt_from_text(request: TextToPPTRequest):
         # 解析 Markdown 并生成 PPT
         from tools.ppt_processor import parse_markdown_content
         slides_data = parse_markdown_content(request.text)
-        
-        # 保存到服务端目录供预览使用
-        output_dir = Path("C:/D/zhiyi/generated")
-        output_dir.mkdir(parents=True, exist_ok=True)
-        saved_filename = f"{request.title.replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
-        saved_path = output_dir / saved_filename
         
         # 根据主题生成 PPT
         processor.create_presentation_from_slides(
