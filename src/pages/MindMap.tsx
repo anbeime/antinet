@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
+const API_BASE = 'http://localhost:8000';
+
 interface KnowledgeCard {
   id: number;
   title: string;
@@ -90,7 +92,7 @@ const MindMap: React.FC = () => {
 
   const loadMindmaps = async () => {
     try {
-      const res = await fetch('/api/mindmap/');
+      const res = await fetch(`${API_BASE}/api/mindmap/`);
       const data = await res.json();
       setMindmaps(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -102,7 +104,7 @@ const MindMap: React.FC = () => {
     if (!networkTopic.trim()) return;
     setGenerating(true);
     try {
-      const res = await fetch('/api/knowledge/network/generate', {
+      const res = await fetch(`${API_BASE}/api/knowledge/network/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -114,7 +116,7 @@ const MindMap: React.FC = () => {
       });
       const data = await res.json();
       if (data.mindmap_id) {
-        const res2 = await fetch(`/api/mindmap/${data.mindmap_id}`);
+        const res2 = await fetch(`${API_BASE}/api/mindmap/${data.mindmap_id}`);
         const mindmapData = await res2.json();
         if (mindmapData?.root_node) {
           setRoot(mindmapData.root_node);
@@ -133,7 +135,7 @@ const MindMap: React.FC = () => {
 
   const loadCards = async () => {
     try {
-      const res = await fetch('/api/knowledge/cards?limit=100');
+      const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=100`);
       const data = await res.json();
       setCards(data);
     } catch (e) {
@@ -143,7 +145,7 @@ const MindMap: React.FC = () => {
 
   const loadNodeCards = async (mindmapId: number, nodeId: string) => {
     try {
-      const res = await fetch(`/api/mindmap/${mindmapId}/cards?node_id=${nodeId}`);
+      const res = await fetch(`${API_BASE}/api/mindmap/${mindmapId}/cards?node_id=${nodeId}`);
       const data = await res.json();
       setNodeCards(prev => ({ ...prev, [nodeId]: data }));
     } catch (e) {
@@ -154,7 +156,7 @@ const MindMap: React.FC = () => {
   const saveMindmap = async () => {
     try {
       if (currentMindmapId) {
-        await fetch(`/api/mindmap/${currentMindmapId}`, {
+        await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: mindmapName, root_node: root })
@@ -194,7 +196,7 @@ const MindMap: React.FC = () => {
     e.stopPropagation();
     if (!confirm('确定删除?')) return;
     try {
-      await fetch(`/api/mindmap/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/api/mindmap/${id}`, { method: 'DELETE' });
       if (currentMindmapId === id) {
         setCurrentMindmapId(null);
         setRoot(defaultMindMap);
@@ -217,7 +219,7 @@ const MindMap: React.FC = () => {
   const linkCard = async (cardId: number) => {
     if (!currentMindmapId || !selectedNode) return;
     try {
-      await fetch(`/api/mindmap/${currentMindmapId}/link`, {
+      await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, node_id: selectedNode })
@@ -231,7 +233,7 @@ const MindMap: React.FC = () => {
   const unlinkCard = async (cardId: number) => {
     if (!currentMindmapId || !selectedNode) return;
     try {
-      await fetch(`/api/mindmap/${currentMindmapId}/link`, {
+      await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}/link`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, node_id: selectedNode })

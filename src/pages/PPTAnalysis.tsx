@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
 import KnowledgeGraph from '@/components/KnowledgeGraph';
@@ -67,6 +67,7 @@ const PPTAnalysis: React.FC = () => {
   const [projectCards, setProjectCards] = useState<any[]>([]);
   const [projectCardsLoading, setProjectCardsLoading] = useState(false);
   const [showGraph, setShowGraph] = useState(false);
+  const [cardSearchQuery, setCardSearchQuery] = useState('');
   
   // 检查PPT服务状态
   useEffect(() => {
@@ -150,6 +151,16 @@ const PPTAnalysis: React.FC = () => {
     }
   }, [selectedProject]);
 
+  // 过滤搜索卡片
+  const filteredCards = cardSearchQuery.trim()
+    ? cards.filter(card => 
+        card.title.toLowerCase().includes(cardSearchQuery.toLowerCase()) ||
+        card.content.toLowerCase().includes(cardSearchQuery.toLowerCase()) ||
+        (card.category && card.category.toLowerCase().includes(cardSearchQuery.toLowerCase())) ||
+        (card.tags && card.tags.toLowerCase().includes(cardSearchQuery.toLowerCase()))
+      )
+    : cards;
+
   // 从专题生成PPT
   const generatePPTFromProject = async () => {
     if (!selectedProject) {
@@ -173,16 +184,30 @@ const PPTAnalysis: React.FC = () => {
         const blob = await response.blob();
         const fileName = `${projects.find(p => p.id === selectedProject)?.name || '专题'}.pptx`;
         
-        const url = URL.createObjectURL(blob);
+        // 保存到 sessionStorage 供预览页面使用
+        const previewUrl = URL.createObjectURL(blob);
+        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
+        sessionStorage.setItem('lastPPTFileName', fileName);
+        
+        // 同时触发下载
+        const downloadUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = downloadUrl;
         a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(downloadUrl);
         
-        toast.success('PPT生成成功！');
+        toast.success('PPT生成成功！', {
+          action: {
+            label: '在线查看',
+            onClick: () => navigate('/ppt-viewer')
+          }
+        });
+        
+        // 自动跳转到预览页面
+        setTimeout(() => navigate('/ppt-viewer'), 500);
       } else {
         const error = await response.json();
         toast.error(`生成失败: ${error.detail || '未知错误'}`);
@@ -224,6 +249,7 @@ const PPTAnalysis: React.FC = () => {
         
         if (data.success && data.filename) {
           // 保存文件名到 sessionStorage，跳转到预览页时读取
+          console.log('[PPTAnalysis] 生成成功，文件名:', data.filename);
           sessionStorage.setItem('lastPPTFileName', data.filename);
           
           // 自动跳转到预览页面
@@ -318,10 +344,10 @@ const PPTAnalysis: React.FC = () => {
 
   // 全选/取消全选
   const toggleSelectAll = () => {
-    if (selectedCards.size === cards.length) {
+    if (selectedCards.size === filteredCards.length) {
       setSelectedCards(new Set());
     } else {
-      setSelectedCards(new Set(cards.map(c => c.id)));
+      setSelectedCards(new Set(filteredCards.map(c => c.id)));
     }
   };
 
@@ -531,24 +557,38 @@ const PPTAnalysis: React.FC = () => {
 
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-sm text-gray-600 dark:text-gray-400">
-                    已选择: {selectedCards.size} / {cards.length}
+                    已选择: {selectedCards.size} / {filteredCards.length}
                   </span>
                   <button
                     onClick={toggleSelectAll}
                     className="text-sm text-purple-600 dark:text-purple-400 hover:underline"
                   >
-                    {selectedCards.size === cards.length ? '取消全选' : '全选'}
+                    {selectedCards.size === filteredCards.length ? '取消全选' : '全选'}
                   </button>
                 </div>
 
+                {/* 搜索卡片 */}
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={cardSearchQuery}
+                    onChange={(e) => setCardSearchQuery(e.target.value)}
+                    placeholder="搜索卡片标题、内容、类型..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                  />
+                </div>
+
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {cards.length === 0 ? (
+                  {filteredCards.length === 0 ? (
                     <div className="text-center py-8">
                       <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
-                      <p className="text-gray-500 dark:text-gray-400">暂无知识卡片</p>
+                      <p className="text-gray-500 dark:text-gray-400">
+                        {cardSearchQuery ? '未找到匹配的卡片' : '暂无知识卡片'}
+                      </p>
                     </div>
                   ) : (
-                    cards.slice(0, 10).map(card => (
+                    filteredCards.slice(0, 50).map(card => (
                       <motion.div
                         key={card.id}
                         whileHover={{ x: 2 }}

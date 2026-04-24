@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
+const API_BASE = 'http://localhost:8000';
+
 interface GraphNode {
   id: string;
   name: string;
@@ -77,7 +79,7 @@ const KnowledgeGraphView: React.FC = () => {
     if (!topic.trim()) return;
     setLoadingAPI(true);
     try {
-      const response = await fetch('/api/knowledge/network/suggest', {
+      const response = await fetch(`${API_BASE}/api/knowledge/network/suggest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic, limit: 20 })
@@ -106,17 +108,17 @@ const KnowledgeGraphView: React.FC = () => {
     chartInstance.current = echarts.init(chartRef.current);
     
     const displayData = viewMode === 'api' && apiData ? {
-      nodes: apiData.entities?.map((e: any, i: number) => ({
-        id: e.entity_id || `node_${i}`,
-        name: e.name,
-        category: i % 4,
-        symbolSize: 30 + Math.random() * 30
-      })) || [],
-      links: apiData.relations?.map((r: any, i: number) => ({
-        source: r.source_id,
-        target: r.target_id,
-        label: r.relation_type
-      })) || [],
+nodes: apiData.entities ? apiData.entities.map((e: any, i: number) => ({
+          id: e.entity_id ? e.entity_id : 'node_' + i,
+          name: e.name,
+          category: i % 4,
+          symbolSize: 30 + Math.random() * 30
+        })) : [],
+links: apiData.relations ? apiData.relations.map((r: any) => ({
+          source: r.source_id,
+          target: r.target_id,
+          label: r.relation_type
+        })) : [],
       categories: [
         { name: '事实' },
         { name: '解释' },

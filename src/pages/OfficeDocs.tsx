@@ -240,7 +240,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
         throw new Error('Luckysheet not available');
       }
     } catch (error) {
-      console.error('加载Luckysheet失败:', error);
+      console.warn('Luckysheet加载失败，使用简易表格模式');
       setIsLoading(false);
       // 使用简易表格替代
       setUseSimpleTable(true);
