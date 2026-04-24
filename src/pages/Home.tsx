@@ -134,10 +134,16 @@ const cardTypeMap = {
 
 
 
-const Home: React.FC = () => {
+interface HomeProps {
+  initialTab?: string;
+}
+
+const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const { theme, toggleTheme } = useTheme();
-  // 主菜单和子菜单状态
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph'>(() => {
+    if (initialTab === 'remotion') return 'remotion';
+    return 'dashboard';
+  });
   const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -790,13 +796,6 @@ const Home: React.FC = () => {
                 >
                   <Bot size={16} />
                   <span>Agent系统</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('remotion')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'remotion' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <Clapperboard size={16} />
-                  <span>动态演示</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('skill-center')}
@@ -1741,6 +1740,24 @@ const matchType = typeFilter === 'all' || card.color === typeFilter;
           <FormatConverter />
         )}
 
+        {/* Remotion 动态演示视图 */}
+        {activeTab === 'remotion' && (
+          <div className="flex h-full p-4">
+            <div className="flex-1">
+              <RemotionGenerator 
+                cards={cards.filter(c => c.color).map(c => ({
+                  id: c.id,
+                  type: c.color as any,
+                  title: c.title,
+                  content: c.content
+                }))}
+                topic="智能分析报告"
+                showSelector={true}
+              />
+            </div>
+          </div>
+        )}
+
         {/* 团队协作视图 */}
         {activeTab === 'team-collaboration' && (
           <TeamCollaboration />
@@ -1760,22 +1777,7 @@ const matchType = typeFilter === 'all' || card.color === typeFilter;
           </div>
         )}
 
-        {/* Remotion 动态演示视图 */}
-        {activeTab === 'remotion' && (
-          <div className="flex h-full p-4">
-            <div className="flex-1">
-              <RemotionGenerator 
-                cards={cards.filter(c => c.color).map(c => ({
-                  id: c.id,
-                  type: c.color as any,
-                  title: c.title,
-                  content: c.content
-                }))}
-                topic="智能分析报告"
-              />
-            </div>
-          </div>
-        )}
+        {/* 预留：以后可以整合到PPT生成中 */}
 
         {/* 文档中心首页 */}
         {activeTab === 'document-center' && (

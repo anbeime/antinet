@@ -119,17 +119,25 @@ const WikiEditor = () => {
 
   const loadPage = async (pageId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/wiki/pages/${pageId}`);
+      // 确保pageId正确编码
+      const encodedId = encodeURIComponent(pageId);
+      const res = await fetch(`http://localhost:8000/api/wiki/pages/${encodedId}`);
+      if (!res.ok) {
+        console.error('Failed to load page:', res.status);
+        return;
+      }
       const data = await res.json();
-      setCurrentPage(data.page);
-      setContent(data.page.content);
-      setTitle(data.page.title);
-      setPageType(data.page.type);
-      setTags(data.page.tags || []);
-      setLinks(data.links || []);
-      setBacklinks(data.backlinks || []);
-      setConnected(data.connected || []);
-      setEditMode(false);
+      if (data.page) {
+        setCurrentPage(data.page);
+        setContent(data.page.content || '');
+        setTitle(data.page.title || '');
+        setPageType(data.page.type);
+        setTags(data.page.tags || []);
+        setLinks(data.links || []);
+        setBacklinks(data.backlinks || []);
+        setConnected(data.connected || []);
+        setEditMode(false);
+      }
     } catch (e) {
       console.error('Failed to load page:', e);
     }

@@ -16,6 +16,7 @@ interface RemotionGeneratorProps {
   cards: CardData[];
   topic: string;
   onGenerated?: (videoUrl: string) => void;
+  showSelector?: boolean;
 }
 
 interface GeneratedSlide {
@@ -26,10 +27,11 @@ interface GeneratedSlide {
   cards?: { title: string; content: string; type: 'blue' | 'green' | 'yellow' | 'red' }[];
 }
 
-const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onGenerated }) => {
+const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onGenerated, showSelector = false }) => {
   const [generating, setGenerating] = useState(false);
   const [slides, setSlides] = useState<GeneratedSlide[]>([]);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [config, setConfig] = useState({
     style: 'modern',
@@ -39,6 +41,11 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
   });
 
   const generateSlides = () => {
+    // 如果有选择器且已选择卡片，使用选中的卡片
+    const sourceCards = showSelector && selectedCards.size > 0 
+      ? cards.filter(c => selectedCards.has(c.id))
+      : cards;
+    
     const newSlides: GeneratedSlide[] = [];
     
     // Cover slide
@@ -50,10 +57,10 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
     });
 
     // Group cards by type
-    const blueCards = cards.filter(c => c.type === 'blue');
-    const greenCards = cards.filter(c => c.type === 'green');
-    const yellowCards = cards.filter(c => c.type === 'yellow');
-    const redCards = cards.filter(c => c.type === 'red');
+    const blueCards = sourceCards.filter(c => c.type === 'blue');
+    const greenCards = sourceCards.filter(c => c.type === 'green');
+    const yellowCards = sourceCards.filter(c => c.type === 'yellow');
+    const redCards = sourceCards.filter(c => c.type === 'red');
 
     // Content slides by type
     if (blueCards.length > 0) {
@@ -92,12 +99,16 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
       });
     }
 
-    // Summary slide
+    // Summary slide (use sourceCards)
+    const summaryCards = showSelector && selectedCards.size > 0 
+      ? cards.filter(c => selectedCards.has(c.id))
+      : sourceCards;
+    
     newSlides.push({
       id: 'summary-1',
       type: 'summary',
       title: '总结',
-      content: cards.slice(0, 4).map((c, i) => `${i + 1}. ${c.title}`),
+      content: summaryCards.slice(0, 4).map((c, i) => `${i + 1}. ${c.title}`),
     });
 
     return newSlides;
@@ -163,6 +174,47 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
           <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
         </button>
       </div>
+
+      {/* Card Selector - Only show when showSelector is true */}
+      {showSelector && (
+        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">选择卡片</span>
+            <button 
+              onClick={() => setSelectedCards(new Set(cards.map(c => c.id))}
+              className="text-xs text-purple-600 hover:underline"
+            >
+              全选 ({cards.length})
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+            {cards.map(card => (
+              <button
+                key={card.id}
+                onClick={() => {
+                  const newSet = new Set(selectedCards);
+                  if (newSet.has(card.id)) {
+                    newSet.delete(card.id);
+                  } else {
+                    newSet.add(card.id);
+                  }
+                  setSelectedCards(newSet);
+                }}
+                className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                  selectedCards.has(card.id) 
+                    ? 'bg-purple-500 text-white border-purple-500' 
+                    : `border-${card.type === 'blue' ? 'blue' : card.type === 'green' ? 'green' : card.type === 'yellow' ? 'yellow' : 'red'}-500 text-${card.type === 'blue' ? 'blue' : card.type === 'green' ? 'green' : card.type === 'yellow' ? 'yellow' : 'red'}-500`
+                }`}
+              >
+                {card.title.slice(0, 12)}...
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            已选择: {selectedCards.size} 张卡片
+          </div>
+        </div>
+      )}
 
       {/* Advanced Settings */}
       {showAdvanced && (

@@ -245,14 +245,16 @@ class SearchRequest(BaseModel):
 @router.get("/graph")
 async def get_knowledge_graph(
     card_type: Optional[str] = None,
-    limit: int = 10000
+    project_id: Optional[int] = None,
+    limit: int = 500
 ):
     """
     获取知识图谱数据
     
     参数：
         card_type: 卡片类型过滤（可选）
-        limit: 节点数量限制
+        project_id: 专题ID过滤（可选）
+        limit: 节点数量限制，默认500
     
     返回：
         知识图谱数据（节点+边）
@@ -263,7 +265,7 @@ async def get_knowledge_graph(
         # 获取技能注册表
         registry = get_skill_registry()
         
-        # 获取所有卡片
+        # 获取卡片
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         
@@ -274,7 +276,12 @@ async def get_knowledge_graph(
             query += " AND card_type = ?"
             params.append(card_type)
         
-        query += " LIMIT ?"
+        if project_id:
+            query += " AND project_id = ?"
+            params.append(project_id)
+        
+        # 添加排序和限制
+        query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         
         cursor.execute(query, params)

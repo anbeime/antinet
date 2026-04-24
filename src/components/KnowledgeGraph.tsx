@@ -121,7 +121,9 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   const loadKnowledgeGraph = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/knowledge/graph');
+      // 如果指定了专题ID，则只加载该专题的卡片
+      const projectParam = selectedProjectFilter ? `&project_id=${selectedProjectFilter}` : '';
+      const response = await fetch(`http://localhost:8000/api/knowledge/graph?limit=500${projectParam}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setGraphData(data);
@@ -133,7 +135,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedProjectFilter]);
 
   // 加载双向链接图谱数据
   const loadBacklinkGraph = useCallback(async (cardId?: number) => {
@@ -156,15 +158,19 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
     }
   }, [focusCardId]);
 
-  // 初始化图表
+// 初始化图表
   useEffect(() => {
     if (chartRef.current && !chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current);
     }
+  }, []);
 
+  // 根据传入的参数加载数据
+  useEffect(() => {
     if (focusCardId) {
       loadBacklinkGraph(focusCardId);
     } else {
+      // 如果传入了专题ID，使用它加载该专题的图谱
       loadKnowledgeGraph();
     }
 
@@ -174,7 +180,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         chartInstance.current = null;
       }
     };
-  }, []);
+  }, [focusCardId, selectedProjectFilter]);
 
   // 渲染图表
   useEffect(() => {

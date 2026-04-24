@@ -50,6 +50,11 @@ export default function App() {
         <Route path="/gtd-tasks" element={<GTDTaskManager />} />
         <Route path="/genie-playground" element={<GeniePlayground />} />
         <Route path="/genie-npu-test" element={<GenieNPUTest />} />
+        <Route path="/remotion" element={
+          <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
+            <Home initialTab="remotion" />
+          </div>
+        } />
       </Routes>
     </AuthProvider>
   );
