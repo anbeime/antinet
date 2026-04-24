@@ -133,16 +133,6 @@ async def suggest_network_cards(topic: str, limit: int = 10000):
     except Exception as e:
         logger.error(f"智能推荐失败: {e}")
         return {"topic": topic, "suggestions": [], "error": str(e)}
-                    "type": s.card_type,
-                    "reason": _get_type_reason(s.card_type)
-                }
-                for s in suggestions[:limit]
-            ],
-            "total": len(suggestions)
-        }
-    except Exception as e:
-        logger.warning(f"[KnowledgeNetwork] 建议失败: {e}")
-        return {"topic": topic, "suggestions": [], "error": str(e)}
 
 
 @router.post("/network/generate")
@@ -418,7 +408,7 @@ async def get_cards(
         cards.append(card_dict)
 
     conn.close()
-    return {"cards": cards}
+    return {"cards": cards, "total": len(cards)}
 
 
 @router.get("/cards/{card_id}")

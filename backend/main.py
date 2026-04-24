@@ -209,7 +209,7 @@ try:
     wiki_db_manager = DatabaseManager(settings.DB_PATH)
     set_wiki_db_manager(wiki_db_manager)
     app.include_router(wiki_router)
-    logger.info("[OK] Wiki路由已注册 (Karpathy模式)")
+    logger.info("[OK] Wiki路由已注册 (Karpathy模式 /api/wiki)")
 except Exception as e:
     logger.warning(f"无法导入Wiki路由: {e}")
 

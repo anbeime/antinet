@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Depends, Form
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/knowledge", tags=["Knowledge Wiki"])
+router = APIRouter(prefix="/api/wiki", tags=["Knowledge Wiki"])
 
 # 全局数据库管理器
 db_manager = None

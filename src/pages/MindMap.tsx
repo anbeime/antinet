@@ -137,9 +137,18 @@ const MindMap: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=100`);
       const data = await res.json();
-      setCards(data);
+      // 后端返回格式可能是 {cards: [...], total: n} 或直接是数组
+      if (data.cards && Array.isArray(data.cards)) {
+        setCards(data.cards);
+      } else if (Array.isArray(data)) {
+        setCards(data);
+      } else {
+        console.warn('卡片数据格式异常:', data);
+        setCards([]);
+      }
     } catch (e) {
       console.error('加载卡片失败:', e);
+      setCards([]);
     }
   };
 

@@ -154,6 +154,8 @@ const Home: React.FC = () => {
   // 卡片管理筛选和分页
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | CardColor>('all');
+  const [projectFilter, setProjectFilter] = useState<number | 'all'>('all');
+  const [projects, setProjects] = useState<{id: number; name: string}[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   
@@ -422,7 +424,7 @@ const Home: React.FC = () => {
   React.useEffect(() => {
     const loadCardsFromAPI = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
+        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
         if (response.ok) {
           const data = await response.json();
           const apiCards = data.cards || data || [];
@@ -441,6 +443,18 @@ const Home: React.FC = () => {
             projectId: card.project_id ?? null
           }));
           setCards(formattedCards);
+          
+          // 加载专题列表
+          try {
+            const projRes = await fetch('http://localhost:8000/api/research/projects');
+            if (projRes.ok) {
+              const projData = await projRes.json();
+              setProjects(projData.value || projData || []);
+            }
+          } catch (e) {
+            console.error('加载专题失败:', e);
+          }
+          
           console.log('从API加载卡片:', formattedCards.length);
         }
       } catch (error) {
@@ -1392,6 +1406,21 @@ const Home: React.FC = () => {
                   </select>
                 </div>
                 
+                {/* 专题筛选 */}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">专题:</span>
+                  <select
+                    value={projectFilter}
+                    onChange={(e) => { setProjectFilter(e.target.value === 'all' ? 'all' : Number(e.target.value)); setCurrentPage(1); }}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 min-w-[120px]"
+                  >
+                    <option value="all">全部</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
                 {/* 类型筛选 */}
                 <div className="flex items-center space-x-2">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">类型:</span>
@@ -1536,11 +1565,12 @@ const Home: React.FC = () => {
                       timeFilter === 'week' ? (now.getTime() - cardDate.getTime()) < 7 * 24 * 60 * 60 * 1000 :
                       timeFilter === 'month' ? cardDate.getMonth() === now.getMonth() && cardDate.getFullYear() === now.getFullYear() :
                       cardDate.getFullYear() === now.getFullYear();
-                    const matchType = typeFilter === 'all' || card.color === typeFilter;
-                    const matchSearch = !managementSearchQuery || 
-                      card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
-                      card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
-                    return matchTime && matchType && matchSearch;
+const matchType = typeFilter === 'all' || card.color === typeFilter;
+                        const matchProject = projectFilter === 'all' || (card as any).project_id === projectFilter;
+                        const matchSearch = !managementSearchQuery || 
+                          card.title.toLowerCase().includes(managementSearchQuery.toLowerCase()) ||
+                          card.content.toLowerCase().includes(managementSearchQuery.toLowerCase());
+                        return matchTime && matchType && matchProject && matchSearch;
                   });
                   
                   const startIndex = (currentPage - 1) * pageSize;
