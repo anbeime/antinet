@@ -181,33 +181,19 @@ const PPTAnalysis: React.FC = () => {
       });
       
       if (response.ok) {
-        const blob = await response.blob();
-        const fileName = `${projects.find(p => p.id === selectedProject)?.name || '专题'}.pptx`;
+        const data = await response.json();
         
-        // 保存到 sessionStorage 供预览页面使用
-        const previewUrl = URL.createObjectURL(blob);
-        sessionStorage.setItem('lastGeneratedPPT', previewUrl);
-        sessionStorage.setItem('lastPPTFileName', fileName);
-        
-        // 同时触发下载
-        const downloadUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(downloadUrl);
-        
-        toast.success('PPT生成成功！', {
-          action: {
-            label: '在线查看',
-            onClick: () => navigate('/ppt-viewer')
-          }
-        });
-        
-        // 自动跳转到预览页面
-        setTimeout(() => navigate('/ppt-viewer'), 500);
+        if (data.success && data.filename) {
+          // 保存文件名
+          sessionStorage.setItem('lastPPTFileName', data.filename);
+          
+          toast.success('PPT生成成功！');
+          
+          // 跳转到预览页面
+          window.location.href = '/ppt-viewer';
+        } else {
+          toast.error(`生成失败: ${data.detail || '未知错误'}`);
+        }
       } else {
         const error = await response.json();
         toast.error(`生成失败: ${error.detail || '未知错误'}`);
@@ -232,6 +218,9 @@ const PPTAnalysis: React.FC = () => {
       return;
     }
 
+    // 清除旧的sessionStorage
+    sessionStorage.removeItem('lastPPTFileName');
+    
     setIsExporting(true);
     try {
       const response = await fetch(`${API_BASE}/api/ppt/generate/from-text`, {

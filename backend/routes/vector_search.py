@@ -154,6 +154,9 @@ def fallback_keyword_search(query: str, limit: int = 5) -> List[VectorSearchResu
     
     global db_manager
     
+    if db_manager is None:
+        return []
+    
     stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '上', '也', 
                   '很', '到', '说', '要', '去', '你', '会', '看', '好', '这', '那', '什么', '怎么'}
     

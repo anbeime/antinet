@@ -66,28 +66,28 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
           const response = await fetch(`${API_BASE}/api/ppt/file?filename=${encodeURIComponent(fileName)}`);
           console.log('[PPTViewer] 响应状态:', response.status);
           if (response.ok) {
-            const contentType = response.headers.get('content-type');
-            console.log('[PPTViewer] Content-Type:', contentType);
-            if (contentType && contentType.includes('application')) {
-              const blob = await response.blob();
+            const blob = await response.blob();
+            if (blob.size > 0) {
               console.log('[PPTViewer] 文件大小:', blob.size);
               const file = new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
               await parsePPTX(file);
               console.log('[PPTViewer] 解析成功');
+              toast.success('PPT加载成功');
             } else {
-              const text = await response.text();
-              console.error('API返回错误:', text);
-              toast.error('文件加载失败: ' + text.substring(0, 100));
+              toast.error('文件为空，请重新生成');
             }
+          } else if (response.status === 404) {
+            // 文件不存在，清除sessionStorage
+            sessionStorage.removeItem('lastPPTFileName');
+            toast.error('PPT文件不存在，请重新生成');
           } else {
-            console.error('文件不存在:', response.status);
-            toast.error('PPT文件不存在');
+            const errText = await response.text();
+            console.error('加载失败:', response.status, errText);
+            toast.error('PPT加载失败: ' + response.status);
           }
-          // 清除 sessionStorage
-          sessionStorage.removeItem('lastPPTFileName');
         } catch (e) {
           console.error('加载PPT失败:', e);
-          toast.error('加载PPT失败: ' + e.message);
+          toast.error('加载PPT失败: ' + (e as Error).message);
         }
       } else {
         console.log('[PPTViewer] 没有文件名，使用默认数据');

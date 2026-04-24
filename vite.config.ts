@@ -13,6 +13,16 @@ function getPlugins() {
 
 export default defineConfig({
   plugins: getPlugins(),
+  server: {
+    proxy: {
+      '/cdn': {
+        target: 'https://cdn.jsdelivr.net',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/cdn/, '')
+      }
+    }
+  },
   build: {
     rollupOptions: {
       input: './index.html',

@@ -191,13 +191,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       return;
     }
     
-    const linkCDN = (filename: string) => 
-      `https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/plugins/css/${filename}`;
-    const jsCDN = (filename: string) =>
-      `https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/plugins/js/${filename}`;
-    const mainCSS = 'https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/css/luckysheet.css';
-    const mainJS = 'https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js';
-
     const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
       // 检查是否已存在
       if (document.querySelector(`script[src="${src}"]`)) {
@@ -226,8 +219,9 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
     try {
       setIsLoading(true);
-      await loadCSS(mainCSS);
-      await loadScript(mainJS);
+      // 使用 jsDelivr CDN
+      await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/css/luckysheet.css');
+      await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js');
       
       // 等待 luckysheet 初始化
       await new Promise(resolve => setTimeout(resolve, 500));

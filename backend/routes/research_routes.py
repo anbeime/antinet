@@ -577,7 +577,7 @@ async def get_all_cards_for_link():
             FROM knowledge_cards 
             WHERE project_id IS NULL
             ORDER BY created_at DESC
-            LIMIT 100
+            LIMIT 10000
         """)
         rows = cursor.fetchall()
         
@@ -616,7 +616,7 @@ async def get_linkable_cards(project_id: int):
             FROM knowledge_cards 
             WHERE project_id IS NULL OR project_id = ?
             ORDER BY created_at DESC
-            LIMIT 100
+            LIMIT 10000
         """, (project_id,))
         rows = cursor.fetchall()
         
@@ -911,7 +911,7 @@ async def get_suggested_relations(card_id: int, limit: int = 10):
             cursor.execute("""
                 SELECT id, title, card_type, category, content FROM knowledge_cards
                 WHERE id != ? AND (project_id != ? OR project_id IS NULL)
-                ORDER BY created_at DESC LIMIT 100
+                ORDER BY created_at DESC LIMIT 10000
             """, (card_id, card["project_id"] or 0))
             
             for row in cursor.fetchall():

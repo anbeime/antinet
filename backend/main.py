@@ -282,6 +282,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
 
+# 注册 OCR 路由 (qwen2.5vl3b NPU模型)
+try:
+    from routes.ocr_routes import router as ocr_router
+    app.include_router(ocr_router)
+    logger.info("[OK] OCR 路由已注册 (qwen2.5vl3b)")
+except Exception as e:
+    logger.warning(f"无法导入 OCR 路由: {e}")
+
 # 注册报表自动化路由
 try:
     from routes.report_routes import router as report_router

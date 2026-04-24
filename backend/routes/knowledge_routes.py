@@ -27,7 +27,7 @@ class NetworkCardsRequest(BaseModel):
     topic: str = Field(..., description="主题/查询词")
     color_filter: Optional[str] = Field(default=None, description="颜色过滤: blue/green/yellow/red")
     mode: str = Field(default="auto", description="模式: auto(自动生成)|manual(手动选择)")
-    limit: int = Field(default=20, description="返回数量")
+    limit: int = Field(default=10000, description="返回数量")
 
 
 class NetworkSuggestion(BaseModel):
@@ -100,23 +100,39 @@ async def get_network_cards(request: NetworkCardsRequest):
 
 
 @router.post("/network/suggest")
-async def suggest_network_cards(topic: str, limit: int = 10):
+async def suggest_network_cards(topic: str, limit: int = 10000):
     """
     知识网络 - AI联想推荐卡片
-    基于主题智能推荐相关卡片
+    基于主题智能推荐相关卡片（语义搜索）
     """
     try:
-        from routes import auto_card
-        auto_card.set_db_manager(db_manager)
+        from routes import vector_search
+        vector_search.set_db_manager(db_manager)
         
-        suggestions = auto_card.analyze_and_suggest_cards(topic, f"智能推荐与「{topic}」相关的知识卡片", threshold=0.3)
+        # 使用混合搜索：向量 + 关键词
+        results = vector_search.search_hybrid(topic, limit=min(limit, 20))
+        
+        if not results:
+            # 回退到关键词搜索
+            results = vector_search.fallback_keyword_search(topic, limit=min(limit, 20))
         
         return {
             "topic": topic,
+            "total": len(results),
             "suggestions": [
                 {
-                    "title": s.title,
-                    "content": s.content,
+                    "card_id": r.id,
+                    "title": r.title,
+                    "content": r.content[:200] + "..." if len(r.content) > 200 else r.content,
+                    "card_type": r.card_type,
+                    "score": r.score
+                }
+                for r in results
+            ]
+        }
+    except Exception as e:
+        logger.error(f"智能推荐失败: {e}")
+        return {"topic": topic, "suggestions": [], "error": str(e)}
                     "type": s.card_type,
                     "reason": _get_type_reason(s.card_type)
                 }
@@ -233,13 +249,13 @@ db_manager = DatabaseManager(settings.DB_PATH)
 class SearchRequest(BaseModel):
     """知识库搜索请求"""
     keyword: str = Field(..., description="搜索关键词")
-    limit: int = Field(10, description="返回数量限制")
+    limit: int = Field(10000, description="返回数量限制")
 
 
 @router.get("/graph")
 async def get_knowledge_graph(
     card_type: Optional[str] = None,
-    limit: int = 100
+    limit: int = 10000
 ):
     """
     获取知识图谱数据
@@ -354,7 +370,7 @@ class KnowledgeSource(BaseModel):
 async def get_cards(
     card_type: Optional[str] = None,
     category: Optional[str] = None,
-    limit: int = 50,
+    limit: int = 10000,
     offset: int = 0
 ):
     """

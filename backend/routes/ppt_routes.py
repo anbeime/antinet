@@ -4,6 +4,7 @@ PPT 路由
 """
 import logging
 import json
+import re
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -248,10 +249,26 @@ async def export_cards_to_ppt(request: ExportCardsRequest):
         # 转换卡片数据
         cards_data = []
         for card in request.cards:
+            # 清理Markdown标记
+            raw_content = card.content if isinstance(card.content, list) else [card.content]
+            clean_content = []
+            for c in raw_content:
+                if isinstance(c, str):
+                    # 清理Markdown
+                    c = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', c)  # 链接
+                    c = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', c)  # 图片
+                    c = re.sub(r'`([^`]+)`', r'\1', c)  # 代码
+                    c = re.sub(r'\*\*([^*]+)\*\*', r'\1', c)  # 加粗
+                    c = re.sub(r'\*([^*]+)\*', r'\1', c)  # 斜体
+                    c = re.sub(r'~~([^~]+)~~', r'\1', c)  # 删除线
+                    clean_content.append(c.strip())
+                else:
+                    clean_content.append(str(c))
+            
             cards_data.append({
                 'type': card.type,
                 'title': card.title,
-                'content': card.content if isinstance(card.content, list) else [card.content],
+                'content': clean_content,
                 'tags': card.tags or [],
                 'created_at': card.created_at or datetime.now().isoformat()
             })
@@ -704,9 +721,11 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         # 构建PPT幻灯片数据
         slides = _build_ppt_slides_from_organized(organized, request, project['name'])
         
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
-            output_path = tmp.name
+        # 保存到服务端目录
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        saved_filename = f"{(request.title or project['name']).replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
+        saved_path = output_dir / saved_filename
         
         # 使用PPT处理器生成
         if USE_ENHANCED:
@@ -723,17 +742,16 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         processor.create_presentation_from_slides(
             slides_data=slides_data,
             title=request.title or project['name'],
-            output_path=output_path,
+            output_path=str(saved_path),
             theme=request.theme
         )
         
-        # 返回文件
-        filename = f"{(request.title or project['name']).replace(' ', '_')}.pptx"
-        return FileResponse(
-            path=output_path,
-            filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
+        # 返回文件名
+        return {
+            "success": True,
+            "filename": saved_filename,
+            "title": request.title or project['name']
+        }
         
     except HTTPException:
         raise

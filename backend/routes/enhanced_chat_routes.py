@@ -442,10 +442,10 @@ def detect_scene(query: str) -> SceneType:
 
 # ============ 卡片知识库查询 ============
 
-def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
+def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     """
     语义搜索知识卡片
-    支持关键词匹配和相似度排序
+    使用混合搜索：向量 + 关键词
     """
     global db_manager
     if db_manager is None:
@@ -453,49 +453,29 @@ def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
         return []
     
     try:
-        conn = db_manager.get_connection()
-        cursor = conn.cursor()
+        # 使用向量搜索模块的混合搜索
+        from routes import vector_search
+        vector_search.set_db_manager(db_manager)
         
-        # 提取关键词
-        keywords = extract_keywords(query)
+        results = vector_search.search_hybrid(query, limit=min(limit, 20))
         
-        # 构建查询条件
-        conditions = []
-        params = []
+        if not results:
+            # 回退到关键词搜索
+            results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
         
-        for keyword in keywords:
-            conditions.append("(title LIKE ? OR content LIKE ?)")
-            params.extend([f"%{keyword}%", f"%{keyword}%"])
-        
-        if not conditions:
-            # 没有提取到关键词，用原始查询字符串搜索
-            conditions = ["(title LIKE ? OR content LIKE ?)"]
-            params = [f"%{query}%", f"%{query}%"]
-        
-        where_clause = " OR ".join(conditions)
-        
-        # 执行搜索 - 使用 knowledge_cards 表
-        cursor.execute(f"""
-            SELECT id, title, content, COALESCE(type, 'blue') as card_type, COALESCE(category, '事实') as card_category, COALESCE(similarity, 0.5) as sim
-            FROM knowledge_cards
-            WHERE {where_clause}
-            ORDER BY sim DESC, created_at DESC
-            LIMIT ?
-        """, params + [limit])
-        
+        # 转换为CardReference格式
         cards = []
-        for row in cursor.fetchall():
+        for r in results[:limit]:
             card = CardReference(
-                card_id=str(row[0]),
-                card_type=row[3] or "blue",
-                title=row[1],
-                content=row[2][:150] if row[2] else "",
-                similarity=float(row[5]) if row[5] else 0.5,
-                color=get_card_color(row[4] or "事实")
+                card_id=r.id,
+                card_type=r.card_type,
+                title=r.title,
+                content=r.content[:150] if r.content else "",
+                similarity=float(r.score),
+                color=get_card_color(r.card_type)
             )
             cards.append(card)
         
-        conn.close()
         return cards
         
     except Exception as e:

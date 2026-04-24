@@ -366,33 +366,39 @@ def clean_speech_text(text: str) -> str:
     return text
 
 
-def search_related_cards(query: str, limit: int = 5) -> str:
+def search_related_cards(query: str, limit: int = 10) -> str:
     """
-    根据会议主题搜索相关知识卡片
+    根据会议主题搜索相关知识卡片（使用语义搜索）
     返回格式化的参考信息字符串
     """
     try:
-        db = get_db_manager()
-        if db is None:
+        from routes import vector_search
+        vector_search.set_db_manager(get_db_manager())
+        
+        # 使用混合搜索
+        results = vector_search.search_hybrid(query, limit=min(limit, 15))
+        
+        if not results:
+            results = vector_search.fallback_keyword_search(query, limit=min(limit, 15))
+        
+        if not results:
             return ""
         
-        cards = db.search_cards(query, limit=limit)
-        if not cards:
-            return ""
+        output = []
+        output.append("\n\n=== 📚 相关知识库参考 ===")
+        for i, r in enumerate(results, 1):
+            content = r.content[:300] + '...' if len(r.content) > 300 else r.content
+            output.append(f"【{i}】{r.title} (相似度: {r.score:.2f})")
+            output.append(f"    类型: {r.card_type}")
+            if content:
+                output.append(f"    内容: {content}")
+            output.append("")
         
-        results = []
-        results.append("\n\n=== 相关知识库参考 ===")
-        for i, card in enumerate(cards, 1):
-            title = card.get('title', '无标题')
-            content = card.get('content', '')
-            category = card.get('category', '')
-            
-            truncated_content = content[:300] + '...' if len(content) > 300 else content
-            results.append(f"【{i}】{title}")
-            if category:
-                results.append(f"    分类: {category}")
-            results.append(f"    内容: {truncated_content}")
-            results.append("")
+        return "\n".join(output)
+        
+    except Exception as e:
+        logger.error(f"搜索失败: {e}")
+        return ""
         
         return "\n".join(results)
     except Exception as e:
