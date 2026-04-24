@@ -181,7 +181,7 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">选择卡片</span>
             <button 
-              onClick={() => setSelectedCards(new Set(cards.map(c => c.id))}
+              onClick={() => setSelectedCards(new Set(cards.map(c => c.id)))}
               className="text-xs text-purple-600 hover:underline"
             >
               全选 ({cards.length})

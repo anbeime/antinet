@@ -39,29 +39,36 @@ def init_model():
         from models.model_loader import get_model_loader
         # 使用正确的模型key（在 model_loader.py 中定义）
         model_loader = get_model_loader("bge-base-zh")
+        logger.info(f"[Vector] 获取模型: {model_loader}")
+        logger.info(f"[Vector] is_loaded: {model_loader.is_loaded}")
+        logger.info(f"[Vector] model: {model_loader.model}")
         
         # 检查模型是否存在并尝试加载
         if model_loader and model_loader.model is not None:
-            # 模型已加载
             model_loader.is_loaded = True
-            logger.info("[Vector] BGE 模型已就绪")
+            logger.info("[Vector] BGE 模型已就绪 (已加载)")
             return True
         elif model_loader:
-            # 尝试手动加载
+            logger.info("[Vector] 尝试加载BGE模型...")
             try:
                 model_loader.load()
+                logger.info(f"[Vector] load()后 - model: {model_loader.model}")
                 if model_loader.model is not None:
                     model_loader.is_loaded = True
                     logger.info("[Vector] BGE 模型加载成功")
                     return True
             except Exception as load_err:
+                import traceback
                 logger.warning(f"[Vector] BGE 模型加载失败: {load_err}")
+                logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
         
         logger.warning("[Vector] BGE 模型不可用，将使用关键词搜索")
         return False
         
     except Exception as e:
+        import traceback
         logger.warning(f"[Vector] BGE 模型初始化失败: {e}")
+        logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
     return False
 
 
