@@ -732,7 +732,9 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         # 保存到服务端目录
         output_dir = Path("C:/D/zhiyi/generated")
         output_dir.mkdir(parents=True, exist_ok=True)
-        saved_filename = f"{(request.title or project['name']).replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
+        # 清理文件名中的特殊字符
+        clean_name = re.sub(r'[<>:\"\'\\/|?*]', '', request.title or project['name'])[:50]
+        saved_filename = f"{clean_name.replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
         saved_path = output_dir / saved_filename
         
         # 使用PPT处理器生成
