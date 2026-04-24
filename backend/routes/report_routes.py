@@ -234,10 +234,13 @@ async def download_report(
     file: str = Query(...)
 ):
     """下载报表文件"""
-    file_path = OUTPUT_DIR / file
+    # 处理 Windows 路径分隔符和 URL 编码
+    import urllib.parse
+    file_name = urllib.parse.unquote(file).replace('\\', '/').split('/')[-1]
+    file_path = OUTPUT_DIR / file_name
     
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="文件不存在")
+        raise HTTPException(status_code=404, detail=f"文件不存在: {file_name}")
     
     media_types = {
         'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -247,7 +250,7 @@ async def download_report(
     
     return FileResponse(
         path=str(file_path),
-        filename=file,
+        filename=file_name,
         media_type=media_types.get(format, 'application/octet-stream')
     )
 

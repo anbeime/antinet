@@ -635,6 +635,14 @@ def _build_ppt_slides_from_organized(organized: List[Dict], request: ExportColle
             if isinstance(content_text, list):
                 content_text = '\n'.join(content_text)
             
+            # 清理Markdown标记
+            content_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', content_text)
+            content_text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', content_text)
+            content_text = re.sub(r'`([^`]+)`', r'\1', content_text)
+            content_text = re.sub(r'\*\*([^*]+)\*\*', r'\1', content_text)
+            content_text = re.sub(r'\*([^*]+)\*', r'\1', content_text)
+            content_text = re.sub(r'~~([^~]+)~~', r'\1', content_text)
+            
             # 添加关联信息
             backlink_info = ''
             if request.include_backlinks and card.get('related_cards'):
