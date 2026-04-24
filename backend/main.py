@@ -199,6 +199,15 @@ try:
 except Exception as e:
     logger.warning(f"无法导入思维导图路由: {e}")
 
+# 注册 Remotion 动态演示路由
+try:
+    import routes.remotion_routes as remotion_routes_module
+    app.include_router(remotion_routes_module.router)
+    remotion_routes_module.set_db_manager(db_manager)
+    logger.info("[OK] Remotion 动态演示路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 Remotion 路由: {e}")
+
 # 注册专题研究路由
 try:
     from routes.research_routes import router as research_router
@@ -272,6 +281,14 @@ try:
     logger.info("[OK] PPT 处理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 PPT 处理路由: {e}")
+
+# 注册 OCR 路由 (qwen2.5vl3b NPU模型)
+try:
+    from routes.ocr_routes import router as ocr_router
+    app.include_router(ocr_router)
+    logger.info("[OK] OCR 路由已注册 (qwen2.5vl3b)")
+except Exception as e:
+    logger.warning(f"无法导入 OCR 路由: {e}")
 
 # 注册报表自动化路由
 try:

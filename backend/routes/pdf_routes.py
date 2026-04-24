@@ -65,12 +65,21 @@ def _sse_event(event_type: str, data: dict) -> str:
 
 @router.get("/status")
 async def get_pdf_status():
-    """获取 PDF 功能状态（含 MinerU 高质量解析能力）"""
+    """获取 PDF 功能状态（含高级解析能力）"""
     pdf_available = pdf_processor.available
+    
+    # 检查高级功能
+    try:
+        from tools.pdf_advanced import advanced_processor
+        advanced_info = advanced_processor.get_info()
+    except Exception:
+        advanced_info = {"text": False, "images": False, "tables": False, "ocr": False}
+    
     return {
         "available": pdf_available,
         "message": "PDF 功能已启用" if pdf_available else "PDF 功能未安装",
         "four_color_available": FOUR_COLOR_AVAILABLE and pdf_available,
+        "advanced": advanced_info,
     }
 
 
@@ -107,7 +116,120 @@ async def extract_text(
             os.unlink(tmp_path)
 
 
-# ========== PDF 拆分 ==========
+# ========== 高级功能提取 ==========
+
+@router.post("/extract/images")
+async def extract_images(file: UploadFile = File(...)):
+    """提取PDF中的图片"""
+    try:
+        from tools.pdf_advanced import advanced_processor
+    except ImportError:
+        raise HTTPException(status_code=503, detail="高级PDF功能未安装")
+    
+    if not advanced_processor.has_images:
+        raise HTTPException(status_code=503, detail="PyMuPDF未安装")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    try:
+        result = advanced_processor.extract_images(tmp_path)
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error", "提取失败"))
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "images": result["images"]
+        }
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/extract/tables")
+async def extract_tables(file: UploadFile = File(...)):
+    """提取PDF中的表格"""
+    try:
+        from tools.pdf_advanced import advanced_processor
+    except ImportError:
+        raise HTTPException(status_code=503, detail="高级PDF功能未安装")
+    
+    if not advanced_processor.has_tables:
+        raise HTTPException(status_code=503, detail="camelot未安装")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    try:
+        result = advanced_processor.extract_tables(tmp_path)
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error", "提取失败"))
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "tables": result["tables"]
+        }
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/extract/ocr")
+async def extract_ocr(file: UploadFile = File(...), lang: str = Form("chi_sim+eng")):
+    """OCR识别PDF中的文字"""
+    try:
+        from tools.pdf_advanced import advanced_processor
+    except ImportError:
+        raise HTTPException(status_code=503, detail="高级PDF功能未安装")
+    
+    if not advanced_processor.has_ocr:
+        raise HTTPException(status_code=503, detail="pytesseract未安装")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    try:
+        result = advanced_processor.extract_ocr(tmp_path, lang)
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error", "OCR失败"))
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "pages": result["pages"]
+        }
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+@router.post("/extract/full")
+async def full_extract(file: UploadFile = File(...)):
+    """完整提取PDF所有内容（文本、图片、表格、OCR）"""
+    try:
+        from tools.pdf_advanced import advanced_processor
+    except ImportError:
+        raise HTTPException(status_code=503, detail="高级PDF功能未安装")
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        shutil.copyfileobj(file.file, tmp_file)
+        tmp_path = tmp_file.name
+    
+    try:
+        result = advanced_processor.full_extract(tmp_path)
+        return {
+            "success": True,
+            "filename": file.filename,
+            "data": result
+        }
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 @router.post("/split")
 async def split_pdf(file: UploadFile = File(...)):

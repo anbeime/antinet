@@ -90,18 +90,27 @@ const FormatConverter: React.FC = () => {
 
   // 添加文件到任务列表
   const addFiles = (files: File[]) => {
-    const validFiles = files.filter(file => 
-      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    );
+    // 支持多种输入格式
+    const validExtensions = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.txt', '.md', '.pptx', '.ppt'];
+    const validFiles = files.filter(file => {
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      return validExtensions.includes(ext) || 
+             file.type === 'application/pdf' ||
+             file.type === 'application/msword' ||
+             file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+             file.type === 'application/vnd.ms-excel' ||
+             file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+             file.type === 'text/plain';
+    });
 
     if (validFiles.length === 0) {
-      toast.error('请选择 PDF 文件');
+      toast.error('请选择支持的文件格式');
       return;
     }
 
     const invalidCount = files.length - validFiles.length;
     if (invalidCount > 0) {
-      toast.warning(`已过滤 ${invalidCount} 个非 PDF 文件`);
+      toast.warning(`已过滤 ${invalidCount} 个不支持的文件`);
     }
 
     const newTasks: ConversionTask[] = validFiles.map(file => ({
@@ -596,7 +605,7 @@ const FormatConverter: React.FC = () => {
             格式转换中心
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            上传 PDF 文件，一键转换为 Word、Excel 或 PDF 格式
+            上传文件，一键转换为 Word、Excel、PDF 等多种格式
           </p>
         </motion.div>
 
@@ -665,21 +674,21 @@ const FormatConverter: React.FC = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf"
+              accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md,.pptx,.ppt"
               multiple
               onChange={handleFileSelect}
               className="hidden"
             />
             <Upload className="w-16 h-16 mx-auto text-gray-400 mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              点击或拖拽 PDF 文件到此处
+              点击或拖拽文件到此处
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-4">
               支持批量上传，将自动转换为 {formatConfig[selectedFormat].name}
             </p>
             <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-              <FileText className="w-4 h-4" />
-              <span>支持 .pdf 格式</span>
+              <FileType className="w-4 h-4" />
+              <span>支持 PDF/Word/Excel/PPT/TXT/MD</span>
             </div>
           </div>
         </motion.div>

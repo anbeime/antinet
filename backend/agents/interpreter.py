@@ -97,13 +97,11 @@ class InterpreterAgent:
             上下文列表
         """
         try:
-            # TODO: 实现向量检索
-            # 如果知识库可用，使用向量检索相关上下文
-            if self.knowledge_base_path:
-                # 调用向量检索（需要实现）
-                context = await self._vector_search(user_query)
-            else:
-                # 使用规则检索
+            # 强制使用向量检索
+            context = await self._vector_search(user_query)
+            
+            # 如果向量检索没有结果，回退到规则检索
+            if not context:
                 context = self._rule_based_retrieval(user_query, current_date)
             
             return context
@@ -143,20 +141,41 @@ class InterpreterAgent:
             logger.error(f"基于规则的检索失败: {e}", exc_info=True)
             return []
     
-    async def _vector_search(self, query: str) -> List[str]:
+async def _vector_search(self, query: str) -> List[str]:
         """
-        向量检索
-        
-        参数：
-            query: 查询文本
-        
-        返回：
-            检索结果
+        向量检索 - 使用混合搜索（向量 + 关键词）
         """
         try:
-            # TODO: 实现向量检索
-            # 使用BGE-M3模型向量化
-            # 使用FAISS或Chroma检索
+            from routes.vector_search import set_db_manager, search_hybrid, fallback_keyword_search
+            from routes import vector_search
+            
+            # 设置数据库管理器
+            try:
+                from database import DatabaseManager
+                from config import settings
+                db = DatabaseManager(settings.DB_PATH)
+                vector_search.set_db_manager(db)
+            except Exception as e:
+                logger.warning(f"设置数据库失败: {e}")
+            
+            # 使用混合搜索
+            results = search_hybrid(query, limit=10)
+            
+            if not results:
+                # 回退到关键词搜索
+                results = fallback_keyword_search(query, limit=10)
+            
+            # 返回格式化的文本
+            context = []
+            for r in results:
+                text = f"【{r.title}】\n{r.content[:200]}..."
+                context.append(text)
+            
+            logger.info(f"[Vector] 检索到 {len(results)} 条相关知识")
+            return context
+        
+        except Exception as e:
+            logger.error(f"向量检索失败: {e}")
             return []
         
         except Exception as e:

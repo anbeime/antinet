@@ -727,20 +727,18 @@ const ProjectDetailPanel: React.FC<{
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.detail || '导出失败');
+throw new Error(err.detail || '导出失败');
       }
 
-      // 下载文件
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${project.name.replace(/\s+/g, '_')}.pptx`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      toast.success('PPT导出成功');
+      const data = await response.json();
+      if (data.success && data.filename) {
+        // 存储文件名并跳转到预览
+        sessionStorage.setItem('lastPPTFileName', data.filename);
+        toast.success('PPT导出成功');
+        window.location.href = '/ppt-viewer';
+      } else {
+        throw new Error(data.detail || '导出失败');
+      }
     } catch (err: any) {
       toast.error(err.message || 'PPT导出失败');
     } finally {

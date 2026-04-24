@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Presentation, Upload, Download, ChevronLeft, ChevronRight,
   Play, Pause, Maximize2, Grid, List, FilePlus
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { toast } from 'sonner';
+
+const API_BASE = 'http://localhost:8000';
 
 interface SlideData {
   title: string;
@@ -27,6 +31,7 @@ const defaultSlides: SlideData[] = [
 
 const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   useTheme();
+  const [searchParams] = useSearchParams();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [viewMode, setViewMode] = useState<'slide' | 'outline'>('slide');
@@ -43,25 +48,52 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   const totalSlides = displaySlides?.length || 1;
   const currentSlideData = displaySlides?.[currentSlide] || displaySlides?.[0] || { title: '无内容', content: [], type: 'content' };
 
-  // 从 sessionStorage 加载上次生成的PPT
+  // 从 sessionStorage 或 URL参数加载PPT文件
   useEffect(() => {
-    const loadFromSession = async () => {
-      const pptUrl = sessionStorage.getItem('lastGeneratedPPT');
-      if (pptUrl) {
+    const loadPPT = async () => {
+      // 优先从URL参数获取
+      let fileName = searchParams.get('file');
+      console.log('[PPTViewer] URL参数文件名:', fileName);
+      
+      // 如果没有URL参数，从sessionStorage获取
+      if (!fileName) {
+        fileName = sessionStorage.getItem('lastPPTFileName');
+        console.log('[PPTViewer] Session参数文件名:', fileName);
+      }
+      
+      if (fileName) {
         try {
-          const response = await fetch(pptUrl);
-          const blob = await response.blob();
-          const file = new File([blob], sessionStorage.getItem('lastPPTFileName') || 'generated.pptx', { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
-          await parsePPTX(file);
-          // 清除 sessionStorage
-          sessionStorage.removeItem('lastGeneratedPPT');
-          sessionStorage.removeItem('lastPPTFileName');
+          const response = await fetch(`${API_BASE}/api/ppt/file?filename=${encodeURIComponent(fileName)}`);
+          console.log('[PPTViewer] 响应状态:', response.status);
+          if (response.ok) {
+            const blob = await response.blob();
+            if (blob.size > 0) {
+              console.log('[PPTViewer] 文件大小:', blob.size);
+              const file = new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+              await parsePPTX(file);
+              console.log('[PPTViewer] 解析成功');
+              toast.success('PPT加载成功');
+            } else {
+              toast.error('文件为空，请重新生成');
+            }
+          } else if (response.status === 404) {
+            // 文件不存在，清除sessionStorage
+            sessionStorage.removeItem('lastPPTFileName');
+            toast.error('PPT文件不存在，请重新生成');
+          } else {
+            const errText = await response.text();
+            console.error('加载失败:', response.status, errText);
+            toast.error('PPT加载失败: ' + response.status);
+          }
         } catch (e) {
-          console.error('加载上次PPT失败:', e);
+          console.error('加载PPT失败:', e);
+          toast.error('加载PPT失败: ' + (e as Error).message);
         }
+      } else {
+        console.log('[PPTViewer] 没有文件名，使用默认数据');
       }
     };
-    loadFromSession();
+    loadPPT();
   }, []);
 
   useEffect(() => {
@@ -101,21 +133,39 @@ const parsePPTX = async (file: File) => {
         if (content) {
           const lines: string[] = [];
           let title = '';
+          let currentParagraph = '';
           
-          const linesMatch = content.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
-          if (linesMatch) {
-            for (let i = 0; i < linesMatch.length; i++) {
-              const match = linesMatch[i].match(/<a:t[^>]*>([^<]+)<\/a:t>/);
+          const textElements = content.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
+          if (textElements) {
+            for (let i = 0; i < textElements.length; i++) {
+              const match = textElements[i].match(/<a:t[^>]*>([^<]+)<\/a:t>/);
               if (match && match[1]) {
                 const text = match[1].trim();
                 if (text) {
                   if (i === 0) {
                     title = text;
                   } else {
-                    lines.push(text);
+                    if (currentParagraph) {
+                      currentParagraph += ' ' + text;
+                    } else {
+                      currentParagraph = text;
+                    }
                   }
                 }
               }
+            }
+          }
+          
+          if (currentParagraph) {
+            const sentences = currentParagraph.split(/(?<=[。！？!?.])|(?<=[\n])/).filter(s => s.trim());
+            
+            if (sentences.length > 1) {
+              for (const s of sentences) {
+                const trimmed = s.trim();
+                if (trimmed) lines.push(trimmed);
+              }
+            } else {
+              lines.push(currentParagraph);
             }
           }
           
@@ -250,9 +300,9 @@ const parsePPTX = async (file: File) => {
       <main className="flex-1 flex overflow-hidden">
         {viewMode === 'slide' ? (
           <div className="flex-1 flex items-center justify-center p-8">
-            <div className="w-full max-w-4xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden">
-              <div className={`h-full flex flex-col ${theme.bg} p-8`}>
-                <div className="flex-1 flex flex-col justify-center">
+            <div className="w-full max-w-5xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden">
+              <div className={`h-full flex flex-col ${theme.bg} p-6 overflow-y-auto`}>
+                <div className="flex-1 flex flex-col justify-start overflow-y-auto">
                   <motion.div
                     key={currentSlide}
                     initial={{ opacity: 0, y: 20 }}
@@ -269,24 +319,24 @@ const parsePPTX = async (file: File) => {
                         </p>
                       </div>
                     ) : (
-                      <div>
-                        <h2 className="text-3xl font-bold text-white mb-6">
+                      <div className="space-y-4">
+                        <h2 className="text-3xl font-bold text-white mb-4">
                           {displaySlides[currentSlide]?.title || ''}
                         </h2>
-                        <ul className="space-y-3">
+                        <div className="space-y-2">
                           {(displaySlides[currentSlide]?.content || []).map((item, idx) => (
-                            <motion.li
+                            <motion.div
                               key={idx}
                               initial={{ opacity: 0, x: -20 }}
                               animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.1 }}
-                              className="flex items-center text-white text-lg"
+                              transition={{ delay: idx * 0.05 }}
+                              className="flex items-start text-white text-lg"
                             >
-                              <span className="w-3 h-3 bg-white rounded-full mr-3" />
-                              {item}
-                            </motion.li>
+                              <span className="w-3 h-3 bg-white rounded-full mr-3 mt-1.5 flex-shrink-0" />
+                              <span className="leading-relaxed">{item}</span>
+                            </motion.div>
                           ))}
-                        </ul>
+                        </div>
                       </div>
                     )}
                   </motion.div>

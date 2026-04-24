@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { 
   FileSpreadsheet, FileText, Presentation, Download, Upload, 
   Save, FolderOpen, X, Maximize2, Minimize2, Eye, Edit3,
-  FileType, Search, FilePlus, Trash2, RefreshCw
+  FileType, Search, FilePlus, Trash2, RefreshCw, Clock,
+  Edit, Check, ChevronRight, Zap, ArrowRight, File
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { toast } from 'sonner';
 
 interface DocFile {
   id: string;
@@ -14,6 +17,14 @@ interface DocFile {
   path: string;
   size: number;
   modified: string;
+}
+
+interface HistoryItem {
+  id: string;
+  name: string;
+  type: string;
+  timestamp: string;
+  action: 'upload' | 'view' | 'edit' | 'export';
 }
 
 interface OfficeDocsProps {
@@ -26,22 +37,139 @@ declare global {
   }
 }
 
+const getFileType = (fileName: string): 'excel' | 'pdf' | 'ppt' | 'doc' | 'other' => {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['xlsx', 'xls', 'csv'].includes(ext)) return 'excel';
+  if (['pdf'].includes(ext)) return 'pdf';
+  if (['pptx', 'ppt'].includes(ext)) return 'ppt';
+  if (['docx', 'doc'].includes(ext)) return 'doc';
+  return 'other';
+};
+
 const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   useTheme();
+  const navigate = useNavigate();
   const [currentFile, setCurrentFile] = useState<DocFile | null>(null);
   const [viewMode, setViewMode] = useState<'edit' | 'view'>('edit');
   const [activeTab, setActiveTab] = useState<'excel' | 'pdf' | 'ppt' | 'docs'>('excel');
   const [isLoading, setIsLoading] = useState(false);
   const [showFileList, setShowFileList] = useState(true);
   const [useSimpleTable, setUseSimpleTable] = useState(false);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showTools, setShowTools] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const luckysheetRef = useRef<HTMLDivElement>(null);
 
-  const sampleFiles: DocFile[] = [
+  const [files, setFiles] = useState<DocFile[]>([
     { id: '1', name: '销售数据.xlsx', type: 'excel', path: '/data/exports/sales.xlsx', size: 25600, modified: '2025-01-20' },
     { id: '2', name: '季度报告.pdf', type: 'pdf', path: '/data/exports/report.pdf', size: 512000, modified: '2025-01-19' },
     { id: '3', name: '产品介绍.pptx', type: 'ppt', path: '/data/exports/demo.pptx', size: 128000, modified: '2025-01-18' },
-  ];
+  ]);
+
+  const addToHistory = (name: string, type: string, action: 'upload' | 'view' | 'edit' | 'export') => {
+    setHistory(prev => [{
+      id: Date.now().toString(),
+      name,
+      type,
+      timestamp: new Date().toLocaleString('zh-CN'),
+      action
+    }, ...prev].slice(0, 50));
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    
+    // Excel文件使用 luckysheet 加载
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+      try {
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        const luckysheetData = workbook.SheetNames.map((sheetName, index) => {
+          const sheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+          
+          return {
+            name: sheetName,
+            color: '',
+            status: index === 0 ? 1 : 0,
+            order: index,
+            data: jsonData.length > 0 ? jsonData : [['']],
+            config: {},
+            zoom: 100,
+            scroll: { x: 1, y: 1 }
+          };
+        });
+
+        if (window.luckysheet && luckysheetRef.current) {
+          window.luckysheet.create({
+            container: 'luckysheet-container',
+            title: file.name,
+            lang: 'zh-CN',
+            data: luckysheetData
+          });
+        }
+      } catch (error) {
+        console.error('加载文件失败:', error);
+        alert('加载文件失败: ' + error);
+      }
+      setIsLoading(false);
+    } else {
+      // 其他文件添加到文件列表
+      const fileType = getFileType(file.name);
+      const newFile: DocFile = {
+        id: Date.now().toString(),
+        name: file.name,
+        type: fileType,
+        path: URL.createObjectURL(file),
+        size: file.size,
+        modified: new Date().toLocaleDateString('zh-CN')
+      };
+
+      setFiles(prev => [newFile, ...prev]);
+      setCurrentFile(newFile);
+      
+      // 自动切换到对应标签页
+      if (fileType !== 'other') {
+        setActiveTab(fileType);
+      }
+      
+      addToHistory(file.name, fileType, 'upload');
+      toast.success(`已上传: ${file.name}`);
+      setIsLoading(false);
+    }
+  };
+
+  const handleRename = (id: string) => {
+    setFiles(prev => prev.map(f => 
+      f.id === id ? { ...f, name: editingName } : f
+    ));
+    setEditingFileId(null);
+    toast.success('文件已重命名');
+  };
+
+  const handleDelete = (id: string) => {
+    const file = files.find(f => f.id === id);
+    if (file) {
+      setFiles(prev => prev.filter(f => f.id !== id));
+      if (currentFile?.id === id) {
+        setCurrentFile(null);
+      }
+      addToHistory(file.name, file.type, 'export');
+      toast.success('文件已删除');
+    }
+  };
+
+  const startRename = (file: DocFile) => {
+    setEditingFileId(file.id);
+    setEditingName(file.name);
+  };
 
   useEffect(() => {
     loadLuckysheet();
@@ -63,13 +191,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       return;
     }
     
-    const linkCDN = (filename: string) => 
-      `https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/plugins/css/${filename}`;
-    const jsCDN = (filename: string) =>
-      `https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/plugins/js/${filename}`;
-    const mainCSS = 'https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/css/luckysheet.css';
-    const mainJS = 'https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js';
-
     const loadScript = (src: string) => new Promise<void>((resolve, reject) => {
       // 检查是否已存在
       if (document.querySelector(`script[src="${src}"]`)) {
@@ -98,8 +219,9 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
     try {
       setIsLoading(true);
-      await loadCSS(mainCSS);
-      await loadScript(mainJS);
+      // 使用 jsDelivr CDN
+      await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/css/luckysheet.css');
+      await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js');
       
       // 等待 luckysheet 初始化
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -112,7 +234,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
         throw new Error('Luckysheet not available');
       }
     } catch (error) {
-      console.error('加载Luckysheet失败:', error);
+      console.warn('Luckysheet加载失败，使用简易表格模式');
       setIsLoading(false);
       // 使用简易表格替代
       setUseSimpleTable(true);
@@ -152,53 +274,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       });
     } catch (error) {
       console.error('初始化Luckysheet失败:', error);
-    }
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    
-    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
-      try {
-        const XLSX = await import('xlsx');
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: 'array' });
-        
-        const luckysheetData = workbook.SheetNames.map((sheetName, index) => {
-          const sheet = workbook.Sheets[sheetName];
-          const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-          
-          return {
-            name: sheetName,
-            color: '',
-            status: index === 0 ? 1 : 0,
-            order: index,
-            data: jsonData.length > 0 ? jsonData : [['']],
-            config: {},
-            zoom: 100,
-            scroll: { x: 1, y: 1 }
-          };
-        });
-
-        if (window.luckysheet && luckysheetRef.current) {
-          window.luckysheet.create({
-            container: 'luckysheet-container',
-            title: file.name,
-            lang: 'zh-CN',
-            data: luckysheetData
-          });
-        }
-      } catch (error) {
-        console.error('加载文件失败:', error);
-        alert('加载文件失败: ' + error);
-      }
-      setIsLoading(false);
-    } else {
-      setIsLoading(false);
-      alert('暂不支持此格式，请上传Excel文件(.xlsx, .xls, .csv)');
     }
   };
 
@@ -262,7 +337,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
-            {sampleFiles.map(file => (
+            {files.map(file => (
               <motion.div
                 key={file.id}
                 whileHover={{ scale: 1.02 }}

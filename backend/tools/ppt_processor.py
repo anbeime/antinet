@@ -35,6 +35,42 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def clean_markdown_for_ppt(text: str) -> str:
+    """
+    清理Markdown标记，转换为PPT可用的纯文本
+    """
+    if not text:
+        return ""
+    
+    # 替换链接: [文字](url) -> 文字
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+    
+    # 移除图片: ![文字](url) -> 
+    text = re.sub(r'!\[([^\]]*)\]\([^)]+\)', '', text)
+    
+    # 移除代码块
+    text = re.sub(r'```[^`]*```', '', text)
+    text = re.sub(r'```[^`]*```', '', text)
+    
+    # 行内代码 `code` -> code
+    text = re.sub(r'`([^`]+)`', r'\1', text)
+    
+    # 加粗 **text** -> text
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    
+    # 斜化 *text* -> text  
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    
+    # 删除线 ~~text~~ -> text
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)
+    
+    # 清理多余空白
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+    
+    return text
+
+
 def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
     """
     解析 Markdown 内容为幻灯片结构

@@ -19,6 +19,9 @@ import tempfile
 import time
 from datetime import datetime
 
+from config import settings
+from database import DatabaseManager
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"])
@@ -439,10 +442,10 @@ def detect_scene(query: str) -> SceneType:
 
 # ============ 卡片知识库查询 ============
 
-def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
+def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     """
     语义搜索知识卡片
-    支持关键词匹配和相似度排序
+    使用混合搜索：向量 + 关键词
     """
     global db_manager
     if db_manager is None:
@@ -450,49 +453,29 @@ def search_cards_semantic(query: str, limit: int = 5) -> List[CardReference]:
         return []
     
     try:
-        conn = db_manager.get_connection()
-        cursor = conn.cursor()
+        # 使用向量搜索模块的混合搜索
+        from routes import vector_search
+        vector_search.set_db_manager(db_manager)
         
-        # 提取关键词
-        keywords = extract_keywords(query)
+        results = vector_search.search_hybrid(query, limit=min(limit, 20))
         
-        # 构建查询条件
-        conditions = []
-        params = []
+        if not results:
+            # 回退到关键词搜索
+            results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
         
-        for keyword in keywords:
-            conditions.append("(title LIKE ? OR content LIKE ?)")
-            params.extend([f"%{keyword}%", f"%{keyword}%"])
-        
-        if not conditions:
-            # 没有提取到关键词，用原始查询字符串搜索
-            conditions = ["(title LIKE ? OR content LIKE ?)"]
-            params = [f"%{query}%", f"%{query}%"]
-        
-        where_clause = " OR ".join(conditions)
-        
-        # 执行搜索 - 使用 knowledge_cards 表
-        cursor.execute(f"""
-            SELECT id, title, content, COALESCE(type, 'blue') as card_type, COALESCE(category, '事实') as card_category, COALESCE(similarity, 0.5) as sim
-            FROM knowledge_cards
-            WHERE {where_clause}
-            ORDER BY sim DESC, created_at DESC
-            LIMIT ?
-        """, params + [limit])
-        
+        # 转换为CardReference格式
         cards = []
-        for row in cursor.fetchall():
+        for r in results[:limit]:
             card = CardReference(
-                card_id=str(row[0]),
-                card_type=row[3] or "blue",
-                title=row[1],
-                content=row[2][:150] if row[2] else "",
-                similarity=float(row[5]) if row[5] else 0.5,
-                color=get_card_color(row[4] or "事实")
+                card_id=r.id,
+                card_type=r.card_type,
+                title=r.title,
+                content=r.content[:150] if r.content else "",
+                similarity=float(r.score),
+                color=get_card_color(r.card_type)
             )
             cards.append(card)
         
-        conn.close()
         return cards
         
     except Exception as e:
@@ -1233,17 +1216,111 @@ async def get_memory_summary(user_id: str):
 
 def init_skills():
     """初始化默认技能"""
-    # PPT生成技能
+    async def _ppt_handler(query, context):
+        try:
+            topic = query or "智能分析报告"
+            
+            cards_data = []
+            if context.get("cards"):
+                cards_data = context["cards"]
+            else:
+                from database import DatabaseManager
+                db = DatabaseManager(settings.DB_PATH)
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, card_type, title, content, category
+                    FROM knowledge_cards
+                    WHERE title LIKE ? OR content LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT 12
+                """, [f"%{topic}%", f"%{topic}%"])
+                rows = cursor.fetchall()
+                for row in rows:
+                    cards_data.append({
+                        "type": row["card_type"],
+                        "title": row["title"],
+                        "content": [row["content"][:200]] if row["content"] else []
+                    })
+                conn.close()
+            
+            if not cards_data:
+                cards_data = [{"type": "blue", "title": topic, "content": [topic]}]
+            
+            from routes import ppt_routes
+            ppt_routes.set_db_manager(db_manager)
+            
+            cards_for_ppt = []
+            for card in cards_data:
+                cards_for_ppt.append({
+                    "type": card.get("type", "blue"),
+                    "title": card.get("title", "无标题")[:50],
+                    "content": card.get("content", []),
+                    "tags": [],
+                    "created_at": datetime.now().isoformat()
+                })
+            
+            result = await ppt_routes.export_cards_to_ppt_internal(
+                cards=cards_for_ppt,
+                title=topic,
+                include_summary=True
+            )
+            
+            if result.get("success"):
+                return {
+                    "result": f"PPT生成成功！包含 {len(cards_for_ppt)} 张幻灯片",
+                    "file_path": result.get("output_path", ""),
+                    "preview_url": f"/ppt-viewer?file={result.get('filename', '')}",
+                    "metadata": {"slides": len(cards_for_ppt), "theme": "professional"}
+                }
+            else:
+                return {
+                    "result": f"PPT生成失败: {result.get('error', '未知错误')}",
+                    "file_path": None
+                }
+        except Exception as e:
+            logger.error(f"PPT生成失败: {e}")
+            return {
+                "result": f"PPT生成失败: {str(e)}",
+                "file_path": None
+            }
+    
+    async def _excel_handler(query, context):
+        return {
+            "result": "Excel分析完成",
+            "file_path": "/generated/analysis.xlsx",
+            "metadata": {"charts": 3, "sheets": 2}
+        }
+    
+    async def _word_handler(query, context):
+        return {
+            "result": "Word文档生成成功",
+            "file_path": "/generated/document.docx",
+            "metadata": {"pages": 5, "template": "standard"}
+        }
+    
     register_skill(
         name="ppt_generator",
         description="生成PowerPoint演示文稿",
         trigger_patterns=[r"生成.*PPT", r"制作.*PPT", r"创建.*PPT"],
-        handler=lambda query, context: {
-            "result": "PPT生成成功",
-            "file_path": "/generated/presentation.pptx",
-            "metadata": {"slides": 10, "theme": "professional"}
-        },
+        handler=_ppt_handler,
         parameters={"theme": "string", "slides": "number"}
+    )
+    
+    register_skill(
+        name="excel_analyzer",
+        description="分析Excel文件并生成报告",
+        trigger_patterns=[r"分析.*Excel", r"Excel.*分析", r"表格.*分析"],
+        handler=_excel_handler,
+        parameters={"file_path": "string", "analysis_type": "string"}
+    )
+    
+    register_skill(
+        name="word_generator",
+        description="生成Word文档",
+        trigger_patterns=[r"生成.*Word", r"创建.*Word", r"文档.*生成"],
+        handler=_word_handler,
+        parameters={"template": "string", "pages": "number"}
     )
     
     # Excel分析技能
@@ -1273,6 +1350,164 @@ def init_skills():
     )
     
     logger.info(f"已初始化 {len(skill_registry)} 个技能")
+
+
+# ============ 草稿箱系统（聊天→页面上下文接力）============
+
+class DraftCreate(BaseModel):
+    """草稿创建"""
+    draft_type: str = Field(default="analysis", description="草稿类型: analysis/card_collection/draft_content")
+    title: str
+    content: Dict[str, Any] = Field(default_factory=dict, description="草稿内容")
+    cards: Optional[List[Dict[str, Any]]] = Field(default=None, description="关联的卡片")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="元数据")
+    user_id: str = Field(default="default_user")
+
+
+class DraftUpdate(BaseModel):
+    """草稿更新"""
+    title: Optional[str] = None
+    content: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None  # draft/active/archived
+
+
+@router.post("/drafts")
+async def create_draft(draft: DraftCreate):
+    """创建草稿 - 将聊天中的分析结果推入草稿箱"""
+    try:
+        db = DatabaseManager(settings.DB_PATH)
+        
+        draft_id = f"draft_{int(time.time() * 1000)}"
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS chat_drafts (
+                    draft_id TEXT PRIMARY KEY,
+                    draft_type TEXT,
+                    title TEXT,
+                    content TEXT,
+                    cards TEXT,
+                    metadata TEXT,
+                    user_id TEXT,
+                    status TEXT DEFAULT 'draft',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            cursor.execute("""
+                INSERT INTO chat_drafts (draft_id, draft_type, title, content, cards, metadata, user_id, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')
+            """, [
+                draft_id,
+                draft.draft_type,
+                draft.title,
+                json.dumps(draft.content, ensure_ascii=False),
+                json.dumps(draft.cards, ensure_ascii=False) if draft.cards else "[]",
+                json.dumps(draft.metadata, ensure_ascii=False) if draft.metadata else "{}",
+                draft.user_id
+            ])
+            conn.commit()
+        
+        return {
+            "status": "created",
+            "draft_id": draft_id,
+            "title": draft.title,
+            "type": draft.draft_type,
+            "message": "草稿已创建，可跳转到页面继续编辑"
+        }
+    except Exception as e:
+        logger.error(f"创建草稿失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/drafts")
+async def list_drafts(user_id: str = "default_user", status: str = "draft", limit: int = 20):
+    """获取草稿列表"""
+    try:
+        db = DatabaseManager(settings.DB_PATH)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT draft_id, draft_type, title, content, cards, status, created_at
+                FROM chat_drafts
+                WHERE user_id = ? AND status = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, [user_id, status, limit])
+            
+            rows = cursor.fetchall()
+            drafts = []
+            for row in rows:
+                drafts.append({
+                    "draft_id": row["draft_id"],
+                    "draft_type": row["draft_type"],
+                    "title": row["title"],
+                    "content": json.loads(row["content"]) if row["content"] else {},
+                    "cards": json.loads(row["cards"]) if row["cards"] else [],
+                    "status": row["status"],
+                    "created_at": row["created_at"]
+                })
+        
+        return {"drafts": drafts, "total": len(drafts)}
+    except Exception as e:
+        logger.error(f"获取草稿列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/drafts/{draft_id}")
+async def update_draft(draft_id: str, update: DraftUpdate):
+    """更新草稿"""
+    try:
+        db = DatabaseManager(settings.DB_PATH)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            if update.status:
+                cursor.execute("""
+                    UPDATE chat_drafts SET status = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE draft_id = ?
+                """, [update.status, draft_id])
+            
+            if update.title or update.content:
+                updates = []
+                params = []
+                if update.title:
+                    updates.append("title = ?")
+                    params.append(update.title)
+                if update.content:
+                    updates.append("content = ?")
+                    params.append(json.dumps(update.content, ensure_ascii=False))
+                
+                if updates:
+                    params.append(draft_id)
+                    cursor.execute(f"""
+                        UPDATE chat_drafts SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                        WHERE draft_id = ?
+                    """, params)
+            
+            conn.commit()
+        
+        return {"status": "updated", "draft_id": draft_id}
+    except Exception as e:
+        logger.error(f"更新草稿失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/drafts/{draft_id}")
+async def delete_draft(draft_id: str):
+    """删除草稿"""
+    try:
+        db = DatabaseManager(settings.DB_PATH)
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM chat_drafts WHERE draft_id = ?", [draft_id])
+            conn.commit()
+        
+        return {"status": "deleted", "draft_id": draft_id}
+    except Exception as e:
+        logger.error(f"删除草稿失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # 初始化

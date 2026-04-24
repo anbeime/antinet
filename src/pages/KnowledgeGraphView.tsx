@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
+const API_BASE = 'http://localhost:8000';
+
 interface GraphNode {
   id: string;
   name: string;
@@ -67,13 +69,37 @@ const KnowledgeGraphView: React.FC = () => {
   const chartInstance = useRef<echarts.ECharts | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
+  const [apiData, setApiData] = useState<{entities: any[], relations: any[]} | null>(null);
+  const [viewMode, setViewMode] = useState<'sample' | 'api'>('sample');
+  const [topic, setTopic] = useState('');
+  const [loadingAPI, setLoadingAPI] = useState(false);
+
+  const loadKnowledgeGraph = async () => {
+    if (!topic.trim()) return;
+    setLoadingAPI(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/knowledge/network/suggest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, limit: 20 })
+      });
+      const data = await response.json();
+      setApiData(data);
+      setViewMode('api');
+    } catch (e) {
+      console.error('Load KG failed:', e);
+    } finally {
+      setLoadingAPI(false);
+    }
+  };
 
   useEffect(() => {
     initChart();
     return () => {
       chartInstance.current?.dispose();
     };
-  }, []);
+  }, [graphData, apiData]);
 
   const initChart = () => {
     if (!chartRef.current) return;
@@ -81,19 +107,44 @@ const KnowledgeGraphView: React.FC = () => {
     setIsLoading(true);
     chartInstance.current = echarts.init(chartRef.current);
     
+    const displayData = viewMode === 'api' && apiData ? {
+nodes: apiData.entities ? apiData.entities.map((e: any, i: number) => ({
+          id: e.entity_id ? e.entity_id : 'node_' + i,
+          name: e.name,
+          category: i % 4,
+          symbolSize: 30 + Math.random() * 30
+        })) : [],
+links: apiData.relations ? apiData.relations.map((r: any) => ({
+          source: r.source_id,
+          target: r.target_id,
+          label: r.relation_type
+        })) : [],
+      categories: [
+        { name: '事实' },
+        { name: '解释' },
+        { name: '风险' },
+        { name: '行动' }
+      ]
+    } : graphData;
+    
+    if (!displayData.nodes?.length) {
+      displayData.nodes = sampleData.nodes;
+      displayData.links = sampleData.links;
+    }
+    
     const option: echarts.EChartsOption = {
       tooltip: {
         trigger: 'item',
         formatter: '{b}'
       },
       legend: {
-        data: sampleData.categories.map(c => c.name),
+        data: displayData.categories.map((c: any) => c.name),
         top: 10,
       },
       series: [{
         type: 'graph',
         layout: 'force',
-        data: sampleData.nodes.map(node => ({
+        data: displayData.nodes.map((node: any) => ({
           id: node.id,
           name: node.name,
           category: node.category,
@@ -116,7 +167,7 @@ const KnowledgeGraphView: React.FC = () => {
           draggable: true,
           roam: true,
         })),
-        links: sampleData.links.map(link => ({
+        links: displayData.links.map((link: any) => ({
           source: link.source,
           target: link.target,
           label: {
@@ -124,7 +175,7 @@ const KnowledgeGraphView: React.FC = () => {
             formatter: link.label || '',
           }
         })),
-        categories: sampleData.categories.map((c, i) => ({
+        categories: displayData.categories.map((c: any, i: number) => ({
           name: c.name,
           itemStyle: {
             color: categoryColors[i % categoryColors.length]
@@ -233,13 +284,49 @@ const KnowledgeGraphView: React.FC = () => {
     initChart();
   };
 
-  return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
-      <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4">
-        <h2 className="text-lg font-semibold mb-4 flex items-center">
-          <Network className="w-5 h-5 mr-2 text-blue-500" />
-          知识图谱
+return (
+    <div className="flex h-full">
+      <aside className="w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+        <h2 className="text-lg font-bold flex items-center space-x-2 mb-4">
+          <Network className="w-5 h-5" />
+          <span>知识图谱</span>
         </h2>
+
+        <div className="space-y-3 mb-4">
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="输入主题搜索..."
+              className="flex-1 px-3 py-2 text-sm border rounded-lg"
+              onKeyDown={(e) => e.key === 'Enter' && loadKnowledgeGraph()}
+            />
+            <button
+              onClick={loadKnowledgeGraph}
+              disabled={loadingAPI}
+              className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            >
+              {loadingAPI ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            </button>
+          </div>
+          
+          <div className="flex space-x-1">
+            <button
+              onClick={() => { setViewMode('sample'); setApiData(null); initChart(); }}
+              className={`flex-1 px-2 py-1 text-xs rounded ${viewMode === 'sample' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+            >
+              示例
+            </button>
+            <button
+              onClick={() => { if(topic.trim()) loadKnowledgeGraph(); }}
+              disabled={!topic.trim()}
+              className={`flex-1 px-2 py-1 text-xs rounded ${viewMode === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+            >
+              API数据
+            </button>
+          </div>
+        </div>
 
         <div className="space-y-3">
           <button
