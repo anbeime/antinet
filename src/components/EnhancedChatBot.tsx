@@ -279,7 +279,7 @@ const MessageBubble: React.FC<{
                   <button 
                     onClick={() => {
                       const fileName = skillResult.file_path?.split('/').pop() || '';
-                      navigate(`/ppt-viewer?file=${encodeURIComponent(fileName)}`);
+                      window.location.href = `/ppt-viewer?file=${encodeURIComponent(fileName)}`;
                     }}
                     className="px-3 py-1 text-xs rounded flex items-center gap-1 hover:opacity-80"
                     style={{ backgroundColor: '#b87333', color: 'white' }}

@@ -74,6 +74,36 @@ const KnowledgeGraphView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'sample' | 'api'>('sample');
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
+  
+  // 从URL参数加载指定卡片的链接图谱
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cardId = params.get('card');
+    if (cardId) {
+      loadCardBacklinks(parseInt(cardId));
+    }
+  }, []);
+  
+  const loadCardBacklinks = async (cardId: number) => {
+    setLoadingAPI(true);
+    try {
+      // 从后端获取卡片的 backlinks 图谱
+      const response = await fetch(`${API_BASE}/api/backlinks/card/${cardId}/graph`, {
+        method: 'GET'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setApiData(data);
+        setViewMode('api');
+      } else {
+        console.error('加载链接图谱失败:', response.status);
+      }
+    } catch (e) {
+      console.error('加载链接图谱失败:', e);
+    } finally {
+      setLoadingAPI(false);
+    }
+  };
 
   const loadKnowledgeGraph = async () => {
     if (!topic.trim()) return;

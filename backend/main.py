@@ -199,6 +199,20 @@ try:
 except Exception as e:
     logger.warning(f"无法导入思维导图路由: {e}")
 
+# 注册Wiki路由 (Karpathy LLM Wiki模式)
+try:
+    from routes.wiki_routes import router as wiki_router
+    from routes.wiki_routes import set_db_manager as set_wiki_db_manager
+    # 设置数据库管理器
+    from database import DatabaseManager
+    from config import settings
+    wiki_db_manager = DatabaseManager(settings.DB_PATH)
+    set_wiki_db_manager(wiki_db_manager)
+    app.include_router(wiki_router)
+    logger.info("[OK] Wiki路由已注册 (Karpathy模式 /api/wiki)")
+except Exception as e:
+    logger.warning(f"无法导入Wiki路由: {e}")
+
 # 注册 Remotion 动态演示路由
 try:
     import routes.remotion_routes as remotion_routes_module

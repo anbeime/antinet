@@ -75,6 +75,8 @@ const MindMap: React.FC = () => {
   const [showCardModal, setShowCardModal] = useState(false);
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [nodeCards, setNodeCards] = useState<Record<string, KnowledgeCard[]>>({});
+  const [selectedCards, setSelectedCards] = useState<Set<number>>(new Set());  // 新增：多选
+  const [cardFilter, setCardFilter] = useState('');  // 新增：搜索过滤
   const [showNetworkPanel, setShowNetworkPanel] = useState(false);
   const [networkTopic, setNetworkTopic] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -137,11 +139,60 @@ const MindMap: React.FC = () => {
     try {
       const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=100`);
       const data = await res.json();
-      setCards(data);
+      if (data.cards && Array.isArray(data.cards)) {
+        setCards(data.cards);
+      } else if (Array.isArray(data)) {
+        setCards(data);
+      } else {
+        console.warn('卡片数据格式异常:', data);
+        setCards([]);
+      }
     } catch (e) {
       console.error('加载卡片失败:', e);
+      setCards([]);
     }
   };
+
+  // 切换卡片选择
+  const toggleCardSelect = (cardId: number) => {
+    setSelectedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
+  };
+
+  // 批量关联选中的卡片
+  const linkSelectedCards = async () => {
+    if (!selectedNode || selectedCards.size === 0) return;
+    for (const cardId of selectedCards) {
+      await linkCard(cardId);
+    }
+    setSelectedCards(new Set());
+    setShowCardModal(false);
+    // 刷新节点关联的卡片
+    if (currentMindmapId) {
+      loadNodeCards(currentMindmapId, selectedNode);
+    }
+  };
+
+  // 全选/取消全选
+  const selectAllCards = () => {
+    if (filteredCards.length === selectedCards.size) {
+      setSelectedCards(new Set());
+    } else {
+      setSelectedCards(new Set(filteredCards.map(c => c.id)));
+    }
+  };
+
+  // 过滤卡片
+  const filteredCards = cards.filter(c => 
+    !cardFilter || c.title?.includes(cardFilter) || c.content?.includes(cardFilter)
+  );
 
   const loadNodeCards = async (mindmapId: number, nodeId: string) => {
     try {
@@ -619,25 +670,58 @@ const MindMap: React.FC = () => {
 
       {showCardModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-[600px] max-h-[80vh] overflow-auto">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-[700px] max-h-[80vh] overflow-auto">
             <h3 className="text-lg font-semibold mb-4 flex items-center">
               <Link2 className="w-5 h-5 mr-2" />
-              关联知识卡片
+              关联知识卡片 - {selectedNode || '根节点'}
             </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {cards.map(card => {
+            
+            {/* 搜索和操作栏 */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="搜索卡片..."
+                value={cardFilter}
+                onChange={(e) => setCardFilter(e.target.value)}
+                className="flex-1 px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+              />
+              <button
+                onClick={selectAllCards}
+                className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                {filteredCards.length === selectedCards.size ? '取消全选' : '全选'}
+              </button>
+              <button
+                onClick={linkSelectedCards}
+                disabled={selectedCards.size === 0}
+                className={`px-4 py-2 rounded font-medium ${
+                  selectedCards.size > 0 
+                    ? 'bg-green-500 text-white hover:bg-green-600' 
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
+              >
+                确认关联 ({selectedCards.size})
+              </button>
+            </div>
+
+            {/* 卡片列表 */}
+            <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-auto">
+              {filteredCards.map(card => {
                 const isLinked = nodeCards[selectedNode || '']?.some(c => c.id === card.id);
+                const isSelected = selectedCards.has(card.id);
                 return (
                   <div
                     key={card.id}
                     className={`
                       p-3 rounded cursor-pointer border-2 transition-all
-                      ${isLinked ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-transparent hover:border-gray-300'}
+                      ${isLinked || isSelected 
+                        ? 'border-green-500 bg-green-50 dark:bg-green-900/20' 
+                        : 'border-transparent hover:border-gray-300'}
                     `}
-                    onClick={() => isLinked ? unlinkCard(card.id) : linkCard(card.id)}
+                    onClick={() => toggleCardSelect(card.id)}
                   >
                     <div className="font-medium truncate flex items-center gap-2">
-                      {isLinked && <span className="text-green-500">✓</span>}
+                      {(isLinked || isSelected) && <span className="text-green-500">✓</span>}
                       {card.title}
                     </div>
                     <div className="text-xs mt-1 flex items-center gap-2">
@@ -655,12 +739,18 @@ const MindMap: React.FC = () => {
                 );
               })}
             </div>
-            <button
-              onClick={() => setShowCardModal(false)}
-              className="w-full mt-4 bg-gray-200 dark:bg-gray-700 py-2 rounded hover:bg-gray-300"
-            >
-              关闭
-            </button>
+            
+            <div className="flex justify-between mt-4 pt-4 border-t">
+              <span className="text-gray-500">
+                共 {filteredCards.length} 张卡片，已选择 {selectedCards.size} 张
+              </span>
+              <button
+                onClick={() => { setShowCardModal(false); setSelectedCards(new Set()); setCardFilter(''); }}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         </div>
       )}

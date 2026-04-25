@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import ThemeSelector from '@/components/ThemeSelector';
 import KnowledgeGraph from '@/components/KnowledgeGraph';
@@ -623,6 +623,25 @@ const PPTAnalysis: React.FC = () => {
               >
                 {isExporting ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                 <span>{isExporting ? '导出中...' : `导出 ${selectedCards.size} 张卡片为PPT`}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (selectedCards.size === 0) {
+                    alert('请先选择卡片');
+                    return;
+                  }
+                  // TODO: 调用Remotion API生成视频
+                  // 通过sessionStorage传递选中的卡片
+                  const selectedCardsList = cards.filter(c => selectedCards.has(c.id));
+                  sessionStorage.setItem('remotionCards', JSON.stringify(selectedCardsList));
+                  window.open('/remotion', '_blank');
+                }}
+                disabled={selectedCards.size === 0}
+                className="w-full flex items-center justify-center space-x-2 mt-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              >
+                <Film className="w-5 h-5" />
+                <span>生成动态演示视频</span>
               </button>
             </motion.div>
 

@@ -37,12 +37,38 @@ def init_model():
     global model_loader
     try:
         from models.model_loader import get_model_loader
-        model_loader = get_model_loader("bge-base-zh-v1.5")
-        if model_loader and model_loader.is_loaded:
-            logger.info("[Vector] BGE 模型加载成功")
+        # 使用正确的模型key（在 model_loader.py 中定义）
+        model_loader = get_model_loader("bge-base-zh")
+        logger.info(f"[Vector] 获取模型: {model_loader}")
+        logger.info(f"[Vector] is_loaded: {model_loader.is_loaded}")
+        logger.info(f"[Vector] model: {model_loader.model}")
+        
+        # 检查模型是否存在并尝试加载
+        if model_loader and model_loader.model is not None:
+            model_loader.is_loaded = True
+            logger.info("[Vector] BGE 模型已就绪 (已加载)")
             return True
+        elif model_loader:
+            logger.info("[Vector] 尝试加载BGE模型...")
+            try:
+                model_loader.load()
+                logger.info(f"[Vector] load()后 - model: {model_loader.model}")
+                if model_loader.model is not None:
+                    model_loader.is_loaded = True
+                    logger.info("[Vector] BGE 模型加载成功")
+                    return True
+            except Exception as load_err:
+                import traceback
+                logger.warning(f"[Vector] BGE 模型加载失败: {load_err}")
+                logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
+        
+        logger.warning("[Vector] BGE 模型不可用，将使用关键词搜索")
+        return False
+        
     except Exception as e:
-        logger.warning(f"[Vector] BGE 模型加载失败: {e}")
+        import traceback
+        logger.warning(f"[Vector] BGE 模型初始化失败: {e}")
+        logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
     return False
 
 
@@ -50,11 +76,28 @@ def get_embedding(text: str) -> Optional[np.ndarray]:
     """获取文本的 embedding 向量"""
     global model_loader
     
+    # 尝试初始化（如果还没有）
     if model_loader is None:
         if not init_model():
             return None
     
-    if model_loader is None or not model_loader.is_loaded:
+    # 检查模型是否可用（is_loaded 或 model存在）
+    if model_loader is None:
+        return None
+        
+    # 如果is_loaded为False但model存在，也认为可用
+    is_available = model_loader.is_loaded or model_loader.model is not None
+    if not is_available:
+        # 尝试加载
+        try:
+            model_loader.load()
+            is_available = model_loader.model is not None
+            if is_available:
+                model_loader.is_loaded = True
+        except:
+            pass
+    
+    if not is_available:
         return None
     
     try:
@@ -62,9 +105,7 @@ def get_embedding(text: str) -> Optional[np.ndarray]:
         embedding = model_loader.infer(prompt=text, max_new_tokens=512)
         
         # 解析输出获取 embedding
-        # BGE 模型输出通常是 token logits，需要取平均或使用 [CLS] token
         if embedding and len(embedding) > 0:
-            # 简单处理：取平均值作为句子向量
             import json
             try:
                 # 尝试解析 JSON 格式输出
@@ -77,8 +118,7 @@ def get_embedding(text: str) -> Optional[np.ndarray]:
             # 回退：简单 token 平均
             tokens = embedding.split()
             if tokens:
-                # 简单哈希映射到向量（临时方案）
-                vec = np.zeros(384)  # BGE-base 维度
+                vec = np.zeros(384)
                 for i, tok in enumerate(tokens[:384]):
                     vec[i % 384] += hash(tok) % 1000 / 1000.0
                 vec = vec / (len(tokens[:384]) + 1e-8)
