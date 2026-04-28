@@ -165,17 +165,7 @@ if chat_router is not None:
     chat_routes_module.db_manager = db_manager
     chat_router.db_manager = db_manager  # 同时设置router属性
     
-    # 初始化向量搜索
-    try:
-        from routes.chat_vector_patch import init_vector_search
-        vector_enabled = init_vector_search(chat_routes_module, db_manager)
-        if vector_enabled:
-            logger.info("[OK] 向量搜索已启用")
-        else:
-            logger.warning("[Warning] 向量搜索初始化失败")
-    except Exception as e:
-        logger.error(f"[Error] 向量搜索初始化异常: {e}")
-    
+    # 向量搜索已集成到 vector_search.py
     logger.info("[OK] 聊天机器人路由已注册")
 
 # 测试用简单端点
@@ -199,19 +189,16 @@ try:
 except Exception as e:
     logger.warning(f"无法导入思维导图路由: {e}")
 
-# 注册Wiki路由 (Karpathy LLM Wiki模式)
+# 注册Wiki路由
 try:
-    from routes.wiki_routes import router as wiki_router
-    from routes.wiki_routes import set_db_manager as set_wiki_db_manager
-    # 设置数据库管理器
-    from database import DatabaseManager
-    from config import settings
-    wiki_db_manager = DatabaseManager(settings.DB_PATH)
-    set_wiki_db_manager(wiki_db_manager)
+    from routes.wiki import router as wiki_router
+    from routes.wiki import WikiFileManager
     app.include_router(wiki_router)
-    logger.info("[OK] Wiki路由已注册 (Karpathy模式 /api/wiki)")
+    logger.info("[OK] Wiki路由已注册 (/api/wiki)")
 except Exception as e:
     logger.warning(f"无法导入Wiki路由: {e}")
+
+# Karpathy Wiki路由已合并到wiki_routes.py，但与wiki.py冲突，暂时禁用
 
 # 注册 Remotion 动态演示路由
 try:
@@ -278,6 +265,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入高级数据分析路由: {e}")
 
+# 注册语音服务路由（TTS + STT）
+try:
+    from routes.speech_routes import router as speech_router
+    app.include_router(speech_router)
+    logger.info("[OK] 语音服务路由已注册 (TTS/STT)")
+except Exception as e:
+    logger.warning(f"无法导入语音服务路由: {e}")
+
 # 注册 PDF 处理路由
 try:
     from routes.pdf_routes import router as pdf_router
@@ -285,6 +280,30 @@ try:
     logger.info("[OK] PDF 处理路由已注册")
 except Exception as e:
     logger.warning(f"无法导入 PDF 处理路由: {e}")
+
+# 注册 Markdown 转 PDF 路由
+try:
+    from routes.md2pdf_routes import router as md2pdf_router
+    app.include_router(md2pdf_router)  # MD转PDF路由
+    logger.info("[OK] Markdown转PDF路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 MD2PDF 路由: {e}")
+
+# 注册知识卡片PDF报告路由
+try:
+    from routes.card_pdf_routes import router as card_pdf_router
+    app.include_router(card_pdf_router)
+    logger.info("[OK] 知识卡片PDF报告路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入知识卡片PDF路由: {e}")
+
+# 注册 Pandoc 风格转换路由（回退到any2pdf）
+try:
+    from routes.pandoc_routes import router as pandoc_router
+    app.include_router(pandoc_router)
+    logger.info("[OK] Pandoc风格转换路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 Pandoc 路由: {e}")
 
 # 注册 PPT 处理路由
 try:
@@ -405,6 +424,7 @@ try:
     from routes.auto_card import set_db_manager as set_card_db
     set_vec_db(db_manager)
     set_card_db(db_manager)
+    init_on_startup()  # 初始化语义嵌入模型
     logger.info("[OK] 向量搜索和自动卡片模块已注册")
 except Exception as e:
     logger.warning(f"无法导入向量搜索模块: {e}")

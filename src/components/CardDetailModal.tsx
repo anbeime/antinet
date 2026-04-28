@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { backlinkService, cardTaskService, calendarEventService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent } from '../services/integrationService';
+import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent } from '../services/integrationService';
+import { cn } from '@/lib/utils';
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -97,6 +98,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
 
+  // 全屏切换功能
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+
   // P0: 双向链接状态
   const [backlinks, setBacklinks] = useState<BacklinkCard[]>([]);
   const [forwardlinks, setForwardlinks] = useState<BacklinkCard[]>([]);
@@ -127,6 +136,10 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // Tab 切换
   const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks'>('relations');
 
+  // 源文件溯源状态
+  const [sourceFileInfo, setSourceFileInfo] = useState<SourceFileInfo | null>(null);
+  const [sourceFileLoading, setSourceFileLoading] = useState(false);
+
   // 内容区引用（选中文本检测）
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -146,6 +159,37 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     forwardlinks.forEach(fl => ids.add(String(fl.id)));
     return Array.from(ids);
   }, [card?.relatedCards, forwardlinks]);
+
+  // 拖拽处理
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setStartPos({ x: position.x, y: position.y });
+    e.preventDefault();
+  };
+
+  const handleMouseMove = React.useCallback((e: MouseEvent) => {
+    if (isDragging) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      setPosition({ x: startPos.x + dx, y: startPos.y + dy });
+    }
+  }, [isDragging, dragStart, startPos]);
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  React.useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [isDragging, handleMouseMove]);
 
   // P0: 加载双向链接数据
   const loadBacklinks = useCallback(async () => {
@@ -189,13 +233,31 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card]);
 
+  // 加载源文件溯源信息
+  const loadSourceFileInfo = useCallback(async () => {
+    if (!card) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setSourceFileLoading(true);
+    try {
+      const info = await sourceFileService.getCardSourceFile(cardId);
+      setSourceFileInfo(info);
+    } catch (err) {
+      console.error('加载源文件信息失败:', err);
+      setSourceFileInfo(null);
+    } finally {
+      setSourceFileLoading(false);
+    }
+  }, [card]);
+
   // 卡片打开时加载数据
   useEffect(() => {
     if (isOpen && card) {
       loadBacklinks();
       loadCardIntegrations();
+      loadSourceFileInfo();
     }
-  }, [isOpen, card, loadBacklinks, loadCardIntegrations]);
+  }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo]);
 
   // P0: 选中文本创建任务 — 检测选中文本
   const handleTextSelect = () => {
@@ -430,15 +492,28 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       onClick={onClose}
     >
       <motion.div
-        initial={{ scale: 0.9, y: 20 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 20 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-4xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
+        ref={modalRef}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ 
+          opacity: 1,
+          scale: 1,
+          x: position.x,
+          y: position.y
+        }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className={cn(
+          "bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col",
+          isFullscreen ? "w-screen h-screen max-w-none rounded-none" : "w-full max-w-4xl max-h-[90vh]"
+        )}
+        style={{ cursor: isDragging ? 'grabbing' : 'default' }}
         onClick={e => e.stopPropagation()}
       >
-        {/* 模态框头部 */}
-        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+        {/* 模态框头部 - 可拖拽 */}
+        <div 
+          className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700"
+          onMouseDown={handleMouseDown}
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        >
           <div className="flex items-center">
             <div className={`${cardTypeMap[card.color].color} w-3 h-3 rounded-full mr-2`}></div>
             {isEditing ? (
@@ -503,6 +578,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 >
                   <Trash2 size={18} />
                 </button>
+                <button
+                  onClick={() => setIsFullscreen(!isFullscreen)}
+                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                  aria-label={isFullscreen ? '退出全屏' : '全屏'}
+                  title={isFullscreen ? '退出全屏' : '全屏'}
+                >
+                  {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
               </>
             )}
             <button
@@ -540,6 +623,21 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
                   {card.address}
                 </div>
+                {/* 源文件溯源按钮 */}
+                {sourceFileInfo && sourceFileInfo.has_source && (
+                  <button
+                    onClick={() => {
+                      if (sourceFileInfo.source_file_id) {
+                        sourceFileService.downloadSourceFile(sourceFileInfo.source_file_id);
+                      }
+                    }}
+                    className="text-xs text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                    title={`来源: ${sourceFileInfo.original_name}`}
+                  >
+                    <FileText size={12} />
+                    {sourceFileInfo.original_name || '查看源文件'}
+                  </button>
+                )}
               </div>
             </div>
             {isEditing ? (
@@ -553,8 +651,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <div
                 ref={contentRef}
                 onMouseUp={handleTextSelect}
-                className="text-lg leading-relaxed whitespace-pre-line select-text"
-              >
+className="text-lg select-text"
+                style={{ whiteSpace: 'pre-wrap' }}
+               >
                 {card.content}
               </div>
             )}

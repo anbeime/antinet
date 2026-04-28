@@ -74,6 +74,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'sample' | 'api'>('sample');
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
+  const [currentCardId, setCurrentCardId] = useState<number | null>(null);
   
   // 从URL参数加载指定卡片的链接图谱
   useEffect(() => {
@@ -85,6 +86,7 @@ const KnowledgeGraphView: React.FC = () => {
   }, []);
   
   const loadCardBacklinks = async (cardId: number) => {
+    setCurrentCardId(cardId);
     setLoadingAPI(true);
     try {
       // 从后端获取卡片的 backlinks 图谱
@@ -124,7 +126,30 @@ const KnowledgeGraphView: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  // 数据格式验证和转换
+const normalizeData = (data: any): {nodes: any[], links: any[], categories: any[]} => {
+  if (!data) return sampleData;
+  
+  const nodes = data.entities || data.nodes || [];
+  const relations = data.relations || data.links || [];
+  
+  // 如果没有任何数据，返回示例数据
+  if (!nodes.length && !relations.length) {
+    return sampleData;
+  }
+  
+  // 构建categories
+  const categorySet = new Set<string>();
+  nodes.forEach((n: any) => {
+    if (n.category) categorySet.add(n.category);
+  });
+  
+  const categories = Array.from(categorySet).map(name => ({ name }));
+  
+  return { nodes, links: relations, categories };
+};
+
+useEffect(() => {
     initChart();
     return () => {
       chartInstance.current?.dispose();
@@ -137,25 +162,50 @@ const KnowledgeGraphView: React.FC = () => {
     setIsLoading(true);
     chartInstance.current = echarts.init(chartRef.current);
     
-    const displayData = viewMode === 'api' && apiData ? {
-nodes: apiData.entities ? apiData.entities.map((e: any, i: number) => ({
-          id: e.entity_id ? e.entity_id : 'node_' + i,
-          name: e.name,
-          category: i % 4,
-          symbolSize: 30 + Math.random() * 30
-        })) : [],
-links: apiData.relations ? apiData.relations.map((r: any) => ({
-          source: r.source_id,
-          target: r.target_id,
-          label: r.relation_type
-        })) : [],
-      categories: [
-        { name: '事实' },
-        { name: '解释' },
-        { name: '风险' },
-        { name: '行动' }
-      ]
-    } : graphData;
+const displayData = viewMode === 'api' && apiData ? (() => {
+      const rawNodes = apiData.nodes || apiData.entities || [];
+      const rawLinks = apiData.links || apiData.relations || [];
+      
+      // 去重节点
+      const nodeMap = new Map();
+      rawNodes.forEach((e: any) => {
+        const id = String(e.id);
+        if (!nodeMap.has(id)) {
+          const typeList = ['blue', 'green', 'yellow', 'red'];
+          const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
+          nodeMap.set(id, {
+            id,
+            name: e.title || e.name || `节点${e.id}`,
+            category: typeIdx >= 0 ? typeIdx : 0,
+            symbolSize: e.is_current ? 50 : 35
+          });
+        }
+      });
+      
+      // 去重链接
+      const linkSet = new Set();
+      const links = rawLinks.filter((r: any) => {
+        const key = `${r.source}-${r.target}`;
+        if (linkSet.has(key)) return false;
+        linkSet.add(key);
+        return true;
+      }).map((r: any) => ({
+        source: String(r.source),
+        target: String(r.target),
+        label: r.type
+      }));
+      
+      return {
+        nodes: Array.from(nodeMap.values()),
+        links,
+        categories: [
+          { name: '事实' },
+          { name: '解释' },
+          { name: '风险' },
+          { name: '行动' }
+        ]
+      };
+    })() : graphData;
     
     if (!displayData.nodes?.length) {
       displayData.nodes = sampleData.nodes;
@@ -190,9 +240,13 @@ links: apiData.relations ? apiData.relations.map((r: any) => ({
             }
           },
           force: {
-            repulsion: 200,
-            gravity: 0.1,
-            edgeLength: 100,
+            repulsion: 2000,
+            gravity: 0.008,
+            edgeLength: [200, 500],
+            layoutAnimation: true,
+            alphaDecay: 0.008,
+            alphaMin: 0.00001,
+            initLayout: 'none'
           },
           draggable: true,
           roam: true,
@@ -200,9 +254,15 @@ links: apiData.relations ? apiData.relations.map((r: any) => ({
         links: displayData.links.map((link: any) => ({
           source: link.source,
           target: link.target,
+          lineStyle: {
+            width: 2,
+            curveness: 0.2
+          },
           label: {
-            show: !!link.label,
-            formatter: link.label || '',
+            show: true,
+            formatter: link.label === 'backlink' ? '←引用' : link.label === 'forwardlink' ? '引用→' : link.label,
+            fontSize: 10,
+            color: '#666'
           }
         })),
         categories: displayData.categories.map((c: any, i: number) => ({
@@ -224,16 +284,24 @@ links: apiData.relations ? apiData.relations.map((r: any) => ({
           }
         },
         label: {
-          position: 'right',
+          show: true,
+          position: 'bottom',
           formatter: '{b}',
-          fontSize: 12,
+          fontSize: 11,
+          color: '#333',
+          fontWeight: 500,
         },
       }],
-      animationDuration: 1500,
+      animationDuration: 3000,
       animationEasing: 'quinticOut',
     };
     
     chartInstance.current.setOption(option);
+    
+    // 延时触发布局重新计算，让节点充分分散
+    setTimeout(() => {
+      chartInstance.current?.resize();
+    }, 100);
     
     chartInstance.current.on('click', (params) => {
       if (params.dataType === 'node') {
@@ -321,6 +389,16 @@ return (
           <Network className="w-5 h-5" />
           <span>知识图谱</span>
         </h2>
+        
+        {currentCardId && (
+          <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+            <div className="text-xs text-purple-600 dark:text-purple-400 mb-1">当前查看卡片</div>
+            <div className="font-medium text-sm text-purple-900 dark:text-purple-200">ID: {currentCardId}</div>
+            <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
+              {apiData?.nodes?.length || 0} 个关联节点
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3 mb-4">
           <div className="flex space-x-2">

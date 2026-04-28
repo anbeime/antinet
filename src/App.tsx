@@ -22,6 +22,7 @@ import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
 import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
+import HermesManager from "@/pages/HermesManager";
 import { AuthProvider } from '@/contexts/authContext';
 
 export default function App() {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/gtd-tasks" element={<GTDTaskManager />} />
         <Route path="/genie-playground" element={<GeniePlayground />} />
         <Route path="/genie-npu-test" element={<GenieNPUTest />} />
+        <Route path="/hermes-manager" element={<HermesManager />} />
         <Route path="/remotion" element={
           <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
             <Home initialTab="remotion" />

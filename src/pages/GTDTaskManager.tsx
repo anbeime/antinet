@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Calendar, ListTodo, Plus, X } from 'lucide-react';
+import { Calendar, ListTodo, Plus, X, Maximize2, Minimize2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
 import { toast } from 'sonner';
@@ -22,6 +23,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>(initialView);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [calendarFullscreen, setCalendarFullscreen] = useState(false);
   const [formData, setFormData] = useState<NewTaskForm>({
     title: '',
     description: '',
@@ -76,33 +78,9 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif', letterSpacing: '0.05em' }}>任务管理</h1>
-            
-            <div className="rounded-lg p-1" style={{ backgroundColor: '#f5ebe0' }}>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'list' 
-                    ? 'text-white shadow-sm' 
-                    : 'hover:opacity-80'
-                }`}
-                style={viewMode === 'list' ? { backgroundColor: '#d4a574', color: '#fff' } : { color: '#8b7355' }}
-              >
-                <ListTodo className="w-4 h-4 mr-1.5" />
-                列表
-              </button>
-              <button
-                onClick={() => setViewMode('calendar')}
-                className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'calendar' 
-                    ? 'text-white shadow-sm' 
-                    : 'hover:opacity-80'
-                }`}
-                style={viewMode === 'calendar' ? { backgroundColor: '#d4a574', color: '#fff' } : { color: '#8b7355' }}
-              >
-                <Calendar className="w-4 h-4 mr-1.5" />
-                日历
-              </button>
-            </div>
+            <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: '#f5ebe0', color: '#8b7355' }}>
+              任务 · 日历
+            </span>
           </div>
           
           <button
@@ -116,8 +94,50 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
-        {viewMode === 'calendar' ? <CalendarView /> : <TaskListView />}
+      <div className="flex-1 overflow-hidden flex">
+        {/* 左侧：任务列表 */}
+        <div className="flex-1 overflow-hidden">
+          <TaskListView />
+        </div>
+        
+        {/* 右侧：日历面板 */}
+        <div className="w-[400px] border-l overflow-hidden" style={{ borderColor: '#e8ddd0' }}>
+          {calendarFullscreen ? (
+            <div className="fixed inset-0 z-50" style={{ backgroundColor: '#faf8f5' }}>
+              <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+                <button
+                  onClick={() => setCalendarFullscreen(false)}
+                  className="flex items-center px-3 py-1.5 text-white rounded-lg hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#d4a574' }}
+                >
+                  <Minimize2 className="w-4 h-4 mr-2" />
+                  退出全屏
+                </button>
+              </div>
+              <CalendarView />
+            </div>
+          ) : (
+            <div className="h-full flex flex-col">
+              {/* 日历标题栏 */}
+              <div className="flex items-center justify-between p-3 border-b" style={{ backgroundColor: '#fff9f3', borderColor: '#e8ddd0' }}>
+                <h3 className="font-bold text-sm" style={{ color: '#8b4513' }}>日历</h3>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCalendarFullscreen(true)}
+                    className="p-1.5 hover:bg-amber-100 rounded transition-colors"
+                    title="全屏"
+                  >
+                    <Maximize2 className="w-4 h-4" style={{ color: '#8b7355' }} />
+                  </button>
+                </div>
+              </div>
+              {/* 日历内容（简化版） */}
+              <div className="flex-1 overflow-hidden">
+                <CalendarView />
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {showCreateModal && (

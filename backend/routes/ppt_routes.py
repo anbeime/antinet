@@ -6,7 +6,7 @@ import logging
 import json
 import re
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -33,12 +33,13 @@ def get_db_manager():
 
 
 try:
-    from skills.pptx.ppt_processor_enhanced import EnhancedPPTProcessor, PPTX_AVAILABLE
-    USE_ENHANCED = True
+    from pptx import Presentation
+    PPTX_AVAILABLE = True
 except ImportError:
-    from tools.ppt_processor import PPTProcessor, PPTX_AVAILABLE
-    USE_ENHANCED = False
-    logger.warning("增强版 PPT 处理器不可用，使用基础版本")
+    PPTX_AVAILABLE = False
+    
+USE_ENHANCED = False
+logger.warning("PPT 模块加载，PPTX可用: " + str(PPTX_AVAILABLE))
 
 router = APIRouter(prefix="/api/ppt", tags=["PPT"])
 
@@ -799,3 +800,65 @@ def _slides_to_markdown(slides: List[Dict]) -> str:
         lines.append("")
     
     return '\n'.join(lines)
+
+
+# ==================== PPT 转 PDF ====================
+
+@router.post("/to-pdf")
+async def ppt_to_pdf(file: UploadFile = File(...)):
+    """PPT/PPTX 转 PDF"""
+    # 导入转换库
+    try:
+        from pptx import Presentation
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+    except ImportError as e:
+        logger.error(f"[PPT2PDF] 导入错误: {e}")
+        raise HTTPException(status_code=500, detail="python-pptx 或 reportlab 库未安装")
+    
+    ext = file.filename.split('.')[-1].lower()
+    if ext not in ['pptx', 'ppt']:
+        raise HTTPException(status_code=400, detail="只支持 .pptx/.ppt 文件")
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        input_file = temp_path / file.filename
+        content = await file.read()
+        input_file.write_bytes(content)
+        
+        try:
+            prs = Presentation(str(input_file))
+            output_file = temp_path / "output.pdf"
+            c = canvas.Canvas(str(output_file), pagesize=A4)
+            width, height = A4
+            
+            for slide_num, slide in enumerate(prs.slides, 1):
+                if slide_num > 1:
+                    c.showPage()
+                c.setFont("Helvetica-Bold", 18)
+                c.drawString(inch, height - inch, f"Slide {slide_num}")
+                
+                y = height - 1.5*inch
+                c.setFont("Helvetica", 10)
+                
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        for para in shape.text.split('\n'):
+                            para = para.strip()[:80]
+                            if para and y > inch:
+                                c.drawString(inch, y, para)
+                                y -= 0.25*inch
+            
+            c.save()
+            
+            pdf_content = output_file.read_bytes()
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={file.filename.replace('.pptx', '.pdf')}"}
+            )
+        except Exception as e:
+            logger.error(f"[PPT2PDF] 错误: {e}, type: {type(e)}")
+            raise HTTPException(status_code=500, detail=f"PPT转换失败: {str(e)}")

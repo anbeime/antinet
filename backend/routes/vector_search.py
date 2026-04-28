@@ -2,17 +2,26 @@
 # -*- coding: utf-8 -*-
 """
 向量搜索模块
-使用 BGE embedding 进行语义搜索
+使用 Ollama nomic-embed-text-v2-moe 进行语义搜索
+预计算所有卡片embedding，搜索时只计算查询embedding
 """
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from pathlib import Path
 import logging
 import numpy as np
+import os
+import json
 
 logger = logging.getLogger(__name__)
 
 db_manager = None
-model_loader = None
+_embedding_model = None
+_ollama_available = False
+
+# 预计算的卡片embedding缓存
+_card_embeddings: Dict[str, np.ndarray] = {}
+_emb_cache_loaded = False
 
 
 @dataclass
@@ -32,102 +41,204 @@ def set_db_manager(manager):
     logger.info("[Vector] 数据库管理器已设置")
 
 
-def init_model():
-    """初始化 BGE 模型"""
-    global model_loader
+def _check_ollama():
+    """检查 Ollama 是否可用"""
+    global _ollama_available
     try:
-        from models.model_loader import get_model_loader
-        # 使用正确的模型key（在 model_loader.py 中定义）
-        model_loader = get_model_loader("bge-base-zh")
-        logger.info(f"[Vector] 获取模型: {model_loader}")
-        logger.info(f"[Vector] is_loaded: {model_loader.is_loaded}")
-        logger.info(f"[Vector] model: {model_loader.model}")
-        
-        # 检查模型是否存在并尝试加载
-        if model_loader and model_loader.model is not None:
-            model_loader.is_loaded = True
-            logger.info("[Vector] BGE 模型已就绪 (已加载)")
-            return True
-        elif model_loader:
-            logger.info("[Vector] 尝试加载BGE模型...")
-            try:
-                model_loader.load()
-                logger.info(f"[Vector] load()后 - model: {model_loader.model}")
-                if model_loader.model is not None:
-                    model_loader.is_loaded = True
-                    logger.info("[Vector] BGE 模型加载成功")
-                    return True
-            except Exception as load_err:
-                import traceback
-                logger.warning(f"[Vector] BGE 模型加载失败: {load_err}")
-                logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
-        
-        logger.warning("[Vector] BGE 模型不可用，将使用关键词搜索")
-        return False
-        
+        import httpx
+        # 不使用代理
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get("http://localhost:11434/api/tags")
+            if resp.status_code == 200:
+                _ollama_available = True
+                logger.info("[Vector] Ollama 已连接")
+                return True
     except Exception as e:
-        import traceback
-        logger.warning(f"[Vector] BGE 模型初始化失败: {e}")
-        logger.warning(f"[Vector] 堆栈: {traceback.format_exc()}")
+        logger.warning(f"[Vector] Ollama 不可用: {e}")
+    _ollama_available = False
     return False
 
 
-def get_embedding(text: str) -> Optional[np.ndarray]:
-    """获取文本的 embedding 向量"""
-    global model_loader
+def _get_embedding_model():
+    """获取 Ollama 嵌入模型"""
+    global _embedding_model
+    if _embedding_model is not None:
+        return _embedding_model
     
-    # 尝试初始化（如果还没有）
-    if model_loader is None:
-        if not init_model():
-            return None
-    
-    # 检查模型是否可用（is_loaded 或 model存在）
-    if model_loader is None:
-        return None
-        
-    # 如果is_loaded为False但model存在，也认为可用
-    is_available = model_loader.is_loaded or model_loader.model is not None
-    if not is_available:
-        # 尝试加载
-        try:
-            model_loader.load()
-            is_available = model_loader.model is not None
-            if is_available:
-                model_loader.is_loaded = True
-        except:
-            pass
-    
-    if not is_available:
+    if not _check_ollama():
         return None
     
     try:
-        # 使用 BGE 模型生成 embedding
-        embedding = model_loader.infer(prompt=text, max_new_tokens=512)
-        
-        # 解析输出获取 embedding
-        if embedding and len(embedding) > 0:
-            import json
-            try:
-                # 尝试解析 JSON 格式输出
-                data = json.loads(embedding)
-                if isinstance(data, list):
-                    return np.array(data)
-            except:
-                pass
-            
-            # 回退：简单 token 平均
-            tokens = embedding.split()
-            if tokens:
-                vec = np.zeros(384)
-                for i, tok in enumerate(tokens[:384]):
-                    vec[i % 384] += hash(tok) % 1000 / 1000.0
-                vec = vec / (len(tokens[:384]) + 1e-8)
-                return vec
-        
-        return None
+        import httpx
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get("http://localhost:11434/api/tags")
+            if resp.status_code == 200:
+                models = resp.json().get("models", [])
+                model_names = [m.get("name", "") for m in models]
+                has_model = any("nomic-embed" in n for n in model_names)
+                if has_model:
+                    _embedding_model = "nomic-embed-text-v2-moe"
+                    logger.info(f"[Vector] Ollama 嵌入模型: {_embedding_model}")
+                    return _embedding_model
     except Exception as e:
-        logger.error(f"[Vector] 生成 embedding 失败: {e}")
+        logger.warning(f"[Vector] 检查 Ollama 模型失败: {e}")
+    
+    return None
+
+
+def _get_cache_path():
+    """获取embedding缓存路径"""
+    cache_dir = Path(__file__).parent.parent / "data" / "embeddings"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "card_embeddings.json"
+
+
+def _load_embeddings_cache():
+    """从磁盘加载已缓存的embeddings"""
+    global _card_embeddings, _emb_cache_loaded
+    if _emb_cache_loaded:
+        return
+    
+    cache_path = _get_cache_path()
+    if cache_path.exists():
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for card_id, emb_list in data.items():
+                    _card_embeddings[card_id] = np.array(emb_list, dtype=np.float32)
+            logger.info(f"[Vector] 加载了 {len(_card_embeddings)} 个缓存embedding")
+        except Exception as e:
+            logger.warning(f"[Vector] 加载缓存失败: {e}")
+    
+    _emb_cache_loaded = True
+
+
+def _save_card_embedding(card_id: str, embedding: np.ndarray):
+    """保存单个embedding到缓存"""
+    cache_path = _get_cache_path()
+    
+    try:
+        if cache_path.exists():
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {}
+    except:
+        data = {}
+    
+    data[card_id] = embedding.tolist()
+    
+    with open(cache_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False)
+
+
+def _get_card_embedding(card_id: str, title: str) -> Optional[np.ndarray]:
+    """获取或计算单个卡片的embedding"""
+    global _card_embeddings
+    
+    if card_id in _card_embeddings:
+        return _card_embeddings[card_id]
+    
+    emb = get_embedding(title[:500])
+    if emb is not None:
+        _card_embeddings[card_id] = emb
+        _save_card_embedding(card_id, emb)
+    
+    return emb
+
+
+def _precompute_all_embeddings_async():
+    """异步预计算所有缺失embedding的卡片（后台运行，不阻塞启动）"""
+    import threading
+    
+    def _do_precompute():
+        try:
+            _do_precompute_embeddings()
+        except Exception as e:
+            logger.error(f"[Vector] 预计算失败: {e}")
+    
+    thread = threading.Thread(target=_do_precompute, daemon=True)
+    thread.start()
+    logger.info("[Vector] 预计算已在后台启动")
+
+
+def _do_precompute_embeddings():
+    """实际执行预计算逻辑"""
+    model = _get_embedding_model()
+    if not model or db_manager is None:
+        return
+    
+    # 先加载已缓存的
+    _load_embeddings_cache()
+    
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id, title FROM knowledge_cards")
+        cards = cursor.fetchall()
+        
+        missing = []
+        for row in cards:
+            card_id = str(row[0])
+            if card_id not in _card_embeddings:
+                missing.append((card_id, row[1] or ""))
+        
+        conn.close()
+        
+        if missing:
+            logger.info(f"[Vector] 预计算 {len(missing)} 个卡片embedding...")
+            import httpx
+            for card_id, title in missing:
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        resp = client.post(
+                            "http://localhost:11434/api/embeddings",
+                            json={"model": model, "prompt": title[:500]}
+                        )
+                        if resp.status_code == 200:
+                            emb = np.array(resp.json().get("embedding"), dtype=np.float32)
+                            _save_card_embedding(card_id, emb)
+                            _card_embeddings[card_id] = emb
+                except Exception as e:
+                    logger.warning(f"[Vector] 预计算失败: {e}")
+            
+            logger.info(f"[Vector] 预计算完成，共 {len(_card_embeddings)} 个embedding")
+        else:
+            logger.info(f"[Vector] 所有卡片已有embedding，共 {len(_card_embeddings)} 个")
+    
+    except Exception as e:
+        logger.error(f"[Vector] 预计算失败: {e}")
+
+
+def compute_and_save_embedding(card_id: str, title: str):
+    """新增卡片时调用：计算并保存embedding"""
+    emb = _get_card_embedding(card_id, title)
+    return emb is not None
+
+
+def get_embedding(text: str) -> Optional[np.ndarray]:
+    """获取文本的 embedding 向量（通过 Ollama）"""
+    model = _get_embedding_model()
+    if not model:
         return None
+    
+    try:
+        import httpx
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(
+                "http://localhost:11434/api/embeddings",
+                json={"model": model, "prompt": text}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                embedding = data.get("embedding")
+                if embedding:
+                    return np.array(embedding, dtype=np.float32)
+    except Exception as e:
+        logger.error(f"[Vector] Ollama Embedding 失败: {e}")
+    
+    return None
 
 
 def search_by_vector(
@@ -136,45 +247,44 @@ def search_by_vector(
     limit: int = 5,
     threshold: float = 0.3
 ) -> List[VectorSearchResult]:
-    """
-    向量搜索
-    如果 BGE 模型不可用，回退到关键词搜索
-    """
-    global db_manager
+    """语义向量搜索（使用预计算的embedding）"""
+    global _card_embeddings
     
-    embedding = get_embedding(query)
-    
-    if embedding is None:
-        logger.info("[Vector] BGE 不可用，回退到关键词搜索")
+    model = _get_embedding_model()
+    if not model or not _card_embeddings:
         return fallback_keyword_search(query, limit)
+    
+    # 只计算查询的embedding
+    query_emb = get_embedding(query)
+    if query_emb is None:
+        return fallback_keyword_search(query, limit)
+    
+    global db_manager
+    if db_manager is None:
+        return []
     
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         
-        # 获取所有卡片（简化版：实际应该预计算并存储向量）
-        cursor.execute(f"""
-            SELECT id, title, content, COALESCE(type, 'blue') as card_type
-            FROM {table}
-            ORDER BY COALESCE(similarity, 0.5) DESC
-            LIMIT 100
-        """)
+        # 获取所有卡片（使用缓存的embedding）
+        cursor.execute("SELECT id, title, content, COALESCE(type, 'blue') as card_type FROM knowledge_cards")
+        cards = cursor.fetchall()
         
         results = []
-        for row in cursor.fetchall():
-            card_embedding = get_embedding(row[1] + " " + (row[2] or ""))
-            if card_embedding is not None:
-                # 计算余弦相似度
-                score = np.dot(embedding, card_embedding) / (
-                    np.linalg.norm(embedding) * np.linalg.norm(card_embedding) + 1e-8
-                )
+        for row in cards:
+            card_id = str(row[0])
+            if card_id in _card_embeddings:
+                # 直接使用缓存的embedding计算相似度
+                card_emb = _card_embeddings[card_id]
+                score = float(np.dot(query_emb, card_emb))
                 if score >= threshold:
                     results.append(VectorSearchResult(
-                        id=str(row[0]),
+                        id=card_id,
                         title=row[1],
                         content=row[2] or "",
                         card_type=row[3],
-                        score=float(score)
+                        score=score
                     ))
         
         conn.close()
@@ -189,7 +299,7 @@ def search_by_vector(
 
 
 def fallback_keyword_search(query: str, limit: int = 5) -> List[VectorSearchResult]:
-    """关键词搜索回退方案"""
+    """关键词搜索回退方案 - 计算真实相似度"""
     import re
     
     global db_manager
@@ -229,26 +339,40 @@ def fallback_keyword_search(query: str, limit: int = 5) -> List[VectorSearchResu
         where = " OR ".join(conditions)
         
         cursor.execute(f"""
-            SELECT id, title, content, COALESCE(type, 'blue') as card_type,
-                   COALESCE(similarity, 0.5) as sim
+            SELECT id, title, content, COALESCE(type, 'blue') as card_type
             FROM knowledge_cards
             WHERE {where}
-            ORDER BY sim DESC
             LIMIT ?
-        """, params + [limit])
+        """, params + [limit * 2])
         
         results = []
         for row in cursor.fetchall():
+            # 计算真实的关键词匹配分数
+            title = row[1] or ""
+            content = row[2] or ""
+            match_count = 0
+            for kw in keywords:
+                if kw.lower() in title.lower():
+                    match_count += 2
+                if kw.lower() in content.lower():
+                    match_count += 1
+            
+            # 归一化相似度
+            score = min(match_count / max(len(keywords) * 2, 1), 1.0)
+            
             results.append(VectorSearchResult(
                 id=str(row[0]),
-                title=row[1],
-                content=row[2] or "",
+                title=title,
+                content=content,
                 card_type=row[3],
-                score=float(row[4])
+                score=score
             ))
         
         conn.close()
-        return results
+        
+        # 按分数排序
+        results.sort(key=lambda x: x.score, reverse=True)
+        return results[:limit]
         
     except Exception as e:
         logger.error(f"[Vector] 关键词搜索失败: {e}")
@@ -258,33 +382,54 @@ def fallback_keyword_search(query: str, limit: int = 5) -> List[VectorSearchResu
 def search_hybrid(
     query: str, 
     limit: int = 5,
-    vector_weight: float = 0.6,
-    keyword_weight: float = 0.4
+    vector_weight: float = 0.3,
+    keyword_weight: float = 0.7
 ) -> List[VectorSearchResult]:
-    """
-    混合搜索：向量 + 关键词
-    结合语义理解和关键词匹配
-    """
-    # 向量搜索
-    vector_results = search_by_vector(query, limit=limit * 2)
+    """混合搜索：关键词优先，向量作为补充"""
+    # 简单查询直接用关键词搜索（更快）
+    if len(query) < 15:
+        return fallback_keyword_search(query, limit)
     
-    # 关键词搜索
+    # 复杂查询先用关键词
     keyword_results = fallback_keyword_search(query, limit=limit * 2)
+    
+    # 如果关键词结果足够好，就不用向量
+    if keyword_results and keyword_results[0].score >= 0.5:
+        return keyword_results[:limit]
+    
+    # 否则尝试向量搜索作为补充
+    vector_results = search_by_vector(query, limit=limit * 2)
     
     # 合并结果
     result_map = {}
     
-    for r in vector_results:
-        if r.id not in result_map:
-            result_map[r.id] = r
-            result_map[r.id].score = r.score * vector_weight
-    
     for r in keyword_results:
+        result_map[r.id] = VectorSearchResult(
+            id=r.id,
+            title=r.title,
+            content=r.content,
+            card_type=r.card_type,
+            score=r.score * keyword_weight
+        )
+    
+    for r in vector_results:
         if r.id in result_map:
-            result_map[r.id].score += r.score * keyword_weight
+            existing = result_map[r.id]
+            result_map[r.id] = VectorSearchResult(
+                id=r.id,
+                title=r.title,
+                content=r.content,
+                card_type=r.card_type,
+                score=existing.score + r.score * vector_weight
+            )
         else:
-            r.score = r.score * keyword_weight
-            result_map[r.id] = r
+            result_map[r.id] = VectorSearchResult(
+                id=r.id,
+                title=r.title,
+                content=r.content,
+                card_type=r.card_type,
+                score=r.score * vector_weight
+            )
     
     # 排序并返回
     results = list(result_map.values())
@@ -295,5 +440,16 @@ def search_hybrid(
 
 def init_on_startup():
     """启动时初始化"""
-    logger.info("[Vector] 尝试加载 BGE 模型...")
-    init_model()
+    # 加载缓存（快速）
+    _load_embeddings_cache()
+    
+    # 只在有缺失时才后台预计算
+    if _card_embeddings:
+        logger.info(f"[Vector] 向量搜索模块初始化完成: {_embedding_model or 'N/A'}, {len(_card_embeddings)} 个缓存embedding")
+    else:
+        logger.info("[Vector] 向量搜索模块初始化完成（仅关键词搜索）")
+
+
+def compute_card_embedding(card_id: str, title: str) -> bool:
+    """新增卡片时调用，计算其embedding"""
+    return compute_and_save_embedding(card_id, title)

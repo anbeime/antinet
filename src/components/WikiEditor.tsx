@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, Sparkles, BarChart3 } from 'lucide-react';
+import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, Sparkles, BarChart3, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import WikiGraphView from './WikiGraphView';
 import KnowledgeGraph from './KnowledgeGraph';
+import { renderMarkdown } from '@/lib/utils';
 
 interface WikiPage {
   id: string;
@@ -78,6 +79,7 @@ const WikiEditor = () => {
   const [semanticResults, setSemanticResults] = useState<SearchResult[]>([]);
   const [compilerStats, setCompilerStats] = useState<any>(null);
   const [semanticLoading, setSemanticLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadPages();
@@ -153,6 +155,18 @@ const WikiEditor = () => {
     setBacklinks([]);
     setConnected([]);
     setEditMode(true);
+  };
+
+  const copyRenderedContent = async () => {
+    const renderedHtml = renderMarkdown(content);
+    try {
+      await navigator.clipboard.writeText(renderedHtml);
+      setCopied(true);
+      toast.success('排版内容已复制到剪贴板');
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('复制失败');
+    }
   };
 
   const savePage = async () => {
@@ -361,63 +375,71 @@ const WikiEditor = () => {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Toolbar */}
-        {!sidebarOpen && (
-          <div className="p-2 bg-white border-b border-gray-200 flex items-center gap-2">
+        {/* Toolbar - Always visible */}
+        <div className="p-2 bg-white border-b border-gray-200 flex items-center gap-2">
+          {!sidebarOpen && (
             <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-gray-100 rounded-lg">
               <FolderOpen className="w-5 h-5" />
             </button>
-            <div className="h-6 w-px bg-gray-300" />
-            <button
-              onClick={() => setViewMode('edit')}
-              className={`p-2 rounded-lg ${viewMode === 'edit' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
-            >
-              <Edit3 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('preview')}
-              className={`p-2 rounded-lg ${viewMode === 'preview' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
-            >
-              <Eye className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('split')}
-              className={`p-2 rounded-lg ${viewMode === 'split' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
-            >
-              <span className="text-xs font-bold">二</span>
-            </button>
-            <div className="h-6 w-px bg-gray-300" />
-            <button
-              onClick={() => setActiveTab('editor')}
-              className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'editor' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-            >
-              编辑
-            </button>
-            <button
-              onClick={() => setActiveTab('graph')}
-              className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'graph' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-            >
-              <BarChart3 className="w-4 h-4 inline mr-1" />
-              图谱
-            </button>
-            <button
-              onClick={() => setActiveTab('search')}
-              className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'search' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-            >
-              搜索
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('semantic');
-                loadCompilStats();
-              }}
-              className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'semantic' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-            >
-              <Sparkles className="w-4 h-4 inline mr-1" />
-              智能
-            </button>
-          </div>
-        )}
+          )}
+          <div className="h-6 w-px bg-gray-300" />
+          <button
+            onClick={() => setViewMode('edit')}
+            className={`p-2 rounded-lg ${viewMode === 'edit' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+          >
+            <Edit3 className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setViewMode('preview')}
+            className={`p-2 rounded-lg ${viewMode === 'preview' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+          >
+            <Eye className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setViewMode('split')}
+            className={`p-2 rounded-lg ${viewMode === 'split' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}
+          >
+            <span className="text-xs font-bold">二</span>
+          </button>
+          <div className="h-6 w-px bg-gray-300" />
+          <button
+            onClick={copyRenderedContent}
+            className={`p-2 rounded-lg hover:bg-gray-100 ${copied ? 'text-green-600' : ''}`}
+            title="复制排版内容"
+          >
+            {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+          </button>
+          <div className="h-6 w-px bg-gray-300" />
+          <button
+            onClick={() => setActiveTab('editor')}
+            className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'editor' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+          >
+            编辑
+          </button>
+          <button
+            onClick={() => setActiveTab('graph')}
+            className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'graph' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+          >
+            <BarChart3 className="w-4 h-4 inline mr-1" />
+            图谱
+          </button>
+          <button
+            onClick={() => setActiveTab('search')}
+            className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'search' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+          >
+            搜索
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('semantic');
+              loadCompilStats();
+            }}
+            className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'semantic' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+          >
+            <Sparkles className="w-4 h-4 inline mr-1" />
+            智能
+          </button>
+        </div>
 
         {/* Editor Area */}
         {activeTab === 'editor' && (

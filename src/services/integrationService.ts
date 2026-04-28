@@ -281,3 +281,30 @@ export const cardTaskService = {
 };
 
 export default { backlinkService, calendarEventService, cardTaskService };
+
+// ============ 源文件服务 ============
+export interface SourceFileInfo {
+  source_file_id?: number;
+  file_name?: string;
+  file_path?: string;
+  paragraph_index?: number;
+  paragraph_text?: string;
+}
+
+export const sourceFileService = {
+  /** 获取卡片的源文件信息 */
+  async getCardSourceFile(cardId: number): Promise<SourceFileInfo> {
+    try {
+      const response = await apiFetch<SourceFileInfo>(`/api/knowledge/cards/${cardId}`);
+      return response || {};
+    } catch (err) {
+      console.error('获取源文件信息失败:', err);
+      return {};
+    }
+  },
+
+  /** 下载源文件 */
+  async downloadSourceFile(sourceFileId: number): Promise<void> {
+    window.open(`${API_BASE_URL}/api/knowledge/sources/${sourceFileId}/download`, '_blank');
+  },
+};

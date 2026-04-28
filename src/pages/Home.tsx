@@ -60,7 +60,6 @@ import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
 import MindMap from '@/pages/MindMap';
 import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 import PDFViewer from '@/pages/PDFViewer';
-import PPTViewer from '@/pages/PPTViewer';
 import ReportAutomation from '@/pages/ReportAutomation';
 import OfficeDocs from '@/pages/OfficeDocs';
 

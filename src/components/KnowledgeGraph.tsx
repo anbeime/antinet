@@ -304,12 +304,6 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
             const labels: Record<string, string> = { blue: '[蓝] 事实', green: '[绿] 解释', yellow: '[黄] 风险', red: '[红] 行动' };
             return labels[name] || name;
           }
-        },
-        {
-          data: Object.values(LINK_TYPE_LABELS).slice(0, 6),
-          orient: 'vertical',
-          right: 10,
-          top: 50,
         }
       ],
       series: [{
