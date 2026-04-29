@@ -1233,6 +1233,22 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
         name: newProject.name, description: newProject.description,
         color: newProject.color, icon: newProject.icon, status: 'active'
       });
+      
+      // 同步到知识卡片库
+      try {
+        await fetch('http://localhost:8000/api/knowledge/cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: newProject.name,
+            content: newProject.description,
+            card_type: 'blue',
+            address: '',
+            related_cards: []
+          })
+        });
+      } catch (e) { console.log('同步到知识卡片失败:', e); }
+      
       toast.success('专题创建成功');
       setShowCreateModal(false);
       setNewProject({ name: '', description: '', color: 'blue', icon: '📚' });

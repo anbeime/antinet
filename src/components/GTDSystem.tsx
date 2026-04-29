@@ -30,6 +30,7 @@ type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
 const GTDSystem: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>('inbox');
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
+  const [calendarFullscreen, setCalendarFullscreen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -431,54 +432,26 @@ const GTDSystem: React.FC = () => {
       {/* 头部导航 */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         {/* 分类标签 */}
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex overflow-x-auto space-x-1 gtd-tabs-container">
+<div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-750 border-b">
+          <div className="flex gap-2">
             {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => (
-            <button 
-              key={category}
-              onClick={() => { setActiveCategory(category); setViewMode('list'); }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                activeCategory === category && viewMode === 'list'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400' 
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-              }`}
-            >
-              {category === 'inbox' ? '收集箱' : 
-               category === 'today' ? '等待处理' :
-               category === 'later' ? '将来可能' :
-               category === 'archive' ? '归档资料' : '专题研究'}
-            </button>
+              <button 
+                key={category}
+                onClick={() => { setActiveCategory(category); setViewMode('list'); }}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeCategory === category && viewMode === 'list'
+                    ? 'bg-blue-500 text-white shadow-sm' 
+                    : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {category === 'inbox' ? '收集箱' : 
+                 category === 'today' ? '等待处理' :
+                 category === 'later' ? '将来可能' :
+                 category === 'archive' ? '归档资料' : '专题研究'}
+              </button>
             ))}
           </div>
-          
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center px-2 py-1.5 text-xs rounded transition-colors ${
-                viewMode === 'list' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100'
-              }`}
-            >
-              列表
-            </button>
-            <button
-              onClick={() => setViewMode('calendar')}
-              className={`flex items-center px-2 py-1.5 text-xs rounded transition-colors ${
-                viewMode === 'calendar' 
-                  ? 'bg-blue-500 text-white' 
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100'
-              }`}
-            >
-              日历
-            </button>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="flex items-center px-2 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700 ml-2"
-            >
-              +新建
-            </button>
-          </div>
+        
         </div>
       </div>
 
@@ -497,60 +470,63 @@ const GTDSystem: React.FC = () => {
                    activeCategory === 'later' ? '将来可能' :
                    activeCategory === 'archive' ? '归档资料' : '专题研究'}
                 </h2>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-sm"
+                >
+                  <PlusCircle size={16} /> 新建任务
+                </button>
               </div>
 
-              {/* 搜索框和筛选 */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <div className="relative flex-1 min-w-[150px]">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                  <input
-                    type="text"
-                    placeholder="搜索..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                    className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                
-                <select
-                  value={priorityFilter}
-                  onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
-                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
-                >
-                  <option value="all">全部优先</option>
-                  <option value="high">高</option>
-                  <option value="medium">中</option>
-                  <option value="low">低</option>
-                </select>
-                
-                <select
-                  value={timeFilter}
-                  onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
-                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
-                >
-                  <option value="all">全部时间</option>
-                  <option value="today">今天</option>
-                  <option value="week">本周</option>
-                  <option value="month">本月</option>
-                </select>
+            {/* 搜索框和筛选 */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  type="text"
+                  placeholder="搜索任务..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                />
               </div>
+              
+              <select
+                value={priorityFilter}
+                onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+              >
+                <option value="all">全部优先级</option>
+                <option value="high">高优先级</option>
+                <option value="medium">中优先级</option>
+                <option value="low">低优先级</option>
+              </select>
+              
+              <select
+                value={timeFilter}
+                onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
+              >
+                <option value="all">全部时间</option>
+                <option value="today">今天</option>
+                <option value="week">本周</option>
+                <option value="month">本月</option>
+              </select>
+            </div>
 
-              {/* 批量操作工具栏 */}
-              {selectedTaskIds.size > 0 && (
-                <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
-                  <span className="text-sm text-blue-600">已选 {selectedTaskIds.size}</span>
-                  <div className="flex items-center space-x-1">
-                    <button onClick={() => setSelectedTaskIds(new Set())} className="px-2 py-1 bg-gray-500 text-white rounded text-xs">取消</button>
-                    <button onClick={async () => {
-                      for (const id of selectedTaskIds) {
-                        await gtdTaskService.delete(id);
-                      }
-                      setSelectedTaskIds(new Set());
-                      window.location.reload();
-                    }} className="px-2 py-1 bg-red-500 text-white rounded text-xs">删除</button>
-                  </div>
-                </div>
-              )}
+            {/* 批量操作工具栏 */}
+            {selectedTaskIds.size > 0 && (
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+                <span className="text-sm text-blue-600 dark:text-blue-400">已选 {selectedTaskIds.size} 项</span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setSelectedTaskIds(new Set())}
+                    className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
+                  >
+                    取消选择
+                  </button>
+                  <button
+                    onClick={async () => {
                       if (confirm(`确定删除 ${selectedTaskIds.size} 个任务？`)) {
                         for (const taskId of selectedTaskIds) {
                           await gtdTaskService.delete(taskId);
@@ -576,6 +552,7 @@ const GTDSystem: React.FC = () => {
               </div>
             )}
 
+              
             {/* 任务列表 */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -605,11 +582,11 @@ const GTDSystem: React.FC = () => {
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
-                  </select>
+</select>
                 </div>
               </div>
               
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {paginatedTasks.map(task => (
                   <div
                     key={task.id}
@@ -815,28 +792,46 @@ const GTDSystem: React.FC = () => {
               >
                 新建任务
               </button>
+)}
+              </div>
             )}
-          </div>
-        )}
+
         </>
         )}
         </div>
 
         {/* 右侧：日历面板 */}
-        <div className="w-[380px] border-l flex flex-col">
-          <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50 dark:bg-gray-700">
-            <h3 className="text-sm font-medium">日历</h3>
-            <button
-              onClick={() => setViewMode('calendar')}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              全屏
-            </button>
+        {calendarFullscreen ? (
+          <div className="fixed inset-0 z-50 bg-white dark:bg-gray-800 flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 dark:bg-gray-700">
+              <h3 className="text-lg font-bold">日历视图</h3>
+              <button
+                onClick={() => setCalendarFullscreen(false)}
+                className="px-3 py-1.5 text-sm text-white bg-gray-600 rounded hover:bg-gray-700"
+              >
+                退出全屏
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
+            </div>
           </div>
-          <div className="flex-1 overflow-auto">
-            <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
+        ) : (
+          <div className="w-[500px] border-l flex flex-col">
+            <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50 dark:bg-gray-700">
+              <h3 className="text-sm font-medium">日历</h3>
+              <button
+                onClick={() => setCalendarFullscreen(true)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                全屏
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto">
+              <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* 创建任务模态框 */}
