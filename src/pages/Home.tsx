@@ -1215,7 +1215,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                  ))}
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredCards.map(card => (
                   <motion.div
                     key={card.id}
@@ -1237,17 +1237,21 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       </div>
                     </div>
                     <div className="p-4 bg-white dark:bg-gray-800">
-                      <p className="text-gray-700 dark:text-gray-300 mb-4">{card.content}</p>
-                       <div className="flex justify-between items-center">
-                         <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(card.createdAt)}</span>
-                         <motion.div 
-                           whileHover={{ x: 3 }}
-                           className="flex items-center text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline"
-                           onClick={() => openDetailModal(card)}
-                         >
-                           查看详情 <ChevronRight size={14} />
-                         </motion.div>
-                       </div>
+                      {card.color === 'blue' ? (
+                        <p className="text-gray-700 dark:text-gray-300 mb-4 line-clamp-2">{card.content}</p>
+                      ) : (
+                        <p className="text-gray-700 dark:text-gray-300 mb-4">{card.content}</p>
+                      )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(card.createdAt)}</span>
+                        <motion.div 
+                          whileHover={{ x: 3 }}
+                          className="flex items-center text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:underline"
+                          onClick={() => openDetailModal(card)}
+                        >
+                          查看详情 <ChevronRight size={14} />
+                        </motion.div>
+                      </div>
                     </div>
                   </motion.div>
                 ))}

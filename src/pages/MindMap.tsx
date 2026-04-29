@@ -634,7 +634,6 @@ const MindMap: React.FC = () => {
         onWheel={handleWheel}
       >
         <div 
-          ref={setContainerRef}
           className="mindmap-container min-h-full flex items-center justify-center"
           style={{ 
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,

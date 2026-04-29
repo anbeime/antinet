@@ -37,8 +37,28 @@ try:
     PPTX_AVAILABLE = True
 except ImportError:
     PPTX_AVAILABLE = False
+
+# PPTProcessor 兼容处理
+try:
+    from skills.pptx.ppt_processor_enhanced import EnhancedPPTProcessor
+    USE_ENHANCED = True
+except ImportError:
+    class EnhancedPPTProcessor:
+        def __init__(self):
+            self.pptx = Presentation()
+        def save(self, path):
+            self.pptx.save(str(path))
+    USE_ENHANCED = False
+    logger.warning("PPT处理器简化版")
+
+# 简化 PPTProcessor 兼容类
+class PPTProcessor:
+    def __init__(self):
+        self.pptx = Presentation() if PPTX_AVAILABLE else None
+    def save(self, path):
+        if self.pptx:
+            self.pptx.save(str(path))
     
-USE_ENHANCED = False
 logger.warning("PPT 模块加载，PPTX可用: " + str(PPTX_AVAILABLE))
 
 router = APIRouter(prefix="/api/ppt", tags=["PPT"])
