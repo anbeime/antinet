@@ -6,7 +6,7 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, X, Sparkles, GripVertical } from 'lucide-react';
-import chatAvatar from '../pages/chat.png';
+import chatAvatar from '../pages/logo.gif';
 import { Button } from '@/components/ui/button';
 import { EnhancedChatBot } from './EnhancedChatBot';
 import { cn } from '@/lib/utils';
@@ -102,7 +102,7 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
             >
               <div className="bg-background border rounded-lg px-3 py-2 shadow-lg flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-500" />
-                <span className="text-sm font-medium">智能助手</span>
+                <span className="text-sm font-medium">小易</span>
               </div>
             </motion.div>
             </motion.div>

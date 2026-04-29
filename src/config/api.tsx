@@ -102,6 +102,16 @@ export const API_ENDPOINTS = {
   TASK_CARDS: '/api/integration/task/{task_id}/cards',
   CARD_TASK_RELATION: '/api/integration/card/{card_id}/task/{task_id}',
   INTEGRATION_HEALTH: '/api/integration/health',
+
+  // 语音服务
+  SPEECH_STATUS: '/api/speech/status',
+  SPEECH_TTS_VOICES: '/api/speech/tts/voices',
+  SPEECH_TTS_SPEAK: '/api/speech/tts/speak',
+  SPEECH_TTS_SPEAK_CARD: '/api/speech/tts/speak-card',
+  SPEECH_TTS_AUDIO: '/api/speech/tts/audio/{filename}',
+  SPEECH_STT_TRANSCRIBE: '/api/speech/stt/transcribe',
+  SPEECH_STT_TRANSCRIBE_BASE64: '/api/speech/stt/transcribe-base64',
+  SPEECH_STT_MODELS: '/api/speech/stt/models',
 };
 
 // 辅助函数：构建URL
@@ -207,6 +217,64 @@ export const downloadFile = (url: string, filename?: string) => {
   document.body.removeChild(link);
 };
 
+// 语音服务 API
+export const speechService = {
+  getStatus: () => apiRequest<any>(API_ENDPOINTS.SPEECH_STATUS),
+  
+  getVoices: () => apiRequest<any>(API_ENDPOINTS.SPEECH_TTS_VOICES),
+  
+  getModels: () => apiRequest<any>(API_ENDPOINTS.SPEECH_STT_MODELS),
+  
+  textToSpeech: (text: string, voice: string = 'zh-CN-XiaoxiaoNeural') =>
+    apiRequest<any>(API_ENDPOINTS.SPEECH_TTS_SPEAK, 'POST', { text, voice }),
+  
+  speakCard: (title: string, content: string, voice?: string) =>
+    apiRequest<any>(API_ENDPOINTS.SPEECH_TTS_SPEAK_CARD, 'POST', {
+      title,
+      content,
+      voice: voice || 'zh-CN-XiaoxiaoNeural'
+    }),
+  
+  getAudioUrl: (filename: string) =>
+    `${API_BASE_URL}${API_ENDPOINTS.SPEECH_TTS_AUDIO.replace('{filename}', filename)}`,
+  
+  transcribeAudio: async (audioBlob: Blob, language: string = 'zh', modelSize: string = 'base') => {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('language', language);
+    formData.append('model_size', modelSize);
+    
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SPEECH_STT_TRANSCRIBE}`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+  
+  transcribeBase64: async (base64Audio: string, language: string = 'zh', modelSize: string = 'base') => {
+    const formData = new FormData();
+    formData.append('audio_data', base64Audio);
+    formData.append('language', language);
+    formData.append('model_size', modelSize);
+    
+    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.SPEECH_STT_TRANSCRIBE_BASE64}`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+  
+  playAudio: (url: string) => {
+    const audio = new Audio(url);
+    audio.play();
+    return audio;
+  },
+  
+  playFromUrl: (audioUrl: string) => {
+    return speechService.playAudio(`${API_BASE_URL}${audioUrl}`);
+  },
+};
+
 export default {
   API_BASE_URL,
   API_ENDPOINTS,
@@ -215,4 +283,5 @@ export default {
   uploadFile,
   uploadFiles,
   downloadFile,
+  speechService,
 };

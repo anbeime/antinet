@@ -3,6 +3,7 @@
 提供知识库的 CRUD 接口
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -11,6 +12,9 @@ import tempfile
 import os
 import re
 import json
+import html
+import hashlib
+from pathlib import Path
 
 from config import settings
 from database import DatabaseManager
@@ -18,6 +22,28 @@ from database import DatabaseManager
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge", "知识网络"])
+
+
+def sanitize_html(content: str) -> str:
+    """过滤 HTML 内容防止 XSS 攻击"""
+    if not content:
+        return content
+    # 解码 HTML 实体以处理输入
+    text = content
+    # 允许的安全标签和属性
+    allowed_tags = ['b', 'i', 'u', 'strong', 'em', 'code', 'pre', 'br', 'p', 'ul', 'ol', 'li', 'a', 'span']
+    allowed_attrs = {'a': ['href', 'title'], 'span': ['class']}
+    
+    # 简单处理：移除危险属性
+    dangerous_patterns = [
+        (r'on\w+\s*=', ''),  # 移除事件处理器
+        (r'javascript:', ''),  # 移除 JS 协议
+        (r'data:', ''),       # 移除 data 协议
+    ]
+    for pattern, repl in dangerous_patterns:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+    
+    return text
 
 
 # ==================== 知识网络入口 ====================
@@ -316,6 +342,7 @@ class KnowledgeCard(BaseModel):
     project_id: Optional[int] = None  # 关联的专题ID
     related_cards: Optional[List[int]] = []  # 关联的卡片ID列表
     address: Optional[str] = None  # Antinet 地址
+    source_file_id: Optional[str] = None  # 源文件ID（文件导入时关联）
 
     def get_valid_category(self) -> str:
         """获取有效的 category"""
@@ -479,13 +506,17 @@ async def create_card(card: KnowledgeCard):
         
         # 使用正确的字段名 card_type（与数据库表结构一致）
         related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
+        
+        # 过滤 HTML 内容防止 XSS
+        safe_content = sanitize_html(card.content) if card.content else ''
+        
         cursor.execute('''
             INSERT INTO knowledge_cards (card_type, title, content, category, project_id, related_cards, address)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             card.type,
             card_title,
-            card.content,
+            safe_content,
             valid_category,
             card.project_id,
             related_cards_json,
@@ -556,6 +587,10 @@ async def update_card(card_id: int, card: KnowledgeCard):
 
         # 更新卡片 — 保留未被显式传入的字段（如 project_id）
         related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
+        
+        # 过滤 HTML 内容防止 XSS
+        safe_content = sanitize_html(card.content) if card.content else None
+        
         # 如果 project_id 未传入（None），保留数据库中的现有值
         existing_project_id = dict(existing_card).get('project_id') if existing_card else None
         final_project_id = card.project_id if card.project_id is not None else existing_project_id
@@ -570,7 +605,7 @@ async def update_card(card_id: int, card: KnowledgeCard):
         ''', (
             card.type,
             card.title,
-            card.content,
+            safe_content if safe_content is not None else dict(existing_card).get('content'),
             card.category,
             final_project_id,
             related_cards_json,
@@ -996,6 +1031,8 @@ async def import_file(file: UploadFile = File(...)):
     支持格式：PDF, TXT, MD, DOCX, XLSX, 图片
     """
     tmp_path = None
+    source_file_id = None
+    stored_file_path = None
     try:
         # 获取文件扩展名
         filename = file.filename or ""
@@ -1070,6 +1107,33 @@ async def import_file(file: UploadFile = File(...)):
                 raise HTTPException(status_code=400, detail="上传的文件为空")
             tmp.write(content)
             tmp_path = tmp.name
+
+        # 生成源文件唯一标识符并保存到永久存储
+        content_hash = hashlib.sha256(content).hexdigest()
+        source_file_id = f"sf_{datetime.now().strftime('%Y%m%d')}_{content_hash[:12]}"
+        
+        # 创建源文件存储目录
+        project_root = Path(__file__).parent.parent
+        source_files_dir = project_root / "data" / "source_files"
+        source_files_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 保存文件到永久存储
+        stored_file_path = source_files_dir / f"{source_file_id}{file_ext}"
+        with open(stored_file_path, 'wb') as f:
+            f.write(content)
+        
+        # 插入源文件记录到数据库
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash))
+            conn.commit()
+        except Exception as e:
+            logger.warning(f"插入源文件记录失败: {e}")
+        conn.close()
 
         extracted_text = ""
 
@@ -1177,11 +1241,12 @@ async def import_file(file: UploadFile = File(...)):
             })
 
         saved_count = 0
+        card_ids = []
         if cards:
             try:
                 conn = db_manager.get_connection()
                 cursor = conn.cursor()
-                for card in cards:
+                for idx, card in enumerate(cards):
                     category_map = {
                         'blue': '事实',
                         'green': '解释',
@@ -1199,6 +1264,20 @@ async def import_file(file: UploadFile = File(...)):
                         category,
                         None
                     ))
+                    card_id = cursor.lastrowid
+                    card_ids.append(card_id)
+                    
+                    # 插入卡片-源文件关联记录
+                    if source_file_id:
+                        location = f"第{idx + 1}段"
+                        try:
+                            cursor.execute('''
+                                INSERT INTO card_source_files (source_file_id, card_id, location_in_source)
+                                VALUES (?, ?, ?)
+                            ''', (source_file_id, card_id, location))
+                        except Exception as e:
+                            logger.warning(f"插入卡片源文件关联失败: {e}")
+                    
                     saved_count += 1
                 conn.commit()
                 conn.close()
@@ -1213,7 +1292,8 @@ async def import_file(file: UploadFile = File(...)):
             'extracted_length': len(extracted_text),
             'cards': cards,
             'total': len(cards),
-            'saved': saved_count
+            'saved': saved_count,
+            'source_file_id': source_file_id  # 返回源文件ID供前端使用
         }
     except HTTPException:
         raise
@@ -1340,4 +1420,124 @@ async def get_card_topics(card_id: int):
         return {"card_id": card_id, "topic_id": None}
     except Exception as e:
         logger.error(f"查询失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ==================== 源文件溯源功能 ====================
+
+@router.get("/cards/{card_id}/source-file")
+async def get_card_source_file(card_id: int):
+    """
+    获取卡片对应的源文件信息
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # 查询卡片关联的源文件
+        cursor.execute("""
+            SELECT sf.id, sf.source_file_id, sf.original_name, sf.stored_path, 
+                   sf.file_type, sf.file_size, sf.created_at, csf.location_in_source
+            FROM card_source_files csf
+            JOIN source_files sf ON csf.source_file_id = sf.source_file_id
+            WHERE csf.card_id = ?
+        """, (card_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return {"has_source": False, "message": "该卡片无溯源信息（非文件导入）"}
+        
+        return {
+            "has_source": True,
+            "source_file_id": row[1],
+            "original_name": row[2],
+            "stored_path": row[3],
+            "file_type": row[4],
+            "file_size": row[5],
+            "created_at": row[6],
+            "location_in_source": row[7]
+        }
+    except Exception as e:
+        logger.error(f"获取源文件失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/source-files/{source_file_id}/cards")
+async def get_source_file_cards(source_file_id: str):
+    """
+    获取某源文件生成的所有卡片
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # 验证源文件是否存在
+        cursor.execute("SELECT original_name, stored_path FROM source_files WHERE source_file_id = ?", (source_file_id,))
+        sf_row = cursor.fetchone()
+        if not sf_row:
+            conn.close()
+            raise HTTPException(status_code=404, detail="源文件不存在")
+        
+        # 获取关联的卡片
+        cursor.execute("""
+            SELECT kc.id, kc.title, kc.content, kc.card_type, kc.category, 
+                   csf.location_in_source, kc.created_at
+            FROM card_source_files csf
+            JOIN knowledge_cards kc ON csf.card_id = kc.id
+            WHERE csf.source_file_id = ?
+            ORDER BY kc.created_at DESC
+        """, (source_file_id,))
+        
+        cards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return {
+            "source_file_id": source_file_id,
+            "original_name": sf_row[0],
+            "stored_path": sf_row[1],
+            "cards": cards,
+            "total": len(cards)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取源文件卡片失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/source-files/{source_file_id}/download")
+async def download_source_file(source_file_id: str):
+    """
+    下载源文件
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT original_name, stored_path FROM source_files WHERE source_file_id = ?
+        """, (source_file_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail="源文件不存在")
+        
+        original_name, stored_path = row
+        
+        if not os.path.exists(stored_path):
+            raise HTTPException(status_code=404, detail="源文件已丢失")
+        
+        return FileResponse(
+            path=stored_path,
+            filename=original_name,
+            media_type='application/octet-stream'
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"下载源文件失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))

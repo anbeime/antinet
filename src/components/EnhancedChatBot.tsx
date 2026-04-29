@@ -13,7 +13,7 @@ import {
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
   Upload, Mic, MicOff, Volume2, VolumeX,
-  Download, Eye
+  Download, Eye, Maximize2, Minimize2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -163,7 +163,7 @@ const MessageBubble: React.FC<{
         ) : isSkill ? (
           <Sparkles className="w-4 h-4 text-white" />
         ) : (
-          <img src="/src/pages/chat.png" alt="bot" className="w-8 h-8 rounded-full object-contain" />
+          <img src="/src/pages/logo.gif" alt="bot" className="w-8 h-8 rounded-full object-contain" />
         )}
       </div>
 
@@ -321,6 +321,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -336,6 +337,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -415,58 +417,75 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
   }, []);
 
-  // 语音识别（ASR）
-  const toggleListening = () => {
+  // 语音识别（ASR）- 优先用浏览器 Web Speech API（需要联网）
+  const toggleListening = async () => {
     if (isListening) {
-      // 停止录音
-      recognitionRef.current?.stop();
-      setIsListening(false);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      mediaRecorderRef.current?.stop();
       return;
     }
 
+    // 检查浏览器是否支持
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       toast.error('您的浏览器不支持语音识别，建议使用 Chrome 浏览器');
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'zh-CN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = false;
 
-    recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript) {
-        setInput(transcript);
-        // 自动发送
-        setTimeout(() => handleSendWithText(transcript, imageData || undefined), 200);
-      }
-      setIsListening(false);
-    };
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setInput(transcript);
+          setTimeout(() => handleSendWithText(transcript, imageData || undefined), 200);
+        }
+        setIsListening(false);
+      };
 
-    recognition.onerror = (event: any) => {
-      console.error('语音识别错误:', event.error);
-      if (event.error === 'not-allowed') {
-        toast.error('请允许浏览器访问麦克风');
-      } else {
-        toast.error('语音识别失败，请重试');
-      }
-      setIsListening(false);
-    };
+      recognition.onerror = (event: any) => {
+        console.error('语音识别错误:', event.error);
+        if (event.error === 'network') {
+          toast.error('语音识别需要联网，请检查网络或使用科学上网');
+        } else {
+          toast.error('语音识别失败，请重试');
+        }
+        setIsListening(false);
+      };
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-    toast.success('正在聆听，请说话...', { duration: 2000 });
+      recognition.onend = () => setIsListening(false);
+      recognitionRef.current = recognition;
+      recognition.start();
+      setIsListening(true);
+    } catch (err) {
+      console.error('语音识别启动失败:', err);
+      toast.error('语音识别不可用，请检查网络或安装 Chrome 浏览器');
+    }
   };
 
   // 语音合成（TTS）- 优先后端 Edge-TTS，回退浏览器 TTS
+  const cleanTextForSpeech = (text: string): string => {
+    return text
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`[^`]+`/g, (m) => m.replace(/`/g, ''))
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1')
+      .replace(/^>\s+/gm, '')
+      .replace(/^[-*+]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .replace(/\|/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
   const speakText = async (text: string) => {
     // 停止当前播放
     if (isSpeaking) {
@@ -479,12 +498,14 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       return;
     }
 
+    const cleanText = cleanTextForSpeech(text);
+    if (!cleanText) return;
+
     try {
-      // 先尝试后端 Edge-TTS
-      const response = await fetch('http://localhost:8000/api/chat/enhanced/tts', {
+      const response = await fetch('http://localhost:8000/api/speech/tts/speak-bytes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: '晓伊' }),
+        body: JSON.stringify({ text: cleanText, voice: 'zh-CN-XiaoxiaoNeural' }),
       });
 
       if (response.ok) {
@@ -506,7 +527,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             currentAudioRef.current = null;
             URL.revokeObjectURL(audioUrl);
             // 回退到浏览器 TTS
-            _browserTTS(text);
+            _browserTTS(cleanText);
           };
           audio.play();
           return;
@@ -517,7 +538,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
 
     // 回退到浏览器 TTS
-    _browserTTS(text);
+    _browserTTS(cleanText);
   };
 
   const _browserTTS = (text: string) => {
@@ -706,8 +727,15 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         onClick={onClose}
       >
         <motion.div
-          className="w-full max-w-2xl h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ backgroundColor: '#fff9f3', border: '1px solid #e8ddd0' }}
+          className={cn(
+            "rounded-2xl shadow-2xl flex flex-col overflow-hidden",
+            isFullscreen ? "w-screen h-screen max-w-none rounded-none" : "w-full max-w-2xl"
+          )}
+          style={{ 
+            backgroundColor: '#fff9f3', 
+            border: '1px solid #e8ddd0',
+            height: isFullscreen ? '100vh' : '80vh'
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* 头部 - 中国风 */}
@@ -725,6 +753,13 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
             <div className="flex items-center gap-2">
               <button
+                className="p-2 rounded-lg text-white/60 hover:bg-white/20 transition-colors"
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                title={isFullscreen ? '退出全屏' : '全屏模式'}
+              >
+                {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+              </button>
+<button
                 className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
                 onClick={() => {
                   const newVal = !autoSpeak;
@@ -742,8 +777,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 }}
                 title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
               >
-                <Volume2 className="w-4 h-4" />
-                {autoSpeak && <span className="text-xs text-white">自动</span>}
+                {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
               </button>
               <button
                 className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"

@@ -15,7 +15,10 @@ import {
   Eye,
   Trash2,
   File,
-  AlertCircle
+  AlertCircle,
+  FileCode,
+  Search,
+  Presentation
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
@@ -24,7 +27,7 @@ interface ConversionTask {
   id: string;
   file: File;
   fileName: string;
-  targetFormat: 'word' | 'excel' | 'pdf';
+  targetFormat: 'word' | 'excel' | 'pdf' | 'markdown';
   status: 'pending' | 'processing' | 'completed' | 'error';
   progress: number;
   resultUrl?: string;
@@ -39,9 +42,31 @@ const FormatConverter: React.FC = () => {
   useTheme();
   const [tasks, setTasks] = useState<ConversionTask[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedFormat, setSelectedFormat] = useState<'word' | 'excel' | 'pdf'>('word');
+  const [selectedFormat, setSelectedFormat] = useState<'word' | 'excel' | 'pdf' | 'markdown' | 'libreoffice' | 'ppt'>('word');
   const [previewTask, setPreviewTask] = useState<ConversionTask | null>(null);
+  const [selectedTheme, setSelectedTheme] = useState('warm-academic');
+  const [pdfWatermark, setPdfWatermark] = useState('');
+  const [pdfTitle, setPdfTitle] = useState('');
+  const [pdfAuthor, setPdfAuthor] = useState('');
+  const [libreOfficeFormat, setLibreOfficeFormat] = useState('pdf');
+  const [documentSearch, setDocumentSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 主题配置
+  const themeOptions = [
+    { id: 'warm-academic', name: '暖学术', color: '#b45309' },
+    { id: 'classic-thesis', name: '经典论文', color: '#78350f' },
+    { id: 'tufte', name: 'Tufte', color: '#9f1239' },
+    { id: 'ieee-journal', name: '期刊蓝', color: '#1e3a8a' },
+    { id: 'elegant-book', name: '精装书', color: '#78350f' },
+    { id: 'chinese-red', name: '中国红', color: '#dc2626' },
+    { id: 'ink-wash', name: '水墨', color: '#374151' },
+    { id: 'github-light', name: 'GitHub', color: '#2563eb' },
+    { id: 'nord-frost', name: 'Nord冰霜', color: '#4c566a' },
+    { id: 'ocean-breeze', name: '海洋', color: '#0d9488' },
+  ];
 
   // 格式配置
   const formatConfig = {
@@ -77,6 +102,66 @@ const FormatConverter: React.FC = () => {
       bgColor: 'bg-red-50 dark:bg-red-900/20',
       textColor: 'text-red-600',
       description: '转换为 PDF 格式，固定版式'
+    },
+    markdown: {
+      name: 'MD 转 PDF',
+      extension: '.pdf',
+      icon: <FileCode className="w-6 h-6" />,
+      color: 'bg-purple-500',
+      hoverColor: 'hover:bg-purple-600',
+      borderColor: 'border-purple-200',
+      bgColor: 'bg-purple-50 dark:bg-purple-900/20',
+      textColor: 'text-purple-600',
+      description: 'Markdown 转换为专业版式 PDF'
+    },
+    libreoffice: {
+      name: '文档转换',
+      extension: '.pdf',
+      icon: <FileText className="w-6 h-6" />,
+      color: 'bg-orange-500',
+      hoverColor: 'hover:bg-orange-600',
+      borderColor: 'border-orange-200',
+      bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+      textColor: 'text-orange-600',
+      description: 'Word/Excel/PPT 转换为 PDF'
+    },
+    ppt: {
+      name: 'PPT 转 PDF',
+      extension: '.pdf',
+      icon: <Presentation className="w-6 h-6" />,
+      color: 'bg-pink-500',
+      hoverColor: 'hover:bg-pink-600',
+      borderColor: 'border-pink-200',
+      bgColor: 'bg-pink-50 dark:bg-pink-900/20',
+      textColor: 'text-pink-600',
+      description: 'PPT 幻灯片转换为 PDF'
+    }
+  };
+
+  // LibreOffice 支持的格式
+  const libreOfficeFormats = [
+    { value: 'pdf', label: '转为 PDF' },
+    { value: 'docx', label: '转为 Word' },
+    { value: 'xlsx', label: '转为 Excel' },
+    { value: 'pptx', label: '转为 PPT' },
+    { value: 'odt', label: '转为 ODT' },
+    { value: 'ods', label: '转为 ODS' },
+  ];
+
+  // 文档搜索
+  const searchDocuments = async () => {
+    if (!documentSearch.trim()) return;
+    setIsSearching(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/libreoffice/search?q=${encodeURIComponent(documentSearch)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.results || []);
+      }
+    } catch (e) {
+      console.error('搜索失败:', e);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -92,7 +177,7 @@ const FormatConverter: React.FC = () => {
   const addFiles = (files: File[]) => {
     // 支持多种输入格式
     const validExtensions = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.txt', '.md', '.pptx', '.ppt'];
-    const validFiles = files.filter(file => {
+    let validFiles = files.filter(file => {
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
       return validExtensions.includes(ext) || 
              file.type === 'application/pdf' ||
@@ -103,8 +188,13 @@ const FormatConverter: React.FC = () => {
              file.type === 'text/plain';
     });
 
+    // MD转PDF只接受md文件
+    if (selectedFormat === 'markdown') {
+      validFiles = validFiles.filter(f => f.name.toLowerCase().endsWith('.md'));
+    }
+
     if (validFiles.length === 0) {
-      toast.error('请选择支持的文件格式');
+      toast.error(selectedFormat === 'markdown' ? '请选择 .md 文件' : '请选择支持的文件格式');
       return;
     }
 
@@ -154,6 +244,18 @@ const FormatConverter: React.FC = () => {
 
         case 'pdf':
           await convertToPDF(task, formData);
+          break;
+        
+        case 'markdown':
+          await convertMarkdownToPDF(task, formData);
+          break;
+        
+        case 'libreoffice':
+          await convertWithLibreOffice(task, formData);
+          break;
+
+        case 'ppt':
+          await convertPPTToPDF(task, formData);
           break;
       }
     } catch (error) {
@@ -312,6 +414,140 @@ const FormatConverter: React.FC = () => {
     ));
 
     toast.success(`${task.fileName} 准备就绪，点击预览查看`);
+  };
+
+  // Markdown 转 PDF
+  const convertMarkdownToPDF = async (task: ConversionTask, formData: FormData) => {
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    // 添加 PDF 选项到 formData
+    formData.append('theme', selectedTheme);
+    if (pdfTitle) formData.append('title', pdfTitle);
+    if (pdfAuthor) formData.append('author', pdfAuthor);
+    if (pdfWatermark) formData.append('watermark', pdfWatermark);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/md2pdf/convert`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'MD转PDF失败');
+      }
+
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { ...t, progress: 80 } : t
+      ));
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { 
+          ...t, 
+          status: 'completed', 
+          progress: 100,
+          resultUrl: url,
+          resultBlob: blob
+        } : t
+      ));
+
+      toast.success(`${task.fileName} 转换为 PDF 成功！`);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // PPT 转 PDF
+  const convertPPTToPDF = async (task: ConversionTask, formData: FormData) => {
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    try {
+      const response = await fetch(`${API_BASE}/api/ppt/to-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'PPT转PDF失败');
+      }
+
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { ...t, progress: 80 } : t
+      ));
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const outputName = task.fileName.replace(/\.pptx?$/i, '.pdf');
+      
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { 
+          ...t, 
+          status: 'completed', 
+          progress: 100,
+          resultUrl: url,
+          resultBlob: blob,
+          fileName: outputName
+        } : t
+      ));
+
+      toast.success(`${task.fileName} 转换为 PDF 成功！`);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  // LibreOffice 文档转换
+  const convertWithLibreOffice = async (task: ConversionTask, formData: FormData) => {
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    // 添加输出格式
+    formData.append('output_format', libreOfficeFormat);
+
+    try {
+      const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'LibreOffice转换失败');
+      }
+
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { ...t, progress: 80 } : t
+      ));
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const ext = libreOfficeFormat;
+      const outputName = task.fileName.replace(/\.[^.]+$/, `.${ext}`);
+      
+      setTasks(prev => prev.map(t => 
+        t.id === task.id ? { 
+          ...t, 
+          status: 'completed', 
+          progress: 100,
+          resultUrl: url,
+          resultBlob: blob,
+          fileName: outputName
+        } : t
+      ));
+
+      toast.success(`${task.fileName} 转换为 ${ext.toUpperCase()} 成功！`);
+    } catch (error) {
+      throw error;
+    }
   };
 
   // 生成 PDF 预览内容
@@ -498,17 +734,9 @@ const FormatConverter: React.FC = () => {
       return;
     }
 
-    if (task.targetFormat === 'pdf') {
-      // PDF 格式在新窗口打开预览
-      const previewFile = async () => {
-        const previewWindow = window.open('', '_blank');
-        if (previewWindow && task.resultBlob) {
-          const text = await task.resultBlob.text();
-          previewWindow.document.write(text);
-          previewWindow.document.close();
-        }
-      };
-      previewFile();
+    if (task.targetFormat === 'pdf' || task.targetFormat === 'markdown') {
+      // PDF/MD转换的PDF 在新窗口打开预览
+      window.open(task.resultUrl, '_blank');
     } else {
       // Word 和 Excel 直接下载
       downloadFile(task);
@@ -619,7 +847,7 @@ const FormatConverter: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             选择目标格式
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {(Object.keys(formatConfig) as Array<keyof typeof formatConfig>).map((format) => (
               <button
                 key={format}
@@ -652,6 +880,144 @@ const FormatConverter: React.FC = () => {
             ))}
           </div>
         </motion.div>
+
+        {/* MD转PDF 设置面板 */}
+        {selectedFormat === 'markdown' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              PDF 主题设置
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+              {themeOptions.map(theme => (
+                <button
+                  key={theme.id}
+                  onClick={() => setSelectedTheme(theme.id)}
+                  className={`p-3 rounded-lg border-2 transition-all text-left ${
+                    selectedTheme === theme.id
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                      : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${selectedTheme === theme.id ? 'bg-blue-500' : 'bg-gray-200'}`} />
+                    <span className="text-sm font-medium">{theme.name}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 block mb-1">文档标题</label>
+                <input
+                  type="text"
+                  value={pdfTitle}
+                  onChange={e => setPdfTitle(e.target.value)}
+                  placeholder="可选，默认从文件名提取"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 block mb-1">作者</label>
+                <input
+                  type="text"
+                  value={pdfAuthor}
+                  onChange={e => setPdfAuthor(e.target.value)}
+                  placeholder="可选"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400 block mb-1">水印</label>
+                <input
+                  type="text"
+                  value={pdfWatermark}
+                  onChange={e => setPdfWatermark(e.target.value)}
+                  placeholder="可选"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* LibreOffice 文档转换与搜索面板 */}
+        {selectedFormat === 'libreoffice' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              LibreOffice 文档管理
+            </h3>
+            
+            {/* 格式转换设置 */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">输出格式</h4>
+              <div className="flex flex-wrap gap-2">
+                {libreOfficeFormats.map(fmt => (
+                  <button
+                    key={fmt.value}
+                    onClick={() => setLibreOfficeFormat(fmt.value)}
+                    className={`px-4 py-2 rounded-lg text-sm ${
+                      libreOfficeFormat === fmt.value
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {fmt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 文档搜索 */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">知识库文档搜索</h4>
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  value={documentSearch}
+                  onChange={e => setDocumentSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && searchDocuments()}
+                  placeholder="输入关键词搜索文档内容..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                />
+                <button
+                  onClick={searchDocuments}
+                  disabled={isSearching}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {isSearching ? '搜索中...' : '搜索'}
+                </button>
+              </div>
+
+              {/* 搜索结果 */}
+              {searchResults.length > 0 && (
+                <div className="space-y-3">
+                  {searchResults.map((result, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium">{result.filename}</span>
+                        <span className="text-xs text-gray-500">匹配 {result.score} 次</span>
+                      </div>
+                      {result.matches?.map((m: any, i: number) => (
+                        <div key={i} className="text-sm text-gray-600 dark:text-gray-400 pl-3 border-l-2 border-orange-500 mb-1">
+                          <span className="text-xs text-gray-400">第{m.line}行: </span>
+                          {m.text}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
         {/* 文件上传区域 */}
         <motion.div

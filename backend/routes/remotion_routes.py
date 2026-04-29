@@ -143,91 +143,111 @@ def generate_remotion_source(slides: List[SlideData], topic: str, config: Dict[s
     }
     colors = theme_colors.get(theme, theme_colors["modern"])
     
-    # 生成幻灯片组件
     slide_components = []
     for i, slide in enumerate(slides):
         if slide.type == "cover":
-            slide_components.append(f"""
+            slide_components.append(f'''
 // Slide {i+1}: Cover
 const CoverSlide{i} = () => {{
-  const progress = spring({{ fps, config: {{ damping: 200 }} }});
+  const frame = useCurrentFrame();
+  const {{ fps }} = useVideoConfig();
+  const progress = spring({{
+    frame,
+    fps,
+    config: {{ damping: 200 }}
+  }});
   return (
-    <AbsoluteFill style={{{{ background: '{colors['bg']}' }}>
+    <AbsoluteFill style={{{{ background: '{colors["bg"]}' }}>
       <div style={{
         opacity: interpolate(progress, [0, 1], [0, 1]),
-        transform: 'translateY(' + interpolate(progress, [0, 1], [30, 0]) + 'px)',
-        fontSize: 72, color: '{colors['primary']}', textAlign: 'center', padding: '40vh 0'
+        transform: `translateY(${{interpolate(progress, [0, 1], [30, 0])}}px)`,
+        fontSize: 72, color: '{colors["primary"]}', textAlign: 'center', padding: '40vh 0'
       }}>
         {slide.title}
       </div>
     </AbsoluteFill>
   );
 }};
-""")
+''')
         elif slide.type == "content":
             cards_html = ""
             for j, card in enumerate((slide.cards or [])[:4]):
                 color = card_colors.get(card.get("type", "blue"), "#3b82f6")
-                cards_html += f"""
+                card_title = card.get("title", "")
+                card_content = card.get("content", "")
+                cards_html += f'''
       <div style={{
         backgroundColor: '{color}',
         borderRadius: 12, padding: 20, marginBottom: 16,
         opacity: interpolate(progress, [{(j+1)*0.15}, {(j+1)*0.15+0.3}], [0, 1]),
-        transform: 'translateX(' + interpolate(progress, [{(j+1)*0.15}, {(j+1)*0.15+0.5}], [-50, 0]) + 'px)'
+        transform: `translateX(${{interpolate(progress, [{(j+1)*0.15}, {(j+1)*0.15+0.5}], [-50, 0])}}px)`
       }}>
-        <div style={{ fontSize: 24, fontWeight: 'bold', color: 'white' }}>{card.get('title', '')}</div>
-        <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.9)', marginTop: 8 }}>{card.get('content', '')}</div>
-      </div>"""
+        <div style={{ fontSize: 24, fontWeight: 'bold', color: 'white' }}>{card_title}</div>
+        <div style={{ fontSize: 16, color: 'rgba(255,255,255,0.9)', marginTop: 8 }}>{card_content}</div>
+      </div>'''
             
-            slide_components.append(f"""
+            slide_components.append(f'''
 // Slide {i+1}: Content - {slide.title}
 const ContentSlide{i} = () => {{
-  const progress = spring({{ fps, config: {{ damping: 200 }} }});
+  const frame = useCurrentFrame();
+  const {{ fps }} = useVideoConfig();
+  const progress = spring({{
+    frame,
+    fps,
+    config: {{ damping: 200 }}
+  }});
   return (
-    <AbsoluteFill style={{{{ background: '{colors['bg']}', padding: 40 }}>
-      <div style={{ fontSize: 36, fontWeight: 'bold', color: '{colors['accent']}', marginBottom: 20 }}>
+    <AbsoluteFill style={{{{ background: '{colors["bg"]}', padding: 40 }}}}>
+      <div style={{ fontSize: 36, fontWeight: 'bold', color: '{colors["accent"]}', marginBottom: 20 }}>
         {slide.title}
       </div>
       {cards_html}
     </AbsoluteFill>
   );
 }};
-""")
+''')
         elif slide.type == "summary":
             points_html = ""
             for j, point in enumerate((slide.content or [])[:4]):
-                points_html += f"""
+                points_html += f'''
         <div style={{
-          fontSize: 24, color: '{colors['primary']}', marginBottom: 16,
+          fontSize: 24, color: '{colors["primary"]}', marginBottom: 16,
           opacity: interpolate(progress, [{j*0.2}, {j*0.2+0.3}], [0, 1])
         }}>
           {point}
-        </div>"""
+        </div>'''
             
-            slide_components.append(f"""
+            slide_components.append(f'''
 // Slide {i+1}: Summary
 const SummarySlide{i} = () => {{
-  const progress = spring({{ fps, config: {{ damping: 200 }} }});
+  const frame = useCurrentFrame();
+  const {{ fps }} = useVideoConfig();
+  const progress = spring({{
+    frame,
+    fps,
+    config: {{ damping: 200 }}
+  }});
   return (
-    <AbsoluteFill style={{{{ background: '{colors['bg']}', justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ fontSize: 48, color: '{colors['accent']}', marginBottom: 40 }}>总结</div>
+    <AbsoluteFill style={{{{ background: '{colors["bg"]}', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ fontSize: 48, color: '{colors["accent"]}', marginBottom: 40 }}>总结</div>
       {points_html}
     </AbsoluteFill>
   );
 }};
-""")
+''')
     
     components_str = "\n".join(slide_components)
     
-    source = f"""
-import {{ AbsoluteFill, spring, interpolate, useVideoConfig }} from 'remotion';
+    source = f'''import {{ AbsoluteFill, interpolate, useVideoConfig, spring, useCurrentFrame }} from 'remotion';
 
 const theme = {json.dumps(colors)};
 
 {components_str}
 
-export const SlideSequence = [Slides];
-"""
+export const SlideSequence = [
+''' + ",\n".join([f"CoverSlide{i}" if slides[i].type == "cover" else f"ContentSlide{i}" if slides[i].type == "content" else f"SummarySlide{i}" for i in range(len(slides))]) + '''
+];
+'''
     
     return source
 
@@ -242,10 +262,9 @@ async def generate_remotion_video(request: RemotionGenerateRequest):
     流程：
     1. 从卡片生成幻灯片序列
     2. 生成 Remotion React 源码
-    3. 调用 Remotion CLI 渲染视频
+    (注：由于系统限制，需要在支持Chrome的环境中渲染)
     """
     try:
-        # 1. 生成幻灯片
         if request.slides:
             slides = request.slides
         elif request.cards:
@@ -253,11 +272,9 @@ async def generate_remotion_video(request: RemotionGenerateRequest):
         else:
             raise HTTPException(status_code=400, detail="需要提供 cards 或 slides 数据")
         
-        # 2. 生成 Remotion 源码
         config = request.config or {}
         source = generate_remotion_source(slides, request.topic, config)
         
-        # 3. 保存源码到临时目录
         output_dir = Path("C:/D/zhiyi/remotion-output")
         output_dir.mkdir(parents=True, exist_ok=True)
         
@@ -265,7 +282,23 @@ async def generate_remotion_video(request: RemotionGenerateRequest):
         source_path = output_dir / f"slide_{job_id}.tsx"
         source_path.write_text(source, encoding="utf-8")
         
-        # 4. 保存元数据
+        slides_data = {
+            "topic": request.topic,
+            "slides": [
+                {
+                    "id": s.id,
+                    "type": s.type,
+                    "title": s.title,
+                    "cards": s.cards,
+                    "content": s.content,
+                }
+                for s in slides
+            ],
+        }
+        
+        data_path = output_dir / f"data_{job_id}.json"
+        data_path.write_text(json.dumps(slides_data, ensure_ascii=False), encoding="utf-8")
+        
         metadata = {
             "job_id": job_id,
             "topic": request.topic,
@@ -273,22 +306,25 @@ async def generate_remotion_video(request: RemotionGenerateRequest):
             "format": request.format,
             "quality": request.quality,
             "created_at": datetime.now().isoformat(),
+            "status": "generated",
+            "source_path": str(source_path),
+            "data_path": str(data_path),
+            "render_command": f"cd C:\\D\\zhiyi && npx remotion render remotion-output/slide_{job_id}.tsx <composition-id> output.mp4",
         }
         metadata_path = output_dir / f"meta_{job_id}.json"
         metadata_path.write_text(json.dumps(metadata, ensure_ascii=False), encoding="utf-8")
         
         logger.info(f"[Remotion] 生成任务 {job_id}: {len(slides)} 张幻灯片")
         
-        # 注意：实际渲染需要调用 npx remotion render
-        # 这里返回元数据，前端可通过轮询获取渲染进度
-        
         return {
             "status": "generated",
             "job_id": job_id,
             "source_path": str(source_path),
+            "data_path": str(data_path),
+            "render_command": f"npx remotion render C:/D/zhiyi/remotion-output/slide_{job_id}.tsx <composition-id> C:/D/zhiyi/remotion-output/video_{job_id}.mp4",
             "slides_count": len(slides),
             "slides": [s.dict() for s in slides],
-            "message": "Remotion 源码已生成，可使用 Remotion Studio 渲染"
+            "message": "Remotion 源码已生成，请在支持Chrome的环境下运行渲染命令"
         }
         
     except Exception as e:

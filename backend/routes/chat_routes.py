@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import logging
 import sys
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -786,3 +787,136 @@ async def health_check():
             "database_initialized": False,
             "error": str(e)
         }
+
+
+# ==================== Hermes 集成 ====================
+
+HERMES_API_URL = os.environ.get("HERMES_API_URL", "http://localhost:8001")
+
+
+async def call_hermes_api(query: str, context: str = "", history: list = None) -> str:
+    """
+    调用Hermes API获取智能回复
+    
+    参数:
+        query: 用户问题
+        context: 知识库上下文
+        history: 对话历史
+    
+    返回:
+        Hermes的回复
+    """
+    import aiohttp
+    
+    system_prompt = f"""你是一个智能助手。请根据以下知识库信息回答用户的问题。
+
+知识库参考内容：
+{context}
+
+如果知识库中有相关信息，请优先使用知识库内容回答。
+如果没有相关信息，请基于你的知识回答，并说明。"""
+
+    messages = []
+    if history:
+        for msg in history:
+            messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+    
+    messages.append({"role": "user", "content": query})
+    
+    payload = {
+        "message": query,
+        "history": messages,
+        "system_prompt": system_prompt
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{HERMES_API_URL}/api/chat",
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data.get("response", "")
+                else:
+                    logger.warning(f"Hermes API返回错误: {resp.status}")
+                    return ""
+    except Exception as e:
+        logger.warning(f"调用Hermes失败: {e}")
+        return ""
+
+
+@router.post("/with_hermes")
+async def chat_with_hermes(request: ChatRequest):
+    """
+    集成Hermes的聊天接口
+    结合知识库搜索 + Hermes LLM智能回复
+    
+    请求：
+        query: 用户问题
+        conversation_history: 对话历史（可选）
+        use_hermes: 是否调用Hermes（默认True）
+    
+    返回：
+        response: 回复内容
+        sources: 知识库来源
+        from_hermes: 是否来自Hermes
+    """
+    use_hermes = request.context.get("use_hermes", True) if request.context else True
+    
+    logger.info(f"[ChatRoutes] chat_with_hermes: {request.query}, hermes={use_hermes}")
+    
+    try:
+        # 1. 先搜索知识库
+        cards = _search_cards_by_keyword(request.query, limit=5)
+        
+        # 构建知识库上下文
+        context_parts = []
+        for card in cards:
+            title = card.get("title", "")
+            content = card.get("content", {})
+            desc = content.get("description", "") if isinstance(content, dict) else content
+            context_parts.append(f"【{title}】{desc}")
+        
+        kb_context = "\n\n".join(context_parts[:3])
+        
+        # 2. 如果Hermes可用，调用它
+        hermes_response = ""
+        if use_hermes:
+            hermes_response = await call_hermes_api(
+                request.query,
+                context=kb_context,
+                history=[{"role": m.role, "content": m.content} for m in request.conversation_history]
+            )
+        
+        sources = []
+        for card in cards:
+            sources.append(CardSource(
+                card_id=card.get("card_id", ""),
+                card_type=card.get("card_type", "blue"),
+                title=card.get("title", ""),
+                similarity=card.get("similarity", 0.8)
+            ))
+        
+        # 3. 返回结果
+        if hermes_response:
+            return {
+                "response": hermes_response,
+                "sources": sources,
+                "cards": cards,
+                "from_hermes": True
+            }
+        else:
+            # Hermes不可用，回退到模板生成
+            answer = _generate_general_answer(request.query, cards)
+            return {
+                "response": answer,
+                "sources": sources,
+                "cards": cards,
+                "from_hermes": False
+            }
+            
+    except Exception as e:
+        logger.error(f"[ChatRoutes] chat_with_hermes失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

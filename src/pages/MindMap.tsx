@@ -80,7 +80,9 @@ const MindMap: React.FC = () => {
   const [showNetworkPanel, setShowNetworkPanel] = useState(false);
   const [networkTopic, setNetworkTopic] = useState('');
   const [generating, setGenerating] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [dragNodeId, setDragNodeId] = useState<string | null>(null);
+  const [dragNodeStart, setDragNodeStart] = useState({ x: 0, y: 0 });
 
   const nodeColors = [
     '#3b82f6', '#22c55e', '#eab308', '#ef4444', 
@@ -90,7 +92,11 @@ const MindMap: React.FC = () => {
   useEffect(() => {
     loadMindmaps();
     loadCards();
-  }, []);
+}, []);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const loadMindmaps = async () => {
     try {
@@ -100,6 +106,30 @@ const MindMap: React.FC = () => {
     } catch (e) {
       console.error('加载思维导图失败:', e);
     }
+  };
+
+  // 拖拽处理函数
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPanOffset({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    setZoom(prev => Math.min(Math.max(prev * delta, 0.1), 5));
   };
 
   const generateFromKnowledgeNetwork = async () => {
@@ -563,6 +593,7 @@ const MindMap: React.FC = () => {
             <li>• 点击+添加分支</li>
             <li>• 点击-折叠/展开</li>
             <li>• 关联按钮链接卡片</li>
+            <li>• 缩放按钮调整视图</li>
           </ul>
           
           {currentMindmapId && selectedNode && nodeCards[selectedNode] && nodeCards[selectedNode].length > 0 && (
@@ -594,11 +625,21 @@ const MindMap: React.FC = () => {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto p-8">
+      <main 
+        className="flex-1 overflow-hidden p-8 cursor-grab active:cursor-grabbing"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+      >
         <div 
-          ref={containerRef}
-          className="min-h-full flex items-center justify-center"
-          style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
+          className="mindmap-container min-h-full flex items-center justify-center"
+          style={{ 
+            transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+            transformOrigin: 'center',
+            cursor: isDragging ? 'grabbing' : 'grab'
+          }}
         >
           {renderNode(root)}
         </div>

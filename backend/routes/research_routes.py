@@ -14,9 +14,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
+import re
+import json
 import sqlite3
 from pathlib import Path
-import json
+
+from routes.knowledge_routes import sanitize_html
 
 # 自定义 JSON 编码器确保 UTF-8
 class UTF8Encoder(json.JSONEncoder):
@@ -267,11 +270,14 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
         # 序列化 related_cards
         related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
         
+        # 过滤 HTML 内容防止 XSS
+        safe_content = sanitize_html(card.content) if card.content else ''
+        
         # 插入卡片 — 同时写入 project_id 和 topic_id 保持兼容
         cursor.execute("""
             INSERT INTO knowledge_cards (card_type, title, content, category, project_id, topic_id, related_cards, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (card_type, card_title, card.content, card_category, project_id, project_id, related_cards_json, now, now))
+        """, (card_type, card_title, safe_content, card_category, project_id, project_id, related_cards_json, now, now))
         
         card_id = cursor.lastrowid
         
@@ -383,7 +389,7 @@ async def update_project_card(project_id: int, card_id: int, card: CardUpdateReq
         
         if card.content is not None:
             updates.append("content = ?")
-            values.append(card.content)
+            values.append(sanitize_html(card.content))
         
         if card.card_type is not None:
             updates.append("card_type = ?")
@@ -464,30 +470,41 @@ async def update_project_card(project_id: int, card_id: int, card: CardUpdateReq
         updates.append("updated_at = ?")
         values.append(datetime.now().isoformat())
         
-        values.extend([card_id, project_id])
+        # 只更新有project_id的情况
+        if project_id:
+            values.extend([card_id, project_id])
+        else:
+            # 如果没有project_id，只按card_id更新
+            values.append(card_id)
         
-        cursor.execute(f"""
-            UPDATE knowledge_cards 
-            SET {', '.join(updates)}
-            WHERE id = ? AND project_id = ?
-        """, values)
+        if project_id:
+            cursor.execute(f"""
+                UPDATE knowledge_cards 
+                SET {', '.join(updates)}
+                WHERE id = ? AND project_id = ?
+            """, values)
+        else:
+            cursor.execute(f"""
+                UPDATE knowledge_cards 
+                SET {', '.join(updates)}
+                WHERE id = ?
+            """, values[:-1])  # 移除最后一个值（project_id）
         
         conn.commit()
         
         # 获取更新后的卡片
-        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        if project_id:
+            cursor.execute("SELECT * FROM knowledge_cards WHERE id = ? AND project_id = ?", (card_id, project_id))
+        else:
+            cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
         row = cursor.fetchone()
         conn.close()
         
-        return {
-            "id": row["id"],
-            "card_type": row["card_type"],
-            "title": row["title"],
-            "content": row["content"],
-            "category": row["category"],
-            "project_id": row["project_id"],
-            "created_at": row["created_at"]
-        }
+        if not row:
+            return {
+                "id": card_id,
+                "message": "卡片已更新（无法获取完整数据）"
+            }
     except HTTPException:
         raise
     except Exception as e:

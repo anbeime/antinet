@@ -1,11 +1,13 @@
 /**
  * 四色卡片组件
  * 展示 NPU 分析生成的四色卡片（事实/解释/风险/行动）
+ * 支持语音朗读功能
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { chatService } from '@/services/chatService';
+import { speechService } from '@/config/api';
 
 interface CardType {
   card_id: string;
@@ -137,6 +139,38 @@ export default function FourColorCards() {
   const [cards, setCards] = useState<CardType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [speakingCardId, setSpeakingCardId] = useState<string | null>(null);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+
+  const speakCard = async (card: CardType) => {
+    if (speakingCardId === card.card_id) {
+      if (currentAudio) {
+        currentAudio.pause();
+        setCurrentAudio(null);
+      }
+      setSpeakingCardId(null);
+      return;
+    }
+
+    if (currentAudio) {
+      currentAudio.pause();
+      setCurrentAudio(null);
+    }
+
+    try {
+      const result = await speechService.speakCard(card.title, card.content);
+      if (result?.audio_url) {
+        const filename = result.audio_url.split('/').pop() || '';
+        const audio = speechService.playAudio(speechService.getAudioUrl(filename));
+        setCurrentAudio(audio);
+        setSpeakingCardId(card.card_id);
+        audio.onended = () => setSpeakingCardId(null);
+      }
+    } catch (err) {
+      toast.error('朗读失败');
+      setSpeakingCardId(null);
+    }
+  };
 
   // 从API加载四色卡片数据
   useEffect(() => {
@@ -268,6 +302,20 @@ export default function FourColorCards() {
                 <p className="text-base leading-relaxed whitespace-pre-wrap">
                   {card.content}
                 </p>
+                <button
+                  onClick={() => speakCard(card)}
+                  className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                    speakingCardId === card.card_id
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {speakingCardId === card.card_id ? (
+                    <>⏹ 停止朗读</>
+                  ) : (
+                    <>🔊 朗读</>
+                  )}
+                </button>
               </div>
             </motion.div>
           );

@@ -880,8 +880,22 @@ def generate_skill_response(skill_result: SkillResult) -> str:
     return response
 
 
-def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any]) -> List[str]:
-    """生成建议问题"""
+def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any], cards: List[Any] = None) -> List[str]:
+    """根据搜索结果动态生成推荐问题"""
+    
+    # 如果有搜索结果，基于卡片内容生成推荐
+    if cards and len(cards) > 0:
+        card_titles = [c.title for c in cards[:3]]
+        first_title = card_titles[0][:15] if card_titles else ""
+        
+        if scene_type == SceneType.CARD_SEARCH:
+            return [
+                f"查看「{first_title}」详情",
+                "搜索相关联的其他卡片",
+                "生成知识报告"
+            ]
+    
+    # 基于场景的基础推荐
     suggestions = {
         SceneType.GENERAL: [
             "帮我搜索关于项目管理的知识卡片",
@@ -1039,19 +1053,38 @@ async def enhanced_chat(request: ChatRequest):
                 ]
                 response_data["response"] = generate_hybrid_response(query, result)
             else:
-                # 无匹配时，优先使用 Ollama（适合复杂任务），回退到 NPU
-                ai_reply = _try_ollama_generate(query, user_id)
-                used_model = "ollama"
-                if not ai_reply:
-                    ai_reply = _try_npu_generate(query, user_id)
-                    used_model = "npu"
-                if ai_reply:
-                    response_data["response"] = ai_reply
-                    response_data["metadata"]["model"] = used_model
+                # 无匹配时，先尝试 NPU 本地模型（最快）
+                npu_reply = _try_npu_generate(query, user_id)
+                if npu_reply:
+                    response_data["response"] = npu_reply
+                    response_data["metadata"]["model"] = "npu"
                 else:
-                    response_data["response"] = f"关于「{query}」，我暂时没有找到相关信息。您可以尝试换个关键词搜索，或者在知识库中创建相关卡片来丰富知识。"
+                    # NPU 不可用时，尝试 Ollama
+                    try:
+                        import httpx
+                        resp = httpx.post(
+                            "http://localhost:11434/api/chat",
+                            json={
+                                "model": "gemma4:latest",
+                                "messages": [{"role": "user", "content": query}],
+                                "stream": False
+                            },
+                            timeout=60.0
+                        )
+                        if resp.status_code == 200:
+                            response_data["response"] = resp.json()["message"]["content"]
+                            response_data["metadata"]["model"] = "ollama"
+                        else:
+                            raise Exception("Ollama failed")
+                    except Exception as e2:
+                        logger.warning(f"[Chat] NPU和Ollama都不可用: {e2}")
+                        response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
         
-        response_data["suggested_questions"] = generate_suggested_questions(scene_type, request.context)
+        response_data["suggested_questions"] = generate_suggested_questions(
+            scene_type, 
+            request.context,
+            result.cards if 'result' in locals() else []
+        )
         
         # 自动提取卡片建议（不自动创建）
         try:

@@ -1,6 +1,7 @@
 // src/services/chatService.ts - 知识库聊天服务
 // 提供与后端知识库对话机器人API的接口
 import { toast } from 'sonner';
+import { speechService } from '@/config/api';
 
 const API_BASE_URL = 'http://localhost:8000/api/chat';
 
@@ -221,3 +222,6 @@ export function getCardTypeColor(cardType: string): string {
   };
   return colorMap[cardType] || 'gray';
 }
+
+// 重新导出语音服务供其他组件使用
+export { speechService };

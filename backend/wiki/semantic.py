@@ -1,6 +1,6 @@
 """
-Vector Semantic Search for Jinyi WeiHu (锦衣卫) Knowledge Network
-Uses BGE embeddings for semantic similarity search
+Semantic Search for Jinyi WeiHu (锦衣卫) Knowledge Network
+Uses keyword-based semantic search
 """
 import os
 import sys
@@ -152,23 +152,10 @@ class SemanticSearch:
         self._init_embedding_service()
     
     def _init_embedding_service(self):
-        try:
-            from embeddings.bge_service import BGEEmbeddingService
-            
-            self.embedding_service = BGEEmbeddingService(use_qnn=False)
-            logger.info("[SemanticSearch] BGE embedding service initialized")
-        except Exception as e:
-            logger.warning(f"[SemanticSearch] BGE not available: {e}")
-            self.embedding_service = None
+        """使用简单的词汇哈希嵌入"""
+        logger.info("[SemanticSearch] 使用关键词语义搜索")
     
     def _get_embedding(self, text: str) -> Optional[np.ndarray]:
-        if self.embedding_service:
-            try:
-                vector = self.embedding_service.encode([text])
-                return vector[0] if vector is not None else None
-            except Exception as e:
-                logger.error(f"[SemanticSearch] Embedding failed: {e}")
-        
         return self._simple_embedding(text)
     
     def _simple_embedding(self, text: str, dim: int = 768) -> np.ndarray:

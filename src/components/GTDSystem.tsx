@@ -482,84 +482,75 @@ const GTDSystem: React.FC = () => {
         </div>
       </div>
 
-      {/* 内容区域 */}
-      <div className="p-6">
-        {viewMode === 'calendar' ? (
-          <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
-        ) : (
-          <>
-            {/* 专题研究页面 - 特殊处理 */}
-            {activeCategory === 'projects' ? (
-              <ResearchProjectManager />
-            ) : (
-              <>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {activeCategory === 'inbox' ? '收集箱' : 
-                     activeCategory === 'today' ? '等待处理' :
-                     activeCategory === 'later' ? '将来可能' :
-                     activeCategory === 'archive' ? '归档资料' : '专题研究'}
-              </h2>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-1 text-sm font-medium transition-colors"
-                onClick={() => setShowCreateModal(true)}
-              >
-                <PlusCircle size={16} />
-                <span>新建任务</span>
-              </motion.button>
-            </div>
-
-            {/* 搜索框和筛选 */}
-            <div className="flex flex-wrap gap-4 mb-6">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  placeholder="搜索任务..."
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                  className="w-full pl-10 pr-4 py-2 bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                />
+{/* 内容区域 - 左右布局 */}
+      <div className="flex h-[calc(100vh-200px)]">
+        {/* 左侧：任务列表 */}
+        <div className="flex-1 overflow-auto p-4 border-r">
+          {activeCategory === 'projects' ? (
+            <ResearchProjectManager />
+          ) : (
+            <>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {activeCategory === 'inbox' ? '收集箱' : 
+                   activeCategory === 'today' ? '等待处理' :
+                   activeCategory === 'later' ? '将来可能' :
+                   activeCategory === 'archive' ? '归档资料' : '专题研究'}
+                </h2>
               </div>
-              
-              <select
-                value={priorityFilter}
-                onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-              >
-                <option value="all">全部优先级</option>
-                <option value="high">高优先级</option>
-                <option value="medium">中优先级</option>
-                <option value="low">低优先级</option>
-              </select>
-              
-              <select
-                value={timeFilter}
-                onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm"
-              >
-                <option value="all">全部时间</option>
-                <option value="today">今天</option>
-                <option value="week">本周</option>
-                <option value="month">本月</option>
-              </select>
-            </div>
 
-            {/* 批量操作工具栏 */}
-            {selectedTaskIds.size > 0 && (
-              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
-                <span className="text-sm text-blue-600 dark:text-blue-400">已选 {selectedTaskIds.size} 项</span>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setSelectedTaskIds(new Set())}
-                    className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600"
-                  >
-                    取消选择
-                  </button>
-                  <button
-                    onClick={async () => {
+              {/* 搜索框和筛选 */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                <div className="relative flex-1 min-w-[150px]">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="搜索..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                    className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-750 rounded-lg border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => { setPriorityFilter(e.target.value as 'all' | 'low' | 'medium' | 'high'); setCurrentPage(1); }}
+                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
+                >
+                  <option value="all">全部优先</option>
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
+                
+                <select
+                  value={timeFilter}
+                  onChange={(e) => { setTimeFilter(e.target.value as 'all' | 'today' | 'week' | 'month'); setCurrentPage(1); }}
+                  className="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg"
+                >
+                  <option value="all">全部时间</option>
+                  <option value="today">今天</option>
+                  <option value="week">本周</option>
+                  <option value="month">本月</option>
+                </select>
+              </div>
+
+              {/* 批量操作工具栏 */}
+              {selectedTaskIds.size > 0 && (
+                <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg flex items-center justify-between">
+                  <span className="text-sm text-blue-600">已选 {selectedTaskIds.size}</span>
+                  <div className="flex items-center space-x-1">
+                    <button onClick={() => setSelectedTaskIds(new Set())} className="px-2 py-1 bg-gray-500 text-white rounded text-xs">取消</button>
+                    <button onClick={async () => {
+                      for (const id of selectedTaskIds) {
+                        await gtdTaskService.delete(id);
+                      }
+                      setSelectedTaskIds(new Set());
+                      window.location.reload();
+                    }} className="px-2 py-1 bg-red-500 text-white rounded text-xs">删除</button>
+                  </div>
+                </div>
+              )}
                       if (confirm(`确定删除 ${selectedTaskIds.size} 个任务？`)) {
                         for (const taskId of selectedTaskIds) {
                           await gtdTaskService.delete(taskId);
@@ -655,7 +646,7 @@ const GTDSystem: React.FC = () => {
                           {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap">{task.description || '无描述'}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap line-clamp-2">{task.description || '无描述'}</p>
                       {/* 闭环三：来源卡片/会议链接 */}
                       {task.source_type && task.source_id && (
                         <div className="mt-1 flex items-center gap-2">
@@ -829,8 +820,23 @@ const GTDSystem: React.FC = () => {
         )}
         </>
         )}
-        </>
-        )}
+        </div>
+
+        {/* 右侧：日历面板 */}
+        <div className="w-[380px] border-l flex flex-col">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50 dark:bg-gray-700">
+            <h3 className="text-sm font-medium">日历</h3>
+            <button
+              onClick={() => setViewMode('calendar')}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              全屏
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <CalendarView key={tasks.inbox.length + tasks.today.length + tasks.later.length + tasks.archive.length + tasks.projects.length} />
+          </div>
+        </div>
       </div>
 
       {/* 创建任务模态框 */}

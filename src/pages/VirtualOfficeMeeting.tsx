@@ -333,6 +333,8 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
   const [rounds, setRounds] = useState(3);
+  const [meetingMode, setMeetingMode] = useState('free');
+  const [meetingModes, setMeetingModes] = useState<{id: string; name: string; description: string}[]>([]);
   const [meetingImage, setMeetingImage] = useState<string | null>(null);  // Base64 图片数据
   const [isLoading, setIsLoading] = useState(false);
   const [meetingResult, setMeetingResult] = useState<any>(null);
@@ -359,6 +361,9 @@ const VirtualOfficeMeeting: React.FC = () => {
     timestamp: string;
   }>>([]);
   const liveDiscussionsEndRef = useRef<HTMLDivElement>(null);
+
+  // 诊断报告
+  const [diagnosisReport, setDiagnosisReport] = useState<any>(null);
 
   // 像素办公室状态
   const [pixelState, setPixelState] = useState({
@@ -415,9 +420,11 @@ const VirtualOfficeMeeting: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === 'history') {
+useEffect(() => {
+    if (activeTab === 'new') {
       fetchMeetingHistory();
+      // 获取讨论模式
+      fetch(`${BACKEND_URL}/modes`).then(r => r.json()).then(d => setMeetingModes(d.modes || [])).catch(console.error);
     } else if (activeTab === 'agents') {
       fetch(`${BACKEND_URL}/agents`).then(r => r.json()).then(d => setAgentList(d.agents || [])).catch(console.error);
     } else if (activeTab === 'tasks') {
@@ -461,7 +468,7 @@ const VirtualOfficeMeeting: React.FC = () => {
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, context, rounds, image_data: meetingImage }),
+        body: JSON.stringify({ topic, context, rounds, mode: meetingMode, image_data: meetingImage }),
         signal: controller.signal
       });
 
@@ -596,6 +603,12 @@ const VirtualOfficeMeeting: React.FC = () => {
               });
               setPixelState(prev => ({ ...prev, detail: '指挥使正在做最终裁决...', progress: 95 }));
               setMessengerInfo(prev => ({ ...prev, agentName: '指挥使', agentTitle: '总指挥', message: '正在生成最终决策...', progress: 95 }));
+              break;
+
+            case 'diagnosis':
+              // 保存诊断报告
+              setDiagnosisReport(evt.data);
+              setMessengerInfo(prev => ({ ...prev, message: '诊断报告已生成', progress: 98 }));
               break;
 
             case 'meeting_end':
@@ -945,6 +958,28 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>1轮</span><span>2轮</span><span>3轮</span><span>4轮</span><span>5轮</span>
                 </div>
+              </div>
+
+              {/* 讨论模式选择 */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-sm text-gray-300">讨论模式</label>
+                  <span className="text-sm text-purple-400 font-medium">
+                    {meetingModes.find(m => m.id === meetingMode)?.name || meetingMode}
+                  </span>
+                </div>
+                <select
+                  value={meetingMode}
+                  onChange={e => setMeetingMode(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg text-sm text-white border border-gray-600/50 focus:border-purple-500 focus:outline-none transition-colors"
+                  style={{ background: '#0f1729' }}
+                >
+                  {meetingModes.map(mode => (
+                    <option key={mode.id} value={mode.id} className="text-white">
+                      {mode.name} - {mode.description}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* 操作按钮 */}
@@ -1450,7 +1485,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                             className="overflow-hidden"
                           >
                               <div className="p-4 space-y-3">
-                               {round.discussions.map((disc: any, idx: number) => (
+                                {(round.discussions || []).map((disc: any, idx: number) => (
                                  <div key={idx} className="flex gap-3">
                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent.color} flex items-center justify-center text-lg flex-shrink-0`}>
                                      {disc.agent.avatar}
@@ -1493,6 +1528,76 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       </AnimatePresence>
                     </div>
                   ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* 诊断报告区域 */}
+            {showResults && diagnosisReport && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-purple-700/50 flex-shrink-0"
+                style={{ background: '#1a2235' }}
+              >
+                <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+                  <Crown className="w-4 h-4 text-purple-500" />
+                  <span className="text-white font-medium text-sm">多视角分析报告</span>
+                </div>
+                <div className="p-4 space-y-4">
+                  {/* 共识 */}
+                  {(diagnosisReport.consensus || []).length > 0 && (
+                    <div>
+                      <div className="text-green-400 text-xs font-medium mb-2">✓ 共识点</div>
+                      <ul className="space-y-1">
+                        {(diagnosisReport.consensus || []).map((item: string, idx: number) => (
+                          <li key={`consensus-${idx}`} className="text-gray-300 text-xs flex items-start gap-2">
+                            <span className="text-green-500">•</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* 分歧 */}
+                  {(diagnosisReport.divergence || []).length > 0 && (
+                    <div>
+                      <div className="text-yellow-400 text-xs font-medium mb-2">⚠ 分歧点</div>
+                      <ul className="space-y-2">
+                        {(diagnosisReport.divergence || []).map((item: any, idx: number) => (
+                          <li key={`div-${idx}`} className="text-gray-300 text-xs">
+                            <div className="text-yellow-500">{item.issue}</div>
+                            <div className="ml-3 text-gray-500">
+                              {Object.entries(item.views || {}).map(([agent, view]: [string, any]) => (
+                                <div key={`div-${idx}-${agent}`}>• {agent}: {view}</div>
+                              ))}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* 独家观点 */}
+                  {(diagnosisReport.unique || []).length > 0 && (
+                    <div>
+                      <div className="text-blue-400 text-xs font-medium mb-2">💡 独家观点</div>
+                      <ul className="space-y-1">
+                        {(diagnosisReport.unique || []).map((item: any, idx: number) => (
+                          <li key={`unique-${idx}`} className="text-gray-300 text-xs flex items-start gap-2">
+                            <span className="text-blue-500">•</span>
+                            <span>{item.agent}: {item.insight}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* 诊断报告摘要 */}
+                  {diagnosisReport.diagnosis_report && (
+                    <div className="pt-2 border-t border-gray-700/30">
+                      <div className="text-purple-400 text-xs font-medium mb-2">📋 诊断摘要</div>
+                      <p className="text-gray-400 text-xs">{diagnosisReport.diagnosis_report}</p>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}

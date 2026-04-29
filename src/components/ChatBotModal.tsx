@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Send, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
-import chatAvatar from '../pages/chat.png';
+import chatAvatar from '../pages/logo.gif';
 
 interface Message {
   id: string;

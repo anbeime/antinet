@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Bell, CheckCircle2, Circle, X, Plus, Trash2, Calendar, MapPin, Edit2, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ChevronLeft, ChevronRight, Bell, CheckCircle2, Circle, X, Plus, Trash2, Calendar, MapPin, Edit2, Clock, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { getLunarDate, getTraditionalFestivalsData } from '@/utils/calendar/calendar';
 import { calendarEventService, type CalendarEvent, type CalendarEventCreate } from '../services/integrationService';
+import CardDetailModal from './CardDetailModal';
 
 interface GTDTask {
   id: number;
@@ -47,6 +49,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showTaskPanel, setShowTaskPanel] = useState(false);
 
+  // 卡片详情弹窗
+  const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [allCards, setAllCards] = useState<any[]>([]);
+
   // 创建事件弹窗
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [newEvent, setNewEvent] = useState<CalendarEventCreate>({
@@ -60,13 +66,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   // 编辑事件
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
+  // 日程面板全屏切换
+  const [panelFullscreen, setPanelFullscreen] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 并行获取 GTD 任务和日历事件
-        const [taskRes, eventRes] = await Promise.all([
+        // 并行获取 GTD 任务、日历事件和知识卡片
+        const [taskRes, eventRes, cardRes] = await Promise.all([
           fetch('http://localhost:8000/api/data/gtd/tasks'),
           fetch('http://localhost:8000/api/integration/calendar/events/all'),
+          fetch('http://localhost:8000/api/knowledge/cards?limit=10000'),
         ]);
 
         if (taskRes.ok) {
@@ -76,6 +86,10 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
         if (eventRes.ok) {
           const data = await eventRes.json();
           setEvents(Array.isArray(data) ? data : []);
+        }
+        if (cardRes.ok) {
+          const data = await cardRes.json();
+          setAllCards(data.cards || []);
         }
       } catch (error) {
         console.error('获取数据失败:', error);
@@ -373,7 +387,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-green-500 rounded mr-1"></span>低</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-blue-500 rounded mr-1"></span>日程</span>
           </div>
-        </div>
+</div>
       </div>
 
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -384,14 +398,24 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
             </div>
           ))}
         </div>
-
         <div className="flex-1 grid grid-cols-7 overflow-auto">
           {days}
         </div>
       </div>
 
       {showTaskPanel && selectedDate && (
-        <div className="absolute inset-y-0 right-0 w-[520px] shadow-2xl flex flex-col z-10" style={{ backgroundColor: '#fff9f3', borderLeft: '2px solid #d4a574' }}>
+        <motion.div 
+          initial={{ x: 520 }}
+          animate={{ x: 0 }}
+          exit={{ x: 520 }}
+          className="absolute inset-y-0 right-0 shadow-2xl flex flex-col z-10" 
+          style={{ 
+            width: panelFullscreen ? '100vw' : '520px', 
+            backgroundColor: '#fff9f3', 
+            borderLeft: panelFullscreen ? 'none' : '2px solid #d4a574',
+            left: panelFullscreen ? 0 : undefined,
+          }}
+        >
           <div className="flex items-center justify-between p-4 border-b" style={{ backgroundColor: '#fef3e2', borderColor: '#e8ddd0' }}>
             <div>
               <h3 className="font-bold text-lg" style={{ color: '#8b4513' }}>
@@ -403,6 +427,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
               </p>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPanelFullscreen(!panelFullscreen)}
+                className="p-2 hover:bg-amber-100 rounded transition-colors"
+                title={panelFullscreen ? '退出全屏' : '全屏'}
+              >
+                {panelFullscreen ? <Minimize2 className="w-5 h-5" style={{ color: '#8b4513' }} /> : <Maximize2 className="w-5 h-5" style={{ color: '#8b4513' }} />}
+              </button>
               <button
                 onClick={() => selectedDay && openCreateEventOnDate(selectedDay)}
                 className="flex items-center px-3 py-1.5 text-white rounded-lg hover:opacity-90 transition-opacity text-sm bg-blue-500"
@@ -447,96 +478,49 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
                   className={`p-4 border rounded-xl transition-colors ${item.isCompleted ? 'opacity-60' : 'hover:shadow-md'}`}
                   style={{
                     borderColor: item.type === 'event' ? '#93c5fd' : '#e8ddd0',
-                    backgroundColor: item.isCompleted
-                      ? '#faf5f0'
-                      : item.type === 'event'
-                        ? '#eff6ff'
-                        : '#ffffff'
+                    backgroundColor: item.isCompleted ? '#faf5f0' : item.type === 'event' ? '#eff6ff' : '#ffffff'
                   }}
                 >
                   <div className="flex items-start space-x-3">
                     <button
-                      onClick={() => {
-                        if (item.type === 'task') {
-                          handleToggleComplete((item.raw as GTDTask).id, item.isCompleted);
-                        } else {
-                          handleToggleEventComplete(item.raw as CalendarEvent);
-                        }
-                      }}
+                      onClick={() => item.type === 'task' ? handleToggleComplete((item.raw as GTDTask).id, item.isCompleted) : handleToggleEventComplete(item.raw as CalendarEvent)}
                       className="mt-1 flex-shrink-0"
                     >
-                      {item.isCompleted ? (
-                        <CheckCircle2 className="w-5 h-5 text-green-500" />
-                      ) : (
-                        <Circle className="w-5 h-5 text-gray-300 hover:text-green-500" />
-                      )}
+                      {item.isCompleted ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Circle className="w-5 h-5 text-gray-300 hover:text-green-500" />}
                     </button>
-
                     <div className="flex-1 min-w-0">
-                      {/* 类型标签 + 标题 */}
                       <div className="flex items-center gap-2 mb-1">
                         {item.type === 'event' ? (
                           <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
                             <Calendar size={10} /> 日程
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 text-xs rounded-full text-white" style={{ backgroundColor: '#d4a574' }}>
-                            任务
-                          </span>
+                          <span className="px-2 py-0.5 text-xs rounded-full text-white" style={{ backgroundColor: '#d4a574' }}>任务</span>
                         )}
-                        <span className={`text-base font-semibold leading-relaxed ${item.isCompleted ? 'line-through text-gray-400' : ''}`}
-                          style={{ color: item.isCompleted ? undefined : '#8b4513' }}>
+                        <span className={`text-base font-semibold leading-relaxed ${item.isCompleted ? 'line-through text-gray-400' : ''}`} style={{ color: item.isCompleted ? undefined : '#8b4513' }}>
                           {item.title}
                         </span>
                       </div>
-
-                      {/* 描述 */}
-                      {item.description && (
-                        <div className="text-sm text-gray-500 mt-1 leading-relaxed whitespace-pre-wrap break-words">{item.description}</div>
-                      )}
-
-                      {/* 事件详细信息 */}
+                      {item.description && <div className="text-sm text-gray-500 mt-1 leading-relaxed whitespace-pre-wrap break-words">{item.description}</div>}
                       {item.type === 'event' && item.startTime && (
-                        <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-blue-600 dark:text-blue-400">
-                          <span className="flex items-center gap-1"><Clock size={10} />
-                            {new Date(item.startTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                            {' - '}
-                            {item.endTime && new Date(item.endTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          {item.location && (
-                            <span className="flex items-center gap-1"><MapPin size={10} />{item.location}</span>
-                          )}
+                        <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-blue-600">
+                          <span className="flex items-center gap-1"><Clock size={10} />{new Date(item.startTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} - {item.endTime && new Date(item.endTime).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                          {item.location && <span className="flex items-center gap-1"><MapPin size={10} />{item.location}</span>}
                           {item.sourceCardId && (
-                            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px]">
-                              来自卡片 #{item.sourceCardId}
-                            </span>
+                            <button onClick={() => { const card = allCards.find((c: any) => c.id === String(item.sourceCardId) || c.id === item.sourceCardId); if (card) setSelectedCard({ id: String(card.id), color: card.card_type || card.type || 'blue', title: card.title, content: card.content, address: card.address || '', createdAt: card.created_at || '', relatedCards: card.related_cards || [], projectId: card.project_id || null }); }} className="px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded text-[10px] hover:bg-purple-200 flex items-center gap-1 transition-colors">
+                              <ExternalLink size={10} />来自卡片 #{item.sourceCardId}
+                            </button>
                           )}
                         </div>
                       )}
-
-                      {/* 任务标签 */}
                       {item.type === 'task' && (
                         <div className="flex flex-wrap items-center gap-2 mt-2">
-                          <span className={`px-2.5 py-0.5 text-xs rounded-full ${getPriorityColor(item.priority || 'medium')} text-white`}>
-                            {item.priority === 'high' ? '高优先级' : item.priority === 'medium' ? '中优先级' : '低优先级'}
-                          </span>
-                          <span className="px-2 py-0.5 text-xs rounded-full border" style={{ color: '#8b7355', borderColor: '#e8ddd0' }}>
-                            {item.category === 'inbox' ? '收集箱' : item.category === 'today' ? '今日' : item.category === 'later' ? '待定' : item.category === 'projects' ? '项目' : item.category === 'archive' ? '归档' : item.category}
-                          </span>
+                          <span className={`px-2.5 py-0.5 text-xs rounded-full ${getPriorityColor(item.priority || 'medium')} text-white`}>{item.priority === 'high' ? '高优先级' : item.priority === 'medium' ? '中优先级' : '低优先级'}</span>
+                          <span className="px-2 py-0.5 text-xs rounded-full border" style={{ color: '#8b7355', borderColor: '#e8ddd0' }}>{item.category === 'inbox' ? '收集箱' : item.category === 'today' ? '今日' : item.category === 'later' ? '待定' : item.category === 'projects' ? '项目' : item.category === 'archive' ? '归档' : item.category}</span>
                         </div>
                       )}
                     </div>
-
-                    <button
-                      onClick={() => {
-                        if (item.type === 'task') {
-                          handleDeleteTask((item.raw as GTDTask).id);
-                        } else {
-                          handleDeleteEvent((item.raw as CalendarEvent).id);
-                        }
-                      }}
-                      className="p-1.5 text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors"
-                    >
+                    <button onClick={() => item.type === 'task' ? handleDeleteTask((item.raw as GTDTask).id) : handleDeleteEvent((item.raw as CalendarEvent).id)} className="p-1.5 text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
@@ -544,87 +528,44 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
               ))
             )}
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* P0: 创建日历事件弹窗 */}
       {showCreateEvent && (
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20" onClick={() => setShowCreateEvent(false)}>
-          <div
-            className="w-[400px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6"
-            onClick={e => e.stopPropagation()}
-            style={{ backgroundColor: '#fffdf9' }}
-          >
+          <div className="w-[400px] bg-white rounded-xl shadow-2xl p-6" onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fffdf9' }}>
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2" style={{ color: '#8b4513' }}>
-              <Calendar size={18} className="text-blue-500" />
-              创建日程事件
+              <Calendar size={18} className="text-blue-500" />创建日程事件
             </h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium mb-1" style={{ color: '#8b7355' }}>标题</label>
-                <input
-                  type="text"
-                  value={newEvent.title}
-                  onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }}
-                  placeholder="输入事件标题..."
-                />
+                <input type="text" value={newEvent.title} onChange={e => setNewEvent(prev => ({ ...prev, title: e.target.value }))} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }} placeholder="输入事件标题..." />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: '#8b7355' }}>开始时间</label>
-                  <input
-                    type="datetime-local"
-                    value={newEvent.start_time}
-                    onChange={e => setNewEvent(prev => ({ ...prev, start_time: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none text-sm"
-                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }}
-                  />
+                  <input type="datetime-local" value={newEvent.start_time} onChange={e => setNewEvent(prev => ({ ...prev, start_time: e.target.value }))} className="w-full px-3 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1" style={{ color: '#8b7355' }}>结束时间</label>
-                  <input
-                    type="datetime-local"
-                    value={newEvent.end_time}
-                    onChange={e => setNewEvent(prev => ({ ...prev, end_time: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg focus:outline-none text-sm"
-                    style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }}
-                  />
+                  <input type="datetime-local" value={newEvent.end_time} onChange={e => setNewEvent(prev => ({ ...prev, end_time: e.target.value }))} className="w-full px-3 py-2 border rounded-lg focus:outline-none text-sm" style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }} />
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1" style={{ color: '#8b7355' }}>地点</label>
-                <input
-                  type="text"
-                  value={newEvent.location || ''}
-                  onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))}
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }}
-                  placeholder="可选..."
-                />
+                <input type="text" value={newEvent.location || ''} onChange={e => setNewEvent(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border rounded-lg focus:outline-none" style={{ borderColor: '#e8ddd0', backgroundColor: '#fff' }} placeholder="可选..." />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  className="px-4 py-2 text-sm rounded-lg transition-colors"
-                  style={{ color: '#8b7355' }}
-                  onClick={() => setShowCreateEvent(false)}
-                >
-                  取消
-                </button>
-                <button
-                  className="px-4 py-2 text-sm text-white rounded-lg transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: '#d4a574' }}
-                  onClick={handleCreateEvent}
-                  disabled={!newEvent.title.trim() || !newEvent.start_time || !newEvent.end_time}
-                >
-                  创建日程
-                </button>
+                <button className="px-4 py-2 text-sm rounded-lg transition-colors" style={{ color: '#8b7355' }} onClick={() => setShowCreateEvent(false)}>取消</button>
+                <button className="px-4 py-2 text-sm text-white rounded-lg transition-opacity hover:opacity-90" style={{ backgroundColor: '#d4a574' }} onClick={handleCreateEvent} disabled={!newEvent.title.trim() || !newEvent.start_time || !newEvent.end_time}>创建日程</button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <CardDetailModal isOpen={!!selectedCard} onClose={() => setSelectedCard(null)} card={selectedCard} allCards={allCards} onDelete={() => {}} onRelatedCardClick={(id) => { const card = allCards.find((c: any) => c.id === id); if (card) setSelectedCard(card); }} onUpdateCard={() => {}} onCreateRecommendedCard={() => {}} />
     </div>
   );
 };

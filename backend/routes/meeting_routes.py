@@ -290,6 +290,121 @@ AGENT_MAPPING = {
 
 import re
 
+# ==================== 四色卡片提取函数 ====================
+
+async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topic: str) -> list:
+    """
+    从 Agent 发言中提取四色卡片
+    返回: [{card_type, title, content, explore_status}]
+    """
+    if not speech or len(speech) < 20:
+        return []
+    
+    try:
+        import re
+        system_prompt = """你是四色卡片分类专家。你的任务是将文本内容分类为四色卡片之一：
+- 蓝色(事实): 客观数据、定义、事件、统计结果
+- 绿色(解释): 背景、原理、原因、逻辑解释
+- 黄色(风险): 隐患、问题、反面案例、潜在威胁
+- 红色(动力): 行动建议、机会、推动力、解决方案
+
+严格按以下JSON数组格式输出，只输出JSON，不要其他内容：
+[{"type": "blue/green/yellow/red", "title": "简短标题", "content": "核心内容(50字以内)"}]"""
+        
+        user_prompt = f"""分析以下发言，提取最有价值的1-2条四色卡片内容：
+
+发言: {speech[:300]}
+主题: {topic}
+
+请提取最核心的信息，生成JSON数组："""
+        
+        result = await call_llm(system_prompt, user_prompt, max_tokens=200, agent_id=agent_id)
+        
+        if not result:
+            return []
+        
+        import json
+        # 移除 markdown 代码块
+        cleaned = re.sub(r'^```json\s*', '', result.strip())
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+        cleaned = cleaned.strip()
+        
+        # 尝试解析 JSON
+        start = cleaned.find('[')
+        end = cleaned.rfind(']') + 1
+        if start >= 0 and end > start:
+            try:
+                cards = json.loads(cleaned[start:end])
+                # 添加探索状态
+                for card in cards:
+                    card['explore_status'] = 'pending'
+                return cards
+            except:
+                pass
+    except Exception as e:
+        logger.error(f"提取四色卡片失败: {e}")
+    
+    return []
+
+
+async def _analyze_consensus_divergence(all_speeches: list, topic: str) -> dict:
+    """
+    分析所有 Agent 发言，识别共识、分歧和独家观点
+    返回: {consensus, divergence, unique, diagnosis_report}
+    """
+    if not all_speeches or len(all_speeches) < 3:
+        return {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
+    
+    # 构建分析文本
+    speeches_text = "\n".join([
+        f"【{s['agent_name']}】{s['speech'][:100]}" 
+        for s in all_speeches
+    ])
+    
+    system_prompt = """你是一个多视角分析系统，负责分析多个专家的观点并诊断。
+你的任务：
+1. 识别共识点（多数人认可的观点）
+2. 识别分歧点（不同观点）
+3. 识别独家观点（仅1-2人提出的独特洞察）
+
+输出格式（严格按以下JSON）：
+{
+  "consensus": ["共识点1", "共识点2"],
+  "divergence": [{"issue": "分歧问题", "views": {"角色1": "观点", "角色2": "观点"}}],
+  "unique": [{"agent": "角色名", "insight": "独家洞察"}],
+  "diagnosis_report": "结构化诊断报告，包含以上分析和建议"
+}"""
+    
+    user_prompt = f"""分析以下{len(all_speeches)}位专家的发言：
+
+{speeches_text}
+
+主题：{topic}
+
+请严格按JSON格式输出分析结果："""
+    
+    try:
+        result = await call_llm(system_prompt, user_prompt, max_tokens=500, agent_id="zhihuishi")
+        
+        if result:
+            import json
+            import re
+            # 移除 markdown 代码块
+            cleaned = re.sub(r'^```json\s*', '', result.strip())
+            cleaned = re.sub(r'\s*```$', '', cleaned)
+            cleaned = cleaned.strip()
+            
+            start = cleaned.find('{')
+            end = cleaned.rfind('}') + 1
+            if start >= 0 and end > start:
+                diagnosis = json.loads(cleaned[start:end])
+                return diagnosis
+    except Exception as e:
+        logger.error(f"共识分歧分析失败: {e}")
+    
+    return {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
+
+
 # ==================== 工具函数 ====================
 
 def _compress_round_discussion(speeches: list) -> str:
@@ -311,6 +426,37 @@ def _compress_round_discussion(speeches: list) -> str:
     
     # 用换行连接，每条不超过80字
     return " | ".join(lines[:4])
+
+
+def _build_speeches_context(all_speeches: list, current_agent: str = None) -> str:
+    """
+    构建包含所有 Agent 发言的上下文，让每个 Agent 能看到其他人的发言
+    用于让 Agent 基于自己的视角发表观点，而不是盲目重复
+    """
+    if not all_speeches:
+        return ""
+    
+    # 按角色分组显示
+    role_groups = {}
+    for s in all_speeches:
+        name = s.get("agent_name", "未知")
+        speech = s.get("speech", "")
+        if speech:
+            role_groups[name] = speech
+    
+    if not role_groups:
+        return ""
+    
+    lines = ["\n=== 本轮其他专家的观点 ==="]
+    for name, speech in role_groups.items():
+        # 跳过自己的发言
+        if current_agent and current_agent.lower() in name.lower():
+            continue
+        # 只显示核心观点，避免重复
+        core = speech[:100] + "..." if len(speech) > 100 else speech
+        lines.append(f"【{name}】: {core}")
+    
+    return "\n".join(lines)
 
 
 def clean_speech_text(text: str) -> str:
@@ -366,10 +512,10 @@ def clean_speech_text(text: str) -> str:
     return text
 
 
-def search_related_cards(query: str, limit: int = 10) -> str:
+def search_related_cards(query: str, limit: int = 10) -> tuple:
     """
-    根据会议主题搜索相关知识卡片（使用语义搜索）
-    返回格式化的参考信息字符串
+    根据会议主题搜索相关知识卡片
+    返回: (格式化字符串, 卡片列表)
     """
     try:
         from routes import vector_search
@@ -382,26 +528,35 @@ def search_related_cards(query: str, limit: int = 10) -> str:
             results = vector_search.fallback_keyword_search(query, limit=min(limit, 15))
         
         if not results:
-            return ""
+            return "", []
+        
+        # 卡片列表，用于返回给前端
+        card_list = []
         
         output = []
         output.append("\n\n=== 📚 相关知识库参考 ===")
         for i, r in enumerate(results, 1):
-            content = r.content[:300] + '...' if len(r.content) > 300 else r.content
+            card_id = f"db_{r.id}"
+            card_list.append({
+                "card_id": card_id,
+                "id": r.id,
+                "title": r.title,
+                "card_type": r.card_type,
+                "content": r.content[:200] if r.content else "",
+                "similarity": r.score
+            })
+            content = r.content[:150] + '...' if len(r.content) > 150 else r.content
             output.append(f"【{i}】{r.title} (相似度: {r.score:.2f})")
-            output.append(f"    类型: {r.card_type}")
+            output.append(f"    📎 查看: http://localhost:3000/cards/{card_id}")
             if content:
-                output.append(f"    内容: {content}")
+                output.append(f"    摘要: {content}")
             output.append("")
         
-        return "\n".join(output)
+        return "\n".join(output), card_list
         
     except Exception as e:
         logger.error(f"搜索失败: {e}")
-        return ""
-        
-        return "\n".join(results)
-    except Exception as e:
+        return "", []
         logger.warning(f"搜索知识库失败: {e}")
         return ""
 
@@ -748,6 +903,128 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     return ""
 
 
+# ==================== 讨论模式 ====================
+DISCUSSION_MODES = {
+    "free": {
+        "name": "自由讨论",
+        "description": "各Agent自由发表观点，没有固定流程",
+        "themes": [
+            "问题分析与信息收集",
+            "方案讨论与风险评估",
+            "决策制定与行动计划",
+            "深度论证与补充",
+            "最终确认与总结"
+        ]
+    },
+    "procon": {
+        "name": "正反辩论",
+        "description": "支持方vs反对方进行辩论",
+        "themes": [
+            "正方观点陈述",
+            "反方观点陈述",
+            "正方反驳",
+            "反方反驳",
+            "最终投票决策"
+        ],
+        "roles": ["pro", "con"]  # pro=支持, con=反对
+    },
+    "proscons": {
+        "name": "利弊分析",
+        "description": "分析议题的优点和缺点",
+        "themes": [
+            "优势分析",
+            "劣势分析",
+            "机会与威胁",
+            "综合评估",
+            "建议结论"
+        ],
+        "focus": ["advantage", "disadvantage", "opportunity", "threat", "summary"]
+    },
+    "expert": {
+        "name": "专家会诊",
+        "description": "不同专业角度分析",
+        "themes": [
+            "技术角度分析",
+            "业务角度分析",
+            "财务角度分析",
+            "风险角度分析",
+            "综合建议"
+        ],
+        "focus": ["technical", "business", "financial", "risk", "summary"]
+    }
+}
+
+
+def _get_mode_themes(mode: str, round_num: int, total_rounds: int) -> tuple:
+    """获取指定模式的讨论主题和焦点"""
+    if mode not in DISCUSSION_MODES:
+        mode = "free"
+    
+    mode_info = DISCUSSION_MODES[mode]
+    themes = mode_info.get("themes", ["讨论"])
+    
+    theme = themes[min(round_num - 1, len(themes) - 1)]
+    focus = mode_info.get("focus", [None])
+    round_focus = focus[min(round_num - 1, len(focus) - 1)] if focus else None
+    
+    return theme, round_focus
+
+
+def _build_agent_prompt(agent_info: dict, request_topic: str, context: str, 
+                   mode: str, round_num: int, theme: str, round_focus: str,
+                   all_speeches: list, compressed_summary: str) -> str:
+    """根据讨论模式构建Agent的Prompt"""
+    
+    # 通用的上下文
+    context_parts = [f"会议主题：{request_topic}"]
+    if context:
+        context_parts.append(f"背景信息：{context}")
+    context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
+    
+    if compressed_summary:
+        context_parts.append(f"\n--- 本轮讨论摘要（通政司整理）---")
+        context_parts.append(compressed_summary)
+        context_parts.append("--- 摘要结束 ---\n")
+    
+    # 添加模式特定的引导
+    if mode == "procon":
+        # 正反辩论模式
+        if round_num % 2 == 1:
+            context_parts.append("请从【支持方】角度分析，说明赞成的理由和优势。")
+        else:
+            context_parts.append("请从【反对方】角度分析，说明反对的理由和风险。")
+    elif mode == "proscons":
+        # 利弊分析模式
+        if round_focus == "advantage":
+            context_parts.append("请分析该议题的【优势/优点】，列出具体好处。")
+        elif round_focus == "disadvantage":
+            context_parts.append("请分析该议题的【劣势/缺点】，列出潜在问题。")
+        elif round_focus == "opportunity":
+            context_parts.append("请分析该议题的【机会】，列出可能的发展机遇。")
+        elif round_focus == "threat":
+            context_parts.append("请分析该议题的【威胁】，列出潜在风险。")
+        elif round_focus == "summary":
+            context_parts.append("请基于以上分析，给出【综合结论和建议】。")
+    elif mode == "expert":
+        # 专家会诊模式
+        if round_focus == "technical":
+            context_parts.append("请从【技术角度】分析，说明技术可行性和实现方案。")
+        elif round_focus == "business":
+            context_parts.append("请从【业务角度】分析，说明业务价值和用户需求。")
+        elif round_focus == "financial":
+            context_parts.append("请从【财务角度】分析，说明成本收益和投资回报。")
+        elif round_focus == "risk":
+            context_parts.append("请从【风险角度】分析，说明风险控制和应对措施。")
+        elif round_focus == "summary":
+            context_parts.append("请综合各专家意见，给出【最终建议】。")
+    
+    # 添加角色要求
+    context_parts.append(f"\n请你以「{agent_info['name']}」的身份，针对当前议题发表观点。")
+    context_parts.append("要求：简洁有力，100字以内，只输出观点，不要重复背景。")
+    
+    return "\n".join(context_parts)
+
+
 # ==================== 请求/响应模型 ====================
 class MeetingRequest(BaseModel):
     topic: str = Field(..., description="会议主题")
@@ -755,6 +1032,7 @@ class MeetingRequest(BaseModel):
     card_ids: List[str] = Field(default_factory=list, description="相关卡片ID")
     rounds: int = Field(default=3, ge=1, le=5, description="讨论轮数")
     image_data: Optional[str] = Field(default=None, description="Base64编码的图片数据（可选）")
+    mode: str = Field(default="free", description="讨论模式: free/procon/proscons/expert")
 
 
 class AgentSpeech(BaseModel):
@@ -813,6 +1091,23 @@ async def get_agents():
         )
         for agent_id, info in AGENT_MAPPING.items()
     ]
+
+
+@router.get("/modes")
+async def get_discussion_modes():
+    """获取可用的讨论模式"""
+    return {
+        "modes": [
+            {
+                "id": mode_id,
+                "name": mode_info["name"],
+                "description": mode_info["description"],
+                "themes": mode_info.get("themes", [])
+            }
+            for mode_id, mode_info in DISCUSSION_MODES.items()
+        ],
+        "default": "free"
+    }
 
 
 @router.get("/health")
@@ -1352,6 +1647,15 @@ async def create_meeting_stream(request: MeetingRequest):
         })
         await asyncio.sleep(0.1)
 
+        # 分析共识/分歧/独家观点
+        diagnosis = {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
+        try:
+            diagnosis = await _analyze_consensus_divergence(all_speeches, request.topic)
+            yield _sse_event("diagnosis", diagnosis)
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            logger.error(f"共识分歧分析失败: {e}")
+
         end_time = time.time()
         duration = end_time - start_time
 
@@ -1432,57 +1736,81 @@ async def create_meeting(request: MeetingRequest):
     """
     同步版会议接口（兼容旧前端）。
     内部逻辑与流式版相同，但等待全部完成后一次性返回。
+    支持讨论模式：free/procon/proscons/expert
     """
     start_time = time.time()
     meeting_id = f"meeting_{int(start_time * 1000)}"
-
-    themes = [
-        "问题分析与信息收集",
-        "方案讨论与风险评估",
-        "决策制定与行动计划",
-        "深度论证与补充",
-        "最终确认与总结"
-    ]
-
+    
+    # 使用讨论模式
+    mode = getattr(request, 'mode', 'free')
+    if mode not in DISCUSSION_MODES:
+        mode = "free"
+    mode_info = DISCUSSION_MODES[mode]
+    
     all_speeches = []
     all_rounds = []
-
+    
     for round_num in range(1, request.rounds + 1):
-        theme = themes[min(round_num - 1, len(themes) - 1)]
+        theme, round_focus = _get_mode_themes(mode, round_num, request.rounds)
+        # 记录本轮引用的卡片
+        round_cards = []
         round_speeches = []
-
+        
         for agent_id, agent_info in AGENT_MAPPING.items():
-            context_parts = [f"会议主题：{request.topic}"]
-            if request.context:
-                context_parts.append(f"背景信息：{request.context}")
-            context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
-
-            # 通政司每轮压缩讨论要点，其他agent只看压缩后的摘要
-            if all_speeches:
-                # 通政司发言后生成摘要，其他agent使用
-                compressed_summary = _compress_round_discussion(all_speeches)
-                if compressed_summary:
-                    context_parts.append(f"\n--- 本轮讨论摘要（通政司整理）---")
-                    context_parts.append(compressed_summary)
-                    context_parts.append("--- 摘要结束 ---\n")
-
             # 密卷房：自动搜索知识库
             card_reference = ""
+            cards_referenced = []
             if agent_id == "mijuanfang":
                 search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                card_reference = search_related_cards(search_query, limit=5)
-                if card_reference:
-                    context_parts.append(card_reference)
-
-            context_parts.append(f"请你以「{agent_info['name']}」的身份，针对当前议题发表你的观点。")
-
-            user_prompt = "\n".join(context_parts)
-            speech_content = await call_llm(agent_info["system_prompt"], user_prompt)
+                result = search_related_cards(search_query, limit=5)
+                if isinstance(result, tuple):
+                    card_reference, cards_referenced = result
+                else:
+                    card_reference = result
+                round_cards.extend(cards_referenced)
+            
+            # 通政司每轮压缩讨论要点
+            compressed_summary = ""
+            if all_speeches and agent_id != "tongzhengsi":
+                compressed_summary = _compress_round_discussion(all_speeches)
+            
+            # 添加其他 Agent 的发言上下文，让每个 Agent 能看到其他人的观点
+            speeches_context = ""
+            if all_speeches and agent_id != "tongzhengsi":
+                speeches_context = _build_speeches_context(all_speeches, agent_id)
+            
+            # 构建Prompt
+            context_parts = _build_agent_prompt(
+                agent_info, 
+                request.topic, 
+                request.context,
+                mode,
+                round_num,
+                theme,
+                round_focus,
+                all_speeches,
+                compressed_summary
+            )
+            
+            if speeches_context:
+                context_parts.append(speeches_context)
+            
+            if card_reference and agent_id == "mijuanfang":
+                context_parts.append(f"\n{card_reference}")
+            
+            speech_content = await call_llm(agent_info["system_prompt"], context_parts)
 
             if not speech_content:
                 speech_content = _generate_role_based_fallback(
                     agent_info, request.topic, theme, round_num, round_speeches
                 )
+
+            # 提取四色卡片（异步，不阻塞会议流程）
+            extracted_cards = []
+            try:
+                extracted_cards = await _extract_color_cards(agent_id, agent_info["name"], speech_content, request.topic)
+            except Exception as e:
+                logger.error(f"提取四色卡片失败: {e}")
 
             speech_obj = AgentSpeech(
                 agent_id=agent_id,
@@ -1492,7 +1820,7 @@ async def create_meeting(request: MeetingRequest):
                 system_prompt=agent_info["system_prompt"],
                 speech=speech_content,
                 timestamp=datetime.now().isoformat(),
-                cards_referenced=[]
+                cards_referenced=[c.get("card_id", "") for c in cards_referenced] if cards_referenced else []
             )
             all_speeches.append({
                 "agent_name": agent_info["name"],
@@ -1508,26 +1836,91 @@ async def create_meeting(request: MeetingRequest):
             speeches=round_speeches
         ))
 
-    # 生成决策
-    decision_prompt_parts = [
-        f"会议主题：{request.topic}",
-        f"经过{request.rounds}轮讨论，以下是所有Agent的发言记录：", ""
-    ]
-    for s in all_speeches:
-        decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
-    decision_prompt_parts.extend([
-        "", "请你作为总指挥，综合以上所有讨论，生成：",
-        "1. 会议总结（2-3句话概括讨论要点）",
-        "2. 最终决策（明确的决策结论）",
-        "3. 行动项（3-5个具体的下一步行动，每项一行，用序号标注）",
-        "请用以下格式输出：", "【总结】...", "【决策】...", "【行动项】", "1. ..."
-    ])
-
-    decision_system = "你是八府巡按的总指挥使，负责综合各方意见做出最终裁决。请严格按照要求的格式输出。"
+    # 生成决策/总结 - 根据模式不同
+    mode = getattr(request, 'mode', 'free')
+    
+    if mode == "procon":
+        # 正反辩论模式 - 投票决策
+        decision_prompt_parts = [
+            f"会议主题：{request.topic}",
+            f"【正方观点】", "",
+        ]
+        for s in all_speeches[:4]:
+            decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
+        decision_prompt_parts.extend([
+            "", "【反方观点】", "",
+        ])
+        for s in all_speeches[4:]:
+            decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
+        decision_prompt_parts.extend([
+            "", "请分析以上正反双方观点，给出：",
+            "1. 投票结果建议",
+            "2. 胜负分析",
+            "3. 最终建议",
+            "请用以下格式输出：", "【投票结果】正方:X票 反方:Y票", "【分析】...", "【建议】..."
+        ])
+        decision_system = "你是辩论裁判，负责分析正反双方观点并给出裁决。请严格按照格式输出。"
+    elif mode == "proscons":
+        # 利弊分析模式
+        decision_prompt_parts = [
+            f"会议主题：{request.topic}",
+            f"经过{request.rounds}轮利弊分析讨论，以下是所有观点：", ""
+        ]
+        for s in all_speeches:
+            decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
+        decision_prompt_parts.extend([
+            "", "请综合以上利弊分析，生成：",
+            "1. 优势总结（2-3点）",
+            "2. 劣势总结（2-3点）",
+            "3. 最终建议（是否推荐实施）",
+            "请用以下格式输出：", "【优势】1. ... 2. ... 3. ...", "【劣势】1. ... 2. ... 3. ...", "【建议】..."
+        ])
+        decision_system = "你是决策顾问，负责综合利弊分析给出建议。请严格按照格式输出。"
+    elif mode == "expert":
+        # 专家会诊模式
+        decision_prompt_parts = [
+            f"会议主题：{request.topic}",
+            f"经过{request.rounds}轮专家会诊，以下是各专家意见：", ""
+        ]
+        for s in all_speeches:
+            decision_prompt_parts.append(f"【{s['agent_name']}】（{s['agent_title']}）：{s['speech']}")
+        decision_prompt_parts.extend([
+            "", "请综合各专家意见，生成：",
+            "1. 技术可行性评估",
+            "2. 业务价值评估",
+            "3. 风险评估",
+            "4. 综合建议",
+            "请用以下格式输出：", "【技术】...", "【业务】...", "【风险】...", "【建议】..."
+        ])
+        decision_system = "你是首席专家，负责综合各专业意见给出会诊结论。请严格按照格式输出。"
+    else:
+        # 自由讨论模式 - 默认
+        decision_prompt_parts = [
+            f"会议主题：{request.topic}",
+            f"经过{request.rounds}轮讨论，以下是所有Agent的发言记录：", ""
+        ]
+        for s in all_speeches:
+            decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
+        decision_prompt_parts.extend([
+            "", "请你作为总指挥，综合以上所有讨论，生成：",
+            "1. 会议总结（2-3句话概括讨论要点）",
+            "2. 最终决策（明确的决策结论）",
+            "3. 行动项（3-5个具体的下一步行动，每项一行，用序号标注）",
+            "请用以下格式输出：", "【总结】...", "【决策】...", "【行动项】", "1. ..."
+        ])
+        decision_system = "你是八府巡按的总指挥使，负责综合各方意见做出最终裁决。请严格按照要求的格式输出。"
+    
     decision_text = await call_llm(decision_system, "\n".join(decision_prompt_parts))
 
     if not decision_text:
         decision_text = _generate_fallback_decision(request.topic, all_speeches)
+
+    # 分析共识/分歧/独家观点（异步）
+    diagnosis = {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
+    try:
+        diagnosis = await _analyze_consensus_divergence(all_speeches, request.topic)
+    except Exception as e:
+        logger.error(f"共识分歧分析失败: {e}")
 
     summary, decision, action_items = _parse_decision(decision_text, request.topic)
 
@@ -1589,7 +1982,8 @@ async def create_meeting(request: MeetingRequest):
         participants=[info["name"] for info in AGENT_MAPPING.values()],
         start_time=datetime.fromtimestamp(start_time).isoformat(),
         end_time=datetime.fromtimestamp(end_time).isoformat(),
-        duration_seconds=round(end_time - start_time, 2)
+        duration_seconds=round(end_time - start_time, 2),
+        diagnosis=diagnosis
     )
 
 
@@ -1704,8 +2098,8 @@ def _auto_create_cards_from_meeting(db, meeting_id: str, topic: str, summary: st
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['title'],
                     data['content'],
@@ -1713,7 +2107,8 @@ def _auto_create_cards_from_meeting(db, meeting_id: str, topic: str, summary: st
                     '会议生成',
                     project_id,
                     json.dumps(['会议', '自动生成']),
-                    json.dumps([])
+                    json.dumps([]),
+                    'pending'
                 ))
                 card_id = cursor.lastrowid
                 conn.commit()

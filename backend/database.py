@@ -288,6 +288,14 @@ class DatabaseManager:
             except:
                 pass
             try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN explore_status TEXT DEFAULT 'pending'")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN explore_notes TEXT")
+            except:
+                pass
+            try:
                 cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN embedding TEXT")
             except:
                 pass
@@ -381,7 +389,34 @@ class DatabaseManager:
                 )
             """)
 
-            # 14. 日历事件表
+            # 14. 源文件表 - 存储用户导入的原始文件
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS source_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_file_id TEXT NOT NULL UNIQUE,  -- 唯一标识符
+                    original_name TEXT NOT NULL,  -- 原始文件名
+                    stored_path TEXT NOT NULL,   -- 存储路径
+                    file_type TEXT NOT NULL,     -- 文件类型 (pdf/docx/txt等)
+                    file_size INTEGER,           -- 文件大小(字节)
+                    content_hash TEXT,            -- 内容哈希，用于去重
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 14.1 卡片-源文件关联表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS card_source_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_file_id TEXT NOT NULL,
+                    card_id INTEGER NOT NULL,
+                    location_in_source TEXT,  -- 来源位置 (如: "第3段" 或 "page:2,line:10")
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+                    UNIQUE(source_file_id, card_id)
+                )
+            """)
+
+            # 15. 日历事件表
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS calendar_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1049,21 +1084,20 @@ class DatabaseManager:
             return dict(cursor.fetchone())
 
     # ========== GTD任务管理 ==========
-    def get_gtd_tasks(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """获取GTD任务"""
+    def get_gtd_tasks(self, category: Optional[str] = None, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取GTD任务，可按分类或来源类型过滤"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            query = "SELECT * FROM gtd_tasks WHERE 1=1"
+            params = []
             if category:
-                cursor.execute("""
-                    SELECT * FROM gtd_tasks
-                    WHERE category = ?
-                    ORDER BY created_at DESC
-                """, (category,))
-            else:
-                cursor.execute("""
-                    SELECT * FROM gtd_tasks
-                    ORDER BY created_at DESC
-                """)
+                query += " AND category = ?"
+                params.append(category)
+            if source_type:
+                query += " AND source_type = ?"
+                params.append(source_type)
+            query += " ORDER BY created_at DESC"
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
@@ -1079,6 +1113,18 @@ class DatabaseManager:
             conn.commit()
             cursor.execute("SELECT * FROM gtd_tasks WHERE id = ?", (task_id,))
             return dict(cursor.fetchone())
+    
+    def check_task_exists(self, title: str, source_type: Optional[str] = None) -> bool:
+        """检查任务是否已存在（优化版）"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT COUNT(*) FROM gtd_tasks WHERE title = ?"
+            params = [title]
+            if source_type:
+                query += " AND source_type = ?"
+                params.append(source_type)
+            cursor.execute(query, params)
+            return cursor.fetchone()[0] > 0
 
     def update_gtd_task(self, task_id: int, **kwargs) -> bool:
         """更新GTD任务"""

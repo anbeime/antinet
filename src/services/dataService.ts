@@ -555,3 +555,47 @@ export const researchStatsService = {
     return response.json();
   },
 };
+
+// ========== 源文件溯源服务 ==========
+const KNOWLEDGE_API_BASE = 'http://localhost:8000/api/knowledge';
+
+export interface SourceFileInfo {
+  has_source: boolean;
+  source_file_id?: string;
+  original_name?: string;
+  stored_path?: string;
+  file_type?: string;
+  file_size?: number;
+  created_at?: string;
+  location_in_source?: string;
+  message?: string;
+}
+
+export interface SourceFileCards {
+  source_file_id: string;
+  original_name: string;
+  stored_path: string;
+  cards: any[];
+  total: number;
+}
+
+export const sourceFileService = {
+  // 获取卡片关联的源文件信息
+  getCardSourceFile: async (cardId: number): Promise<SourceFileInfo> => {
+    const response = await fetch(`${KNOWLEDGE_API_BASE}/cards/${cardId}/source-file`);
+    if (!response.ok) throw new Error('获取源文件信息失败');
+    return response.json();
+  },
+
+  // 获取源文件生成的所有卡片
+  getSourceFileCards: async (sourceFileId: string): Promise<SourceFileCards> => {
+    const response = await fetch(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/cards`);
+    if (!response.ok) throw new Error('获取源文件卡片失败');
+    return response.json();
+  },
+
+  // 下载源文件
+  downloadSourceFile: (sourceFileId: string) => {
+    window.open(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/download`, '_blank');
+  },
+};
