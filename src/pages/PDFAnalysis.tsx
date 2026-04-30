@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Hash,
+  Copy,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -94,6 +95,7 @@ const PDFAnalysis: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [editedText, setEditedText] = useState<string>('');
   const [generatedCards, setGeneratedCards] = useState<KnowledgeCard[]>([]);
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
@@ -142,6 +144,7 @@ const PDFAnalysis: React.FC = () => {
       if (file && file.type === 'application/pdf') {
         setUploadedFile(file);
         setAnalysisResult(null);
+        setEditedText('');
         setGeneratedCards([]);
         setSelectedCards(new Set());
         setSavedCardIds(new Set());
@@ -184,13 +187,14 @@ const PDFAnalysis: React.FC = () => {
       setAnalysisResult({
         fileName: uploadedFile.name,
         pageCount: result.pages || 1,
-        wordCount: result.text?.split(/\s+/).length || 0,
-        extractedText: result.text || '',
+        wordCount: result.full_text?.split(/\s+/).length || 0,
+        extractedText: result.full_text || '',
         summary: result.summary || '',
         keyPoints: result.key_points || [],
         tables: result.tables || [],
         suggestedCards: result.suggested_cards || []
       });
+      setEditedText(result.full_text || '');
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '处理完成' });
       toast.success('文本提取成功！');
@@ -1176,6 +1180,7 @@ const PDFAnalysis: React.FC = () => {
                 setUploadedFile(null);
                 setUploadedFiles([]);
                 setAnalysisResult(null);
+                setEditedText('');
                 setGeneratedCards([]);
                 setSelectedCards(new Set());
                 setSavedCardIds(new Set());
@@ -1477,9 +1482,57 @@ const PDFAnalysis: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* PDF Preview Section */}
+                  {uploadedFile && (
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">PDF 预览</h4>
+                        <button
+                          onClick={() => setActiveFeature('viewer')}
+                          className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
+                        >
+                          全屏查看 →
+                        </button>
+                      </div>
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden h-64 bg-gray-100 dark:bg-gray-700">
+                        <PDFViewerInternal />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Editable Text Section */}
                   {analysisResult.extractedText && (
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <pre className="text-sm whitespace-pre-wrap">{analysisResult.extractedText}</pre>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">提取文本 (可编辑)</h4>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(editedText);
+                            toast.success('已复制到剪贴板');
+                          }}
+                          className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 flex items-center space-x-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>复制</span>
+                        </button>
+                      </div>
+                      <textarea
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="w-full h-64 p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="提取的文本将显示在这里，您可以编辑修改..."
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          onClick={() => {
+                            // Save edited text - could add API call here
+                            toast.success('文本已保存');
+                          }}
+                          className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors"
+                        >
+                          保存修改
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

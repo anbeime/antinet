@@ -130,7 +130,7 @@ const SkillCenterPanel: React.FC = () => {
         <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-6 border border-green-200 dark:border-green-800">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">已启用</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">启用</p>
               <p className="text-3xl font-bold text-green-600 dark:text-green-400">
                 {stats?.enabled_skills || 0}
               </p>
@@ -206,7 +206,7 @@ const SkillCenterPanel: React.FC = () => {
                       <h3 className="font-bold text-lg">{skill.name}</h3>
                       {skill.enabled && (
                         <span className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded">
-                          已启用
+                          启用
                         </span>
                       )}
                     </div>

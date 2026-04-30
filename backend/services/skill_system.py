@@ -165,6 +165,14 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册报表自动化技能: {e}")
         
+        # 四色卡片知识库技能
+        try:
+            from skills.four_color_card_skill import FourColorCardSkill
+            self.register(FourColorCardSkill())
+            logger.info("[SkillRegistry] 四色卡片知识库技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册四色卡片知识库技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())

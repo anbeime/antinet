@@ -415,6 +415,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入增强版聊天路由: {e}")
 
+# 注册自进化聊天路由（集成8-Agent、Memory、四色卡片）
+try:
+    from routes.evolving_chat_routes import router as evolving_chat_router
+    app.include_router(evolving_chat_router)  # 自进化聊天路由
+    logger.info("[OK] 自进化聊天路由已注册 (集成8-Agent+Memory+四色卡片)")
+except Exception as e:
+    logger.warning(f"无法导入自进化聊天路由: {e}")
+
 # 注册对话上下文链路由
 try:
     from routes.chat_context_routes import router as context_router

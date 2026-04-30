@@ -422,3 +422,101 @@ async def get_skill_statistics():
     except Exception as e:
         logger.error(f"获取技能统计失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 四色卡片知识库 API ====================
+
+@router.post("/four-color-cards/extract")
+async def extract_four_color_cards(
+    text: str,
+    source: str = "",
+    build_relations: bool = True
+):
+    """
+    从文本中提取四色卡片
+    
+    参数：
+        text: 待处理的文本内容
+        source: 信息来源
+        build_relations: 是否构建关联关系
+    """
+    try:
+        from skills.four_color_card_skill import get_four_color_card_skill
+        
+        skill = get_four_color_card_skill()
+        result = await skill.execute(
+            text=text,
+            source=source,
+            build_relations=build_relations
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"四色卡片提取失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/four-color-cards/stats")
+async def get_four_color_cards_stats():
+    """获取四色卡片存储统计"""
+    try:
+        from skills.four_color_card_skill import get_four_color_card_skill
+        
+        skill = get_four_color_card_skill()
+        return skill.get_storage_stats()
+    except Exception as e:
+        logger.error(f"获取四色卡片统计失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/four-color-cards/export")
+async def export_four_color_cards(card_type: Optional[str] = None):
+    """
+    导出四色卡片
+    
+    参数：
+        card_type: 过滤卡片类型 (blue/green/yellow/red)
+    """
+    try:
+        from skills.four_color_card_skill import get_four_color_card_skill
+        
+        skill = get_four_color_card_skill()
+        cards = skill.export_cards(card_type)
+        
+        return {
+            "total": len(cards),
+            "cards": cards
+        }
+    except Exception as e:
+        logger.error(f"导出四色卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/four-color-cards/system-prompt")
+async def get_four_color_cards_system_prompt():
+    """获取四色卡片系统的提示词（供Hermes使用）"""
+    try:
+        from skills.four_color_card_skill import get_four_color_card_skill
+        
+        skill = get_four_color_card_skill()
+        return {
+            "system_prompt": skill.get_system_prompt()
+        }
+    except Exception as e:
+        logger.error(f"获取四色卡片提示词失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/four-color-cards/clear")
+async def clear_four_color_cards():
+    """清空四色卡片存储"""
+    try:
+        from skills.four_color_card_skill import get_four_color_card_skill
+        
+        skill = get_four_color_card_skill()
+        skill.clear_storage()
+        
+        return {"status": "success", "message": "四色卡片存储已清空"}
+    except Exception as e:
+        logger.error(f"清空四色卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

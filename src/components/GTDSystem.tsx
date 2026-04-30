@@ -443,24 +443,51 @@ const GTDSystem: React.FC = () => {
       {/* 头部导航 */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         {/* 分类标签 */}
-<div className="flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-750 border-b">
+        <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 via-green-50 to-yellow-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => (
-              <button 
-                key={category}
-                onClick={() => { setActiveCategory(category); setViewMode('list'); }}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  activeCategory === category && viewMode === 'list'
-                    ? 'bg-blue-500 text-white shadow-sm' 
-                    : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
-                }`}
-              >
-                {category === 'inbox' ? '收集箱' : 
-                 category === 'today' ? '等待处理' :
-                 category === 'later' ? '将来可能' :
-                 category === 'archive' ? '归档资料' : '专题研究'}
-              </button>
-            ))}
+            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => {
+              const isActive = activeCategory === category && viewMode === 'list';
+              const categoryColors = {
+                inbox: { active: 'bg-blue-600 text-white shadow-blue-200 dark:shadow-blue-900', inactive: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
+                today: { active: 'bg-red-600 text-white shadow-red-200 dark:shadow-red-900', inactive: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700' },
+                later: { active: 'bg-yellow-500 text-white shadow-yellow-200 dark:shadow-yellow-900', inactive: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700' },
+                archive: { active: 'bg-gray-600 text-white shadow-gray-200 dark:shadow-gray-900', inactive: 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600' },
+                projects: { active: 'bg-green-600 text-white shadow-green-200 dark:shadow-green-900', inactive: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
+              };
+              const icons = {
+                inbox: '📥',
+                today: '⏰',
+                later: '📅',
+                archive: '📁',
+                projects: '📚',
+              };
+              const labels = {
+                inbox: '收集箱',
+                today: '等待处理',
+                later: '将来可能',
+                archive: '归档资料',
+                projects: '专题研究',
+              };
+              return (
+                <button
+                  key={category}
+                  onClick={() => { setActiveCategory(category); setViewMode('list'); }}
+                  className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 border-2 flex items-center gap-2 ${
+                    isActive
+                      ? `${categoryColors[category].active} shadow-lg transform scale-105`
+                      : `${categoryColors[category].inactive} hover:shadow-md`
+                  }`}
+                >
+                  <span className="text-base">{icons[category]}</span>
+                  <span>{labels[category]}</span>
+                  {isActive && (
+                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
+                      {tasks[category].length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         
         </div>
@@ -597,172 +624,83 @@ const GTDSystem: React.FC = () => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-3">
                 {paginatedTasks.map(task => (
-                  <div
+                  <motion.div
                     key={task.id}
-                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                    whileHover={{ y: -5 }}
+                    className={`border rounded-xl overflow-hidden ${
+                      task.priority === 'high' ? 'border-red-200 dark:border-red-800' :
+                      task.priority === 'medium' ? 'border-amber-200 dark:border-amber-800' :
+                      'border-green-200 dark:border-green-800'
+                    } ${selectedTaskIds.has(task.id!) ? 'ring-2 ring-blue-500' : ''}`}
                   >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedTaskIds.has(task.id!)}
-                      onChange={(e) => {
-                        const newSet = new Set(selectedTaskIds);
-                        if (e.target.checked) {
-                          newSet.add(task.id!);
-                        } else {
-                          newSet.delete(task.id!);
-                        }
-                        setSelectedTaskIds(newSet);
-                      }}
-                      className="mt-1 w-4 h-4 rounded border-gray-300"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        <h3 
-                          className="font-medium text-gray-900 dark:text-white cursor-pointer hover:underline"
-                          onClick={() => handleEditTask(task)}
-                        >{task.title}</h3>
-                        <span className={`w-2 h-2 rounded-full ${getPriorityStyle(task.priority)}`}></span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          task.priority === 'high' ? 'bg-red-100 text-red-800' :
-                          task.priority === 'medium' ? 'bg-amber-100 text-amber-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
-                          {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 whitespace-pre-wrap line-clamp-2">{task.description || '无描述'}</p>
-                      {/* 闭环三：来源卡片/会议链接 */}
-                      {task.source_type && task.source_id && (
-                        <div className="mt-1 flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              if (task.source_type === 'card') {
-                                // 跳转到主页并高亮该卡片
-                                window.location.hash = `/?highlightCard=${task.source_id}`;
-                              } else if (task.source_type === 'meeting') {
-                                // 查看会议详情
-                                window.location.hash = `/virtual-office-meeting?meetingId=${task.source_id}`;
-                              } else if (task.source_type === 'project') {
-                                // 跳转到专题
-                                window.location.hash = `/?projectId=${task.source_id}`;
+                    <div className={`p-3 border-b ${
+                      task.priority === 'high' ? 'bg-red-50 dark:bg-red-900/20' :
+                      task.priority === 'medium' ? 'bg-amber-50 dark:bg-amber-900/20' :
+                      'bg-green-50 dark:bg-green-900/20'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedTaskIds.has(task.id!)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedTaskIds);
+                              if (e.target.checked) {
+                                newSet.add(task.id!);
+                              } else {
+                                newSet.delete(task.id!);
                               }
+                              setSelectedTaskIds(newSet);
                             }}
-                            className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
-                          >
-                            <FileText size={10} />
-                            {task.source_type === 'card' ? '来源卡片' : task.source_type === 'meeting' ? '来源会议' : '来源专题'}
-                            <ExternalLink size={10} />
-                          </button>
+                            className="mr-2 w-4 h-4 rounded"
+                          />
+                          <div className={`w-2 h-2 rounded-full mr-2 ${getPriorityStyle(task.priority)}`}></div>
+                          <h3
+                            className="font-semibold truncate cursor-pointer hover:text-blue-600"
+                            onClick={() => handleEditTask(task)}
+                          >{task.title}</h3>
                         </div>
-                      )}
-                      <div className="mt-2 flex items-center text-xs text-gray-500 dark:text-gray-400 space-x-4">
-                        <span>创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
-                        {task.due_date && (
-                          <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Calendar size={10} />
-                            截止: {new Date(task.due_date).toLocaleDateString('zh-CN')}
-                          </span>
-                        )}
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      onClick={(e) => handleCopyTask(task, e as any)}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="复制内容"
-                    >
-                      <Copy size={16} />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setZoomedTask(task); }}
-                      className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                      title="放大查看"
-                    >
-                      <ZoomIn size={16} />
-                    </button>
-                    {task.category !== 'archive' && (
-                      <button
-                        onClick={() => handleArchiveTask(task.id!)}
-                        className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                        title="完成并归档"
-                      >
-                        <Check size={18} />
-                      </button>
-                    )}
-                    <div className="relative">
-                      <button 
-                        onClick={() => setShowActionMenu(showActionMenu === task.id ? null : task.id!)}
-                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <MoreHorizontal size={18} />
-                      </button>
-                      
-                      {showActionMenu === task.id && (
-                        <div className="absolute right-0 top-10 w-44 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50 py-1">
-                          <button 
-                            onClick={() => { handleEditTask(task); setShowActionMenu(null); }}
-                            className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                    <div className="p-3 bg-white dark:bg-gray-800">
+                      <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 mb-2">{task.description || '无描述'}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">{task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={(e) => handleCopyTask(task, e as any)}
+                            className="text-gray-500 hover:text-blue-600 p-1"
+                            title="复制内容"
                           >
-                            <Edit size={14} />
-                            <span>编辑</span>
+                            <Copy size={14} />
                           </button>
-                          {task.category !== 'inbox' && (
-                            <button 
-                              onClick={() => { handleMoveTask(task.id!, 'inbox'); setShowActionMenu(null); }}
-                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                            >
-                              <ArrowRight size={14} />
-                              <span>移到收集箱</span>
-                            </button>
-                          )}
-                          {task.category !== 'today' && (
-                            <button 
-                              onClick={() => { handleMoveTask(task.id!, 'today'); setShowActionMenu(null); }}
-                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                            >
-                              <ArrowRight size={14} />
-                              <span>移到等待处理</span>
-                            </button>
-                          )}
-                          {task.category !== 'later' && (
-                            <button 
-                              onClick={() => { handleMoveTask(task.id!, 'later'); setShowActionMenu(null); }}
-                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                            >
-                              <ArrowRight size={14} />
-                              <span>移到将来可能</span>
-                            </button>
-                          )}
-                          {task.category !== 'archive' && (
-                            <button 
-                              onClick={() => { handleMoveTask(task.id!, 'archive'); setShowActionMenu(null); }}
-                              className="w-full px-4 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
-                            >
-                              <Archive size={14} />
-                              <span>归档</span>
-                            </button>
-                          )}
-                          <div className="border-t border-gray-200 dark:border-gray-700 my-1"></div>
-                          <button 
-                            onClick={() => handleDeleteTask(task.id!)}
-                            className="w-full px-4 py-2 text-left hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 flex items-center gap-2 text-sm"
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setZoomedTask(task); }}
+                            className="text-gray-500 hover:text-purple-600 p-1"
+                            title="放大查看"
                           >
-                            <Trash2 size={14} />
-                            <span>删除</span>
+                            <ZoomIn size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleEditTask(task)}
+                            className="text-blue-600 text-sm hover:underline"
+                          >
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTask(task.id!)}
+                            className="text-red-500 text-sm hover:underline ml-2"
+                          >
+                            删除
                           </button>
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  </motion.div>
+                ))}
               </div>
-            ))}
-          </div>
           
           {/* 分页 */}
           {totalPages > 1 && (
@@ -1054,7 +992,7 @@ const GTDSystem: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-6">
               {/* 任务基本信息 */}
               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mb-6">
-                <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                   <div className="flex items-center">
                     <span className={`text-xs px-2 py-1 rounded-full text-white ${
                       editingTask.priority === 'high' ? 'bg-red-500' :
