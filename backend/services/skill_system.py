@@ -132,6 +132,13 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册卡片过滤技能: {e}")
         
+        # 数据分析技能
+        try:
+            self.register(DataAnalysisSkill())
+            logger.info("[SkillRegistry] 数据分析技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册数据分析技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())
@@ -1511,6 +1518,103 @@ class ResultAggregationSkill(Skill):
                 "failed": len([r for r in results if r.get("status") == "failed"])
             }
         }
+
+
+# 数据分析技能
+class DataAnalysisSkill(Skill):
+    """
+    数据分析技能
+    
+    整合 8-Agent 系统进行智能数据分析，生成四色卡片，并导出 Excel 报告。
+    
+    功能流程：
+    1. 从文件/数据库加载数据
+    2. 通过 8-Agent 系统进行智能分析
+    3. 生成四色卡片（事实/解释/风险/行动）
+    4. 导出为专业 Excel 报告
+    """
+    
+    def __init__(self):
+        super().__init__(
+            name="data_analysis",
+            description="数据分析：加载数据、8-Agent智能分析、生成四色卡片、导出Excel报告",
+            category="数据处理",
+            agent_name="锦衣卫"
+        )
+        self._exporter = None
+    
+    def _get_exporter(self):
+        """获取或创建 DataAnalysisExporter 实例"""
+        if self._exporter is None:
+            try:
+                from skills.xlsx.data_analysis_integration import DataAnalysisExporter
+                from agents import OrchestratorAgent, MemoryAgent
+                from database import DatabaseManager
+                
+                db_manager = DatabaseManager()
+                orchestrator = OrchestratorAgent()
+                memory = MemoryAgent()
+                
+                self._exporter = DataAnalysisExporter(
+                    db_manager=db_manager,
+                    orchestrator=orchestrator,
+                    memory=memory
+                )
+                logger.info("[DataAnalysisSkill] DataAnalysisExporter 初始化成功")
+            except Exception as e:
+                logger.error(f"[DataAnalysisSkill] 初始化 DataAnalysisExporter 失败: {e}")
+                raise
+        
+        return self._exporter
+    
+    async def execute(
+        self,
+        data_source: str,
+        query: str,
+        output_path: str = "./data_analysis_output.xlsx",
+        include_charts: bool = True
+    ) -> Dict[str, Any]:
+        """
+        执行数据分析
+        
+        Args:
+            data_source: 数据源路径（.csv, .xlsx, .xls）或数据库表名（db:table_name）
+            query: 用户查询/分析需求
+            output_path: Excel 输出路径
+            include_charts: 是否包含图表
+        
+        Returns:
+            分析结果字典
+        """
+        try:
+            exporter = self._get_exporter()
+            
+            result = await exporter.analyze_and_export(
+                data_source=data_source,
+                query=query,
+                output_path=output_path,
+                include_charts=include_charts
+            )
+            
+            return {
+                "status": "success",
+                "skill": self.name,
+                "data_source": data_source,
+                "query": query,
+                "output_path": output_path,
+                "cards_count": result.get("cards_count", 0),
+                "data_rows": result.get("data_rows", 0),
+                "message": f"数据分析完成，生成 {result.get('cards_count', 0)} 张卡片"
+            }
+            
+        except Exception as e:
+            logger.error(f"[DataAnalysisSkill] 数据分析失败: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "skill": self.name,
+                "error": str(e),
+                "message": f"数据分析失败: {str(e)}"
+            }
 
 
 # 全局技能注册表单例
