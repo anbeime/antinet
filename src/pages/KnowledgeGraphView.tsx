@@ -166,19 +166,33 @@ const displayData = viewMode === 'api' && apiData ? (() => {
       const rawNodes = apiData.nodes || apiData.entities || [];
       const rawLinks = apiData.links || apiData.relations || [];
       
-      // 去重节点
+      // 计算圆形分布的初始位置
+      const centerX = 500;
+      const centerY = 300;
+      const radius = 280;
+      const totalNodes = rawNodes.length || 1;
+      
+      // 去重节点并分配初始位置
+      let nodeIndex = 0;
       const nodeMap = new Map();
       rawNodes.forEach((e: any) => {
         const id = String(e.id);
         if (!nodeMap.has(id)) {
           const typeList = ['blue', 'green', 'yellow', 'red'];
           const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
+          // 圆形分布初始位置
+          const angle = (nodeIndex / totalNodes) * 2 * Math.PI;
+          const x = centerX + radius * Math.cos(angle);
+          const y = centerY + radius * Math.sin(angle);
           nodeMap.set(id, {
             id,
             name: e.title || e.name || `节点${e.id}`,
             category: typeIdx >= 0 ? typeIdx : 0,
-            symbolSize: e.is_current ? 50 : 35
+            symbolSize: e.is_current ? 50 : 35,
+            x,
+            y
           });
+          nodeIndex++;
         }
       });
       
@@ -241,12 +255,13 @@ const displayData = viewMode === 'api' && apiData ? (() => {
           },
           force: {
             repulsion: 2000,
-            gravity: 0.008,
-            edgeLength: [200, 500],
+            gravity: 0.005,
+            edgeLength: [200, 600],
             layoutAnimation: true,
-            alphaDecay: 0.008,
-            alphaMin: 0.00001,
-            initLayout: 'none'
+            alphaDecay: 0.005,
+            alphaMin: 0.000001,
+            initLayout: 'none',
+            friction: 0.9
           },
           draggable: true,
           roam: true,
