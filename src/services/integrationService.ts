@@ -284,7 +284,9 @@ export default { backlinkService, calendarEventService, cardTaskService };
 
 // ============ 源文件服务 ============
 export interface SourceFileInfo {
+  has_source?: boolean;
   source_file_id?: number;
+  original_name?: string;
   file_name?: string;
   file_path?: string;
   paragraph_index?: number;

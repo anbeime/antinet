@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2 } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText } from 'lucide-react';
 import { toast } from 'sonner';
-import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent } from '../services/integrationService';
+import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import { cn } from '@/lib/utils';
 
 // 定义卡片类型
@@ -135,6 +135,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // Tab 切换
   const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks'>('relations');
+
+  // 复制和放大功能
+  const [isZoomed, setIsZoomed] = useState(false);
 
   // 源文件溯源状态
   const [sourceFileInfo, setSourceFileInfo] = useState<SourceFileInfo | null>(null);
@@ -415,6 +418,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     toast('卡片内容已复制到剪贴板', { className: 'bg-green-50 text-green-800' });
   };
 
+  // 复制卡片内容
+  const handleCopy = () => {
+    const copyText = `${card.title}\n\n${card.content}`;
+    navigator.clipboard?.writeText(copyText);
+    toast('已复制卡片标题和内容', { className: 'bg-blue-50 text-blue-800' });
+  };
+
   // 过滤可关联的卡片
   const filterAvailableCards = () => {
     return allCards.filter(availableCard =>
@@ -559,6 +569,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 )}
                 <button
                   className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                  aria-label="复制"
+                  onClick={handleCopy}
+                  title="复制内容"
+                >
+                  <Copy size={18} />
+                </button>
+                <button
+                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                   aria-label="分享"
                   onClick={handleShare}
                 >
@@ -577,6 +595,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   onClick={handleDelete}
                 >
                   <Trash2 size={18} />
+                </button>
+                <button
+                  onClick={() => setIsZoomed(!isZoomed)}
+                  className="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                  aria-label={isZoomed ? '退出放大' : '放大查看'}
+                  title={isZoomed ? '退出放大' : '放大查看'}
+                >
+                  {isZoomed ? <ZoomOut size={18} /> : <ZoomIn size={18} />}
                 </button>
                 <button
                   onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1358,6 +1384,68 @@ className="text-lg select-text"
                   >
                     {creatingEvent ? '创建中...' : '创建日程'}
                   </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* 放大查看模态框 */}
+        {isZoomed && (
+          <div
+            className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-8"
+            onClick={() => setIsZoomed(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* 放大模态框头部 */}
+              <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
+                <div className="flex items-center">
+                  <div className={`${cardTypeMap[card.color].color} w-4 h-4 rounded-full mr-3`}></div>
+                  <h2 className="text-2xl font-bold">{card.title}</h2>
+                  <span className={`ml-3 ${cardTypeMap[card.color].color} text-white text-xs px-2 py-1 rounded-full`}>
+                    {cardTypeMap[card.color].name}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopy}
+                    className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                    title="复制内容"
+                  >
+                    <Copy size={20} />
+                  </button>
+                  <button
+                    onClick={() => setIsZoomed(false)}
+                    className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
+              </div>
+              
+              {/* 放大后的卡片内容 */}
+              <div className="flex-1 overflow-y-auto p-8">
+                <div className={`${cardTypeMap[card.color].bgColor} border ${cardTypeMap[card.color].borderColor} rounded-xl p-8`}>
+                  <div className="text-lg leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
+                    {card.content}
+                  </div>
+                </div>
+                
+                {/* 元信息 */}
+                <div className="mt-6 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center">
+                    <Clock size={14} className="mr-1" />
+                    创建于 {formatDate(card.createdAt)}
+                  </div>
+                  <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full`}>
+                    {card.address}
+                  </div>
                 </div>
               </div>
             </motion.div>

@@ -152,6 +152,146 @@ async def execute_skill(request: SkillExecutionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/html-report")
+async def generate_html_report(
+    data: List[Dict[str, Any]],
+    title: str = "数据分析报告",
+    chart_type: str = "auto",
+    include_table: bool = True
+):
+    """
+    生成 HTML 报告（使用 Chart.js）
+    
+    参数：
+        data: 数据列表
+        title: 报告标题
+        chart_type: 图表类型 (line/bar/pie/doughnut/mixed/auto)
+        include_table: 是否包含数据表格
+    
+    返回：
+        HTML 报告内容
+    """
+    try:
+        from skills.html_report_skill import HtmlReportSkill
+        
+        skill = HtmlReportSkill()
+        result = await skill.execute(
+            data=data,
+            title=title,
+            chart_type=chart_type,
+            include_table=include_table
+        )
+        
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "html": result.get("html"),
+                "charts": result.get("charts", []),
+                "summary": result.get("summary", {})
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "生成失败"))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成HTML报告失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/full-report")
+async def generate_full_report(
+    data: List[Dict[str, Any]],
+    title: str = "数据分析报告",
+    config: Optional[Dict[str, Any]] = None
+):
+    """
+    生成完整报表（Excel + PDF + PPT）
+    
+    参数：
+        data: 数据列表
+        title: 报告标题
+        config: 配置选项
+    
+    返回：
+        {
+            "status": "success",
+            "excel": "path/to/report.xlsx",
+            "pdf": "path/to/report.pdf",
+            "ppt": "path/to/report.pptx"
+        }
+    """
+    try:
+        from skills.report_automation_skill import ReportAutomationSkill
+        
+        skill = ReportAutomationSkill()
+        result = await skill.execute(data=data, title=title, config=config)
+        
+        if result.get("status") == "success":
+            return {
+                "status": "success",
+                "excel": result.get("excel"),
+                "pdf": result.get("pdf"),
+                "ppt": result.get("ppt"),
+                "timestamp": result.get("timestamp")
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "生成失败"))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成完整报表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/full-report-from-file")
+async def generate_full_report_from_file(
+    data_source: str,
+    query: str = "",
+    output_path: str = "./report_output",
+    output_format: str = "all"
+):
+    """
+    从数据源文件生成完整报表（使用 8-Agent 分析）
+    
+    参数：
+        data_source: 数据源路径（.csv, .xlsx, .xls）
+        query: 分析需求描述
+        output_path: 输出路径前缀
+        output_format: 输出格式 ("excel", "pdf", "ppt", "all")
+    
+    返回：
+        {
+            "status": "success",
+            "output_paths": {"excel": "...", "html": "..."},
+            "cards_count": 10,
+            "data_rows": 1000
+        }
+    """
+    try:
+        from skills.report_automation_skill import ReportAutomationSkill
+        
+        skill = ReportAutomationSkill()
+        result = await skill.execute_from_file(
+            data_source=data_source,
+            query=query,
+            output_path=output_path,
+            output_format=output_format
+        )
+        
+        if result.get("status") == "success":
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "生成失败"))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"从数据源生成报表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/agent/{agent_name}")
 async def get_agent_skills(agent_name: str):
     """获取指定 Agent 的所有技能"""
@@ -216,10 +356,21 @@ async def get_skill_statistics():
     try:
         all_skills = skill_registry.list_skills()
         
-        # 统计
+        # 基础统计
         total_skills = len(all_skills)
         enabled_skills = sum(1 for s in all_skills if s["enabled"])
         total_usage = sum(s["usage_count"] for s in all_skills)
+        
+        # 任务执行统计（真实数据）
+        task_stats = skill_registry.task_stats
+        total_executions = task_stats["total_executions"]
+        successful = task_stats["successful_executions"]
+        failed = task_stats["failed_executions"]
+        task_completion_rate = (successful / total_executions * 100) if total_executions > 0 else 0
+        
+        # 计算平均响应时间
+        response_times = task_stats["response_times"]
+        avg_response_time = (sum(response_times) / len(response_times)) if response_times else 0
         
         # 按 Agent 分组
         skills_by_agent = {}
@@ -256,7 +407,17 @@ async def get_skill_statistics():
             "enabled_skills": enabled_skills,
             "total_usage": total_usage,
             "skills_by_agent": skills_by_agent,
-            "skills_by_category": skills_by_category
+            "skills_by_category": skills_by_category,
+            # 真实任务执行统计
+            "task_stats": {
+                "total_executions": total_executions,
+                "successful_executions": successful,
+                "failed_executions": failed,
+                "task_completion_rate": round(task_completion_rate, 1),
+                "avg_response_time": round(avg_response_time, 3),
+                "active_tasks": task_stats["active_tasks"],
+                "today_processed": total_executions  # 今日处理 = 总执行次数
+            }
         }
     except Exception as e:
         logger.error(f"获取技能统计失败: {e}")

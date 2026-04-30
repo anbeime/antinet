@@ -244,25 +244,85 @@ const HermesManagementPanel: React.FC = () => {
     </div>
   );
 
-  const renderConfigTab = () => (
-    <div className="p-4 space-y-4">
-      <h3 className="font-semibold">Hermes 配置</h3>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-          <span className="text-gray-600">当前模型</span>
-          <span className="font-medium">{currentModel}</span>
-        </div>
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-          <span className="text-gray-600">工具数量</span>
-          <span className="font-medium">{config?.tools?.length || 0}</span>
-        </div>
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-          <span className="text-gray-600">最大Token</span>
-          <span className="font-medium">{config?.max_tokens || 4096}</span>
+  const renderConfigTab = () => {
+    const zhiyiEnabled = config?.tools?.includes('zhiyi') || false;
+    
+    const toggleZhiyiTool = async () => {
+      try {
+        const newTools = zhiyiEnabled
+          ? (config?.tools || []).filter((t: string) => t !== 'zhiyi')
+          : [...(config?.tools || []), 'zhiyi'];
+        
+        await hermesService.setConfig({ ...config, tools: newTools });
+        setConfig(prev => prev ? { ...prev, tools: newTools } : null);
+        toast.success(zhiyiEnabled ? '已禁用知易工具' : '已启用知易工具');
+      } catch (error) {
+        toast.error('操作失败');
+      }
+    };
+    
+    return (
+      <div className="p-4 space-y-4">
+        <h3 className="font-semibold">Hermes 配置</h3>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-gray-600">当前模型</span>
+            <span className="font-medium">{currentModel}</span>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-gray-600">工具数量</span>
+            <span className="font-medium">{config?.tools?.length || 0}</span>
+          </div>
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <span className="text-gray-600">最大Token</span>
+            <span className="font-medium">{config?.max_tokens || 4096}</span>
+          </div>
+          
+          {/* 知易工具开关 */}
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white font-bold">
+                知
+              </div>
+              <div>
+                <div className="font-medium">知易工具</div>
+                <div className="text-sm text-gray-500">启用后可调用知易知识管理API</div>
+              </div>
+            </div>
+            <button
+              onClick={toggleZhiyiTool}
+              className={`relative w-14 h-7 rounded-full transition-colors ${
+                zhiyiEnabled ? 'bg-blue-500' : 'bg-gray-300'
+              }`}
+            >
+              <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                zhiyiEnabled ? 'translate-x-8' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+          
+          {/* 工具列表 */}
+          <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="text-sm text-gray-600 mb-2">已启用工具:</div>
+            <div className="flex flex-wrap gap-2">
+              {(config?.tools || []).length === 0 ? (
+                <span className="text-sm text-gray-400">无</span>
+              ) : (
+                (config?.tools || []).map((tool: string) => (
+                  <span
+                    key={tool}
+                    className="px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded text-sm"
+                  >
+                    {tool}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="h-full flex flex-col bg-white rounded-lg shadow">

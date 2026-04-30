@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 interface Column {
@@ -31,6 +31,11 @@ const ExcelAnalysis: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
+
+  // 在线编辑功能
+  const [editData, setEditData] = useState<string[][]>([]);
+  const [editMode, setEditMode] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -188,7 +193,35 @@ const ExcelAnalysis: React.FC = () => {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* 功能切换标签 */}
+        <div className="flex space-x-2 mb-4">
+          <button
+            onClick={() => setActiveFeature('analysis')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeFeature === 'analysis' 
+                ? 'bg-green-500 text-white' 
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 inline mr-2" />
+            数据分析
+          </button>
+          <button
+            onClick={() => setActiveFeature('editor')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeFeature === 'editor' 
+                ? 'bg-green-500 text-white' 
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+            }`}
+          >
+            <Edit3 className="w-4 h-4 inline mr-2" />
+            在线编辑
+          </button>
+        </div>
+
+        {/* 功能内容 */}
+        {activeFeature === 'analysis' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Panel */}
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
@@ -433,7 +466,63 @@ const ExcelAnalysis: React.FC = () => {
             )}
           </motion.div>
         </div>
+        ) : (
+          <SimpleSpreadsheetEditor onSave={(data) => console.log('Saved:', data)} />
+        )}
       </div>
+    </div>
+  );
+};
+
+// 简单在线表格编辑器
+const SimpleSpreadsheetEditor: React.FC<{ initialData?: string[][], onSave?: (data: string[][]) => void }> = ({ onSave }) => {
+  const [rows, setRows] = useState<string[][]>([['字段1', '字段2', '字段3'], ['', '', '']]);
+  const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const addRow = () => setRows([...rows, Array(rows[0]?.length || 3).fill('')]);
+  const addCol = () => setRows(rows.map(r => [...r, '']));
+  const updateCell = (r: number, c: number, v: string) => {
+    const newRows = [...rows];
+    newRows[r][c] = v;
+    setRows(newRows);
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-auto max-h-[500px]">
+      <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-3 py-2 flex items-center justify-between z-10">
+        <span className="font-semibold text-sm">在线表格</span>
+        <div className="flex space-x-1">
+          <button onClick={addRow} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600" title="添加行"><Plus className="w-3 h-3" /></button>
+          <button onClick={addCol} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600" title="添加列"><Plus className="w-3 h-3 rotate-90" /></button>
+          <button onClick={() => onSave?.(rows)} className="p-1 bg-green-500 text-white rounded hover:bg-green-600" title="保存"><Save className="w-3 h-3" /></button>
+        </div>
+      </div>
+      <table className="w-full text-sm border-collapse">
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri}>
+              <td className="w-8 p-1 bg-gray-50 dark:bg-gray-700 border text-center text-xs">{ri + 1}</td>
+              {row.map((cell, ci) => (
+                <td key={ci} className="border">
+                  {editingCell?.row === ri && editingCell?.col === ci ? (
+                    <input
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                      onBlur={() => { updateCell(ri, ci, editValue); setEditingCell(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (updateCell(ri, ci, editValue), setEditingCell(null))}
+                      className="w-full px-2 py-1 bg-blue-50 outline-blue-500" autoFocus
+                    />
+                  ) : (
+                    <div onClick={() => { setEditingCell({row: ri, col: ci}); setEditValue(cell); }} 
+                      className="w-full px-2 py-1 cursor-text hover:bg-gray-50 min-h-[28px]">{cell || '-'}</div>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 };

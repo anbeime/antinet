@@ -59,6 +59,16 @@ class SkillRegistry:
             "任务调度": ["orchestrator", "锦衣卫"]
         }
         
+        # 任务执行统计
+        self.task_stats = {
+            "total_executions": 0,
+            "successful_executions": 0,
+            "failed_executions": 0,
+            "total_response_time": 0.0,
+            "response_times": [],  # 最近100次响应时间
+            "active_tasks": 0
+        }
+        
         self._register_builtin_skills()
     
     def _register_builtin_skills(self):
@@ -139,6 +149,22 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册数据分析技能: {e}")
         
+        # HTML 报告生成技能
+        try:
+            from skills.html_report_skill import HtmlReportSkill
+            self.register(HtmlReportSkill())
+            logger.info("[SkillRegistry] HTML报告生成技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册HTML报告生成技能: {e}")
+        
+        # 报表自动化技能
+        try:
+            from skills.report_automation_skill import ReportAutomationSkill
+            self.register(ReportAutomationSkill())
+            logger.info("[SkillRegistry] 报表自动化技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册报表自动化技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())
@@ -193,6 +219,8 @@ class SkillRegistry:
     
     async def execute_skill(self, name: str, *args, **kwargs) -> Dict:
         """执行技能"""
+        import time
+        
         skill = self.get_skill(name)
         
         if skill is None:
@@ -205,8 +233,49 @@ class SkillRegistry:
         skill.usage_count += 1
         skill.last_used = datetime.now().isoformat()
         
-        # 执行技能
-        result = await skill.execute(*args, **kwargs)
+        # 记录开始时间
+        start_time = time.time()
+        self.task_stats["active_tasks"] += 1
+        
+        try:
+            # 执行技能
+            result = await skill.execute(*args, **kwargs)
+            
+            # 计算响应时间
+            response_time = time.time() - start_time
+            
+            # 更新任务统计
+            self.task_stats["total_executions"] += 1
+            self.task_stats["successful_executions"] += 1
+            self.task_stats["total_response_time"] += response_time
+            self.task_stats["response_times"].append(response_time)
+            if len(self.task_stats["response_times"]) > 100:
+                self.task_stats["response_times"].pop(0)
+            
+            return {
+                "skill": name,
+                "success": True,
+                "result": result,
+                "usage_count": skill.usage_count,
+                "last_used": skill.last_used,
+                "response_time": response_time
+            }
+            
+        except Exception as e:
+            # 计算响应时间
+            response_time = time.time() - start_time
+            
+            # 更新任务统计
+            self.task_stats["total_executions"] += 1
+            self.task_stats["failed_executions"] += 1
+            self.task_stats["total_response_time"] += response_time
+            self.task_stats["response_times"].append(response_time)
+            if len(self.task_stats["response_times"]) > 100:
+                self.task_stats["response_times"].pop(0)
+            
+            raise
+        finally:
+            self.task_stats["active_tasks"] -= 1
         
         return {
             "skill": name,
@@ -1537,7 +1606,7 @@ class DataAnalysisSkill(Skill):
     def __init__(self):
         super().__init__(
             name="data_analysis",
-            description="数据分析：加载数据、8-Agent智能分析、生成四色卡片、导出Excel报告",
+            description="数据分析：加载数据、8-Agent智能分析、生成四色卡片、导出Excel/HTML报告",
             category="数据处理",
             agent_name="锦衣卫"
         )
@@ -1571,8 +1640,9 @@ class DataAnalysisSkill(Skill):
         self,
         data_source: str,
         query: str,
-        output_path: str = "./data_analysis_output.xlsx",
-        include_charts: bool = True
+        output_path: str = "./data_analysis_output",
+        include_charts: bool = True,
+        output_format: str = "excel"
     ) -> Dict[str, Any]:
         """
         执行数据分析
@@ -1580,8 +1650,9 @@ class DataAnalysisSkill(Skill):
         Args:
             data_source: 数据源路径（.csv, .xlsx, .xls）或数据库表名（db:table_name）
             query: 用户查询/分析需求
-            output_path: Excel 输出路径
+            output_path: 输出路径（不含扩展名）
             include_charts: 是否包含图表
+            output_format: 输出格式 ("excel", "html", "both")
         
         Returns:
             分析结果字典
@@ -1593,7 +1664,8 @@ class DataAnalysisSkill(Skill):
                 data_source=data_source,
                 query=query,
                 output_path=output_path,
-                include_charts=include_charts
+                include_charts=include_charts,
+                output_format=output_format
             )
             
             return {
@@ -1601,7 +1673,7 @@ class DataAnalysisSkill(Skill):
                 "skill": self.name,
                 "data_source": data_source,
                 "query": query,
-                "output_path": output_path,
+                "output_paths": result.get("output_paths", {}),
                 "cards_count": result.get("cards_count", 0),
                 "data_rows": result.get("data_rows", 0),
                 "message": f"数据分析完成，生成 {result.get('cards_count', 0)} 张卡片"

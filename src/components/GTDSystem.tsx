@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Inbox, 
-  Clock, 
-  Calendar, 
-  Archive, 
+import {
+  Inbox,
+  Clock,
+  Calendar,
+  Archive,
   Book,
   PlusCircle,
   MoreHorizontal,
@@ -17,7 +17,9 @@ import {
   ArrowRight,
   Share2,
   ExternalLink,
-  FileText
+  FileText,
+  Copy,
+  ZoomIn
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
@@ -55,7 +57,16 @@ const GTDSystem: React.FC = () => {
     due_date: '',
     remind_at: '',
     reminder_enabled: false
-  })
+  });
+  const [zoomedTask, setZoomedTask] = useState<GtdTaskType | null>(null);
+  
+  // 复制任务内容
+  const handleCopyTask = (task: GtdTaskType, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const text = `任务: ${task.title}\n描述: ${task.description || '无'}\n优先级: ${task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}`;
+    navigator.clipboard?.writeText(text);
+    toast('任务内容已复制', { className: 'bg-green-50 text-green-800' });
+  };
   // 自动从描述提取标题
   const extractTitleFromDesc = (description: string): string => {
     if (!description.trim()) return '';
@@ -660,8 +671,22 @@ const GTDSystem: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2 ml-4">
+                    <button
+                      onClick={(e) => handleCopyTask(task, e as any)}
+                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="复制内容"
+                    >
+                      <Copy size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setZoomedTask(task); }}
+                      className="p-2 text-gray-600 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                      title="放大查看"
+                    >
+                      <ZoomIn size={16} />
+                    </button>
                     {task.category !== 'archive' && (
-                      <button 
+                      <button
                         onClick={() => handleArchiveTask(task.id!)}
                         className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                         title="完成并归档"
@@ -1141,6 +1166,101 @@ const GTDSystem: React.FC = () => {
                     保存修改
                   </button>
                 </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 任务放大查看模态框 */}
+      {zoomedTask && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-8"
+          onClick={() => setZoomedTask(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30">
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-3 ${
+                  zoomedTask.priority === 'high' ? 'bg-red-500' :
+                  zoomedTask.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
+                }`}></div>
+                <h2 className="text-xl font-bold">{zoomedTask.title}</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => handleCopyTask(zoomedTask, e as any)}
+                  className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-colors"
+                  title="复制内容"
+                >
+                  <Copy size={18} />
+                </button>
+                <button
+                  onClick={() => setZoomedTask(null)}
+                  className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-3 py-1 rounded-full text-white ${
+                    zoomedTask.priority === 'high' ? 'bg-red-500' :
+                    zoomedTask.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
+                  }`}>
+                    {zoomedTask.priority === 'high' ? '高优先级' : zoomedTask.priority === 'medium' ? '中优先级' : '低优先级'}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {zoomedTask.category === 'inbox' ? '收集箱' :
+                     zoomedTask.category === 'today' ? '等待处理' :
+                     zoomedTask.category === 'later' ? '将来可能' :
+                     zoomedTask.category === 'archive' ? '归档资料' : '专题研究'}
+                  </span>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">描述</h3>
+                  <p className="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">{zoomedTask.description || '无描述'}</p>
+                </div>
+                
+                <div className="flex flex-wrap gap-4 text-sm text-gray-500">
+                  <span>创建: {zoomedTask.created_at ? new Date(zoomedTask.created_at).toLocaleDateString('zh-CN') : '-'}</span>
+                  {zoomedTask.due_date && (
+                    <span className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Calendar size={12} />
+                      截止: {new Date(zoomedTask.due_date).toLocaleDateString('zh-CN')}
+                    </span>
+                  )}
+                </div>
+                
+                {zoomedTask.source_type && zoomedTask.source_id && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => {
+                        if (zoomedTask.source_type === 'card') {
+                          window.location.hash = `/?highlightCard=${zoomedTask.source_id}`;
+                        } else if (zoomedTask.source_type === 'meeting') {
+                          window.location.hash = `/virtual-office-meeting?meetingId=${zoomedTask.source_id}`;
+                        } else if (zoomedTask.source_type === 'project') {
+                          window.location.hash = `/?projectId=${zoomedTask.source_id}`;
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                    >
+                      <FileText size={12} />
+                      {zoomedTask.source_type === 'card' ? '来源卡片' : zoomedTask.source_type === 'meeting' ? '来源会议' : '来源专题'}
+                      <ExternalLink size={10} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

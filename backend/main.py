@@ -305,6 +305,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 Pandoc 路由: {e}")
 
+# 注册 Markdown + Mermaid + CSV 完整工作流路由
+try:
+    from routes.markdown_converter_routes import router as markdown_converter_router
+    app.include_router(markdown_converter_router)
+    logger.info("[OK] Markdown+Mermaid+CSV工作流路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 Markdown转换路由: {e}")
+
 # 注册 PPT 处理路由
 try:
     from routes.ppt_routes import router as ppt_router

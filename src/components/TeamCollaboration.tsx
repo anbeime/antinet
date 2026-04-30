@@ -35,6 +35,7 @@ import {
   Brain,
   GitBranch
 } from 'lucide-react';
+import WikiEditor from './WikiEditor';
 import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
@@ -532,7 +533,20 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap'>('integration');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap' | 'wiki-editor'>('integration');
+  
+  // 监听来自顶栏菜单的tab切换事件
+  useEffect(() => {
+    const handleSwitchTeamTab = (e: CustomEvent) => {
+      if (e.detail?.tab) {
+        setActiveTab(e.detail.tab as any);
+      }
+    };
+    window.addEventListener('switchTeamTab', handleSwitchTeamTab as EventListener);
+    return () => {
+      window.removeEventListener('switchTeamTab', handleSwitchTeamTab as EventListener);
+    };
+  }, []);
   
   // 数据状态
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -1273,6 +1287,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <Brain size={18} className="mr-2" />
             <span>思维导图</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('wiki-editor')}
+          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+            activeTab === 'wiki-editor'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+          }`}
+        >
+          <div className="flex items-center justify-center">
+            <Network size={18} className="mr-2" />
+            <span>知识网络</span>
           </div>
         </button>
       </div>
@@ -2090,6 +2117,13 @@ const TeamCollaborationEnhanced: React.FC = () => {
         
         {/* 思维导图 */}
         {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
+
+        {/* 知识网络/wiki编辑器 */}
+        {activeTab === 'wiki-editor' && (
+          <div className="h-[calc(100vh-200px)]">
+            <WikiEditor />
+          </div>
+        )}
       </div>
 
       {/* 成员编辑弹窗 */}

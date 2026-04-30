@@ -92,7 +92,8 @@ class DataAnalysisExporter:
         data_source: str,
         query: str,
         output_path: str,
-        include_charts: bool = True
+        include_charts: bool = True,
+        output_format: str = "excel"
     ) -> Dict[str, Any]:
         """
         完整的分析和导出流程
@@ -100,8 +101,9 @@ class DataAnalysisExporter:
         Args:
             data_source: 数据源（文件路径或数据库表名）
             query: 用户查询/分析需求
-            output_path: Excel 输出路径
+            output_path: 输出路径（.xlsx 或 .html）
             include_charts: 是否包含图表
+            output_format: 输出格式 ("excel", "html", "both")
         
         Returns:
             结果字典，包含分析结果和导出路径
@@ -138,13 +140,28 @@ class DataAnalysisExporter:
             )
             logger.info(f"[DataAnalysisExporter] Excel 数据准备完成")
             
-            # ========== 步骤 6: 导出 Excel 报告 ==========
-            export_result = await self._export_to_excel(
-                output_path=output_path,
-                excel_data=excel_data,
-                query=query
-            )
-            logger.info(f"[DataAnalysisExporter] Excel 导出完成: {output_path}")
+            # ========== 步骤 6: 导出报告 ==========
+            export_results = {}
+            
+            if output_format in ["excel", "both"]:
+                excel_path = output_path if output_path.endswith('.xlsx') else output_path + '.xlsx'
+                export_result = await self._export_to_excel(
+                    output_path=excel_path,
+                    excel_data=excel_data,
+                    query=query
+                )
+                export_results["excel"] = excel_path
+                logger.info(f"[DataAnalysisExporter] Excel 导出完成: {excel_path}")
+            
+            if output_format in ["html", "both"]:
+                html_path = output_path if output_path.endswith('.html') else output_path + '.html'
+                html_result = await self._export_to_html(
+                    output_path=html_path,
+                    excel_data=excel_data,
+                    data=data.to_dict('records')
+                )
+                export_results["html"] = html_path
+                logger.info(f"[DataAnalysisExporter] HTML 导出完成: {html_path}")
             
             # ========== 步骤 7: 保存到记忆库 ==========
             await self._save_to_memory(cards_by_type, query)
@@ -152,7 +169,7 @@ class DataAnalysisExporter:
             
             return {
                 "status": "success",
-                "output_path": output_path,
+                "output_paths": export_results,
                 "cards_count": sum(len(cards) for cards in cards_by_type.values()),
                 "data_rows": len(data),
                 "analysis_result": analysis_result,
@@ -511,6 +528,76 @@ class DataAnalysisExporter:
             data_sheets=excel_data['data_sheets'],
             charts=excel_data['charts']
         )
+    
+    async def _export_to_html(
+        self,
+        output_path: str,
+        excel_data: Dict[str, Any],
+        data: List[Dict]
+    ) -> str:
+        """导出到 HTML 报告（使用 Chart.js）"""
+        from skills.html_report_skill import HtmlReportSkill
+        
+        skill = HtmlReportSkill()
+        result = await skill.execute(
+            data=data,
+            title=excel_data['analysis_info']['title'],
+            chart_type="mixed",
+            include_table=True
+        )
+        
+        if result.get("status") == "success":
+            html_content = result.get("html", "")
+            
+            # 添加四色卡片摘要到 HTML
+            cards_html = self._generate_cards_html(excel_data['cards_by_type'])
+            html_content = html_content.replace(
+                '</div>\n    <div class="table-section">',
+                f'</div>\n    {cards_html}\n    <div class="table-section">'
+            )
+            
+            # 保存 HTML 文件
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            return output_path
+        else:
+            raise Exception(f"HTML 报告生成失败: {result.get('error')}")
+    
+    def _generate_cards_html(self, cards_by_type: Dict[str, List[Dict]]) -> str:
+        """生成四色卡片 HTML"""
+        card_colors = {
+            'fact': ('#3182ce', '事实'),
+            'interpret': ('#805ad5', '解释'),
+            'risk': ('#e53e3e', '风险'),
+            'action': ('#38a169', '行动')
+        }
+        
+        html_parts = ['<div class="cards-section" style="background:white;border-radius:16px;padding:24px;margin-bottom:24px;box-shadow:0 10px 40px rgba(0,0,0,0.1);">']
+        html_parts.append('<h2 style="color:#2d3748;margin-bottom:20px;font-size:18px;">📋 四色卡片分析结果</h2>')
+        html_parts.append('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;">')
+        
+        for card_type, (color, label) in card_colors.items():
+            cards = cards_by_type.get(card_type, [])
+            html_parts.append(f'''
+            <div style="border-left:4px solid {color};padding:16px;background:#f7fafc;border-radius:8px;">
+                <h3 style="color:{color};margin-bottom:12px;font-size:14px;text-transform:uppercase;">{label} ({len(cards)})</h3>
+                <ul style="list-style:none;padding:0;margin:0;">''')
+            
+            for card in cards[:5]:  # 最多显示5个
+                html_parts.append(f'''
+                    <li style="padding:8px 0;border-bottom:1px solid #e2e8f0;">
+                        <strong style="color:#2d3748;">{card.get('title', '无标题')}</strong>
+                        <p style="color:#718096;font-size:13px;margin:4px 0 0 0;">{card.get('content', '')[:100]}...</p>
+                    </li>''')
+            
+            if len(cards) > 5:
+                html_parts.append(f'<li style="color:#718096;font-size:13px;padding:8px 0;">还有 {len(cards) - 5} 项...</li>')
+            
+            html_parts.append('</ul></div>')
+        
+        html_parts.append('</div></div>')
+        return ''.join(html_parts)
     
     async def _save_to_memory(
         self,

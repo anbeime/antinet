@@ -94,6 +94,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
   const [projects, setProjects] = useState<Array<{id: number; name: string; color: string}>>([]);
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | null>(filterProjectId || null);
+  const [isFreeDragMode, setIsFreeDragMode] = useState(false);  // 自由拖拽模式
 
   // 卡片类型颜色映射
   const typeColors = {
@@ -308,17 +309,23 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
       ],
       series: [{
         type: 'graph',
-        layout: 'force',
+        layout: isFreeDragMode ? 'none' : 'force',
         data: nodes,
         links: links,
         categories: [{ name: 'blue' }, { name: 'green' }, { name: 'yellow' }, { name: 'red' }],
         roam: true,
+        draggable: true,
         label: { show: true, position: 'right', formatter: '{b}' },
         labelLayout: { hideOverlap: true },
-        scaleLimit: { min: 0.4, max: 2 },
+        scaleLimit: { min: 0.2, max: 3 },
         lineStyle: { color: 'source', curveness: 0.3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-        force: { repulsion: 100, gravity: 0.1, edgeLength: [50, 150], layoutAnimation: true }
+        force: isFreeDragMode ? undefined : {
+          repulsion: 800,
+          gravity: 0.02,
+          edgeLength: [150, 300],
+          layoutAnimation: true
+        }
       }]
     };
 
@@ -346,7 +353,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         label: {
           show: true,
           fontSize: node.is_current ? 13 : 10,
-          fontWeight: node.is_current ? 'bold' : 'normal',
+          fontWeight: node.is_current ? ('bold' as const) : ('normal' as const),
           color: isHighlighted ? '#333' : '#ccc',
         }
       };
@@ -398,15 +405,21 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
       ],
       series: [{
         type: 'graph',
-        layout: 'force',
+        layout: isFreeDragMode ? 'none' : 'force',
         data: nodes,
         links: links,
         roam: true,
+        draggable: true,
         label: { show: true, position: 'right', formatter: '{b}' },
         labelLayout: { hideOverlap: true },
-        scaleLimit: { min: 0.4, max: 2 },
+        scaleLimit: { min: 0.2, max: 3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-        force: { repulsion: 150, gravity: 0.05, edgeLength: [80, 200], layoutAnimation: true }
+        force: isFreeDragMode ? undefined : {
+          repulsion: 600,
+          gravity: 0.03,
+          edgeLength: [120, 250],
+          layoutAnimation: true
+        }
       }]
     };
 
@@ -548,6 +561,14 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
             <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
               刷新
+            </Button>
+            <Button
+              variant={isFreeDragMode ? "default" : "outline"}
+              size="sm"
+              onClick={() => setIsFreeDragMode(!isFreeDragMode)}
+              title={isFreeDragMode ? "切换到力导向布局" : "切换到自由拖拽模式"}
+            >
+              {isFreeDragMode ? "🔒 锁定布局" : "✋ 自由拖拽"}
             </Button>
             <Button variant="outline" size="sm" onClick={handleZoomIn}>
               <ZoomIn className="w-4 h-4" />
