@@ -417,55 +417,103 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
   }, []);
 
-  // 语音识别（ASR）- 优先用浏览器 Web Speech API（需要联网）
+  // 语音识别（ASR）- 使用后端 Whisper 进行语音识别（更准确，不需要联网）
   const toggleListening = async () => {
     if (isListening) {
+      // 停止录音
       if (recognitionRef.current) {
         recognitionRef.current.stop();
+        recognitionRef.current = null;
       }
-      mediaRecorderRef.current?.stop();
-      return;
-    }
-
-    // 检查浏览器是否支持
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      toast.error('您的浏览器不支持语音识别，建议使用 Chrome 浏览器');
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'zh-CN';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-
-      recognition.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setInput(transcript);
-          setTimeout(() => handleSendWithText(transcript, imageData || undefined), 200);
+      // 请求麦克风权限并开始录音
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+      });
+      mediaRecorderRef.current = mediaRecorder;
+      
+      const audioChunks: Blob[] = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
         }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        // 停止所有音轨
+        stream.getTracks().forEach(track => track.stop());
+        
+        if (audioChunks.length === 0) {
+          toast.error('未录制到音频，请重试');
+          setIsListening(false);
+          return;
+        }
+        
+        // 合并音频块
+        const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+        
+        try {
+          // 发送到后端进行 STT 识别
+          const formData = new FormData();
+          formData.append('file', audioBlob, `recording.${mediaRecorder.mimeType.includes('webm') ? 'webm' : 'mp4'}`);
+          formData.append('language', 'zh');
+          formData.append('model_size', 'base');
+          
+          const response = await fetch('http://localhost:8000/api/speech/stt/transcribe', {
+            method: 'POST',
+            body: formData,
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            const transcript = result.text?.trim();
+            
+            if (transcript) {
+              setInput(transcript);
+              toast.success(`识别: ${transcript}`, { duration: 2000 });
+              setTimeout(() => handleSendWithText(transcript, imageData || undefined), 300);
+            } else {
+              toast.error('未识别到语音内容，请重试');
+            }
+          } else {
+            const error = await response.json().catch(() => ({ detail: '识别失败' }));
+            toast.error(error.detail || '语音识别失败，请重试');
+          }
+        } catch (err) {
+          console.error('STT 请求失败:', err);
+          toast.error('语音识别服务不可用，请确保后端服务已启动');
+        }
+        
         setIsListening(false);
       };
-
-      recognition.onerror = (event: any) => {
-        console.error('语音识别错误:', event.error);
-        if (event.error === 'network') {
-          toast.error('语音识别需要联网，请检查网络或使用科学上网');
-        } else {
-          toast.error('语音识别失败，请重试');
-        }
+      
+      mediaRecorder.onerror = (event) => {
+        console.error('录音错误:', event);
+        stream.getTracks().forEach(track => track.stop());
+        toast.error('录音失败，请重试');
         setIsListening(false);
       };
-
-      recognition.onend = () => setIsListening(false);
-      recognitionRef.current = recognition;
-      recognition.start();
+      
+      mediaRecorder.start();
       setIsListening(true);
+      toast.success('开始录音，请说话...', { duration: 1500 });
+      
     } catch (err) {
-      console.error('语音识别启动失败:', err);
-      toast.error('语音识别不可用，请检查网络或安装 Chrome 浏览器');
+      console.error('获取麦克风失败:', err);
+      if ((err as Error).name === 'NotAllowedError') {
+        toast.error('请允许使用麦克风');
+      } else {
+        toast.error('无法访问麦克风，请检查权限设置');
+      }
+      setIsListening(false);
     }
   };
 
