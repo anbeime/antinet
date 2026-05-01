@@ -59,6 +59,16 @@ class SkillRegistry:
             "任务调度": ["orchestrator", "锦衣卫"]
         }
         
+        # 任务执行统计
+        self.task_stats = {
+            "total_executions": 0,
+            "successful_executions": 0,
+            "failed_executions": 0,
+            "total_response_time": 0.0,
+            "response_times": [],  # 最近100次响应时间
+            "active_tasks": 0
+        }
+        
         self._register_builtin_skills()
     
     def _register_builtin_skills(self):
@@ -132,6 +142,37 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册卡片过滤技能: {e}")
         
+        # 数据分析技能
+        try:
+            self.register(DataAnalysisSkill())
+            logger.info("[SkillRegistry] 数据分析技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册数据分析技能: {e}")
+        
+        # HTML 报告生成技能
+        try:
+            from skills.html_report_skill import HtmlReportSkill
+            self.register(HtmlReportSkill())
+            logger.info("[SkillRegistry] HTML报告生成技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册HTML报告生成技能: {e}")
+        
+        # 报表自动化技能
+        try:
+            from skills.report_automation_skill import ReportAutomationSkill
+            self.register(ReportAutomationSkill())
+            logger.info("[SkillRegistry] 报表自动化技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册报表自动化技能: {e}")
+        
+        # 四色卡片知识库技能
+        try:
+            from skills.four_color_card_skill import FourColorCardSkill
+            self.register(FourColorCardSkill())
+            logger.info("[SkillRegistry] 四色卡片知识库技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册四色卡片知识库技能: {e}")
+        
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())
@@ -186,6 +227,8 @@ class SkillRegistry:
     
     async def execute_skill(self, name: str, *args, **kwargs) -> Dict:
         """执行技能"""
+        import time
+        
         skill = self.get_skill(name)
         
         if skill is None:
@@ -198,8 +241,49 @@ class SkillRegistry:
         skill.usage_count += 1
         skill.last_used = datetime.now().isoformat()
         
-        # 执行技能
-        result = await skill.execute(*args, **kwargs)
+        # 记录开始时间
+        start_time = time.time()
+        self.task_stats["active_tasks"] += 1
+        
+        try:
+            # 执行技能
+            result = await skill.execute(*args, **kwargs)
+            
+            # 计算响应时间
+            response_time = time.time() - start_time
+            
+            # 更新任务统计
+            self.task_stats["total_executions"] += 1
+            self.task_stats["successful_executions"] += 1
+            self.task_stats["total_response_time"] += response_time
+            self.task_stats["response_times"].append(response_time)
+            if len(self.task_stats["response_times"]) > 100:
+                self.task_stats["response_times"].pop(0)
+            
+            return {
+                "skill": name,
+                "success": True,
+                "result": result,
+                "usage_count": skill.usage_count,
+                "last_used": skill.last_used,
+                "response_time": response_time
+            }
+            
+        except Exception as e:
+            # 计算响应时间
+            response_time = time.time() - start_time
+            
+            # 更新任务统计
+            self.task_stats["total_executions"] += 1
+            self.task_stats["failed_executions"] += 1
+            self.task_stats["total_response_time"] += response_time
+            self.task_stats["response_times"].append(response_time)
+            if len(self.task_stats["response_times"]) > 100:
+                self.task_stats["response_times"].pop(0)
+            
+            raise
+        finally:
+            self.task_stats["active_tasks"] -= 1
         
         return {
             "skill": name,
@@ -1511,6 +1595,106 @@ class ResultAggregationSkill(Skill):
                 "failed": len([r for r in results if r.get("status") == "failed"])
             }
         }
+
+
+# 数据分析技能
+class DataAnalysisSkill(Skill):
+    """
+    数据分析技能
+    
+    整合 8-Agent 系统进行智能数据分析，生成四色卡片，并导出 Excel 报告。
+    
+    功能流程：
+    1. 从文件/数据库加载数据
+    2. 通过 8-Agent 系统进行智能分析
+    3. 生成四色卡片（事实/解释/风险/行动）
+    4. 导出为专业 Excel 报告
+    """
+    
+    def __init__(self):
+        super().__init__(
+            name="data_analysis",
+            description="数据分析：加载数据、8-Agent智能分析、生成四色卡片、导出Excel/HTML报告",
+            category="数据处理",
+            agent_name="锦衣卫"
+        )
+        self._exporter = None
+    
+    def _get_exporter(self):
+        """获取或创建 DataAnalysisExporter 实例"""
+        if self._exporter is None:
+            try:
+                from skills.xlsx.data_analysis_integration import DataAnalysisExporter
+                from agents import OrchestratorAgent, MemoryAgent
+                from database import DatabaseManager
+                
+                db_manager = DatabaseManager()
+                orchestrator = OrchestratorAgent()
+                memory = MemoryAgent()
+                
+                self._exporter = DataAnalysisExporter(
+                    db_manager=db_manager,
+                    orchestrator=orchestrator,
+                    memory=memory
+                )
+                logger.info("[DataAnalysisSkill] DataAnalysisExporter 初始化成功")
+            except Exception as e:
+                logger.error(f"[DataAnalysisSkill] 初始化 DataAnalysisExporter 失败: {e}")
+                raise
+        
+        return self._exporter
+    
+    async def execute(
+        self,
+        data_source: str,
+        query: str,
+        output_path: str = "./data_analysis_output",
+        include_charts: bool = True,
+        output_format: str = "excel"
+    ) -> Dict[str, Any]:
+        """
+        执行数据分析
+        
+        Args:
+            data_source: 数据源路径（.csv, .xlsx, .xls）或数据库表名（db:table_name）
+            query: 用户查询/分析需求
+            output_path: 输出路径（不含扩展名）
+            include_charts: 是否包含图表
+            output_format: 输出格式 ("excel", "html", "both")
+        
+        Returns:
+            分析结果字典
+        """
+        try:
+            exporter = self._get_exporter()
+            
+            result = await exporter.analyze_and_export(
+                data_source=data_source,
+                query=query,
+                output_path=output_path,
+                include_charts=include_charts,
+                output_format=output_format
+            )
+            
+            return {
+                "status": "success",
+                "skill": self.name,
+                "data_source": data_source,
+                "query": query,
+                "output_paths": result.get("output_paths", {}),
+                "cards_count": result.get("cards_count", 0),
+                "data_rows": result.get("data_rows", 0),
+                "message": f"数据分析完成，生成 {result.get('cards_count', 0)} 张卡片"
+            }
+            
+        except Exception as e:
+            logger.error(f"[DataAnalysisSkill] 数据分析失败: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "skill": self.name,
+                "error": str(e),
+                "message": f"数据分析失败: {str(e)}"
+            }
 
 
 # 全局技能注册表单例

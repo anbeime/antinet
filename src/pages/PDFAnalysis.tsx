@@ -25,6 +25,13 @@ import {
   Save,
   Bookmark,
   BookmarkCheck,
+  Eye,
+  ZoomIn,
+  ZoomOut,
+  ChevronLeft,
+  ChevronRight,
+  Hash,
+  Copy,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -88,11 +95,12 @@ const PDFAnalysis: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [editedText, setEditedText] = useState<string>('');
   const [generatedCards, setGeneratedCards] = useState<KnowledgeCard[]>([]);
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'viewer'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -136,6 +144,7 @@ const PDFAnalysis: React.FC = () => {
       if (file && file.type === 'application/pdf') {
         setUploadedFile(file);
         setAnalysisResult(null);
+        setEditedText('');
         setGeneratedCards([]);
         setSelectedCards(new Set());
         setSavedCardIds(new Set());
@@ -178,13 +187,14 @@ const PDFAnalysis: React.FC = () => {
       setAnalysisResult({
         fileName: uploadedFile.name,
         pageCount: result.pages || 1,
-        wordCount: result.text?.split(/\s+/).length || 0,
-        extractedText: result.text || '',
+        wordCount: result.full_text?.split(/\s+/).length || 0,
+        extractedText: result.full_text || '',
         summary: result.summary || '',
         keyPoints: result.key_points || [],
         tables: result.tables || [],
         suggestedCards: result.suggested_cards || []
       });
+      setEditedText(result.full_text || '');
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '处理完成' });
       toast.success('文本提取成功！');
@@ -822,6 +832,17 @@ const PDFAnalysis: React.FC = () => {
       inactiveText: 'text-slate-600 dark:text-slate-400',
       hoverBg: 'hover:bg-slate-100 dark:hover:bg-slate-800/30',
     },
+    {
+      id: 'viewer' as const,
+      name: 'PDF查看器',
+      icon: <Eye size={20} />,
+      description: '在线查看PDF文档',
+      color: 'from-red-500 to-pink-500',
+      inactiveBg: 'bg-red-50 dark:bg-red-900/20',
+      inactiveBorder: 'border-red-200 dark:border-red-700',
+      inactiveText: 'text-red-600 dark:text-red-400',
+      hoverBg: 'hover:bg-red-100 dark:hover:bg-red-900/30',
+    },
   ];
 
   // ============ 渲染格式转换面板 ============
@@ -1159,6 +1180,7 @@ const PDFAnalysis: React.FC = () => {
                 setUploadedFile(null);
                 setUploadedFiles([]);
                 setAnalysisResult(null);
+                setEditedText('');
                 setGeneratedCards([]);
                 setSelectedCards(new Set());
                 setSavedCardIds(new Set());
@@ -1460,9 +1482,57 @@ const PDFAnalysis: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* PDF Preview Section */}
+                  {uploadedFile && (
+                    <div className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">PDF 预览</h4>
+                        <button
+                          onClick={() => setActiveFeature('viewer')}
+                          className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
+                        >
+                          全屏查看 →
+                        </button>
+                      </div>
+                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden h-64 bg-gray-100 dark:bg-gray-700">
+                        <PDFViewerInternal />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Editable Text Section */}
                   {analysisResult.extractedText && (
-                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 max-h-96 overflow-y-auto">
-                      <pre className="text-sm whitespace-pre-wrap">{analysisResult.extractedText}</pre>
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">提取文本 (可编辑)</h4>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(editedText);
+                            toast.success('已复制到剪贴板');
+                          }}
+                          className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 flex items-center space-x-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>复制</span>
+                        </button>
+                      </div>
+                      <textarea
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        className="w-full h-64 p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="提取的文本将显示在这里，您可以编辑修改..."
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          onClick={() => {
+                            // Save edited text - could add API call here
+                            toast.success('文本已保存');
+                          }}
+                          className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors"
+                        >
+                          保存修改
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1763,10 +1833,152 @@ const PDFAnalysis: React.FC = () => {
                 </div>
               )}
 
+              {/* PDF查看器面板 */}
+              {activeFeature === 'viewer' && (
+                <div className="h-full flex flex-col">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 border border-gray-200 dark:border-gray-700 flex-1">
+                    <h3 className="text-xl font-semibold mb-4 flex items-center">
+                      <Eye className="w-5 h-5 mr-2 text-red-500" />
+                      PDF查看器
+                    </h3>
+                    <div className="flex-1 min-h-[500px]">
+                      <PDFViewerInternal />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* PPT 转 PDF 面板 */}
               {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
             </motion.div>
           </div>
+      </div>
+    </div>
+  );
+};
+
+const PDFViewerInternal: React.FC = () => {
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [scale, setScale] = useState(1.0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  React.useEffect(() => {
+    loadPDFJS();
+  }, []);
+
+  React.useEffect(() => {
+    if (pdfDoc && currentPage > 0) {
+      renderPage(currentPage);
+    }
+  }, [pdfDoc, currentPage, scale]);
+
+  const loadPDFJS = async () => {
+    const pdfjsLib = (window as any).pdfjsLib;
+    if (pdfjsLib) return;
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      const pdfjs = (window as any).pdfjsLib;
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    };
+    document.head.appendChild(script);
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.includes('pdf')) {
+      toast.error('请选择PDF文件');
+      return;
+    }
+    setIsLoading(true);
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      try {
+        const pdfjs = (window as any).pdfjsLib;
+        if (pdfjs) {
+          const pdf = await pdfjs.getDocument({ data }).promise;
+          setPdfDoc(pdf);
+          setTotalPages(pdf.numPages);
+          setCurrentPage(1);
+        }
+      } catch (error) {
+        console.error('加载PDF失败:', error);
+        toast.error('加载PDF失败');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const renderPage = async (pageNum: number) => {
+    if (!pdfDoc || !canvasRef.current) return;
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale });
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      if (context) {
+        await page.render({ canvasContext: context, viewport }).promise;
+      }
+    } catch (error) {
+      console.error('渲染页面失败:', error);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full min-h-[500px] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
+      <div className="bg-gray-200 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
+        <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+          <Upload className="w-4 h-4" />
+          <span>打开PDF</span>
+          <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+        </label>
+        {fileName && <span className="text-sm text-gray-600 dark:text-gray-400">{fileName}</span>}
+        <div className="flex items-center space-x-2">
+          <button onClick={() => setScale(Math.max(scale - 0.25, 0.5))} disabled={scale <= 0.5} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
+            <ZoomOut className="w-4 h-4" />
+          </button>
+          <span className="text-sm w-12 text-center">{Math.round(scale * 100)}%</span>
+          <button onClick={() => setScale(Math.min(scale + 0.25, 3))} disabled={scale >= 3} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
+            <ZoomIn className="w-4 h-4" />
+          </button>
+          <div className="w-px h-5 bg-gray-400 mx-1" />
+          <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <input type="number" min={1} max={totalPages} value={currentPage} onChange={(e) => { const p = parseInt(e.target.value); if (p >= 1 && p <= totalPages) setCurrentPage(p); }} className="w-12 px-1 py-0.5 text-center border rounded text-sm" />
+          <span className="text-gray-500 text-sm">/ {totalPages}</span>
+          <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto flex justify-center p-2 bg-gray-200 dark:bg-gray-700">
+        {isLoading ? (
+          <div className="flex items-center justify-center">
+            <Loader className="w-8 h-8 animate-spin text-gray-500" />
+          </div>
+        ) : pdfDoc ? (
+          <div className="bg-white shadow-lg">
+            <canvas ref={canvasRef} />
+          </div>
+        ) : (
+          <div className="flex items-center justify-center text-gray-400">
+            <div className="text-center">
+              <FileText className="w-16 h-16 mx-auto mb-2" />
+              <p className="text-sm">请上传PDF文件</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

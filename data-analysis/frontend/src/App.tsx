@@ -4,6 +4,7 @@ import { LayoutDashboard, Network, Settings, BarChart3, Activity } from 'lucide-
 import CardFilter from './components/CardFilter'
 import Card from './components/Card'
 import KnowledgeGraph from './components/KnowledgeGraph'
+import KnowledgeOverview from './components/KnowledgeOverview'
 import RuleConfig from './components/RuleConfig'
 import ReportGenerator from './components/ReportGenerator'
 import api from './api'
@@ -38,7 +39,7 @@ interface RuleData {
  * 主应用组件
  */
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'cards' | 'graph' | 'rules' | 'generate'>('cards')
+  const [activeTab, setActiveTab] = useState<'overview' | 'cards' | 'graph' | 'rules' | 'generate'>('overview')
   const [cards, setCards] = useState<CardData[]>([])
   const [filteredCards, setFilteredCards] = useState<CardData[]>([])
   const [rules, setRules] = useState<RuleData[]>([])
@@ -201,6 +202,17 @@ const App: React.FC = () => {
         {/* Tab导航 */}
         <div className="flex gap-2 mb-6">
           <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
+              activeTab === 'overview'
+                ? 'bg-primary-600 text-white'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            知识概览
+          </button>
+          <button
             onClick={() => setActiveTab('cards')}
             className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${
               activeTab === 'cards'
@@ -248,6 +260,27 @@ const App: React.FC = () => {
 
         {/* 内容区域 */}
         <AnimatePresence mode="wait">
+          {activeTab === 'overview' && (
+            <motion.div
+              key="overview"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              transition={{ duration: 0.2 }}
+            >
+              <KnowledgeOverview onCardClick={(cardId) => {
+                if (cardId === 'all') {
+                  setActiveTab('cards')
+                } else if (['blue', 'green', 'yellow', 'red'].includes(cardId)) {
+                  handleFilterChange({ color: cardId })
+                  setActiveTab('cards')
+                } else {
+                  handleCardClick(cardId)
+                }
+              }} />
+            </motion.div>
+          )}
+
           {activeTab === 'cards' && (
             <motion.div
               key="cards"

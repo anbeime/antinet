@@ -11,13 +11,16 @@ dependency:
     - uvicorn>=0.24.0
     - faiss-cpu>=1.7.4
     - sentence-transformers>=2.2.0
-    - duckdb>=0.9.0
-    - qnn>=2.15.0
-    - torch>=2.0.0
+    - httpx>=0.25.0
+    - python-multipart>=0.0.6
+    - pydantic>=2.0.0
+    - python-dotenv>=1.0.0
+    - aiofiles>=23.0.0
   system:
-    - echo "配置venv_arm64虚拟环境（Python 3.12.10 ARM64 NPU优化）"
-    - echo "设置QNN SDK环境变量：QNN_SDK_ROOT，PATH"
-    - echo "配置GenieAPIService HTTP API"
+    - echo "配置venv_arm64虚拟环境（Python 3.12+ ARM64 NPU优化）"
+    - echo "设置QNN SDK环境变量：QNN_SDK_ROOT，PATH（如使用NPU加速）"
+    - echo "配置GenieAPIService HTTP API（如使用NPU推理）"
+    - echo "安装Tesseract OCR：apt-get install tesseract-ocr tesseract-ocr-chi-sim"
 ---
 
 # 知易智能知识管家
@@ -129,9 +132,11 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 faiss-cpu>=1.7.4
 sentence-transformers>=2.2.0
-duckdb>=0.9.0
-qnn>=2.15.0
-torch>=2.0.0
+httpx>=0.25.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+aiofiles>=23.0.0
 ```
 
 ### OCR环境配置
@@ -522,11 +527,11 @@ mkdir -p ./knowledge-graph/
   - 用途：批量处理文件夹中的文件，自动识别类型并分类
   - 参数：`--dir` 目录路径，`--output` 输出目录
 
-- [scripts/ocr_engine.py](scripts/ocr_engine.py)
+- [scripts/ocr_process.py](scripts/ocr_process.py)
   - 用途：对图像文件执行OCR文本提取（CPU版本，pytesseract）
   - 参数：`--file` 图像文件路径，`--language` 语言（chi_sim/eng）
 
-- [scripts/ocr_npu.py](scripts/ocr_npu.py) ⭐新增
+- [scripts/ocr_npu.py](scripts/ocr_npu.py)
   - 用途：NPU加速的OCR图像文本提取（使用高通AI Engine SDK）
   - 参数：`--file` 图像文件路径，`--language` 语言
   - 性能：NPU加速，推理延迟~50ms（比CPU快4倍）
@@ -550,7 +555,17 @@ mkdir -p ./knowledge-graph/
     )
     ```
 
-- [scripts/model_loader.py](scripts/model_loader.py) ⭐新增
+- [scripts/easy_ocr_npu.py](scripts/easy_ocr_npu.py)
+  - 用途：EasyOCR NPU引擎封装，推荐的OCR解决方案
+  - 使用方式：
+    ```python
+    from scripts.easy_ocr_npu import EasyOCRNPU
+
+    ocr_engine = EasyOCRNPU(use_mock=False)  # 真实NPU模式
+    result = ocr_engine.ocr_single_image(image_path="./image.jpg", languages=["ch_sim", "eng"])
+    ```
+
+- [scripts/model_loader.py](scripts/model_loader.py)
   - 用途：NPU模型加载器，支持多模型切换（llama3.2-3b/Qwen2.0-7B-SSD/llama3.1-8b）
   - 参数：`--model_key` 模型标识符
   - 示例：
@@ -562,86 +577,51 @@ mkdir -p ./knowledge-graph/
     model = loader.load()
     ```
 
-- [agents/query_builder.py](agents/query_builder.py) ⭐新增
-  - 用途：查询构建与执行 Agent，根据结构化条件生成SQL查询并执行
-  - 部署位置：本地代码（Python），连接本地SQLite/DuckDB
-  - 核心能力：接收查询条件、映射到数据库、生成SQL、执行查询
-  - 使用方式：
-    ```python
-    from agents.query_builder import QueryBuilderAgent
-
-    agent = QueryBuilderAgent(db_path="./data/analysis.db")
-    result = agent.process_query_request(query_request)
-    ```
-
-- [agents/card_classifier.py](agents/card_classifier.py) ⭐新增
-  - 用途：卡片生成与分类 Agent，分析数据结果决定生成哪些类型的卡片
-  - 部署位置：NPU，使用轻量分类模型
-  - 核心能力：判断生成四色卡片（事实/解释/风险/行动）、路由到对应生成器
-  - 使用方式：
-    ```python
-    from agents.card_classifier import CardClassifierAgent
-
-    agent = CardClassifierAgent()
-    result = agent.classify_cards(data_summary, user_query)
-    ```
-
 - [scripts/vector_retrieval.py](scripts/vector_retrieval.py)
   - 用途：向量检索模块，使用BGE-M3模型和FAISS进行语义搜索
-  - 参数：`--query` 查询文本，`--top_k` 返回结果数
-
-- [scripts/agent_memory_db.py](scripts/agent_memory_db.py)
-  - 用途：Agent记忆数据库，支持Agent间记忆共享与流转
-  - 参数：`--agent_id` Agent ID，`--operation` 操作类型（store/retrieve）
-
-- [scripts/init_memory_db.py](scripts/init_memory_db.py)
-  - 用途：初始化Agent记忆数据库，创建表结构和索引
-  - 参数：`--db-path` 数据库路径（默认：./agent_memory.db）
+  - 使用方式：`vr = VectorRetrieval(); vr.search(query, top_k=10)`
 
 - [scripts/agent_memory_db.py](scripts/agent_memory_db.py)
   - 用途：Agent记忆数据库访问类，封装所有CRUD操作
   - 使用方式：`db = AgentMemoryDB("./agent_memory.db")`
 
-- [scripts/test_memory_db.py](scripts/test_memory_db.py)
-  - 用途：测试Agent记忆数据库完整功能
-  - 参数：无
+- [scripts/init_memory_db.py](scripts/init_memory_db.py)
+  - 用途：初始化Agent记忆数据库，创建表结构和索引
+  - 参数：`--db-path` 数据库路径（默认：./agent_memory.db）
 
-- [scripts/test_agents.py](scripts/test_agents.py)
-  - 用途：测试8-Agent协作流程和各Agent独立功能
-  - 参数：无（交互式测试）
-
-- [scripts/test_knowledge_graph.py](scripts/test_knowledge_graph.py)
-  - 用途：测试知识图谱引导应用完整流程
-  - 参数：无（自动化测试或交互式测试）
-
-- [scripts/test_knowledge_graph_standalone.py](scripts/test_knowledge_graph_standalone.py)
-  - 用途：测试知识图谱引导应用（独立测试，不依赖驿传司）
-  - 参数：无
-
-- [scripts/vector_retrieval.py](scripts/vector_retrieval.py)
-  - 用途：向量检索模块，使用BGE-M3模型和FAISS实现语义搜索
-  - 使用方式：`vr = VectorRetrieval(); vr.search(query, top_k=10)`
-
-- [scripts/test_performance.py](scripts/test_performance.py)
-  - 用途：性能测试脚本，测试NPU推理、向量检索、批处理、OCR性能
-  - 参数：无
-
-- [scripts/test_agents.py](scripts/test_agents.py)
-  - 用途：测试8-Agent协作流程和各Agent独立功能
-  - 参数：无（交互式测试）
-
-- [scripts/test_knowledge_graph.py](scripts/test_knowledge_graph.py)
-  - 用途：测试知识图谱引导应用完整流程
-  - 参数：无（自动化测试或交互式测试）
+### Agent模块
+- [agents/orchestrator.py](agents/orchestrator.py) - 锦衣卫总指挥使，8-Agent体系最高调度核心
+- [agents/preprocessor.py](agents/preprocessor.py) - 密卷房，数据清洗与格式转换
+- [agents/query_builder.py](agents/query_builder.py) - 查询构建与执行Agent
+- [agents/card_classifier.py](agents/card_classifier.py) - 卡片生成与分类Agent
+- [agents/fact_generator.py](agents/fact_generator.py) - 通政司，事实卡片生成器
+- [agents/interpreter.py](agents/interpreter.py) - 监察院，解释卡片生成器
+- [agents/risk_detector.py](agents/risk_detector.py) - 刑狱司，风险卡片生成器
+- [agents/action_advisor.py](agents/action_advisor.py) - 参谋司，行动卡片生成器
+- [agents/memory.py](agents/memory.py) - 太史阁，知识存储与检索
+- [agents/messenger.py](agents/messenger.py) - 驿传司，报告合成与呈现
+- [agents/canmousi.py](agents/canmousi.py) - 蚕眸司，视觉分析Agent
+- [agents/jianchayuan.py](agents/jianchayuan.py) - 监察院（扩展），数据分析
+- [agents/mijuanfang.py](agents/mijuanfang.py) - 密卷房（扩展），文档处理
+- [agents/taishige.py](agents/taishige.py) - 太史阁（扩展），知识管理
+- [agents/tongzhengsi.py](agents/tongzhengsi.py) - 通政司（扩展），信息传递
+- [agents/xingyusi.py](agents/xingyusi.py) - 行移司，流程调度
+- [agents/yichuansi.py](agents/yichuansi.py) - 驿传司（扩展），报告输出
 
 ### 领域参考
 - [references/8-agent-architecture.md](references/8-agent-architecture.md)
   - 何时读取：设计Agent协作流程、理解Agent角色职责、实现提示词设计
 
-- [references/npu-deployment.md](references/npu-deployment.md) ⭐新增
+- [references/7-agent-architecture.md](references/7-agent-architecture.md)
+  - 何时读取：7-Agent架构参考，对比8-Agent设计
+
+- [references/npu-deployment.md](references/npu-deployment.md)
   - 何时读取：部署NPU加速功能、配置模型量化、实现并行推理
 
-- [references/model-selection.md](references/model-selection.md) ⭐新增
+- [references/easyocr-npu-deployment.md](references/easyocr-npu-deployment.md)
+  - 何时读取：EasyOCR NPU部署配置
+
+- [references/model-selection.md](references/model-selection.md)
   - 何时读取：选择合适的模型、理解模型性能差异、配置模型切换策略
 
 - [references/agent-prompts.md](references/agent-prompts.md)
@@ -666,9 +646,21 @@ mkdir -p ./knowledge-graph/
 - [references/frontend-integration.md](references/frontend-integration.md)
   - 何时读取：对接前端组件、实现API接口、设计数据可视化
 
+- [references/frontend-development.md](references/frontend-development.md)
+  - 何时读取：前端开发规范、组件设计
+
 - [references/card-specification.md](references/card-specification.md)
   - 何时读取：创建四色卡片、编写分析内容
   - 卡片结构、数据格式、约束条件
+
+- [references/analysis-best-practices.md](references/analysis-best-practices.md)
+  - 何时读取：数据分析最佳实践
+
+- [references/backend-api.md](references/backend-api.md)
+  - 何时读取：后端API设计、对接后端服务
+
+- [references/data-classification.md](references/data-classification.md)
+  - 何时读取：数据分类标准、处理规范
 
 ### 输出资产
 - [assets/data-analysis-report-template.md](assets/data-analysis-report-template.md)
@@ -693,19 +685,21 @@ mkdir -p ./knowledge-graph/
 
 ## 部署环境
 
-- **平台**：Windows ARM64
-- **开发工具**：QAI AppBuilder
-- **后端**：FastAPI + Python 3.10+
+- **平台**：Windows ARM64（支持Linux/macOS）
+- **后端**：FastAPI + Python 3.10+ + uvicorn
 - **前端**：React 18 + TypeScript + Vite + Tailwind CSS
-- **数据库**：SQLite（元数据） + DuckDB（分析数据）
-- **模型**：Qwen2.0-7B-SSD-8380-2.34（路径：models/Qwen2.0-7B-SSD-8380-2.34）
-- **向量检索**：BGE-M3 + FAISS/Chroma
-- **NPU SDK**：QNN SDK
-- **服务接口**：GenieAPIService（HTTP API）
+- **数据库**：SQLite（元数据）
+- **向量检索**：BGE-M3 + FAISS
+- **NPU SDK**：QNN SDK（可选，用于NPU加速）
+- **服务接口**：FastAPI RESTful API + GenieAPIService（可选NPU推理）
 
 ## 架构说明
 
-- **8-Agent架构**：明确采用8-Agent锦衣卫风格协作流（锦衣卫总指挥使/密卷房/通政司/监察院/太史阁/刑狱司/参谋司/驿传司）
+- **多Agent架构**：采用多Agent锦衣卫风格协作流
+  - 核心Agent：orchestrator, preprocessor, query_builder, card_classifier
+  - 卡片生成器：fact_generator, interpreter, risk_detector, action_advisor
+  - 扩展Agent：canmousi, jianchayuan, mijuanfang, taishige, tongzhengsi, xingyusi, yichuansi
+  - 基础设施：memory, messenger
 - **前后端完全解耦**：通过RESTful API对接，前端通过HTTP请求调用后端服务
-- **GenieAPIService集成**：作为标准HTTP API接口，支持NPU推理调用
+- **NPU加速支持**：可选集成GenieAPIService进行NPU推理
 - **多模态扩展**：支持OCR识别图像文本，视频处理模块需后续迭代

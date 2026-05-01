@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Zap, BrainCircuit, FileText, BarChart3, Database, Code, Settings, Shield, Eye, Target, Star, Users } from 'lucide-react';
+import { Zap, BrainCircuit, FileText, BarChart3, Database, Code, Settings, Shield, Eye, Target, Star, Users, History, MessageSquare, Crown } from 'lucide-react';
+
+// Agent元数据
+const agentMeta: Record<string, { name: string; role: string; icon: any; color: string }> = {
+  '太史阁': { name: '太史阁', role: '历史记录与反思官', icon: History, color: 'from-blue-500 to-blue-600' },
+  '锦衣卫': { name: '锦衣卫', role: '安全与情报收集官', icon: Shield, color: 'from-red-500 to-red-600' },
+  '通政司': { name: '通政司', role: '信息与通讯中枢', icon: MessageSquare, color: 'from-green-500 to-green-600' },
+  '监察院': { name: '监察院', role: '监督与审计官', icon: Eye, color: 'from-purple-500 to-purple-600' },
+  '密卷房': { name: '密卷房', role: '知识库与档案管理员', icon: Database, color: 'from-indigo-500 to-indigo-600' },
+  '参谋司': { name: '参谋司', role: '行动建议官', icon: Target, color: 'from-orange-500 to-orange-600' },
+  '驿传司': { name: '驿传司', role: '消息传递官', icon: MessageSquare, color: 'from-cyan-500 to-cyan-600' },
+  '刑狱司': { name: '刑狱司', role: '风险检测官', icon: Shield, color: 'from-yellow-500 to-yellow-600' },
+  '丞相府': { name: '丞相府', role: '战略规划与决策官', icon: Crown, color: 'from-amber-500 to-amber-600' },
+};
 
 // 图标映射函数
 const getCategoryIcon = (category: string): React.ComponentType<{className?: string}> => {
@@ -34,6 +47,7 @@ interface Skill {
 
 const SkillCenter: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [apiSkills, setApiSkills] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [executingSkill, setExecutingSkill] = useState<string | null>(null);
@@ -41,6 +55,7 @@ const SkillCenter: React.FC = () => {
   const [showExecuteModal, setShowExecuteModal] = useState(false);
   const [selectedSkillForExec, setSelectedSkillForExec] = useState<Skill | null>(null);
   const [skillParams, setSkillParams] = useState('');
+  const [viewMode, setViewMode] = useState<'category' | 'agent'>('category');
 
   // 从API获取技能列表
   useEffect(() => {
@@ -72,13 +87,24 @@ const SkillCenter: React.FC = () => {
     rating: 4.5
   }));
 
-  // 筛选技能
-  const filteredSkills = displaySkills.filter(skill => {
-    return selectedCategory === 'all' || skill.category === selectedCategory;
-  });
-
   // 提取唯一分类
   const categories = ['全部技能', ...Array.from(new Set(displaySkills.map(s => s.category)))];
+
+  // 提取唯一Agent
+  const agents = Array.from(new Set(displaySkills.map(s => s.agent))).filter(Boolean);
+
+  // 筛选技能
+  const filteredSkills = displaySkills.filter(skill => {
+    const categoryMatch = selectedCategory === 'all' || skill.category === selectedCategory;
+    const agentMatch = !selectedAgent || skill.agent === selectedAgent;
+    return categoryMatch && agentMatch;
+  });
+
+  // 按Agent分组统计
+  const skillsByAgent = agents.reduce((acc, agent) => {
+    acc[agent] = displaySkills.filter(s => s.agent === agent);
+    return acc;
+  }, {} as Record<string, Skill[]>);
 
   // 执行技能
   const handleExecuteSkill = async (skill: Skill, params?: string) => {
@@ -135,41 +161,109 @@ const SkillCenter: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Sidebar */}
           <div className="lg:col-span-3 space-y-6">
-            {/* Categories */}
+            {/* View Mode Toggle */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-              <h3 className="font-semibold mb-4 flex items-center">
-                <Database className="w-4 h-4 mr-2" />
-                技能分类
+              <h3 className="font-semibold mb-3 flex items-center">
+                <Zap className="w-4 h-4 mr-2" />
+                视图模式
               </h3>
-              <div className="space-y-2">
-                {categories.map((category) => {
-                  const categoryId = category === '全部技能' ? 'all' : category;
-                  const count = category === '全部技能' 
-                    ? displaySkills.length 
-                    : displaySkills.filter(s => s.category === category).length;
-                  const Icon = category === '全部技能' ? Zap : getCategoryIcon(category);
-                  return (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedCategory(categoryId)}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
-                        selectedCategory === categoryId
-                          ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <Icon className="w-4 h-4 mr-2" />
-                        <span>{category}</span>
-                      </div>
-                      <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => { setViewMode('category'); setSelectedAgent(null); }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'category'
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  按分类
+                </button>
+                <button
+                  onClick={() => { setViewMode('agent'); setSelectedCategory('all'); }}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm transition-colors ${
+                    viewMode === 'agent'
+                      ? 'bg-violet-600 text-white'
+                      : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  按Agent
+                </button>
               </div>
             </div>
+
+            {/* Categories */}
+            {viewMode === 'category' ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+                <h3 className="font-semibold mb-4 flex items-center">
+                  <Database className="w-4 h-4 mr-2" />
+                  技能分类
+                </h3>
+                <div className="space-y-2">
+                  {categories.map((category) => {
+                    const categoryId = category === '全部技能' ? 'all' : category;
+                    const count = category === '全部技能'
+                      ? displaySkills.length
+                      : displaySkills.filter(s => s.category === category).length;
+                    const Icon = category === '全部技能' ? Zap : getCategoryIcon(category);
+                    return (
+                      <button
+                        key={category}
+                        onClick={() => setSelectedCategory(categoryId)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${
+                          selectedCategory === categoryId
+                            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center">
+                          <Icon className="w-4 h-4 mr-2" />
+                          <span>{category}</span>
+                        </div>
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
+                <h3 className="font-semibold mb-4 flex items-center">
+                  <Users className="w-4 h-4 mr-2" />
+                  Agent团队
+                </h3>
+                <div className="space-y-2">
+                  {agents.map((agent) => {
+                    const meta = agentMeta[agent] || { name: agent, role: '', icon: Users, color: 'from-gray-500 to-gray-600' };
+                    const AgentIcon = meta.icon;
+                    const count = skillsByAgent[agent]?.length || 0;
+                    return (
+                      <button
+                        key={agent}
+                        onClick={() => setSelectedAgent(selectedAgent === agent ? null : agent)}
+                        className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          selectedAgent === agent
+                            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${meta.color} flex items-center justify-center`}>
+                          <AgentIcon className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="flex-1 text-left">
+                          <p className="font-medium">{agent}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{meta.role}</p>
+                        </div>
+                        <span className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
           </div>
 
@@ -193,15 +287,25 @@ const SkillCenter: React.FC = () => {
                         </div>
                         <div>
                           <h3 className="font-semibold">{skill.name}</h3>
-                          <p className="text-xs text-gray-500">{skill.agent}</p>
+                          {/* Agent Badge with color */}
+                          {(() => {
+                            const meta = agentMeta[skill.agent] || { name: skill.agent, role: '', icon: Users, color: 'from-gray-500 to-gray-600' };
+                            const AgentIcon = meta.icon;
+                            return (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs bg-gradient-to-r ${meta.color} text-white`}>
+                                <AgentIcon className="w-3 h-3 mr-1" />
+                                {skill.agent}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                       <span className={`text-xs px-2 py-1 rounded-full ${
-                        skill.status === 'active' 
+                        skill.status === 'active'
                           ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
                           : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
                       }`}>
-                        {skill.status === 'active' ? '已启用' : '测试版'}
+                        {skill.status === 'active' ? '启用' : '测试版'}
                       </span>
                     </div>
                     

@@ -23,6 +23,8 @@ import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
+import FourColorCardPanel from "@/components/FourColorCardPanel";
+import EvolvingChatBot from "@/components/EvolvingChatBot";
 import { AuthProvider } from '@/contexts/authContext';
 
 export default function App() {
@@ -52,6 +54,8 @@ export default function App() {
         <Route path="/genie-playground" element={<GeniePlayground />} />
         <Route path="/genie-npu-test" element={<GenieNPUTest />} />
         <Route path="/hermes-manager" element={<HermesManager />} />
+        <Route path="/four-color-cards" element={<FourColorCardPanel />} />
+        <Route path="/evolving-chat" element={<EvolvingChatBot />} />
         <Route path="/remotion" element={
           <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
             <Home initialTab="remotion" />

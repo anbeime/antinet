@@ -142,9 +142,10 @@ const DataAnalysisPanel: React.FC = () => {
           );
           
           if (searchResponse.ok) {
-            const cards: KnowledgeCard[] = await searchResponse.json();
+            const data = await searchResponse.json();
+            const cards: KnowledgeCard[] = data.cards || [];
             // 筛选与查询相关的卡片（简单的关键词匹配）
-            const relevantCards = cards.filter(card => 
+            const relevantCards = cards.filter(card =>
               card.title.toLowerCase().includes(query.toLowerCase()) ||
               card.content.toLowerCase().includes(query.toLowerCase())
             );

@@ -472,18 +472,49 @@ const PPTAnalysis: React.FC = () => {
                   <h4 className="font-semibold text-purple-700 dark:text-purple-300 mb-3">✨ 智能生成</h4>
                   <ul className="text-sm space-y-1 text-gray-700 dark:text-gray-300">
                     <li>• 输入内容即可生成完整PPT</li>
-                    <li>• 支持Markdown语法</li>
-                    <li>• 多种主题风格可选</li>
-                    <li>• 秒级生成，即时下载</li>
+                    <li>• 支持 Markdown 语法，快速排版</li>
+                    <li>• 三种精美主题，适应不同场景</li>
+                    <li>• 自动生成专业布局</li>
+                    <li>• 秒级生成，即时下载</li>                    
                   </ul>
                 </div>
                 <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">📝 Markdown 语法</h4>
+                  <h4 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">
+                    📝 Markdown 语法
+                  </h4>
                   <div className="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">#</code><span>一级标题</span></div>
-                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">##</code><span>二级标题</span></div>
-                    <div className="flex items-start space-x-2"><code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">-</code><span>无序列表</span></div>
+                    <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">#</code>
+                      <span>一级标题 → 创建标题页</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">##</code>
+                      <span>二级标题 → 创建新页面</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">###</code>
+                      <span>三级标题 → 页面小标题</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">-</code>
+                      <span>无序列表（项目符号）</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">1.</code>
+                      <span>有序列表（编号）</span>
+                    </div>
                   </div>
+                </div>
+
+                <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-4">
+                  <h4 className="font-semibold text-green-700 dark:text-green-300 mb-3">
+                    🎯 主题说明
+                  </h4>
+                  <ul className="text-sm space-y-2 text-gray-700 dark:text-gray-300">
+                    <li><strong>Professional:</strong> 适合商务汇报、项目提案</li>
+                    <li><strong>Creative:</strong> 适合产品发布、市场营销</li>
+                    <li><strong>Minimal:</strong> 适合技术分享、学术报告</li>
+                  </ul>
                 </div>
               </div>
             </motion.div>
