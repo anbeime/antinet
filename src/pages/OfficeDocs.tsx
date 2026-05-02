@@ -259,6 +259,8 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
     try {
       setIsLoading(true);
+      // 先加载 jQuery（Luckysheet sparkline 插件依赖 jQuery）
+      await loadScript('https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js');
       // 使用 jsDelivr CDN - 修复路径
       await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.css');
       await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.umd.js');

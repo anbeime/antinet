@@ -19,7 +19,11 @@ import {
   AlertCircle,
   FileCode,
   Search,
-  Presentation
+  Presentation,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
@@ -793,18 +797,19 @@ const FormatConverter: React.FC = () => {
   };
 
   // 加载 PDF.js
-  const loadPdfJs = async () => {
+  const loadPdfJs = async (): Promise<any> => {
     const pdfjsLib = (window as any).pdfjsLib;
     if (pdfjsLib) return pdfjsLib;
 
-    return new Promise<void>((resolve) => {
+    return new Promise<any>((resolve, reject) => {
       const script = document.createElement('script');
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       script.onload = () => {
         const pdfjs = (window as any).pdfjsLib;
         pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        resolve();
+        resolve(pdfjs);
       };
+      script.onerror = reject;
       document.head.appendChild(script);
     });
   };
@@ -816,14 +821,13 @@ const FormatConverter: React.FC = () => {
     setIsPdfLoading(true);
     
     try {
-      await loadPdfJs();
+      const pdfjsLib = await loadPdfJs();
       
       const response = await fetch(task.resultUrl!);
       const arrayBuffer = await response.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
       
-      const pdfjs = (window as any).pdfjsLib;
-      const pdf = await pdfjs.getDocument({ data }).promise;
+      const pdf = await pdfjsLib.getDocument({ data }).promise;
       
       setPdfDoc(pdf);
       setPdfTotalPages(pdf.numPages);
@@ -1347,6 +1351,106 @@ const FormatConverter: React.FC = () => {
             </li>
           </ul>
         </motion.div>
+
+        {/* PDF 预览弹窗 */}
+        <AnimatePresence>
+          {showPdfPreview && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+              onClick={closePdfPreview}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* 标题栏 */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    {previewTask?.fileName || 'PDF 预览'}
+                  </h3>
+                  <button
+                    onClick={closePdfPreview}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+
+                {/* PDF 工具栏 */}
+                <div className="flex items-center justify-between px-6 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-4">
+                    {/* 页码导航 */}
+                    <button
+                      onClick={() => setPdfCurrentPage(Math.max(1, pdfCurrentPage - 1))}
+                      disabled={pdfCurrentPage <= 1}
+                      className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-300">
+                      第 {pdfCurrentPage} / {pdfTotalPages} 页
+                    </span>
+                    <button
+                      onClick={() => setPdfCurrentPage(Math.min(pdfTotalPages, pdfCurrentPage + 1))}
+                      disabled={pdfCurrentPage >= pdfTotalPages}
+                      className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    {/* 缩放控制 */}
+                    <button
+                      onClick={() => setPdfScale(Math.max(0.5, pdfScale - 0.25))}
+                      className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
+                    >
+                      <ZoomOut className="w-5 h-5" />
+                    </button>
+                    <span className="text-sm text-gray-600 dark:text-gray-300 min-w-[60px] text-center">
+                      {Math.round(pdfScale * 100)}%
+                    </span>
+                    <button
+                      onClick={() => setPdfScale(Math.min(3, pdfScale + 0.25))}
+                      className="p-2 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
+                    >
+                      <ZoomIn className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* 下载按钮 */}
+                  {previewTask && (
+                    <button
+                      onClick={() => downloadFile(previewTask)}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      下载
+                    </button>
+                  )}
+                </div>
+
+                {/* PDF 内容区 */}
+                <div className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-900 flex items-start justify-center p-4">
+                  {isPdfLoading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <Loader className="w-8 h-8 animate-spin text-blue-500" />
+                      <span className="ml-3 text-gray-600 dark:text-gray-400">加载中...</span>
+                    </div>
+                  ) : (
+                    <canvas ref={pdfCanvasRef} className="shadow-lg" />
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Book, 
@@ -845,6 +846,15 @@ throw new Error(err.detail || '导出失败');
                 <ExternalLink className="w-4 h-4 mr-1" />
                 {exportingPPT ? '导出中...' : '导出PPT'}
               </button>
+              <PDFDownloadLink
+                document={<ProjectPDF cards={cards} projectName={project.name} />}
+                fileName={`${project.name}-专题卡片.pdf`}
+                className="flex items-center px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors shadow-sm"
+              >
+                {({ loading }) => (
+                  loading ? '生成中...' : '导出PDF'
+                )}
+              </PDFDownloadLink>
               <button
                 onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}
                 className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
@@ -1217,6 +1227,58 @@ throw new Error(err.detail || '导出失败');
     </Portal>
   );
 };
+
+// ========== 专题卡片PDF导出组件 ==========
+interface ProjectPDFProps {
+  cards: ProjectCard[];
+  projectName: string;
+}
+
+const projectStyles = StyleSheet.create({
+  page: { padding: 30, fontFamily: 'Helvetica' },
+  header: { marginBottom: 20, borderBottom: '2px solid #6366f1', paddingBottom: 10 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
+  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 5 },
+  cardContainer: { marginBottom: 15, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, overflow: 'hidden' },
+  cardHeader: { padding: 10, backgroundColor: '#f3f4f6' },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1f2937' },
+  cardBadge: { fontSize: 10, color: '#6b7280', marginTop: 2 },
+  cardBody: { padding: 12 },
+  cardContent: { fontSize: 11, color: '#374151', lineHeight: 1.5 },
+  cardFooter: { padding: 8, backgroundColor: '#f9fafb', borderTopWidth: 1, borderColor: '#e5e7eb' },
+  cardMeta: { fontSize: 9, color: '#9ca3af' },
+  footer: { marginTop: 30, paddingTop: 10, borderTopWidth: 1, borderColor: '#e5e7eb', fontSize: 10, color: '#9ca3af', textAlign: 'center' },
+});
+
+const cardTypeLabels: Record<string, string> = {
+  blue: '事实', green: '解释', yellow: '风险', red: '行动'
+};
+
+const ProjectPDF: React.FC<ProjectPDFProps> = ({ cards, projectName }) => (
+  <Document>
+    <Page size="A4" style={projectStyles.page}>
+      <View style={projectStyles.header}>
+        <Text style={projectStyles.title}>{projectName}</Text>
+        <Text style={projectStyles.subtitle}>专题卡片导出 | 共 {cards.length} 张</Text>
+      </View>
+      {cards.map((card, index) => (
+        <View key={card.id} style={projectStyles.cardContainer}>
+          <View style={projectStyles.cardHeader}>
+            <Text style={projectStyles.cardTitle}>{index + 1}. {card.title}</Text>
+            <Text style={projectStyles.cardBadge}>{cardTypeLabels[card.card_type] || card.card_type}</Text>
+          </View>
+          <View style={projectStyles.cardBody}>
+            <Text style={projectStyles.cardContent}>{card.content || '无内容'}</Text>
+          </View>
+          <View style={projectStyles.cardFooter}>
+            <Text style={projectStyles.cardMeta}>创建: {card.created_at ? new Date(card.created_at).toLocaleDateString('zh-CN') : '-'}</Text>
+          </View>
+        </View>
+      ))}
+      <Text style={projectStyles.footer}>由 Antinet 专题研究系统生成</Text>
+    </Page>
+  </Document>
+);
 
 
 // ========== 主组件 ==========

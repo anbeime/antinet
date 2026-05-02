@@ -342,8 +342,8 @@ roam: true,
       }
     });
     
-    // 双击查看节点对应的卡片详情
-    chartInstance.current.on('dblclick', async (params) => {
+    // 点击查看节点对应的卡片详情
+    chartInstance.current.on('click', async (params) => {
       if (params.dataType === 'node') {
         const nodeId = params.data.id;
         if (nodeId && viewMode === 'api') {
@@ -354,19 +354,21 @@ roam: true,
               setModalCard(card);
               setModalOpen(true);
             } else {
-              const graphRes = await fetch(`${API_BASE}/api/backlinks/card/${nodeId}`);
-              if (graphRes.ok) {
-                const graphData = await graphRes.json();
-                setModalCard({
-                  title: graphData.nodes?.[0]?.title || `卡片 ${nodeId}`,
-                  content: `关联节点: ${graphData.nodes?.length || 0} 个\n链接: ${graphData.links?.length || 0} 条`,
-                  color: graphData.nodes?.[0]?.type || 'blue'
-                });
-                setModalOpen(true);
-              }
+              setModalCard({
+                title: params.data.name || `卡片 ${nodeId}`,
+                content: '卡片不存在或已删除',
+                color: 'blue'
+              });
+              setModalOpen(true);
             }
           } catch (e) {
             console.error('加载卡片失败:', e);
+            setModalCard({
+              title: params.data.name || `卡片 ${nodeId}`,
+              content: '加载失败: ' + String(e),
+              color: 'red'
+            });
+            setModalOpen(true);
           }
         }
       }

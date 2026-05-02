@@ -157,6 +157,7 @@ register_router("routes.meeting_routes")
 register_router("routes.speech_routes")
 register_router("routes.research_routes")
 register_router("routes.ppt_structure_routes")
+register_router("routes.analysis_routes")
 
 # ============================================================
 # 8. 初始化各模块的数据库连接

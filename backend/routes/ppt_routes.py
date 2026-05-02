@@ -5,6 +5,7 @@ PPT 路由
 import logging
 import json
 import re
+import urllib.parse
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
@@ -238,12 +239,15 @@ async def get_ppt_file(filename: str):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
         
+        # RFC 5987 编码：filename*=UTF-8''{encoded}
+        encoded_filename = urllib.parse.quote(filename)
+        
         # 使用 media_type 返回而不是 attachment，让浏览器可以在页面显示
         return FileResponse(
             path=str(file_path),
             filename=filename,
             media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            headers={"Content-Disposition": f"inline; filename={filename}"}
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"}
         )
     except Exception as e:
         logger.error(f"获取PPT文件失败: {e}")

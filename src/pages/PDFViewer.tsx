@@ -26,23 +26,52 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
     loadPDFJS();
   }, []);
 
+  // Load PDF from URL if provided
+  useEffect(() => {
+    if (fileUrl) {
+      loadPDFFromURL(fileUrl);
+    }
+  }, [fileUrl]);
+
+  const loadPDFFromURL = async (url: string) => {
+    setIsLoading(true);
+    try {
+      const pdfjsLib = await loadPDFJS();
+      const response = await fetch(url);
+      const arrayBuffer = await response.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+      const pdf = await pdfjsLib.getDocument({ data }).promise;
+      setPdfDoc(pdf);
+      setTotalPages(pdf.numPages);
+      setCurrentPage(1);
+    } catch (error) {
+      console.error('加载PDF失败:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (pdfDoc && currentPage > 0) {
       renderPage(currentPage);
     }
   }, [pdfDoc, currentPage, scale]);
 
-  const loadPDFJS = async () => {
+  const loadPDFJS = async (): Promise<any> => {
     const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib) return;
+    if (pdfjsLib) return pdfjsLib;
 
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
-      const pdfjs = (window as any).pdfjsLib;
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    };
-    document.head.appendChild(script);
+    return new Promise<any>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.onload = () => {
+        const pdfjs = (window as any).pdfjsLib;
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(pdfjs);
+      };
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,13 +89,12 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       
       try {
-        const pdfjs = (window as any).pdfjsLib;
-        if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data }).promise;
-          setPdfDoc(pdf);
-          setTotalPages(pdf.numPages);
-          setCurrentPage(1);
-        }
+        const pdfjsLib = await loadPDFJS();
+        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        
+        setPdfDoc(pdf);
+        setTotalPages(pdf.numPages);
+        setCurrentPage(1);
       } catch (error) {
         console.error('加载PDF失败:', error);
         alert('加载PDF失败');
