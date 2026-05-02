@@ -759,7 +759,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 知识可视化下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'document-center', 'format-converter', 'report-automation'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'document-center', 'format-converter', 'report-automation', 'knowledge-graph', 'mindmap', 'wiki-editor', 'knowledge-network'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Brain size={18} />
                 <span>知识可视化</span>
@@ -810,8 +810,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
             {/* 团队协作下拉菜单 */}
             <div className="relative group">
-<button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['virtual-office-meeting'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              <button
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['virtual-office-meeting', 'team-collaboration'].includes(activeTab) && !['knowledge-graph', 'mindmap', 'wiki-editor', 'knowledge-network'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Users size={18} />
                 <span>团队协作</span>

@@ -219,9 +219,9 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
     try {
       setIsLoading(true);
-      // 使用 jsDelivr CDN
-      await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/css/luckysheet.css');
-      await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/js/luckysheet.umd.js');
+      // 使用 jsDelivr CDN - 修复路径
+      await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.css');
+      await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.umd.js');
       
       // 等待 luckysheet 初始化
       await new Promise(resolve => setTimeout(resolve, 500));

@@ -232,7 +232,7 @@ const displayData = viewMode === 'api' && apiData ? (() => {
         formatter: '{b}'
       },
       legend: {
-        data: displayData.categories.map((c: any) => c.name),
+        data: displayData.categories?.map((c: any) => c.name) || ['事实', '解释', '风险', '行动'],
         top: 10,
       },
       series: [{
@@ -241,30 +241,15 @@ const displayData = viewMode === 'api' && apiData ? (() => {
         data: displayData.nodes.map((node: any) => ({
           id: node.id,
           name: node.name,
-          category: node.category,
-          symbolSize: node.symbolSize,
+          category: node.category ?? 0,
+          symbolSize: node.symbolSize || 30,
+          x: node.x,
+          y: node.y,
           label: {
             show: true,
-            fontSize: 12,
+            fontSize: 11,
+            position: 'bottom',
           },
-          emphasis: {
-            focus: 'adjacency',
-            lineStyle: {
-              width: 4
-            }
-          },
-          force: {
-            repulsion: 2000,
-            gravity: 0.005,
-            edgeLength: [200, 600],
-            layoutAnimation: true,
-            alphaDecay: 0.005,
-            alphaMin: 0.000001,
-            initLayout: 'none',
-            friction: 0.9
-          },
-          draggable: true,
-          roam: true,
         })),
         links: displayData.links.map((link: any) => ({
           source: link.source,
@@ -275,48 +260,78 @@ const displayData = viewMode === 'api' && apiData ? (() => {
           },
           label: {
             show: true,
-            formatter: link.label === 'backlink' ? '←引用' : link.label === 'forwardlink' ? '引用→' : link.label,
             fontSize: 10,
-            color: '#666'
+            formatter: link.label || ''
           }
         })),
-        categories: displayData.categories.map((c: any, i: number) => ({
-          name: c.name,
-          itemStyle: {
-            color: categoryColors[i % categoryColors.length]
-          }
-        })),
-        lineStyle: {
-          color: 'source',
-          curveness: 0.1,
-          width: 2,
-        },
-        emphasis: {
-          focus: 'adjacency',
-          lineStyle: {
-            width: 4,
-            color: '#5470c6'
-          }
-        },
+        categories: displayData.categories?.map((c: any, i: number) => ({ name: c.name || ['事实', '解释', '风险', '行动'][i] })) || [
+          { name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }
+        ],
+roam: true,
+        draggable: true,
         label: {
           show: true,
           position: 'bottom',
-          formatter: '{b}',
           fontSize: 11,
-          color: '#333',
-          fontWeight: 500,
+          formatter: '{b}'
         },
+        labelLayout: { hideOverlap: true },
+        scaleLimit: { min: 0.3, max: 3 },
+        lineStyle: { color: 'source', curveness: 0.3 },
+        emphasis: {
+          focus: 'adjacency',
+          lineStyle: { width: 4 }
+        },
+        force: {
+          repulsion: 5000,
+          gravity: 0.03,
+          edgeLength: [150, 400],
+          layoutAnimation: true,
+          alphaDecay: 0.02,
+          alphaMin: 0.001
+        }
       }],
-      animationDuration: 3000,
-      animationEasing: 'quinticOut',
+      links: displayData.links.map((link: any) => ({
+        source: link.source,
+        target: link.target,
+        lineStyle: {
+          width: 2,
+          curveness: 0.2
+        },
+        label: {
+          show: true,
+          formatter: link.label === 'backlink' ? '←引用' : link.label === 'forwardlink' ? '引用→' : link.label,
+          fontSize: 10,
+          color: '#666'
+        }
+      })),
+      categories: displayData.categories.map((c: any, i: number) => ({
+        name: c.name,
+        itemStyle: {
+          color: categoryColors[i % categoryColors.length]
+        }
+      })),
+      lineStyle: {
+        color: 'source',
+        curveness: 0.1,
+        width: 2,
+      },
+      emphasis: {
+        focus: 'adjacency',
+        lineStyle: {
+          width: 4,
+          color: '#54c6'
+        }
+      },
+      animationDuration: 5000,
+      animationEasing: 'elasticOut'
     };
     
-    chartInstance.current.setOption(option);
+    chartInstance.current.setOption(option, true);
     
-    // 延时触发布局重新计算，让节点充分分散
     setTimeout(() => {
       chartInstance.current?.resize();
-    }, 100);
+    }, 500);
     
     chartInstance.current.on('click', (params) => {
       if (params.dataType === 'node') {

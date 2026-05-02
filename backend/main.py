@@ -313,6 +313,14 @@ try:
 except Exception as e:
     logger.warning(f"无法导入 Markdown转换路由: {e}")
 
+# 注册 PPT结构草稿路由
+try:
+    from routes.ppt_structure_routes import router as ppt_structure_router
+    app.include_router(ppt_structure_router)
+    logger.info("[OK] PPT结构草稿路由已注册")
+except Exception as e:
+    logger.warning(f"无法导入 PPT结构草稿路由: {e}")
+
 # 注册 PPT 处理路由
 try:
     from routes.ppt_routes import router as ppt_router

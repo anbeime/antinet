@@ -30,13 +30,42 @@ _use_faster_whisper = False
 
 
 def _get_whisper_model(model_size: str = "base") -> any:
-    """获取 Whisper 模型 - 由于缺失依赖，返回 None 让前端使用浏览器 API"""
-    global _whisper_model, _whisper_model_name
+    """获取 Whisper 模型"""
+    global _whisper_model, _whisper_model_name, _use_faster_whisper
+    
     if _whisper_model is not None and _whisper_model_name == model_size:
         return _whisper_model
     
-    # 跳过 Whisper（需要 tiktoken），让前端用浏览器语音识别
-    logger.warning("[STT] Whisper 需要额外依赖，使用浏览器语音识别")
+    try:
+        # 尝试使用 faster-whisper（推荐）
+        from faster_whisper import WhisperModel
+        logger.info(f"[STT] 加载 Faster-Whisper 模型: {model_size}")
+        _whisper_model = WhisperModel(
+            model_size,
+            device="cpu",
+            compute_type="int8",
+            download_root=str(PROJECT_ROOT / "data" / "whisper_models")
+        )
+        _whisper_model_name = model_size
+        _use_faster_whisper = True
+        logger.info("[STT] Faster-Whisper 模型加载成功")
+        return _whisper_model
+    except ImportError:
+        pass
+    
+    try:
+        # 回退到 openai-whisper
+        import whisper
+        logger.info(f"[STT] 加载 OpenAI Whisper 模型: {model_size}")
+        _whisper_model = whisper.load_model(model_size)
+        _whisper_model_name = model_size
+        _use_faster_whisper = False
+        logger.info("[STT] OpenAI Whisper 模型加载成功")
+        return _whisper_model
+    except ImportError:
+        pass
+    
+    logger.warning("[STT] 未安装 Whisper 相关库，请运行: pip install faster-whisper 或 pip install openai-whisper")
     return None
 
 
@@ -93,8 +122,15 @@ def stt_transcribe_audio(audio_path: str, language: str = "zh", model_size: str 
         raise FileNotFoundError(f"音频文件不存在: {audio_path}")
     
     model = _get_whisper_model(model_size)
-    lang = None if language == "auto" else language
+    if model is None:
+        raise RuntimeError(
+            "Whisper 模型未安装。请运行以下命令安装：\n"
+            "  pip install faster-whisper  # 推荐，更快更准\n"
+            "  或\n"
+            "  pip install openai-whisper"
+        )
     
+    lang = None if language == "auto" else language
     logger.info(f"[STT] 开始转写: {audio_path}")
     
     if _use_faster_whisper:
@@ -144,10 +180,33 @@ def list_stt_models() -> list:
 
 def get_speech_status() -> dict:
     """获取语音服务状态"""
-    global _whisper_model_name, _use_faster_whisper
+    global _whisper_model, _whisper_model_name, _use_faster_whisper
+    
+    # 检查 Whisper 是否可用
+    try:
+        from faster_whisper import WhisperModel as _  # 检查 faster-whisper
+        faster_whisper_available = True
+    except ImportError:
+        faster_whisper_available = False
+    
+    try:
+        import whisper as _  # 检查 openai-whisper
+        openai_whisper_available = True
+    except ImportError:
+        openai_whisper_available = False
+    
+    whisper_available = faster_whisper_available or openai_whisper_available
+    
     return {
         "tts": {"engine": "Microsoft Edge TTS", "status": "ready", "voices_count": len(list_tts_voices())},
-        "stt": {"engine": "Faster-Whisper" if _use_faster_whisper else "OpenAI Whisper", "model_loaded": _whisper_model_name or "未加载", "status": "ready"}
+        "stt": {
+            "engine": "Faster-Whisper" if _use_faster_whisper else ("OpenAI Whisper" if _whisper_model else "未安装"),
+            "model_loaded": _whisper_model_name or "未加载",
+            "model_available": whisper_available,
+            "faster_whisper_available": faster_whisper_available,
+            "openai_whisper_available": openai_whisper_available,
+            "status": "ready" if _whisper_model else ("available" if whisper_available else "not_installed")
+        }
     }
 
 
