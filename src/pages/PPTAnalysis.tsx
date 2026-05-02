@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
 import KnowledgeGraph from '@/components/KnowledgeGraph';
 
@@ -16,7 +17,7 @@ interface KnowledgeCard {
   tags?: string;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl() + ''
 
 type TabType = 'text' | 'cards' | 'project';
 type ThemeType = 'professional' | 'creative' | 'minimal';

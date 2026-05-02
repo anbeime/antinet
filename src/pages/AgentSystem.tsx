@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, History, Shield, MessageSquare, Eye, Database, Crown, Target, CheckCircle, Activity, Zap, TrendingUp, Clock, Cpu } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface Agent {
   id: string;
@@ -121,7 +122,7 @@ const AgentSystem: React.FC = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/skill/stats');
+        const response = await fetch(getApiBaseUrl() + '/api/skill/stats');
         if (response.ok) {
           const data = await response.json();
           const taskStats = data.task_stats || {};

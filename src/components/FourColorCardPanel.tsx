@@ -3,7 +3,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
   Bot, FileText, Network, RefreshCw, Download, Trash2,
   ChevronDown, ChevronRight, Plus, Check, AlertCircle, Loader,
   Database, Link2, Eye, Clock
@@ -42,7 +43,7 @@ interface ExtractionResult {
   system_prompt: string;
 }
 
-const API_BASE = 'http://localhost:8000/api/skill';
+const API_BASE = getApiBaseUrl() + '/api/skill'
 
 const FourColorCardPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'extract' | 'storage' | 'prompt'>('extract');

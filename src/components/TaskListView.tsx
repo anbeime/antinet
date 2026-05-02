@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, CheckCircle2, Circle, Trash2 } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import { toast } from 'sonner';
 
 interface Task {
@@ -23,11 +24,11 @@ const TaskListView: React.FC = () => {
   const fetchTasks = async () => {
     setLoading(true);
     try {
-      let url = 'http://localhost:8000/api/data/gtd/tasks';
+      let url = `${getApiBaseUrl()}/api/data/gtd/tasks`;
       if (filter === 'today') {
-        url = 'http://localhost:8000/api/data/gtd/tasks/today';
+        url = `${getApiBaseUrl()}/api/data/gtd/tasks/today`;
       } else if (filter === 'upcoming') {
-        url = 'http://localhost:8000/api/data/gtd/tasks/upcoming?days=7';
+        url = `${getApiBaseUrl()}/api/data/gtd/tasks/upcoming?days=7`;
       }
       
       const response = await fetch(url);
@@ -56,7 +57,7 @@ const TaskListView: React.FC = () => {
   const toggleComplete = async (taskId: number, isCompleted: boolean) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/data/gtd/tasks/${taskId}/complete?is_completed=${!isCompleted}`,
+        `${getApiBaseUrl()}/api/data/gtd/tasks/${taskId}/complete?is_completed=${!isCompleted}`,
         { method: 'PUT' }
       );
       if (response.ok) {
@@ -72,7 +73,7 @@ const TaskListView: React.FC = () => {
 
   const deleteTask = async (taskId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/data/gtd/tasks/${taskId}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/data/gtd/tasks/${taskId}`, {
         method: 'DELETE'
       });
       if (response.ok) {

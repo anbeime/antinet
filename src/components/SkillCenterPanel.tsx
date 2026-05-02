@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Zap, Search, Play, TrendingUp, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = getApiBaseUrl() + ''
 
 interface Skill {
   name: string;

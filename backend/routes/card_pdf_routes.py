@@ -163,8 +163,15 @@ async def export_cards_to_pdf(
         except subprocess.TimeoutExpired:
             raise HTTPException(status_code=500, detail="生成超时")
         
-        return FileResponse(
-            path=str(output_file),
-            filename=f"{title}.pdf",
-            media_type="application/pdf"
+        # 读取并返回
+        pdf_content = output_file.read_bytes()
+        from urllib.parse import quote
+        filename = f"{title}.pdf"
+        encoded_name = quote(filename)
+        
+        from fastapi.responses import Response
+        return Response(
+            content=pdf_content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"}
         )

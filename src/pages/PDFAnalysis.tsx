@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   FileText,
   Upload,
@@ -85,7 +86,7 @@ interface ConversionRecord {
   fileSize?: number;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl() + ''
 
 const PDFAnalysis: React.FC = () => {
   useTheme();

@@ -17,6 +17,39 @@ router = APIRouter(prefix="/api/chat", tags=["聊天机器人"])
 # 数据库管理器（将在main.py中设置）
 db_manager = None
 
+# 向量搜索模块
+_vector_search = None
+
+# 太史阁记忆系统
+_memory_agent = None
+
+def _get_vector_search():
+    """获取向量搜索模块"""
+    global _vector_search
+    if _vector_search is None:
+        try:
+            from routes.vector_search import hybrid_search
+            _vector_search = hybrid_search
+            logger.info("[ChatRoutes] 向量搜索模块已加载")
+        except Exception as e:
+            logger.warning(f"[ChatRoutes] 向量搜索模块加载失败: {e}")
+            return None
+    return _vector_search
+
+
+def _get_memory_agent():
+    """获取太史阁记忆系统"""
+    global _memory_agent
+    if _memory_agent is None:
+        try:
+            from agents.memory import MemoryAgent
+            _memory_agent = MemoryAgent()
+            logger.info("[ChatRoutes] 太史阁记忆系统已加载")
+        except Exception as e:
+            logger.warning(f"[ChatRoutes] 太史阁加载失败: {e}")
+            return None
+    return _memory_agent
+
 
 class ChatMessage(BaseModel):
     """聊天消息"""
@@ -128,6 +161,106 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
     except Exception as e:
         logger.error(f"搜索卡片失败: {e}", exc_info=True)
         return []
+
+
+def _semantic_search_cards(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    使用 Ollama 向量搜索数据库中的知识卡片
+    
+    参数：
+        query: 查询文本
+        limit: 返回数量限制
+    
+    返回：
+        匹配的卡片列表（按相似度排序）
+    """
+    try:
+        # 优先使用太史阁记忆系统进行语义搜索
+        memory_agent = _get_memory_agent()
+        
+        if memory_agent is not None:
+            try:
+                import asyncio
+                # 太史阁检索是async的，需要在同步函数中调用
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果在async环境中，创建新task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(asyncio.run, memory_agent.retrieve_knowledge("fact", query, limit))
+                        memory_result = future.result()
+                else:
+                    memory_result = asyncio.run(memory_agent.retrieve_knowledge("fact", query, limit))
+                
+                if memory_result and memory_result.get("results"):
+                    results = memory_result["results"]
+                    cards = []
+                    for r in results:
+                        cards.append({
+                            "card_id": r.get("id", ""),
+                            "id": r.get("id", ""),
+                            "title": r.get("title", ""),
+                            "content": {"description": r.get("description", "")},
+                            "card_type": r.get("knowledge_type", "blue"),
+                            "category": "",
+                            "similarity": r.get("similarity", 0.8)
+                        })
+                    logger.info(f"[ChatRoutes] 太史阁找到 {len(cards)} 条记忆")
+                    if cards:
+                        return cards
+            except Exception as e:
+                logger.warning(f"[ChatRoutes] 太史阁检索失败: {e}")
+        
+        # 回退到向量搜索模块
+        vs = _get_vector_search()
+        if vs is None:
+            logger.warning("[ChatRoutes] 向量搜索不可用，回退到关键词搜索")
+            return _search_cards_by_keyword(query, limit)
+        
+        # 执行混合搜索（关键词+向量）
+        results = vs(query, limit=limit)
+        
+        # 转换为统一格式
+        cards = []
+        for r in results:
+            cards.append({
+                "card_id": r.id,
+                "id": r.id.replace("db_", ""),
+                "title": r.title,
+                "content": {"description": r.content},
+                "card_type": r.card_type,
+                "category": "",
+                "similarity": r.score
+            })
+        
+        logger.info(f"[ChatRoutes] 向量搜索找到 {len(cards)} 条结果")
+        return cards
+        
+    except Exception as e:
+        logger.error(f"语义搜索失败: {e}", exc_info=True)
+        # 回退到关键词搜索
+        return _search_cards_by_keyword(query, limit)
+
+
+def _hybrid_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    混合搜索：结合语义搜索和关键词搜索的结果
+    
+    参数：
+        query: 查询文本
+        limit: 返回数量限制
+    
+    返回：
+        合并后的卡片列表
+    """
+    # 获取语义搜索结果
+    semantic_results = _semantic_search_cards(query, limit)
+    
+    # 如果语义搜索结果为空或失败，回退到关键词搜索
+    if not semantic_results:
+        return _search_cards_by_keyword(query, limit)
+    
+    return semantic_results
 
 
 def _analyze_question_type(query: str) -> str:
@@ -405,19 +538,26 @@ def _generate_response(query: str, relevant_cards: List[Dict]) -> str:
     生成改进的自然语言回复
 
     改进点：
-    1. 根据问题类型调整回答风格
-    2. 更自然的语言组织
-    3. 智能摘要和整合
-    4. 添加上下文理解
+    1. 优先尝试使用NPU模型进行RAG生成
+    2. 根据问题类型调整回答风格
+    3. 更自然的语言组织
+    4. 智能摘要和整合
     """
 
     if not relevant_cards:
         return _generate_empty_response(query)
 
-    # 分析问题类型
+    # 优先尝试使用NPU模型生成RAG回答
+    try:
+        ai_response = _generate_ai_response(query, relevant_cards)
+        if ai_response and len(ai_response) > 10:
+            return ai_response
+    except Exception as e:
+        logger.warning(f"[ChatRoutes] NPU生成失败，回退到模板: {e}")
+
+    # 回退到模板回答
     question_type = _analyze_question_type(query)
 
-    # 根据问题类型生成回答
     if question_type == "what":
         return _generate_what_answer(query, relevant_cards)
     elif question_type == "how":
@@ -554,12 +694,9 @@ async def chat_query(request: ChatRequest):
     t_start = _time.time()
 
     try:
-        # 搜索卡片
+        # 搜索卡片 - 使用混合搜索（语义+关键词）
         t_search = _time.time()
-        if hasattr(sys.modules[__name__], '_hybrid_search'):
-            cards = _hybrid_search(request.query, limit=10)
-        else:
-            cards = _search_cards_by_keyword(request.query, limit=10)
+        cards = _hybrid_search(request.query, limit=10)
         t_search_ms = (_time.time() - t_search) * 1000
         logger.info(f"[ChatRoutes] 搜索耗时 {t_search_ms:.0f}ms, 找到 {len(cards)} 张卡片")
         

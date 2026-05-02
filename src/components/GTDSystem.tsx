@@ -200,6 +200,23 @@ const GTDSystem: React.FC = () => {
         reminder_enabled: newTask.reminder_enabled
       });
 
+      // 同步到知识卡片库
+      try {
+        await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: newTask.title,
+            content: newTask.description || '',
+            card_type: 'green',
+            address: '',
+            related_cards: []
+          })
+        });
+      } catch (e) {
+        console.log('同步到知识卡片失败:', e);
+      }
+
       // 重新加载数据确保同步
       const allTasks = await gtdTaskService.getAll();
       const organizedTasks: Record<Category, GtdTaskType[]> = {
@@ -348,8 +365,16 @@ const GTDSystem: React.FC = () => {
     }
   };
 
+  // 获取当前分类的任务或全部任务
+  const getCurrentTasks = () => {
+    if (activeCategory === 'all') {
+      return Object.values(tasks).flat();
+    }
+    return tasks[activeCategory as Category] || [];
+  };
+
   // 按创建时间倒序（最新的在最前面）
-  const sortedTasks = [...tasks[activeCategory]].sort((a, b) => {
+  const sortedTasks = [...getCurrentTasks()].sort((a, b) => {
     if (!a.created_at) return 1;
     if (!b.created_at) return -1;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -445,23 +470,26 @@ const GTDSystem: React.FC = () => {
         {/* 分类标签 */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 via-green-50 to-yellow-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => {
-              const isActive = activeCategory === category && viewMode === 'list';
-              const categoryColors = {
+            {(['all', 'inbox', 'today', 'later', 'archive', 'projects'] as (Category | 'all')[]).map(category => {
+              const isActive = category === 'all' ? activeCategory === 'all' : (activeCategory === category && viewMode === 'list');
+              const categoryColors: Record<string, {active: string, inactive: string}> = {
+                all: { active: 'bg-purple-600 text-white shadow-purple-200 dark:shadow-purple-900', inactive: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700' },
                 inbox: { active: 'bg-blue-600 text-white shadow-blue-200 dark:shadow-blue-900', inactive: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
                 today: { active: 'bg-red-600 text-white shadow-red-200 dark:shadow-red-900', inactive: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700' },
                 later: { active: 'bg-yellow-500 text-white shadow-yellow-200 dark:shadow-yellow-900', inactive: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700' },
                 archive: { active: 'bg-gray-600 text-white shadow-gray-200 dark:shadow-gray-900', inactive: 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600' },
                 projects: { active: 'bg-green-600 text-white shadow-green-200 dark:shadow-green-900', inactive: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
               };
-              const icons = {
+              const icons: Record<string, string> = {
+                all: '📋',
                 inbox: '📥',
                 today: '⏰',
                 later: '📅',
                 archive: '📁',
                 projects: '📚',
               };
-              const labels = {
+              const labels: Record<string, string> = {
+                all: '全部',
                 inbox: '收集箱',
                 today: '等待处理',
                 later: '将来可能',
@@ -471,7 +499,7 @@ const GTDSystem: React.FC = () => {
               return (
                 <button
                   key={category}
-                  onClick={() => { setActiveCategory(category); setViewMode('list'); }}
+                  onClick={() => { setActiveCategory(category as any); setViewMode('list'); }}
                   className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 border-2 flex items-center gap-2 ${
                     isActive
                       ? `${categoryColors[category].active} shadow-lg transform scale-105`
@@ -480,9 +508,14 @@ const GTDSystem: React.FC = () => {
                 >
                   <span className="text-base">{icons[category]}</span>
                   <span>{labels[category]}</span>
-                  {isActive && (
+                  {isActive && category !== 'all' && (
                     <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {tasks[category].length}
+                      {tasks[category as Category]?.length || 0}
+                    </span>
+                  )}
+                  {isActive && category === 'all' && (
+                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
+                      {Object.values(tasks).flat().length}
                     </span>
                   )}
                 </button>
@@ -503,7 +536,8 @@ const GTDSystem: React.FC = () => {
             <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {activeCategory === 'inbox' ? '收集箱' : 
+                  {activeCategory === 'all' ? '全部任务' : 
+                   activeCategory === 'inbox' ? '收集箱' : 
                    activeCategory === 'today' ? '等待处理' :
                    activeCategory === 'later' ? '将来可能' :
                    activeCategory === 'archive' ? '归档资料' : '专题研究'}
@@ -724,42 +758,8 @@ const GTDSystem: React.FC = () => {
               </button>
             </div>
           )}
-        </div>
-
-        {/* 空状态 */}
-        {filteredTasks.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 mx-auto mb-4 text-gray-300 dark:text-gray-600">
-              {getCategoryIcon(activeCategory)}
             </div>
-            <h3 className="text-xl font-semibold mb-2">
-              {searchQuery ? '未找到匹配的任务' : '暂无任务'}
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">
-              {searchQuery 
-                ? '尝试调整搜索关键词或清除筛选条件' 
-                : '点击"新建任务"开始添加任务'
-              }
-            </p>
-            {searchQuery ? (
-              <button 
-                className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-6 py-2 rounded-full text-sm font-medium transition-colors"
-                onClick={() => setSearchQuery('')}
-              >
-                清除搜索
-              </button>
-            ) : (
-              <button 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full text-sm font-medium transition-colors"
-                onClick={() => setShowCreateModal(true)}
-              >
-                新建任务
-              </button>
-)}
-              </div>
-            )}
-
-        </>
+          </>
         )}
         </div>
 

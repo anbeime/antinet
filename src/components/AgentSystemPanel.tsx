@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Target, FileText, Lightbulb, AlertTriangle, Compass, BookOpen, Send, Loader } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = getApiBaseUrl() + ''
 
 interface AgentStatus {
   orchestrator?: string;

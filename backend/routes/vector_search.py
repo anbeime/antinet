@@ -453,3 +453,41 @@ def init_on_startup():
 def compute_card_embedding(card_id: str, title: str) -> bool:
     """新增卡片时调用，计算其embedding"""
     return compute_and_save_embedding(card_id, title)
+
+
+# ==================== FastAPI Router ====================
+# 注意：此模块主要提供函数接口，router 用于占位兼容
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/vector-search", tags=["向量搜索"])
+
+
+@router.get("/health")
+async def vector_search_health():
+    """向量搜索健康检查"""
+    return {
+        "status": "ok",
+        "ollama_available": _ollama_available,
+        "embedding_model": _embedding_model,
+        "cached_embeddings": len(_card_embeddings)
+    }
+
+
+@router.post("/search")
+async def vector_search_endpoint(query: str, limit: int = 10):
+    """向量搜索API端点"""
+    results = hybrid_search(query, limit=limit)
+    return {
+        "query": query,
+        "results": [
+            {
+                "id": r.id,
+                "title": r.title,
+                "content": r.content,
+                "card_type": r.card_type,
+                "score": r.score
+            }
+            for r in results
+        ],
+        "total": len(results)
+    }

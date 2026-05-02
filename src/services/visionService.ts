@@ -3,8 +3,9 @@
  */
 
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const VISION_API_BASE = 'http://localhost:8000/api/vision';
+const VISION_API_BASE = getApiBaseUrl() + '/api/vision'
 
 /**
  * 上传图片

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { 
-  X, 
-  Upload, 
-  FileText, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  X,
+  Upload,
+  FileText,
   FileSpreadsheet,
   File,
   Check,
@@ -262,7 +263,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const parsePDFFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
       method: 'POST',
       body: formData
     });
@@ -275,7 +276,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const parseExcelFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
       method: 'POST',
       body: formData
     });
@@ -288,7 +289,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const parseWordFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
       method: 'POST',
       body: formData
     });
@@ -301,7 +302,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const parseImageFile = async (file: File): Promise<string> => {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await fetch('http://localhost:8000/api/knowledge/import/file', {
+    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
       method: 'POST',
       body: formData
     });

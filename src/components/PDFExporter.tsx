@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, PDFViewer as ReactPDFViewer } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, PDFViewer as ReactPDFViewer, Font } from '@react-pdf/renderer';
+
+// 注册中文字体支持
+Font.register({
+  family: 'Noto Sans SC',
+  src: 'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.woff2',
+});
 
 // 定义卡片类型
 interface KnowledgeCard {
@@ -27,10 +33,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1e40af',
     marginBottom: 8,
+    fontFamily: 'Noto Sans SC',
   },
   subtitle: {
     fontSize: 12,
     color: '#6b7280',
+    fontFamily: 'Noto Sans SC',
   },
   cardContainer: {
     marginBottom: 20,
@@ -47,16 +55,19 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: 'bold',
+    fontFamily: 'Noto Sans SC',
   },
   cardBadge: {
     padding: '4 8',
     borderRadius: 4,
     fontSize: 10,
+    fontFamily: 'Noto Sans SC',
   },
   cardContent: {
     fontSize: 12,
     lineHeight: 1.6,
     color: '#374151',
+    fontFamily: 'Noto Sans SC',
   },
   cardFooter: {
     marginTop: 10,
@@ -68,6 +79,7 @@ const styles = StyleSheet.create({
   cardMeta: {
     fontSize: 9,
     color: '#9ca3af',
+    fontFamily: 'Noto Sans SC',
   },
   footer: {
     position: 'absolute',
@@ -77,6 +89,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 10,
     color: '#9ca3af',
+    fontFamily: 'Noto Sans SC',
   },
 });
 

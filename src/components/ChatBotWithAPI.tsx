@@ -18,7 +18,7 @@ interface ChatBotWithAPIProps {
 }
 
 // API 基础 URL
-const API_BASE = 'http://localhost:8000/api/chat/enhanced';
+const API_BASE = getApiBaseUrl() + '/api/chat/enhanced'
 
 export const ChatBotWithAPI: React.FC<ChatBotWithAPIProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);

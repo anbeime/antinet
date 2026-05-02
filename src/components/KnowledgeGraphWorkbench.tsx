@@ -5,11 +5,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
-import { 
-  Search, Filter, List, Network, Edit3, Eye, Copy, Download, 
-  ZoomIn, ZoomOut, Maximize2, RefreshCw, Link2, ChevronRight, 
-  ChevronDown, X, Plus, Trash2, ExternalLink, FileText, 
-  Calendar, SortAsc, SortDesc, Copy as CopyIcon, FileDown, Image
+import {
+  Search, Filter, List, Network, Edit3, Eye, Copy, Download,
+  ZoomIn, ZoomOut, Maximize2, RefreshCw, Link2, ChevronRight,
+  ChevronDown, X, Plus, Trash2, ExternalLink, FileText,
+  Calendar, SortAsc, SortDesc, Copy as CopyIcon, FileDown, Image,
+  Presentation
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -589,6 +590,44 @@ const KnowledgeGraphWorkbench: React.FC = () => {
     toast.success('已导出PNG图片');
   };
 
+  const handleExportPPT = async () => {
+    if (!selectedCard) return;
+    
+    try {
+      // 将卡片内容转换为 Markdown
+      const markdownContent = `# ${selectedCard.title || '知识卡片'}\n\n**类型**: ${selectedCard.card_type}\n\n---\n\n${selectedCard.content || ''}\n\n---\n\n**标签**: ${selectedCard.tags?.join(', ') || '无'}\n`;
+      
+      // 创建 FormData
+      const formData = new FormData();
+      const blob = new Blob([markdownContent], { type: 'text/markdown' });
+      formData.append('file', blob, 'card.md');
+      
+      // 调用后端 API 转换为 PPTX
+      const response = await fetch('/api/markdown-converter/to-pptx', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'PPT导出失败');
+      }
+      
+      // 下载文件
+      const pptxBlob = await response.blob();
+      const url = URL.createObjectURL(pptxBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${selectedCard.title || 'card'}.pptx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      toast.success('已导出PPT文件');
+    } catch (err: any) {
+      toast.error(err.message || 'PPT导出失败');
+    }
+  };
+
   // ============ 初始化 ============
   useEffect(() => {
     loadGraphData();
@@ -881,6 +920,9 @@ const KnowledgeGraphWorkbench: React.FC = () => {
                     </Button>
                     <Button variant="outline" size="sm" onClick={handleExportPNG} title="导出PNG">
                       <Image className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleExportPPT} title="导出PPT">
+                      <Presentation className="w-4 h-4" />
                     </Button>
                   </>
                 )}

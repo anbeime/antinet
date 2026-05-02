@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface Column {
   key: string;
@@ -47,7 +48,7 @@ const ExcelAnalysis: React.FC = () => {
         const formData = new FormData();
         formData.append('file', file);
         
-        const response = await fetch('http://localhost:8000/api/analysis/upload-and-analyze', {
+        const response = await fetch(getApiBaseUrl() + '/api/analysis/upload-and-analyze', {
           method: 'POST',
           body: formData
         });
@@ -141,7 +142,7 @@ const ExcelAnalysis: React.FC = () => {
         exportData.data_sheets['统计摘要'] = [stats];
       }
 
-      const response = await fetch('http://localhost:8000/api/excel/export-analysis', {
+      const response = await fetch(getApiBaseUrl() + '/api/excel/export-analysis', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -152,7 +153,7 @@ const ExcelAnalysis: React.FC = () => {
       if (response.ok) {
         const result = await response.json();
         const link = document.createElement('a');
-        link.href = `http://localhost:8000${result.download_url}`;
+        link.href = `getApiBaseUrl() + ${result.download_url}`;
         link.download = result.filename;
         document.body.appendChild(link);
         link.click();

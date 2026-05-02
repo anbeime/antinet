@@ -1,7 +1,7 @@
 // 后端API配置文件
 // 自动生成 - 请勿手动修改
 
-export const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = getApiBaseUrl() + ''
 
 // API端点定义
 export const API_ENDPOINTS = {

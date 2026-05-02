@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import { ChevronLeft, ChevronRight, Bell, CheckCircle2, Circle, X, Plus, Trash2, Calendar, MapPin, Edit2, Clock, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
@@ -74,9 +75,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       try {
         // 并行获取 GTD 任务、日历事件和知识卡片
         const [taskRes, eventRes, cardRes] = await Promise.all([
-          fetch('http://localhost:8000/api/data/gtd/tasks'),
-          fetch('http://localhost:8000/api/integration/calendar/events/all'),
-          fetch('http://localhost:8000/api/knowledge/cards?limit=10000'),
+          fetch(getApiBaseUrl() + '/api/data/gtd/tasks'),
+          fetch(getApiBaseUrl() + '/api/integration/calendar/events/all'),
+          fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000'),
         ]);
 
         if (taskRes.ok) {
@@ -201,7 +202,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   const handleToggleComplete = async (taskId: number, isCompleted: boolean) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/api/data/gtd/tasks/${taskId}/complete?is_completed=${!isCompleted}`,
+        `${getApiBaseUrl()}/api/data/gtd/tasks/${taskId}/complete?is_completed=${!isCompleted}`,
         { method: 'PUT' }
       );
       if (response.ok) {
@@ -215,7 +216,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
 
   const handleDeleteTask = async (taskId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/data/gtd/tasks/${taskId}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/data/gtd/tasks/${taskId}`, {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -240,7 +241,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       setNewEvent({ title: '', start_time: '', end_time: '', location: '', category: 'default' });
       if (onRefresh) onRefresh();
       // 刷新事件列表
-      const eventRes = await fetch('http://localhost:8000/api/integration/calendar/events/all');
+      const eventRes = await fetch(getApiBaseUrl() + '/api/integration/calendar/events/all');
       if (eventRes.ok) setEvents(await eventRes.json());
     } catch (err) {
       toast.error('创建日程失败');
@@ -252,7 +253,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       await calendarEventService.delete(eventId);
       toast.success('日程已删除');
       if (onRefresh) onRefresh();
-      const eventRes = await fetch('http://localhost:8000/api/integration/calendar/events/all');
+      const eventRes = await fetch(getApiBaseUrl() + '/api/integration/calendar/events/all');
       if (eventRes.ok) setEvents(await eventRes.json());
     } catch (err) {
       toast.error('删除日程失败');
@@ -263,7 +264,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
     try {
       await calendarEventService.update(event.id, { is_completed: !event.is_completed });
       toast.success(event.is_completed ? '日程已标记未完成' : '日程已完成');
-      const eventRes = await fetch('http://localhost:8000/api/integration/calendar/events/all');
+      const eventRes = await fetch(getApiBaseUrl() + '/api/integration/calendar/events/all');
       if (eventRes.ok) setEvents(await eventRes.json());
     } catch (err) {
       toast.error('操作失败');

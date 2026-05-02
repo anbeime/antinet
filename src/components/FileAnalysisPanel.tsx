@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Upload, FileText, Download, Loader, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = getApiBaseUrl() + ''
 
 interface AnalysisResult {
   status: string;

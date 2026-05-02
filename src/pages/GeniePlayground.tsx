@@ -3,8 +3,9 @@ import { motion } from 'framer-motion';
 import { Cpu, RefreshCw, Send, AlertCircle, Eye, MessageSquare, ImageIcon, Play, Settings2, Wifi, WifiOff, Trash2, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE = 'http://localhost:8000/api/genie-playground';
+const API_BASE = getApiBaseUrl() + '/api/genie-playground'
 
 interface GenieModel {
   id: string;

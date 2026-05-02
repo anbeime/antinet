@@ -9,10 +9,11 @@ import tempfile
 import subprocess
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from typing import Optional
 import shutil
 import json
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -170,11 +171,15 @@ async def convert_md_to_pdf(
         # 读取 PDF 内容到内存后再返回
         pdf_content = output_file.read_bytes()
         
-        from fastapi.responses import Response
+        # 使用 ASCII 安全的方式处理文件名
+        safe_filename = output_filename.replace('.pdf', '') + '.pdf'
+        # 仅保留 ASCII 字符
+        ascii_filename = ''.join(c if ord(c) < 128 else '_' for c in safe_filename)
+        
         return Response(
             content=pdf_content,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={output_filename}"}
+            headers={"Content-Disposition": f"attachment; filename={ascii_filename}"}
         )
 
 

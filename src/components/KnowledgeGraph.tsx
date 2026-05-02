@@ -108,7 +108,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   useEffect(() => {
     const loadProjects = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/research/projects');
+        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
         if (res.ok) {
           const data = await res.json();
           setProjects(data.map((p: any) => ({ id: p.id, name: p.name, color: p.color || 'blue' })));
@@ -124,7 +124,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
     try {
       // 如果指定了专题ID，则只加载该专题的卡片
       const projectParam = selectedProjectFilter ? `&project_id=${selectedProjectFilter}` : '';
-      const response = await fetch(`http://localhost:8000/api/knowledge/graph?limit=500${projectParam}`);
+      const response = await fetch(getApiBaseUrl() + `/api/knowledge/graph?limit=500${projectParam}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setGraphData(data);

@@ -42,7 +42,7 @@ const APITestPanel: React.FC = () => {
     const startTime = Date.now();
 
     try {
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`getApiBaseUrl() + ${endpoint}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
       });

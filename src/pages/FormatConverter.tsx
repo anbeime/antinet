@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   FileText,
   Upload,
@@ -27,7 +28,7 @@ interface ConversionTask {
   id: string;
   file: File;
   fileName: string;
-  targetFormat: 'word' | 'excel' | 'pdf' | 'markdown';
+  targetFormat: 'word' | 'excel' | 'pdf' | 'markdown' | 'libreoffice' | 'ppt';
   status: 'pending' | 'processing' | 'completed' | 'error';
   progress: number;
   resultUrl?: string;
@@ -36,7 +37,7 @@ interface ConversionTask {
   createdAt: Date;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl()
 
 const FormatConverter: React.FC = () => {
   useTheme();
@@ -44,6 +45,12 @@ const FormatConverter: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState<'word' | 'excel' | 'pdf' | 'markdown' | 'libreoffice' | 'ppt'>('word');
   const [previewTask, setPreviewTask] = useState<ConversionTask | null>(null);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
+  const [pdfScale, setPdfScale] = useState(1.0);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState('warm-academic');
   const [pdfWatermark, setPdfWatermark] = useState('');
   const [pdfTitle, setPdfTitle] = useState('');
@@ -173,13 +180,39 @@ const FormatConverter: React.FC = () => {
     }
   };
 
+  // 根据文件扩展名自动检测目标格式
+  const detectTargetFormat = (fileName: string, selectedFmt: string): string => {
+    const ext = fileName.toLowerCase().slice(fileName.lastIndexOf('.'));
+    
+    // 如果选择的是"文档转换"(libreoffice)，根据文件类型自动选择
+    if (selectedFmt === 'libreoffice') {
+      if (ext === '.pptx' || ext === '.ppt') {
+        return 'ppt'; // PPT文件使用PPT转PDF
+      }
+      // docx, doc, xlsx, xls 继续使用 libreoffice
+      return 'libreoffice';
+    }
+    
+    // 如果选择的是"PPT转PDF"但文件不是PPT格式
+    if (selectedFmt === 'ppt') {
+      if (ext === '.pdf') {
+        return 'error-pdf'; // 特殊标记，提示不支持
+      }
+      if (ext !== '.pptx' && ext !== '.ppt') {
+        return 'error-unsupported'; // 提示不支持
+      }
+    }
+    
+    return selectedFmt;
+  };
+
   // 添加文件到任务列表
   const addFiles = (files: File[]) => {
     // 支持多种输入格式
     const validExtensions = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.txt', '.md', '.pptx', '.ppt'];
     let validFiles = files.filter(file => {
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-      return validExtensions.includes(ext) || 
+      return validExtensions.includes(ext) ||
              file.type === 'application/pdf' ||
              file.type === 'application/msword' ||
              file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -203,15 +236,30 @@ const FormatConverter: React.FC = () => {
       toast.warning(`已过滤 ${invalidCount} 个不支持的文件`);
     }
 
-    const newTasks: ConversionTask[] = validFiles.map(file => ({
-      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      file,
-      fileName: file.name,
-      targetFormat: selectedFormat,
-      status: 'pending',
-      progress: 0,
-      createdAt: new Date()
-    }));
+    // 为每个文件检测正确的目标格式
+    const newTasks: ConversionTask[] = validFiles.map(file => {
+      const detectedFormat = detectTargetFormat(file.name, selectedFormat);
+      
+      // 如果检测到不支持的格式，记录错误
+      if (detectedFormat === 'error-pdf') {
+        toast.error(`文件 ${file.name} 不支持转换：PDF文件无法通过此方式转换`);
+        return null;
+      }
+      if (detectedFormat === 'error-unsupported') {
+        toast.error(`文件 ${file.name} 格式不支持，请选择正确的转换格式`);
+        return null;
+      }
+      
+      return {
+        id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        file,
+        fileName: file.name,
+        targetFormat: detectedFormat,
+        status: 'pending',
+        progress: 0,
+        createdAt: new Date()
+      };
+    }).filter(Boolean) as ConversionTask[];
 
     setTasks(prev => [...prev, ...newTasks]);
     toast.success(`已添加 ${newTasks.length} 个文件到转换队列`);
@@ -734,15 +782,100 @@ const FormatConverter: React.FC = () => {
       return;
     }
 
-    if (task.targetFormat === 'pdf' || task.targetFormat === 'markdown') {
-      // PDF/MD转换的PDF 在新窗口打开预览
-      window.open(task.resultUrl, '_blank');
+    if (task.targetFormat === 'pdf' || task.targetFormat === 'markdown' || task.targetFormat === 'ppt') {
+      // PDF/PPT 转换的 PDF 使用内嵌预览
+      openPdfPreview(task);
     } else {
       // Word 和 Excel 直接下载
       downloadFile(task);
       toast.info('Word/Excel 文件已下载，请在本地查看');
     }
   };
+
+  // 加载 PDF.js
+  const loadPdfJs = async () => {
+    const pdfjsLib = (window as any).pdfjsLib;
+    if (pdfjsLib) return pdfjsLib;
+
+    return new Promise<void>((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.onload = () => {
+        const pdfjs = (window as any).pdfjsLib;
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
+  };
+
+  // 打开 PDF 预览弹窗
+  const openPdfPreview = async (task: ConversionTask) => {
+    setPreviewTask(task);
+    setShowPdfPreview(true);
+    setIsPdfLoading(true);
+    
+    try {
+      await loadPdfJs();
+      
+      const response = await fetch(task.resultUrl!);
+      const arrayBuffer = await response.arrayBuffer();
+      const data = new Uint8Array(arrayBuffer);
+      
+      const pdfjs = (window as any).pdfjsLib;
+      const pdf = await pdfjs.getDocument({ data }).promise;
+      
+      setPdfDoc(pdf);
+      setPdfTotalPages(pdf.numPages);
+      setPdfCurrentPage(1);
+      setPdfScale(1.0);
+    } catch (error) {
+      console.error('加载 PDF 失败:', error);
+      toast.error('加载 PDF 失败');
+    } finally {
+      setIsPdfLoading(false);
+    }
+  };
+
+  // 关闭 PDF 预览弹窗
+  const closePdfPreview = () => {
+    setShowPdfPreview(false);
+    setPreviewTask(null);
+    setPdfDoc(null);
+  };
+
+  // 渲染 PDF 页面
+  const renderPdfPage = async () => {
+    if (!pdfDoc || !pdfCanvasRef.current) return;
+
+    try {
+      const page = await pdfDoc.getPage(pdfCurrentPage);
+      const viewport = page.getViewport({ scale: pdfScale });
+      const canvas = pdfCanvasRef.current;
+      const context = canvas.getContext('2d');
+
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      if (context) {
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+      }
+    } catch (error) {
+      console.error('渲染 PDF 页面失败:', error);
+    }
+  };
+
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // 当 PDF 文档、页码或缩放改变时重新渲染
+  useEffect(() => {
+    if (pdfDoc && pdfCurrentPage > 0) {
+      renderPdfPage();
+    }
+  }, [pdfDoc, pdfCurrentPage, pdfScale]);
 
   // 删除任务
   const removeTask = (taskId: string) => {

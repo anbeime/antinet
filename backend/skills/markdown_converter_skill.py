@@ -33,6 +33,7 @@ class OutputFormat(Enum):
     DOCX = "docx"
     HTML = "html"
     EXCEL = "xlsx"
+    PPTX = "pptx"
     MARKDOWN = "markdown"
 
 
