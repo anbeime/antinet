@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
@@ -25,6 +25,59 @@ interface AnalysisStats {
   duplicates: number;
 }
 
+// 简单在线编辑器（内联版本）
+const InlineEditor: React.FC = () => {
+  const [rows, setRows] = useState<string[][]>([['字段1', '字段2', '字段3'], ['', '', '']]);
+  const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const addRow = () => setRows([...rows, Array(rows[0]?.length || 3).fill('')]);
+  const addCol = () => setRows(rows.map(r => [...r, '']));
+  const updateCell = (r: number, c: number, v: string) => {
+    const newRows = [...rows];
+    newRows[r][c] = v;
+    setRows(newRows);
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-auto max-h-[500px]">
+      <div className="sticky top-0 bg-gray-100 dark:bg-gray-700 px-3 py-2 flex items-center justify-between z-10">
+        <span className="font-semibold text-sm">在线表格</span>
+        <div className="flex space-x-1">
+          <button onClick={addRow} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600" title="添加行"><Plus className="w-3 h-3" /></button>
+          <button onClick={addCol} className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600" title="添加列"><Plus className="w-3 h-3 rotate-90" /></button>
+          <button onClick={() => console.log('Saved:', rows)} className="p-1 bg-green-500 text-white rounded hover:bg-green-600" title="保存"><Save className="w-3 h-3" /></button>
+        </div>
+      </div>
+      <table className="w-full text-sm border-collapse">
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri}>
+              <td className="w-8 p-1 bg-gray-50 dark:bg-gray-700 border text-center text-xs">{ri + 1}</td>
+              {row.map((cell, ci) => (
+                <td key={ci} className="border">
+                  {editingCell?.row === ri && editingCell?.col === ci ? (
+                    <input
+                      value={editValue}
+                      onChange={e => setEditValue(e.target.value)}
+                      onBlur={() => { updateCell(ri, ci, editValue); setEditingCell(null); }}
+                      onKeyDown={e => e.key === 'Enter' && (updateCell(ri, ci, editValue), setEditingCell(null))}
+                      className="w-full px-2 py-1 bg-blue-50 outline-blue-500" autoFocus
+                    />
+                  ) : (
+                    <div onClick={() => { setEditingCell({row: ri, col: ci}); setEditValue(cell); }} 
+                      className="w-full px-2 py-1 cursor-text hover:bg-gray-50 min-h-[28px]">{cell || '-'}</div>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const ExcelAnalysis: React.FC = () => {
   useTheme();
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -32,13 +85,17 @@ const ExcelAnalysis: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
 
-  // 直接打开编辑器模式 - 监听URL参数或localStorage
-  const searchParams = new URLSearchParams(window.location.search);
-  const mode = searchParams.get('mode') || localStorage.getItem('excelMode');
-  const activeFeature: 'analysis' | 'editor' = mode === 'editor' ? 'editor' : 'analysis';
+  // 检查是否需要直接打开编辑器
+  useEffect(() => {
+    if (localStorage.getItem('excelMode') === 'editor') {
+      localStorage.removeItem('excelMode');
+      setActiveFeature('editor');
+    }
+  }, []);
 
-  if (mode === 'editor') {
+  if (activeFeature === 'editor') {
     return (
       <div className="p-6 max-w-7xl mx-auto">
         <motion.div 
@@ -60,7 +117,7 @@ const ExcelAnalysis: React.FC = () => {
             </div>
           </div>
         </motion.div>
-        <SimpleSpreadsheetEditor onSave={(data) => console.log('Saved:', data)} />
+        <InlineEditor />
       </div>
     );
   }
