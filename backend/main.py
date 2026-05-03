@@ -21,14 +21,14 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # ============================================================
-# 2. NPU 库路径配置（使用新的配置模块）
+# 2. NPU 库路径配置（使用新的配置模块）AAAA
 # ============================================================
 from conf.npu import NPUConfig
 
 npu_config = NPUConfig()
 lib_path = npu_config.get_libs_path()
 
-print(f"[SETUP] QAI 库路径AAAA: {lib_path}")
+print(f"[SETUP] QAI 库路径: {lib_path}")
 
 # 设置环境变量
 paths_to_add = [lib_path]
