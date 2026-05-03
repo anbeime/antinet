@@ -290,23 +290,10 @@ const parsePPTX = async (file: File) => {
 
           <div className="w-px h-6 bg-gray-600" />
 
-          <button onClick={() => {
-            if (loadedSlides.length > 0) {
-              const blob = new Blob([JSON.stringify(loadedSlides, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'slides-export.json';
-              a.click();
-              URL.revokeObjectURL(url);
-              toast.success('导出成功');
-            } else {
-              toast.error('没有可导出的内容');
-            }
-          }} className="flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600">
-            <Download className="w-4 h-4" />
-            <span className="text-sm">导出</span>
-          </button>
+          <a href="/home?tab=ppt-analysis" className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
+            <Presentation className="w-4 h-4" />
+            <span className="text-sm">生成PPT</span>
+          </a>
         </div>
       </header>
 
