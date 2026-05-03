@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Brain,
@@ -152,8 +152,14 @@ interface HomeProps {
 
 const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'ppt-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph' | 'markdown-converter'>(() => {
+  
+  // 从URL参数获取tab
+  const urlTab = searchParams.get('tab');
+  
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
     return 'dashboard';
   });
@@ -169,6 +175,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAllCardsModal, setShowAllCardsModal] = useState(false);
+  
+  // 同步activeTab到URL参数
+  useEffect(() => {
+    if (activeTab && activeTab !== 'dashboard') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', activeTab);
+      window.history.replaceState(null, '', `?${params.toString()}`);
+    }
+  }, [activeTab]);
   
   // 卡片管理筛选和分页
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');

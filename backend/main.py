@@ -130,6 +130,7 @@ def register_router(module_name: str):
         return False
 
 # 核心路由 - 使用各自的 prefix
+print("[INFO] 开始注册路由...")
 register_router("routes.knowledge_routes")
 register_router("routes.chat_routes")
 register_router("routes.data_routes")
@@ -146,6 +147,8 @@ register_router("routes.backlink_routes")
 register_router("routes.integration_routes")
 register_router("routes.moc_routes")
 register_router("routes.vision_routes")
+
+print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
 register_router("routes.evolving_chat_routes")
 register_router("routes.chat_context_routes")
