@@ -34,6 +34,14 @@ const ExcelAnalysis: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
 
+  // 检查是否需要直接打开编辑器
+  useEffect(() => {
+    if (localStorage.getItem('openExcelEditor') === 'true') {
+      localStorage.removeItem('openExcelEditor');
+      setActiveFeature('editor');
+    }
+  }, []);
+
   // 在线编辑功能
   const [editData, setEditData] = useState<string[][]>([]);
   const [editMode, setEditMode] = useState(false);
