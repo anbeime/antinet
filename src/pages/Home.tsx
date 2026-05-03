@@ -530,6 +530,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 加载仪表板数据
   useEffect(() => {
+    let isMounted = true;
     const loadDashboardData = async () => {
       if (activeTab !== 'dashboard') return;
       
@@ -539,6 +540,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       try {
         // 从知识卡片API获取真实数据
         const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
+        if (!isMounted) return;
         if (!response.ok) throw new Error('API请求失败');
         const data = await response.json();
         const rawCards = data.cards || data || [];
@@ -586,13 +588,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
       } catch (error) {
         console.error('加载仪表板数据失败:', error);
+        if (!isMounted) return;
         setStatsError('加载统计数据失败');
       } finally {
-        setStatsLoading(false);
+        if (isMounted) setStatsLoading(false);
       }
     };
 
     loadDashboardData();
+    return () => { isMounted = false; };
   }, [activeTab]);
 
   // 更新卡片

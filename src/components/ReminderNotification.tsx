@@ -5,8 +5,16 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 const useEdgeTTS = () => {
   const currentAudio = useRef<HTMLAudioElement | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
+  const isMounted = useRef(true);
+  const isSpeaking = useRef(false);
+  const pendingQueue = useRef<string[]>([]);
 
-  const speak = async (text: string, voice: string = '晓伊') => {
+  const processQueue = async () => {
+    if (isSpeaking.current || pendingQueue.current.length === 0 || !isMounted.current) return;
+    
+    isSpeaking.current = true;
+    const text = pendingQueue.current.shift()!;
+    
     try {
       // 停止当前播放
       if (currentAudio.current) {
@@ -21,22 +29,50 @@ const useEdgeTTS = () => {
         body: JSON.stringify({ text, voice: 'zh-CN-XiaoxiaoNeural' })
       });
 
+      if (!isMounted.current) return;
+
       if (response.ok && response.headers.get('content-type')?.includes('audio')) {
         // 直接播放返回的音频
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          isSpeaking.current = false;
+          processQueue();
+        };
+        audio.onerror = () => {
+          isSpeaking.current = false;
+          processQueue();
+        };
         await audio.play();
         currentAudio.current = audio;
       } else {
         // 回退到浏览器 TTS
         console.log('[Reminder] Edge-TTS 不可用，使用浏览器 TTS');
         _fallbackSpeak(text);
+        isSpeaking.current = false;
+        processQueue();
       }
     } catch (e) {
       console.error('[Reminder] TTS 播放失败:', e);
-      _fallbackSpeak(text);
+      if (isMounted.current) {
+        _fallbackSpeak(text);
+      }
+      isSpeaking.current = false;
+      processQueue();
+    }
+  };
+
+  const speak = async (text: string, voice: string = '晓伊') => {
+    if (!isMounted.current) return;
+    
+    // 将文本添加到队列
+    pendingQueue.current.push(text);
+    
+    // 如果没有正在播放，立即开始处理队列
+    if (!isSpeaking.current) {
+      processQueue();
     }
   };
 

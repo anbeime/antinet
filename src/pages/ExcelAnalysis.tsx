@@ -52,7 +52,7 @@ const ExcelAnalysis: React.FC = () => {
     if (data.length > 0 && columns.length > 0) {
       const editable: string[][] = [
         columns.map(c => c.name),
-        ...data.slice(0, 100).map(row => columns.map(c => String(row[c.key] ?? '')))
+        ...data.slice(0, 1000).map(row => columns.map(c => String(row[c.key] ?? '')))
       ];
       setEditData(editable);
     }
@@ -417,7 +417,7 @@ const ExcelAnalysis: React.FC = () => {
                       数据预览
                     </h3>
                     <span className="text-sm text-gray-500">
-                      显示前 {Math.min(data.length, 100)} 行
+                      显示 {editData.length > 0 ? editData.length - 1 : data.length} 行
                     </span>
                   </div>
                   <div className="overflow-x-auto">
