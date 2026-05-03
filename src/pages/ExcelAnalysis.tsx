@@ -476,7 +476,16 @@ const ExcelAnalysis: React.FC = () => {
           </motion.div>
         </div>
         ) : (
-          <SimpleSpreadsheetEditor onSave={(data) => console.log('Saved:', data)} />
+          <SimpleSpreadsheetEditor 
+            initialData={data.length > 0 ? [
+              columns.map(c => c.name),
+              ...data.slice(0, 100).map(row => columns.map(c => String(row[c.key] ?? '')))
+            ] : undefined}
+            onSave={(savedData) => {
+              console.log('Saved data:', savedData);
+              // 可以选择导出或进一步处理
+            }} 
+          />
         )}
       </div>
     </div>
@@ -484,8 +493,8 @@ const ExcelAnalysis: React.FC = () => {
 };
 
 // 简单在线表格编辑器
-const SimpleSpreadsheetEditor: React.FC<{ initialData?: string[][], onSave?: (data: string[][]) => void }> = ({ onSave }) => {
-  const [rows, setRows] = useState<string[][]>([['字段1', '字段2', '字段3'], ['', '', '']]);
+const SimpleSpreadsheetEditor: React.FC<{ initialData?: string[][], onSave?: (data: string[][]) => void }> = ({ initialData, onSave }) => {
+  const [rows, setRows] = useState<string[][]>(initialData || [['字段1', '字段2', '字段3'], ['', '', '']]);
   const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
   const [editValue, setEditValue] = useState('');
 

@@ -712,7 +712,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
 
     } catch (error) {
-      toast.error('发送失败，请重试');
+      console.error('发送消息失败:', error);
+      toast.error('发送失败，请重试: ' + (error as Error).message);
     } finally {
       setIsLoading(false);
       handleRemoveImage();
