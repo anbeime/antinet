@@ -634,10 +634,7 @@ async def generate_ai_cards(
 
 @router.post("/toolkit/images-to-pdf")
 async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
-    """图片转 PDF"""
-    if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
-    
+    """图片转 PDF（使用 pypdf + img2pdf 或 PIL）"""
     temp_files = []
     try:
         for f in files:
@@ -646,12 +643,38 @@ async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
                 shutil.copyfileobj(f.file, tmp)
                 temp_files.append(tmp.name)
         
-        result = pdf_processor.images_to_pdf(temp_files)
+        # 尝试使用 PIL + img2pdf
+        try:
+            from img2pdf import convert
+            output_pdf = tempfile.mktemp(suffix='.pdf')
+            convert(temp_files, outputpdf=output_pdf)
+            return FileResponse(output_pdf, media_type="application/pdf")
+        except ImportError:
+            pass
         
-        if not result["success"]:
-            raise HTTPException(status_code=500, detail=result.get("error", "转换失败"))
-        
-        return FileResponse(result["output_file"], media_type="application/pdf")
+        # 回退：使用 PIL + pypdf
+        try:
+            from pypdf import PdfWriter
+            from PIL import Image
+            writer = PdfWriter()
+            for img_path in temp_files:
+                img = Image.open(img_path)
+                # 转换为RGB
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                # 保存为临时PDF页
+                img_pdf = tempfile.mktemp(suffix='.pdf')
+                img.save(img_pdf, 'PDF', resolution=100.0)
+                # 读取并添加到writer
+                from pypdf import PdfReader
+                reader = PdfReader(img_pdf)
+                for page in reader.pages:
+                    writer.add_page(page)
+            output_pdf = tempfile.mktemp(suffix='.pdf')
+            writer.write(output_pdf)
+            return FileResponse(output_pdf, media_type="application/pdf")
+        except ImportError as e:
+            raise HTTPException(status_code=503, detail="请安装 img2pdf 或 Pillow 库: " + str(e))
     finally:
         for fp in temp_files:
             if os.path.exists(fp):
