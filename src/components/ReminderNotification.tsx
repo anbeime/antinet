@@ -117,14 +117,19 @@ const useEdgeTTS = () => {
 export const useNotifications = () => {
   const { speak } = useEdgeTTS();
   const notifiedIds = useRef<Set<number>>(new Set());
+  const isInitialized = useRef(false);
 
   // 从 localStorage 恢复已通知的 ID
   useEffect(() => {
+    if (isInitialized.current) return;
+    isInitialized.current = true;
+    
     try {
       const saved = localStorage.getItem('notified_reminder_ids');
       if (saved) {
         const ids = JSON.parse(saved) as number[];
         ids.forEach(id => notifiedIds.current.add(id));
+        console.log('[Reminder] 已恢复已通知ID:', ids.length);
       }
     } catch (e) {
       console.error('[Reminder] 恢复已通知ID失败:', e);
@@ -147,13 +152,15 @@ export const useNotifications = () => {
     }
   }, []);
 
-  const showNotification = (title: string, body: string, taskId: number, enableVoice: boolean = true) => {
+  const showNotification = React.useCallback((title: string, body: string, taskId: number, enableVoice: boolean = true) => {
     // 避免重复通知
     if (notifiedIds.current.has(taskId)) {
+      console.log('[Reminder] 跳过已通知的任务:', taskId);
       return;
     }
     notifiedIds.current.add(taskId);
     saveNotifiedIds();
+    console.log('[Reminder] 发送通知:', taskId, title);
 
     // 语音通知
     if (enableVoice && 'speechSynthesis' in window) {
@@ -177,7 +184,7 @@ export const useNotifications = () => {
       duration: 10000,
       id: `reminder-${taskId}`,
     });
-  };
+  }, [speak]);
 
   return { showNotification };
 };

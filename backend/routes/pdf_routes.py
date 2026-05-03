@@ -445,30 +445,50 @@ async def generate_four_color_cards_compat(
 
 @router.post("/export/cards-docx")
 async def export_cards_to_docx(
-    cards: List[UploadFile] = File(...)
+    cards: Optional[List[UploadFile]] = File(None),
+    cards_data: Optional[str] = Form(None)
 ):
-    """导出知识卡片到 Word"""
+    """导出知识卡片到 Word（支持文件上传或JSON数据）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
-    all_text = []
-    try:
-        for f in cards:
-            content = await f.read()
-            import io
+    all_cards = []
+    
+    # 方式1：从文件提取
+    if cards:
+        try:
             from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(content))
-            text = "\n".join([p.extract_text() for p in reader.pages])
-            all_text.append(text)
-        
+            import io
+            for f in cards:
+                content = await f.read()
+                reader = PdfReader(io.BytesIO(content))
+                text = "\n".join([p.extract_text() for p in reader.pages])
+                
+                from tools.pdf_four_color_processor import PDFourColorProcessor
+                processor = PDFourColorProcessor()
+                result = processor._analyze_content(text, 50)
+                all_cards.extend(result.get('cards', []))
+        except Exception as e:
+            logger.error(f"从PDF提取失败: {e}")
+    
+    # 方式2：从JSON数据
+    if cards_data:
+        try:
+            import json
+            cards_list = json.loads(cards_data)
+            all_cards.extend(cards_list)
+        except Exception as e:
+            logger.error(f"解析JSON失败: {e}")
+    
+    if not all_cards:
+        raise HTTPException(status_code=400, detail="没有可导出的卡片数据")
+    
+    try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
         
-        combined_text = "\n\n".join(all_text)
-        result = processor._analyze_content(combined_text, 50)
-        
         output_path = os.path.join(tempfile.gettempdir(), "cards_export.docx")
-        processor.export_to_docx(result, output_path)
+        processor.export_to_docx({'cards': all_cards}, output_path)
         
         return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     except Exception as e:
@@ -477,30 +497,50 @@ async def export_cards_to_docx(
 
 @router.post("/export/four-color-excel")
 async def export_four_color_excel(
-    files: List[UploadFile] = File(...)
+    files: Optional[List[UploadFile]] = File(None),
+    cards_data: Optional[str] = Form(None)
 ):
-    """导出四色卡片到 Excel"""
+    """导出四色卡片到 Excel（支持文件上传或JSON数据）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
-    all_text = []
-    try:
-        for f in files:
-            content = await f.read()
-            import io
+    all_cards = []
+    
+    # 方式1：从文件提取
+    if files:
+        try:
             from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(content))
-            text = "\n".join([p.extract_text() for p in reader.pages])
-            all_text.append(text)
-        
+            import io
+            for f in files:
+                content = await f.read()
+                reader = PdfReader(io.BytesIO(content))
+                text = "\n".join([p.extract_text() for p in reader.pages])
+                
+                from tools.pdf_four_color_processor import PDFourColorProcessor
+                processor = PDFourColorProcessor()
+                result = processor._analyze_content(text, 50)
+                all_cards.extend(result.get('cards', []))
+        except Exception as e:
+            logger.error(f"从PDF提取失败: {e}")
+    
+    # 方式2：从JSON数据
+    if cards_data:
+        try:
+            import json
+            cards_list = json.loads(cards_data)
+            all_cards.extend(cards_list)
+        except Exception as e:
+            logger.error(f"解析JSON失败: {e}")
+    
+    if not all_cards:
+        raise HTTPException(status_code=400, detail="没有可导出的卡片数据")
+    
+    try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
         
-        combined_text = "\n\n".join(all_text)
-        result = processor._analyze_content(combined_text, 50)
-        
         output_path = os.path.join(tempfile.gettempdir(), "cards_export.xlsx")
-        processor.export_to_excel(result, output_path)
+        processor.export_to_excel({'cards': all_cards}, output_path)
         
         return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:

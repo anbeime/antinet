@@ -615,17 +615,17 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 60 } : t
     ));
 
-    // 第二步：将卡片导出为Word（正确的后端接口: /api/pdf/export/cards-docx）
-    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    // 第二步：将卡片导出为Word
+    const wordFormData = new FormData();
+    wordFormData.append('cards_data', JSON.stringify({
         cards: analysisData.cards || [],
         title: `${task.fileName.replace('.pdf', '')}_分析报告`,
         author: 'Antinet 智能知识管家'
-      })
+    }));
+    
+    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
+      method: 'POST',
+      body: wordFormData
     });
 
     if (!wordResponse.ok) {
@@ -655,9 +655,12 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 30 } : t
     ));
 
+    const excelFormData = new FormData();
+    excelFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
+    
     const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
       method: 'POST',
-      body: formData
+      body: excelFormData
     });
 
     if (!response.ok) {
