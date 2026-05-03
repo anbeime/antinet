@@ -44,7 +44,25 @@ const ExcelAnalysis: React.FC = () => {
 
   // 在线编辑功能
   const [editData, setEditData] = useState<string[][]>([]);
-  const [editMode, setEditMode] = useState(false);
+  const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  // 将分析数据转换为可编辑格式
+  useEffect(() => {
+    if (data.length > 0 && columns.length > 0) {
+      const editable: string[][] = [
+        columns.map(c => c.name),
+        ...data.slice(0, 100).map(row => columns.map(c => String(row[c.key] ?? '')))
+      ];
+      setEditData(editable);
+    }
+  }, [data, columns]);
+
+  const updateCell = (rowIdx: number, colIdx: number, value: string) => {
+    const newData = [...editData];
+    newData[rowIdx][colIdx] = value;
+    setEditData(newData);
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -406,8 +424,9 @@ const ExcelAnalysis: React.FC = () => {
                     <table className="w-full">
                       <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
+                          <th className="px-2 py-2 text-xs w-8">#</th>
                           {columns.map(col => (
-                            <th key={col.key} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th key={col.key} className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                               <div className="flex items-center space-x-1">
                                 <span>{col.name}</span>
                                 <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -423,10 +442,36 @@ const ExcelAnalysis: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {data.slice(0, 100).map((row, idx) => (
+                        {editData.length > 0 ? editData.slice(1).map((row, idx) => (
                           <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="px-2 py-1 text-xs text-gray-400 w-8">{idx + 1}</td>
+                            {row.map((cell, cidx) => (
+                              <td key={cidx} className="px-1 py-1">
+                                {editingCell?.row === idx + 1 && editingCell?.col === cidx ? (
+                                  <input
+                                    value={editValue}
+                                    onChange={e => setEditValue(e.target.value)}
+                                    onBlur={() => { updateCell(idx + 1, cidx, editValue); setEditingCell(null); }}
+                                    onKeyDown={e => e.key === 'Enter' && (updateCell(idx + 1, cidx, editValue), setEditingCell(null))}
+                                    className="w-full px-2 py-1 bg-blue-50 outline-blue-500 text-sm"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <div 
+                                    onClick={() => { setEditingCell({row: idx + 1, col: cidx}); setEditValue(cell); }} 
+                                    className="px-2 py-1 cursor-text hover:bg-blue-50 min-h-[28px] text-sm"
+                                  >
+                                    {cell || '-'}
+                                  </div>
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        )) : data.slice(0, 100).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="px-2 py-1 text-xs text-gray-400 w-8">{idx + 1}</td>
                             {columns.map(col => (
-                              <td key={col.key} className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                              <td key={col.key} className="px-2 py-1 text-sm text-gray-900 dark:text-gray-100">
                                 {row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-'}
                               </td>
                             ))}

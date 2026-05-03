@@ -472,9 +472,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 从后端API加载卡片
   React.useEffect(() => {
+    let isMounted = true;
     const loadCardsFromAPI = async () => {
       try {
         const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
+        if (!isMounted) return;
         if (response.ok) {
           const data = await response.json();
           const apiCards = data.cards || data || [];
@@ -520,7 +522,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
     };
     
-loadCardsFromAPI();
+    loadCardsFromAPI();
+    return () => { isMounted = false; };
   }, []);
 
 
