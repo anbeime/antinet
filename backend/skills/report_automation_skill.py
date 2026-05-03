@@ -33,6 +33,18 @@ class ReportAutomationSkill:
         self.last_used = None
         self.usage_count = 0
     
+    def get_info(self) -> Dict:
+        """获取技能信息"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "agent_name": self.agent_name,
+            "enabled": self.enabled,
+            "last_used": self.last_used,
+            "usage_count": self.usage_count
+        }
+    
     async def execute(
         self,
         data: List[Dict],

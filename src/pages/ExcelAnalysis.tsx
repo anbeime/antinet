@@ -32,17 +32,38 @@ const ExcelAnalysis: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
 
-  // 检查是否需要直接打开编辑器
-  useEffect(() => {
-    if (localStorage.getItem('openExcelEditor') === 'true') {
-      localStorage.removeItem('openExcelEditor');
-      setActiveFeature('editor');
-    }
-  }, []);
+  // 直接打开编辑器模式 - 监听URL参数或localStorage
+  const searchParams = new URLSearchParams(window.location.search);
+  const mode = searchParams.get('mode') || localStorage.getItem('excelMode');
+  const activeFeature: 'analysis' | 'editor' = mode === 'editor' ? 'editor' : 'analysis';
 
-  // 在线编辑功能
+  if (mode === 'editor') {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+              <Edit3 className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                在线表格编辑
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                创建和编辑电子表格
+              </p>
+            </div>
+          </div>
+        </motion.div>
+        <SimpleSpreadsheetEditor onSave={(data) => console.log('Saved:', data)} />
+      </div>
+    );
+  }
   const [editData, setEditData] = useState<string[][]>([]);
   const [editMode, setEditMode] = useState(false);
 
