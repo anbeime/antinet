@@ -635,7 +635,10 @@ async def generate_ai_cards(
 @router.post("/toolkit/images-to-pdf")
 async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
     """图片转 PDF（使用 pypdf + img2pdf 或 PIL）"""
+    from fastapi import HTTPException
+    
     temp_files = []
+    temp_pdfs = []
     try:
         for f in files:
             ext = os.path.splitext(f.filename)[1].lower()
@@ -643,39 +646,48 @@ async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
                 shutil.copyfileobj(f.file, tmp)
                 temp_files.append(tmp.name)
         
+        output_pdf = tempfile.mktemp(suffix='.pdf')
+        
         # 尝试使用 PIL + img2pdf
         try:
             from img2pdf import convert
-            output_pdf = tempfile.mktemp(suffix='.pdf')
-            convert(temp_files, outputpdf=output_pdf)
+            convert(temp_files, outputfile=output_pdf)
             return FileResponse(output_pdf, media_type="application/pdf")
         except ImportError:
             pass
+        except Exception as e:
+            logger.warning(f"img2pdf失败，回退到PIL: {e}")
         
         # 回退：使用 PIL + pypdf
-        try:
-            from pypdf import PdfWriter
-            from PIL import Image
-            writer = PdfWriter()
-            for img_path in temp_files:
-                img = Image.open(img_path)
-                # 转换为RGB
-                if img.mode != 'RGB':
-                    img = img.convert('RGB')
-                # 保存为临时PDF页
-                img_pdf = tempfile.mktemp(suffix='.pdf')
-                img.save(img_pdf, 'PDF', resolution=100.0)
-                # 读取并添加到writer
-                from pypdf import PdfReader
-                reader = PdfReader(img_pdf)
-                for page in reader.pages:
-                    writer.add_page(page)
-            output_pdf = tempfile.mktemp(suffix='.pdf')
-            writer.write(output_pdf)
-            return FileResponse(output_pdf, media_type="application/pdf")
-        except ImportError as e:
-            raise HTTPException(status_code=503, detail="请安装 img2pdf 或 Pillow 库: " + str(e))
+        from pypdf import PdfWriter, PdfReader
+        from PIL import Image
+        writer = PdfWriter()
+        
+        for img_path in temp_files:
+            img = Image.open(img_path)
+            # 转换为RGB
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            # 保存为临时PDF页
+            img_pdf = tempfile.mktemp(suffix='.pdf')
+            img.save(img_pdf, 'PDF', resolution=100.0)
+            temp_pdfs.append(img_pdf)
+            # 读取并添加到writer
+            reader = PdfReader(img_pdf)
+            for page in reader.pages:
+                writer.add_page(page)
+        
+        writer.write(output_pdf)
+        return FileResponse(output_pdf, media_type="application/pdf")
+    except Exception as e:
+        logger.error(f"图片转PDF失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         for fp in temp_files:
             if os.path.exists(fp):
-                os.unlink(fp)
+                try: os.unlink(fp)
+                except: pass
+        for fp in temp_pdfs:
+            if os.path.exists(fp):
+                try: os.unlink(fp)
+                except: pass

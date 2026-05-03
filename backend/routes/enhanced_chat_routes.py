@@ -1118,11 +1118,6 @@ async def enhanced_chat(request: ChatRequest):
                 
         elif scene_type == SceneType.GREETING:
             response_data["response"] = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
-• 生成PPT演示 - 快速创建专业演示文稿
-• 分析Excel数据 - 数据分析和可视化
-• 生成Word文档 - 创建专业文档
-
-有什么可以帮您的吗？"
             
         elif scene_type == SceneType.HELP:
             response_data["response"] = """**功能使用指南**
@@ -1174,11 +1169,7 @@ async def enhanced_chat(request: ChatRequest):
             except Exception as e:
                 logger.warning(f"[Chat] Genie深度思考失败: {e}")
                 response_data["response"] = "深度思考服务暂时不可用。"
-                    response_data["response"] = npu_reply
-                    response_data["metadata"]["model"] = "npu"
-                else:
-                    response_data["response"] = "深度思考服务暂时不可用，请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。\n\n安装方法：\n1. 安装 Ollama: https://ollama.ai\n2. 运行: ollama pull gemma4"
-            
+             
         else:
             # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
             result = hybrid_search_all(query, limit=5)
