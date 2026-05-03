@@ -28,7 +28,7 @@ from conf.npu import NPUConfig
 npu_config = NPUConfig()
 lib_path = npu_config.get_libs_path()
 
-print(f"[SETUP] QAI 库路径: {lib_path}")
+print(f"[SETUP] QAI 库路径AA: {lib_path}")
 
 # 设置环境变量
 paths_to_add = [lib_path]
