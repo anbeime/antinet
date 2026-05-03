@@ -120,8 +120,10 @@ def register_router(module_name: str):
                 # 直接使用路由自己的 prefix
                 actual_prefix = getattr(router, 'prefix', '') or '(无前缀)'
                 app.include_router(router)
-                print(f"[OK] 路由已注册: {actual_prefix}")
+                print(f"[OK] 路由已注册: {module_name} -> {actual_prefix}")
                 return True
+            else:
+                print(f"[WARN] {module_name} 无 router 属性")
         return False
     except Exception as e:
         print(f"[WARN] 无法导入 {module_name}: {e}")

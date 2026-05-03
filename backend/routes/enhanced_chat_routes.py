@@ -29,9 +29,7 @@ router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"
 # 数据库管理器
 db_manager = None
 
-# 知识图谱管理器
-from routes import knowledge_graph, conversation_context
-from routes import vector_search, auto_card
+# 知识图谱管理器 - 延迟到函数内导入
 kg_manager = None
 context_manager = None
 
@@ -43,8 +41,12 @@ def set_db_manager(manager):
     """设置数据库管理器"""
     global db_manager, kg_manager
     db_manager = manager
-    knowledge_graph.set_db_manager(manager)
-    logger.info("[Chat] 知识图谱模块已连接")
+    try:
+        from routes import knowledge_graph
+        knowledge_graph.set_db_manager(manager)
+        logger.info("[Chat] 知识图谱模块已连接")
+    except Exception as e:
+        logger.warning(f"[Chat] 知识图谱模块连接失败: {e}")
 
 # 技能注册表
 skill_registry: Dict[str, Dict[str, Any]] = {}
@@ -531,6 +533,7 @@ def hybrid_search_all(query: str, limit: int = 5) -> HybridSearchResult:
     # 搜索知识图谱
     kg_entities = []
     try:
+        from routes import knowledge_graph
         kg_entities = knowledge_graph.search_entities(query, limit)
     except Exception as e:
         logger.warning(f"知识图谱搜索失败: {e}")

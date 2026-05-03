@@ -1932,7 +1932,7 @@ const PDFViewerInternal: React.FC = () => {
       try {
         const pdfjs = (window as any).pdfjsLib;
         if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data }).promise;
+          const pdf = await pdfjs.getDocument({ data });
           setPdfDoc(pdf);
           setTotalPages(pdf.numPages);
           setCurrentPage(1);
