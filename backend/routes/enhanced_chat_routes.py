@@ -1117,10 +1117,7 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["response"] = f"该技能暂时不可用。"
                 
         elif scene_type == SceneType.GREETING:
-            response_data["response"] = "你好呀！我是小易。
-
-我可以帮您：
-• 查询知识库卡片 - 搜索事实、解释、风险、行动卡片
+            response_data["response"] = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
 • 生成PPT演示 - 快速创建专业演示文稿
 • 分析Excel数据 - 数据分析和可视化
 • 生成Word文档 - 创建专业文档

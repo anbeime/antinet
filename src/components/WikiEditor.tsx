@@ -122,6 +122,11 @@ const WikiEditor = () => {
 
   const loadPage = async (pageId: string) => {
     try {
+      // 跳过无效的pageId
+      if (!pageId || pageId.includes('undefined') || pageId.includes('md--md')) {
+        console.warn('跳过无效的页面ID:', pageId);
+        return;
+      }
       // 确保pageId正确编码
       const encodedId = encodeURIComponent(pageId);
       const res = await fetch(getApiBaseUrl() + `/api/wiki/pages/${encodedId}`);
@@ -358,7 +363,11 @@ const WikiEditor = () => {
                   {folderPages.map(page => (
                     <button
                       key={page.id}
-                      onClick={() => loadPage(page.id)}
+                      onClick={() => {
+                        if (page.id && !page.id.includes('undefined')) {
+                          loadPage(page.id);
+                        }
+                      }}
                       className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg ${
                         currentPage?.id === page.id ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'
                       }`}
