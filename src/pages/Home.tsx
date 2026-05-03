@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Brain,
   Home as HomeIcon,
@@ -149,6 +151,7 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ initialTab }) => {
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'ppt-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph' | 'markdown-converter'>(() => {
     if (initialTab === 'remotion') return 'remotion';
@@ -256,7 +259,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     
     try {
       // 调用后端API创建卡片
-      const response = await fetch('http://localhost:8000/api/knowledge/cards', {
+      const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -338,7 +341,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           };
           console.log('[IMPORT] 发送请求:', requestBody);
           
-          const response = await fetch('http://localhost:8000/api/knowledge/cards', {
+          const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestBody)
@@ -362,7 +365,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       console.log('[IMPORT] 保存结果: 成功=', savedCount, '失败=', errorCount);
       
       // 重新从后端加载卡片列表
-      const cardsResponse = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+      const cardsResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
       if (cardsResponse.ok) {
         const apiCards = await cardsResponse.json();
         const formattedCards = apiCards.map((card: any) => ({
@@ -380,7 +383,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         // 如果用户选择同步到GTD
         if (syncToGTD && savedCount > 0) {
           try {
-            await fetch('http://localhost:8000/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
+            await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' });
           } catch (e) {
             console.log('同步到GTD失败:', e);
           }
@@ -444,7 +447,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const handleDeleteCard = async (cardId: string) => {
     try {
       // 调用后端API删除卡片
-      const response = await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${cardId}`, {
         method: 'DELETE'
       });
 
@@ -471,7 +474,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   React.useEffect(() => {
     const loadCardsFromAPI = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+        const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
         if (response.ok) {
           const data = await response.json();
           const apiCards = data.cards || data || [];
@@ -493,7 +496,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           
           // 加载专题列表
           try {
-            const projRes = await fetch('http://localhost:8000/api/research/projects');
+            const projRes = await fetch(getApiBaseUrl() + '/api/research/projects');
             if (projRes.ok) {
               const projData = await projRes.json();
               setProjects(projData.value || projData || []);
@@ -517,12 +520,12 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
     };
     
-    loadCardsFromAPI();
+loadCardsFromAPI();
   }, []);
 
 
 
-// 加载仪表板数据
+  // 加载仪表板数据
   useEffect(() => {
     const loadDashboardData = async () => {
       if (activeTab !== 'dashboard') return;
@@ -532,7 +535,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       
       try {
         // 从知识卡片API获取真实数据
-        const response = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
+        const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
         if (!response.ok) throw new Error('API请求失败');
         const data = await response.json();
         const rawCards = data.cards || data || [];
@@ -615,7 +618,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         const categoryMap: Record<string, string> = {
           blue: '事实', green: '解释', yellow: '风险', red: '行动'
         };
-        await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`, {
+        await fetch(getApiBaseUrl() + `/api/knowledge/cards/${cardId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1109,25 +1112,40 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                >
                  <h2 className="text-xl font-bold mb-2">提升知识管理效率</h2>
                  <p className="text-blue-100 mb-4 text-sm">开始使用AI增强的卢曼卡片系统，加速团队知识发展</p>
-                 <div className="space-y-2">
-                   {Object.entries(cardTypeMap).map(([color, type]) => (
-                     <motion.button
-                       key={color}
-                       whileHover={{ scale: 1.02 }}
-                       whileTap={{ scale: 0.98 }}
-                       className="w-full bg-white/20 hover:bg-white/30 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors"
-                       onClick={() => openCreateModal(color as CardColor)}
-                     >
-                       <div className="flex items-center">
-                         <div className={`${type.color} p-1.5 rounded-lg mr-3`}>
-                           {type.icon}
-                         </div>
-                         <span>创建{type.name}卡片</span>
-                       </div>
-                       <ChevronRight size={16} />
-                     </motion.button>
-                   ))}
-                 </div>
+<div className="space-y-2">
+                    {Object.entries(cardTypeMap).map(([color, type]) => (
+                      <motion.button
+                        key={color}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full bg-white/20 hover:bg-white/30 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors"
+                        onClick={() => openCreateModal(color as CardColor)}
+                      >
+                        <div className="flex items-center">
+                          <div className={`${type.color} p-1.5 rounded-lg mr-3`}>
+                            {type.icon}
+                          </div>
+                          <span>创建{type.name}卡片</span>
+                        </div>
+                        <ChevronRight size={16} />
+                      </motion.button>
+                    ))}
+                    {/* 自进化聊天入口 */}
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors mt-2"
+                      onClick={() => navigate('/evolving-chat')}
+                    >
+                      <div className="flex items-center">
+                        <div className="bg-white/20 p-1.5 rounded-lg mr-3">
+                          <Brain className="w-4 h-4" />
+                        </div>
+                        <span className="font-medium">自进化聊天</span>
+                      </div>
+                      <ChevronRight size={16} />
+                    </motion.button>
+                  </div>
                </motion.div>
 
                {/* 企业应用场景 */}

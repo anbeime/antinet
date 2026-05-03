@@ -1,8 +1,9 @@
 // src/services/dataService.ts - 数据管理服务
 // 提供团队成员、知识空间、协作活动等数据的API调用
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE_URL = 'http://localhost:8000/api/data';
+const API_BASE_URL = getApiBaseUrl() + '/api/data'
 
 // ========== 类型定义 ==========
 export interface TeamMember {
@@ -295,7 +296,7 @@ export const gtdTaskService = {
 };
 
 // ========== 专题研究服务 ==========
-const RESEARCH_API_BASE = 'http://localhost:8000/api/research';
+const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
 
 export interface ResearchProject {
   id?: number;
@@ -557,7 +558,7 @@ export const researchStatsService = {
 };
 
 // ========== 源文件溯源服务 ==========
-const KNOWLEDGE_API_BASE = 'http://localhost:8000/api/knowledge';
+const KNOWLEDGE_API_BASE = `${getApiBaseUrl()}/api/knowledge`;
 
 export interface SourceFileInfo {
   has_source: boolean;

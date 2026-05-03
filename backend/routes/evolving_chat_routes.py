@@ -28,7 +28,7 @@ class EvolvingChatRequest(BaseModel):
     enable_evolution: bool = Field(default=True, description="是否启用自进化")
     enable_memory: bool = Field(default=True, description="是否启用记忆")
     enable_skill: bool = Field(default=True, description="是否启用技能")
-    enable_8agent: bool = Field(default=False, description="是否启用完整8-Agent流程")
+    enable_8agent: bool = Field(default=True, description="是否启用完整8-Agent流程")
     user_id: str = Field(default="default_user", description="用户ID")
 
 
@@ -66,40 +66,51 @@ class EvolvingChatEngine:
         self._eight_agent_engine = None
     
     async def initialize(self):
-        """初始化所有组件"""
+        """初始化所有组件（每个组件独立失败不影响其他组件）"""
         if self._initialized:
             return
         
+        # 尝试初始化 OrchestratorAgent (锦衣卫)
         try:
-            # 初始化 OrchestratorAgent (锦衣卫)
             from agents.orchestrator import OrchestratorAgent
             self._orchestrator = OrchestratorAgent(
                 genie_api_base_url="http://127.0.0.1:8000",
                 model_path=""
             )
             logger.info("[EvolvingChat] OrchestratorAgent 初始化完成")
-            
-            # 初始化 MemoryAgent (太史阁)
+        except Exception as e:
+            logger.warning(f"[EvolvingChat] OrchestratorAgent 初始化失败: {e}")
+            self._orchestrator = None
+        
+        # 尝试初始化 MemoryAgent (太史阁)
+        try:
             from agents.memory import MemoryAgent
             self._memory = MemoryAgent()
             logger.info("[EvolvingChat] MemoryAgent 初始化完成")
-            
-            # 初始化 SkillRegistry
+        except Exception as e:
+            logger.warning(f"[EvolvingChat] MemoryAgent 初始化失败: {e}")
+            self._memory = None
+        
+        # 尝试初始化 SkillRegistry
+        try:
             from services.skill_system import get_skill_registry
             self._skill_registry = get_skill_registry()
             logger.info("[EvolvingChat] SkillRegistry 初始化完成")
-            
-            # 初始化四色卡片技能
+        except Exception as e:
+            logger.warning(f"[EvolvingChat] SkillRegistry 初始化失败: {e}")
+            self._skill_registry = None
+        
+        # 尝试初始化四色卡片技能
+        try:
             from skills.four_color_card_skill import get_four_color_card_skill
             self._four_color_skill = get_four_color_card_skill()
             logger.info("[EvolvingChat] FourColorCardSkill 初始化完成")
-            
-            self._initialized = True
-            logger.info("[EvolvingChat] 所有组件初始化完成")
-            
         except Exception as e:
-            logger.error(f"[EvolvingChat] 初始化失败: {e}", exc_info=True)
-            raise
+            logger.warning(f"[EvolvingChat] FourColorCardSkill 初始化失败: {e}")
+            self._four_color_skill = None
+        
+        self._initialized = True
+        logger.info("[EvolvingChat] 组件初始化完成（部分组件可能不可用）")
     
     async def process(
         self,
@@ -252,13 +263,13 @@ class EvolvingChatEngine:
             if self._memory is None:
                 return {}
             
-            # 检索相关记忆
-            memories = self._memory.retrieve(query, user_id)
+            # 检索相关记忆 - 使用正确的接口
+            memories = await self._memory.retrieve_knowledge("conversation", query, limit=10)
             
             return {
-                "recent_conversations": memories.get("recent", [])[:5],
-                "user_preferences": memories.get("preferences", {}),
-                "context_history": memories.get("history", [])
+                "recent_conversations": memories.get("results", [])[:5],
+                "user_preferences": {},
+                "context_history": memories.get("results", [])
             }
         except Exception as e:
             logger.warning(f"[EvolvingChat] 记忆检索失败: {e}")
@@ -270,11 +281,12 @@ class EvolvingChatEngine:
             if self._memory is None:
                 return
             
-            self._memory.store(
-                query=query,
-                response=response,
-                user_id=user_id
-            )
+            # 存储对话记忆 - 使用正确的接口
+            await self._memory.store_knowledge("conversation", {
+                "query": query,
+                "response": response,
+                "user_id": user_id
+            })
         except Exception as e:
             logger.warning(f"[EvolvingChat] 记忆存储失败: {e}")
     
@@ -376,38 +388,100 @@ class EvolvingChatEngine:
         return [], {}
     
     async def _search_knowledge(self, query: str) -> List[Dict]:
-        """搜索知识库"""
+        """搜索知识库 - 同时搜索主知识库和四色卡片存储"""
         try:
-            # 使用四色卡片技能的知识库
+            all_cards = []
+            query_lower = query.lower()
+            query_words = query_lower.split()
+            
+            # 1. 搜索四色卡片技能的内部存储
             if self._four_color_skill:
-                cards = self._four_color_skill.export_cards()
-                
-                # 简单的关键词匹配
-                query_lower = query.lower()
-                scored_cards = []
-                
-                for card in cards:
+                skill_cards = self._four_color_skill.export_cards()
+                for card in skill_cards:
                     content = card.get("content", "").lower()
                     title = card.get("title", "").lower()
-                    
-                    # 计算相似度
                     score = 0
-                    query_words = query_lower.split()
                     for word in query_words:
                         if word in content:
                             score += 1
                         if word in title:
                             score += 2
-                    
                     if score > 0:
-                        scored_cards.append({
+                        all_cards.append({
                             **card,
-                            "similarity": min(score / len(query_words), 1.0)
+                            "similarity": min(score / len(query_words), 1.0),
+                            "source": "skill"
                         })
+            
+            # 2. 搜索主知识库 (knowledge_cards表)
+            try:
+                from database import DatabaseManager
+                from config import settings
                 
-                # 按相似度排序
-                scored_cards.sort(key=lambda x: x.get("similarity", 0), reverse=True)
-                return scored_cards[:10]
+                # 每次创建新连接可能导致问题，改用共享的db_manager
+                if hasattr(EvolvingChatService, '_db_instance'):
+                    db = EvolvingChatService._db_instance
+                else:
+                    db = DatabaseManager(settings.DB_PATH)
+                    EvolvingChatService._db_instance = db
+                
+                conn = db.get_connection()
+                cursor = conn.cursor()
+                
+                # 调试：先检查有多少数据
+                cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
+                total_count = cursor.fetchone()[0]
+                logger.info(f"[EvolvingChat] 知识库总卡片数: {total_count}")
+                
+                if total_count > 0:
+                    cursor.execute("""
+                        SELECT id, card_type, title, content, category, created_at
+                        FROM knowledge_cards
+                        WHERE title LIKE ? OR content LIKE ?
+                        ORDER BY created_at DESC
+                        LIMIT 50
+                    """, [f"%{query}%", f"%{query}%"])
+                    
+                    rows = cursor.fetchall()
+                    logger.info(f"[EvolvingChat] 搜索'{query}'找到 {len(rows)} 条")
+                    
+                    for row in rows:
+                        content = (row["content"] or "").lower()
+                        title = (row["title"] or "").lower()
+                        score = 0
+                        for word in query_words:
+                            if word in content:
+                                score += 1
+                            if word in title:
+                                score += 2
+                        if score > 0:
+                            all_cards.append({
+                                "card_id": str(row["id"]),
+                                "card_type": row["card_type"],
+                                "title": row["title"],
+                                "content": row["content"],
+                                "category": row["category"],
+                                "similarity": min(score / len(query_words), 1.0),
+                                "source": "knowledge_db"
+                            })
+                
+                conn.close()
+            except Exception as e:
+                logger.warning(f"[EvolvingChat] 主知识库搜索失败: {e}")
+            
+            # 按相似度排序并去重
+            all_cards.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+            
+            # 去除重复（基于title）
+            seen_titles = set()
+            unique_cards = []
+            for card in all_cards:
+                title = card.get("title", "")
+                if title not in seen_titles:
+                    seen_titles.add(title)
+                    unique_cards.append(card)
+            
+            return unique_cards[:10]
         
         except Exception as e:
             logger.warning(f"[EvolvingChat] 知识搜索失败: {e}")
@@ -459,7 +533,18 @@ class EvolvingChatEngine:
 
 请生成一个准确、简洁的回答："""
         
-        # TODO: 调用LLM生成回答（这里先用简单实现）
+        # 调用LLM生成回答
+        try:
+            from services.ai import AIServiceFactory
+            llm_service = AIServiceFactory.get_default()
+            if llm_service:
+                result = llm_service.chat(prompt)
+                if result and hasattr(result, 'content'):
+                    return result.content
+        except Exception as e:
+            logger.warning(f"[EvolvingChat] LLM调用失败: {e}")
+        
+        # Fallback到简单实现
         return self._simple_generate_response(query, relevant_cards, memory_context)
     
     def _simple_generate_response(

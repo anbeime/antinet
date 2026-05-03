@@ -118,14 +118,15 @@ async def convert_markdown(request: MarkdownConvertRequest):
             'pdf': OutputFormat.PDF,
             'docx': OutputFormat.DOCX,
             'html': OutputFormat.HTML,
-            'xlsx': OutputFormat.EXCEL
+            'xlsx': OutputFormat.EXCEL,
+            'pptx': OutputFormat.PPTX
         }
         
         output_format = output_format_map.get(request.output_format.lower())
         if not output_format:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported format: {request.output_format}. Supported: pdf, docx, html, xlsx"
+                detail=f"Unsupported format: {request.output_format}. Supported: pdf, docx, html, xlsx, pptx"
             )
         
         converter = PandocConverter()
@@ -145,14 +146,16 @@ async def convert_markdown(request: MarkdownConvertRequest):
             OutputFormat.PDF: 'application/pdf',
             OutputFormat.DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             OutputFormat.HTML: 'text/html',
-            OutputFormat.EXCEL: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            OutputFormat.EXCEL: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            OutputFormat.PPTX: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
         }
         
         extensions = {
             OutputFormat.PDF: '.pdf',
             OutputFormat.DOCX: '.docx',
             OutputFormat.HTML: '.html',
-            OutputFormat.EXCEL: '.xlsx'
+            OutputFormat.EXCEL: '.xlsx',
+            OutputFormat.PPTX: '.pptx'
         }
         
         return Response(
@@ -185,7 +188,8 @@ async def convert_markdown_file(
             'pdf': OutputFormat.PDF,
             'docx': OutputFormat.DOCX,
             'html': OutputFormat.HTML,
-            'xlsx': OutputFormat.EXCEL
+            'xlsx': OutputFormat.EXCEL,
+            'pptx': OutputFormat.PPTX
         }
         
         output_fmt = output_format_map.get(output_format.lower())
@@ -210,14 +214,16 @@ async def convert_markdown_file(
             OutputFormat.PDF: 'application/pdf',
             OutputFormat.DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             OutputFormat.HTML: 'text/html',
-            OutputFormat.EXCEL: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            OutputFormat.EXCEL: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            OutputFormat.PPTX: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
         }
         
         extensions = {
             OutputFormat.PDF: '.pdf',
             OutputFormat.DOCX: '.docx',
             OutputFormat.HTML: '.html',
-            OutputFormat.EXCEL: '.xlsx'
+            OutputFormat.EXCEL: '.xlsx',
+            OutputFormat.PPTX: '.pptx'
         }
         
         # 获取原始文件名
@@ -380,7 +386,7 @@ async def get_supported_formats():
     return {
         "input": ["markdown", "md"],
         "output": {
-            "document": ["pdf", "docx", "html"],
+            "document": ["pdf", "docx", "html", "pptx"],
             "spreadsheet": ["xlsx", "csv"],
             "other": ["latex", "rst"]
         },
@@ -430,3 +436,12 @@ async def md_to_html(
 async def md_to_xlsx(file: UploadFile = File(...)):
     """Markdown → Excel (便捷端点，提取 CSV)"""
     return await convert_markdown_file(file, "xlsx", False)
+
+
+@router.post("/to-pptx")
+async def md_to_pptx(
+    file: UploadFile = File(...),
+    render_mermaid: bool = Query(True)
+):
+    """Markdown → PPTX (便捷端点)"""
+    return await convert_markdown_file(file, "pptx", render_mermaid)

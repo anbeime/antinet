@@ -40,17 +40,18 @@ import { teamMemberService, activityService, analyticsService, projectService } 
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import * as echarts from 'echarts';
-import { 
-  PieChart, 
-  Pie, 
-  Cell, 
-  ResponsiveContainer, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   Legend,
   LineChart,
   Line,
@@ -75,7 +76,7 @@ const AgentMeetingPanel: React.FC = () => {
   useEffect(() => {
     const loadAgents = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/meeting/agents');
+        const response = await fetch(getApiBaseUrl() + '/api/meeting/agents');
         if (response.ok) {
           const data = await response.json();
           setAgents(data);
@@ -108,7 +109,7 @@ const AgentMeetingPanel: React.FC = () => {
     toast.info('正在召集8-Agent进行讨论...');
     
     try {
-      const response = await fetch('http://localhost:8000/api/meeting/discuss', {
+      const response = await fetch(getApiBaseUrl() + '/api/meeting/discuss', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2615,7 +2616,7 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
   useEffect(() => {
     const fetchCards = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/knowledge/cards?limit=100');
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=100');
         const data = await res.json();
         setCards(Array.isArray(data) ? data : (data.cards || []));
       } catch (e) {
@@ -2754,7 +2755,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
   useEffect(() => {
     const fetchCards = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/knowledge/cards?limit=50');
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
         const data = await res.json();
         setCards(Array.isArray(data) ? data : (data.cards || []));
       } catch (e) {

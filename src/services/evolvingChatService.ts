@@ -1,7 +1,9 @@
 // src/services/evolvingChatService.ts
 // 自进化聊天服务 - 集成8-Agent、Memory、四色卡片
 
-const API_BASE = 'http://localhost:8000/api/evolving-chat';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+const API_BASE = getApiBaseUrl() + '/api/evolving-chat'
 
 export interface EvolvingChatRequest {
   query: string;

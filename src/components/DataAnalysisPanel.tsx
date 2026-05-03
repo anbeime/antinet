@@ -1,6 +1,7 @@
 // src/components/DataAnalysisPanel.tsx - 数据分析面板
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Search,
   Loader,
@@ -16,7 +17,7 @@ import {
 import { toast } from 'sonner';
 
 // API配置
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = getApiBaseUrl()
 
 // 类型定义（匹配8-Agent后端 /api/generate/cards 返回格式）
 interface FourColorCard {

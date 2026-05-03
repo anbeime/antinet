@@ -165,7 +165,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
           formData.append('question', input.trim());
         }
 
-        const response = await fetch('http://localhost:8000/api/vision/analyze', {
+        const response = await fetch(getApiBaseUrl() + '/api/vision/analyze', {
           method: 'POST',
           body: formData,
         });
@@ -179,7 +179,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
       } else {
         // For text queries, first try searching existing knowledge cards
         // This is faster than AI inference and should be used when possible
-        const searchResponse = await fetch('http://localhost:8000/api/chat/search', {
+        const searchResponse = await fetch(getApiBaseUrl() + '/api/chat/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -203,7 +203,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
             result = formattedResult;
           } else {
             // No relevant cards found, fall back to AI inference
-            const chatResponse = await fetch('http://localhost:8000/api/chat/query', {
+            const chatResponse = await fetch(getApiBaseUrl() + '/api/chat/query', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
@@ -218,7 +218,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
           }
         } else {
           // Search failed, fall back to AI inference
-          const chatResponse = await fetch('http://localhost:8000/api/chat/query', {
+          const chatResponse = await fetch(getApiBaseUrl() + '/api/chat/query', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: input.trim(), conversation_history: [] }),
@@ -305,7 +305,7 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat/enhanced/tts', {
+      const response = await fetch(getApiBaseUrl() + '/api/chat/enhanced/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: '晓伊' }),

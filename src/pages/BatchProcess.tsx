@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Layers, CheckCircle, Clock, Settings, 
-  Play, RotateCcw, Loader, AlertTriangle, 
-  BarChart3, Upload, FileText, FileSpreadsheet, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  Layers, CheckCircle, Clock, Settings,
+  Play, RotateCcw, Loader, AlertTriangle,
+  BarChart3, Upload, FileText, FileSpreadsheet,
   Presentation, Image, X, FolderOpen, Database, FileDown
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -124,7 +125,7 @@ const BatchProcess: React.FC = () => {
       formData.append('file', batchFile.file);
 
       // 使用统一的知识导入API
-      const apiUrl = 'http://localhost:8000/api/knowledge/import/file';
+      const apiUrl = `${getApiBaseUrl()}/api/knowledge/import/file`;
 
       const progressInterval = setInterval(() => {
         setFiles(prev => prev.map(f => 
@@ -151,7 +152,7 @@ const BatchProcess: React.FC = () => {
           let savedCount = 0;
           for (const card of extractedCards) {
             try {
-              const saveResponse = await fetch('http://localhost:8000/api/knowledge/cards', {
+              const saveResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

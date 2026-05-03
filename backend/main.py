@@ -1,467 +1,246 @@
 #!/usr/bin/env python3
-# backend/main.py - 主API服务
+# backend/main.py - 主API服务 (重构版)
 """
 知易智能知识管家 - 后端API服务
-基于FastAPI,提供数据分析和知识管理接口
+参考 SiYuan 架构重构，配置和中间件集中管理
 """
 
-# 必须在任何导入之前设置环境变量
 import os
 import sys
 from pathlib import Path
 
-# 添加 backend 目录到 Python 路径，以支持正确的模块导入
+# ============================================================
+# 1. 路径设置（必须在导入之前）
+# ============================================================
 backend_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(backend_dir)
 
-# 确保 backend 目录在 Python 路径中
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
-# 同时添加项目根目录
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# 设置NPU库路径 - 必须在导入模型加载器之前完成
-# 【重要】只设置默认版本（2.37），匹配系统NPU驱动
-# 模型加载时会根据模型的QNN版本动态切换，避免版本冲突
-def find_qai_libs():
-    """自动查找 QAI 库路径 - 默认使用 2.37（匹配系统NPU驱动）"""
-    qualcomm_base = Path(project_root) / "QAIRT"
-    
-    # 【关键】默认使用 2.37 版本（匹配当前系统 NPU 驱动）
-    # 只有匹配版本的 SDK 才能正确加载模型
-    default_version_dirs = ["2.37.1.250807"]
-    
-    for ver_dir in default_version_dirs:
-        version_path = qualcomm_base / ver_dir
-        if version_path.is_dir():
-            for lib_sub in ["lib/arm64x-windows-msvc", "lib/aarch64-windows-msvc"]:
-                lib_path = version_path / lib_sub.replace("/", os.sep)
-                if lib_path.exists():
-                    return str(lib_path)
-    
-    # 回退：查找任意可用版本
-    fallback_versions = ["2.45.40.260406", "2.42.0.251225", "2.34.0.250626"]
-    for ver_dir in fallback_versions:
-        version_path = qualcomm_base / ver_dir
-        if version_path.is_dir():
-            for lib_sub in ["lib/arm64x-windows-msvc", "lib/aarch64-windows-msvc"]:
-                lib_path = version_path / lib_sub.replace("/", os.sep)
-                if lib_path.exists():
-                    print(f"[SETUP] ⚠️ 未找到2.37版本SDK，回退使用: {ver_dir}")
-                    return str(lib_path)
-    
-    # 最后回退到 QAIRT_Runtime
-    for lib_sub in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
-        p = Path(project_root) / "QAIRT_Runtime" / lib_sub
-        if p.exists():
-            return str(p)
-    
-    return str(Path(project_root) / "QAIRT_Runtime" / "arm64x-windows-msvc")
+# ============================================================
+# 2. NPU 库路径配置（使用新的配置模块）
+# ============================================================
+from conf.npu import NPUConfig
 
-lib_path = find_qai_libs()
-bridge_lib_path = lib_path
+npu_config = NPUConfig()
+lib_path = npu_config.get_libs_path()
 
 print(f"[SETUP] QAI 库路径: {lib_path}")
 
-# 只添加匹配版本的路径到 PATH，避免多版本 DLL 冲突
-paths_to_add = [lib_path, bridge_lib_path]
+# 设置环境变量
+paths_to_add = [lib_path]
 current_path = os.environ.get('PATH', '')
 for p in paths_to_add:
     if p not in current_path:
         current_path = p + ';' + current_path
 os.environ['PATH'] = current_path
 os.environ['QAI_LIBS_PATH'] = lib_path
+os.environ['QNN_LOG_LEVEL'] = npu_config.QNN_LOG_LEVEL
 
-# 显式添加 DLL 目录（Python 3.8+）- 只添加匹配版本
+# 添加 DLL 目录
 for p in paths_to_add:
     if os.path.exists(p):
         os.add_dll_directory(p)
         print(f"[SETUP] 添加 DLL 目录: {p}")
 
-# 设置 QNN 日志级别
-try:
-    from config import settings
-    qnn_log_level = settings.QNN_LOG_LEVEL
-    os.environ['QNN_LOG_LEVEL'] = qnn_log_level
-    print(f"[SETUP] QNN 日志级别设置为: {qnn_log_level}")
-except ImportError:
-    os.environ['QNN_LOG_LEVEL'] = "DEBUG"
-    print(f"[SETUP] 使用默认 QNN 日志级别: DEBUG")
+print(f"[SETUP] NPU 配置: backend={npu_config.QNN_BACKEND}, device={npu_config.QNN_DEVICE}")
 
-print(f"[SETUP] NPU library paths configured:")
-print(f"  - qai_libs: {lib_path}")
-print(f"  - bridge libs: {bridge_lib_path}")
-print(f"  - PATH updated: {lib_path in os.environ['PATH']}")
-
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
+# ============================================================
+# 3. FastAPI 应用创建
+# ============================================================
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-import logging
-from pathlib import Path
-import json
-import time
 
-from config import settings
-# 可选导入 NPU 路由（如果依赖库可用）
-try:
-    from routes.npu_routes import router as npu_router
-except Exception as e:
-    print(f"[WARNING] 无法导入 NPU 路由: {e}")
-    npu_router = None
-from routes import data_routes  # 导入数据管理模块
-# 可选导入聊天机器人路由（如果依赖库可用）
-try:
-    from routes.chat_routes import router as chat_router
-except Exception as e:
-    print(f"[WARNING] 无法导入聊天机器人路由: {e}")
-    chat_router = None
+# 使用新的配置模块
+from conf.app import AppConfig
+
+app_config = AppConfig()
+
+app = FastAPI(
+    title=app_config.APP_NAME,
+    version=app_config.APP_VERSION,
+    description=app_config.APP_DESCRIPTION,
+)
+
+# ============================================================
+# 4. 中间件设置（使用新的中间件模块）
+# ============================================================
+from middleware import create_middleware_stack
+
+create_middleware_stack(app)
+print("[OK] 中间件栈已配置")
+
+# ============================================================
+# 5. 数据库初始化
+# ============================================================
+from conf.database import DatabaseConfig
+
+db_config = DatabaseConfig()
+print(f"[Database] 数据库路径: {db_config.DB_PATH}")
 
 from database import DatabaseManager
 
-# 配置日志
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+db_manager = DatabaseManager(db_config.DB_PATH)
+print("[OK] 数据库初始化完成")
 
-# 创建FastAPI应用
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    description="端侧智能数据中枢与协同分析平台"
-)
+# ============================================================
+# 6. AI 服务初始化（使用新的 AI 服务模块）
+# ============================================================
+from services.ai import AIServiceFactory
 
-# 初始化数据库
-logger.info(f"[Database] 正在初始化数据库: {settings.DB_PATH}")
-settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-db_manager = DatabaseManager(settings.DB_PATH)
+AIServiceFactory.create_default_services()
+print("[OK] AI 服务工厂已初始化")
 
-# 设置data_routes的数据库管理器
-data_routes.set_db_manager(db_manager)
-logger.info("[Database] 数据库初始化完成，已加载默认数据")
-
-# 配置CORS - 允许所有源（开发环境）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 允许所有源
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
-
-# 注册路由
-if npu_router is not None:
-    app.include_router(npu_router)  # NPU 推理路由
-app.include_router(data_routes.router)  # 数据管理路由
-if chat_router is not None:
-    app.include_router(chat_router)  # 聊天机器人路由
-    # 设置chat_routes模块的数据库管理器
-    import routes.chat_routes as chat_routes_module
-    chat_routes_module.db_manager = db_manager
-    chat_router.db_manager = db_manager  # 同时设置router属性
-    
-    # 向量搜索已集成到 vector_search.py
-    logger.info("[OK] 聊天机器人路由已注册")
-
-# 测试用简单端点
-@app.get("/api/test")
-async def test():
-    return {"status": "ok"}
-
-# 注册知识管理路由
+# ============================================================
+# 7. 提醒服务启动（后台定时任务）
+# ============================================================
 try:
-    from routes.knowledge_routes import router as knowledge_router
-    app.include_router(knowledge_router)  # 知识管理路由
-    logger.info("[OK] 知识管理路由已注册")
+    from services.reminder_service import start_reminder_service
+    start_reminder_service()
+    print("[OK] 提醒服务已启动")
 except Exception as e:
-    logger.warning(f"无法导入知识管理路由: {e}")
+    print(f"[WARN] 提醒服务启动失败: {e}")
 
-# 注册思维导图路由
+# ============================================================
+# 7. 路由注册（简化版）
+# ============================================================
+def register_router(module_name: str):
+    """直接注册路由模块"""
+    try:
+        # 动态导入
+        parts = module_name.split('.')
+        if len(parts) == 2:
+            # routes.xxx 格式
+            router_module = __import__(module_name, fromlist=['router'])
+            router = getattr(router_module, 'router', None)
+            if router:
+                # 直接使用路由自己的 prefix
+                actual_prefix = getattr(router, 'prefix', '') or '(无前缀)'
+                app.include_router(router)
+                print(f"[OK] 路由已注册: {actual_prefix}")
+                return True
+        return False
+    except Exception as e:
+        print(f"[WARN] 无法导入 {module_name}: {e}")
+        return False
+
+# 核心路由 - 使用各自的 prefix
+register_router("routes.knowledge_routes")
+register_router("routes.chat_routes")
+register_router("routes.data_routes")
+register_router("routes.agent_routes")
+register_router("routes.skill_routes")
+register_router("routes.npu_routes")
+register_router("routes.pdf_routes")
+register_router("routes.excel_routes")
+register_router("routes.ppt_routes")
+register_router("routes.multi_model_routes")
+register_router("routes.genie_playground_routes")
+register_router("routes.gtd_routes")
+register_router("routes.backlink_routes")
+register_router("routes.integration_routes")
+register_router("routes.moc_routes")
+register_router("routes.vision_routes")
+register_router("routes.enhanced_chat_routes")
+register_router("routes.evolving_chat_routes")
+register_router("routes.chat_context_routes")
+register_router("routes.md2pdf_routes")
+register_router("routes.card_pdf_routes")
+register_router("routes.libreoffice_routes")
+# register_router("routes.vector_search")  # 无router属性，是工具模块
+register_router("routes.wiki")
+register_router("routes.markdown_converter_routes")
+register_router("routes.meeting_routes")
+register_router("routes.speech_routes")
+register_router("routes.research_routes")
+register_router("routes.ppt_structure_routes")
+register_router("routes.analysis_routes")
+
+# ============================================================
+# 8. 初始化各模块的数据库连接
+# ============================================================
+print("[INFO] 开始初始化各模块数据库连接...")
+
+# 自动设置所有路由模块的db_manager
+import routes
+for attr_name in dir(routes):
+    mod = getattr(routes, attr_name, None)
+    if hasattr(mod, 'db_manager') and hasattr(mod, 'set_db_manager'):
+        try:
+            mod.set_db_manager(db_manager)
+            print(f"[OK] {attr_name} 数据库已连接")
+        except Exception as e:
+            print(f"[WARN] {attr_name} 设置失败: {e}")
+    elif hasattr(mod, 'db_manager'):
+        try:
+            mod.db_manager = db_manager
+            print(f"[OK] {attr_name} db_manager已设置")
+        except Exception as e:
+            pass
+
+# 单独设置其他需要db_manager的模块
 try:
-    from routes.mindmap_routes import router as mindmap_router
-    app.include_router(mindmap_router)
-    logger.info("[OK] 思维导图路由已注册")
+    from routes import auto_card
+    if hasattr(auto_card, 'set_db_manager'):
+        auto_card.set_db_manager(db_manager)
+        print("[OK] auto_card 数据库已连接")
+    auto_card.db_manager = db_manager
 except Exception as e:
-    logger.warning(f"无法导入思维导图路由: {e}")
+    print(f"[WARN] auto_card: {e}")
 
-# 注册Wiki路由
 try:
-    from routes.wiki import router as wiki_router
-    from routes.wiki import WikiFileManager
-    app.include_router(wiki_router)
-    logger.info("[OK] Wiki路由已注册 (/api/wiki)")
+    from routes import enhanced_chat_routes
+    enhanced_chat_routes.set_db_manager(db_manager)
+    print("[OK] enhanced_chat 数据库已连接")
 except Exception as e:
-    logger.warning(f"无法导入Wiki路由: {e}")
+    print(f"[WARN] enhanced_chat: {e}")
 
-# Karpathy Wiki路由已合并到wiki_routes.py，但与wiki.py冲突，暂时禁用
-
-# 注册 Remotion 动态演示路由
 try:
-    import routes.remotion_routes as remotion_routes_module
-    app.include_router(remotion_routes_module.router)
-    remotion_routes_module.set_db_manager(db_manager)
-    logger.info("[OK] Remotion 动态演示路由已注册")
+    from routes import chat_routes
+    chat_routes.db_manager = db_manager
+    print("[OK] chat_routes 数据库已连接")
 except Exception as e:
-    logger.warning(f"无法导入 Remotion 路由: {e}")
+    print(f"[WARN] chat_routes: {e}")
 
-# 注册专题研究路由
 try:
-    from routes.research_routes import router as research_router
-    app.include_router(research_router)  # 专题研究路由
-    logger.info("[OK] 专题研究路由已注册")
+    from routes import ppt_routes
+    ppt_routes.set_db_manager(db_manager)
+    print("[OK] ppt_routes 数据库已连接")
 except Exception as e:
-    logger.warning(f"无法导入专题研究路由: {e}")
+    print(f"[WARN] ppt_routes: {e}")
 
-# 注册 8-Agent 系统路由
 try:
-    from routes.agent_routes import router as agent_router
-    app.include_router(agent_router)  # 8-Agent 系统路由
-    logger.info("[OK] 8-Agent 系统路由已注册")
+    from routes import vector_search
+    vector_search.set_db_manager(db_manager)
+    print("[OK] vector_search 数据库已连接")
 except Exception as e:
-    logger.warning(f"无法导入 8-Agent 系统路由: {e}")
+    print(f"[WARN] vector_search: {e}")
 
-# 注册报告生成路由
 try:
-    from api.generate import router as generate_router
-    app.include_router(generate_router, prefix="/api/generate", tags=["报告生成"])
-    logger.info("[OK] 报告生成路由已注册")
+    from routes import ppt_routes
+    ppt_routes.set_db_manager(db_manager)
+    print("[OK] ppt_routes 数据库已连接")
 except Exception as e:
-    logger.warning(f"无法导入报告生成路由: {e}")
+    print(f"[WARN] ppt_routes: {e}")
 
-# 注册技能系统路由
-try:
-    from routes.skill_routes import router as skill_router
-    app.include_router(skill_router)  # 技能系统路由
-    logger.info("[OK] 技能系统路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入技能系统路由: {e}")
+print("[INFO] 数据库连接初始化完成")
 
-# 注册 Excel 导出路由
-try:
-    from routes.excel_routes import router as excel_router
-    app.include_router(excel_router)  # Excel 导出路由
-    logger.info("[OK] Excel 导出路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 Excel 导出路由: {e}")
+# ============================================================
+# 9. 健康检查端点
+# ============================================================
+@app.get("/api/health")
+async def health_check():
+    """健康检查端点"""
+    return {
+        "status": "ok",
+        "app": app_config.APP_NAME,
+        "version": app_config.APP_VERSION,
+        "database_initialized": True,
+    }
 
-# 注册完整分析路由
-try:
-    from routes.analysis_routes import router as analysis_router
-    app.include_router(analysis_router)  # 完整分析路由
-    logger.info("[OK] 完整分析路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入完整分析路由: {e}")
-
-# 注册高级数据分析路由
-try:
-    from routes.analysis_advanced_routes import router as analysis_advanced_router
-    app.include_router(analysis_advanced_router)  # 高级数据分析路由
-    logger.info("[OK] 高级数据分析路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入高级数据分析路由: {e}")
-
-# 注册语音服务路由（TTS + STT）
-try:
-    from routes.speech_routes import router as speech_router
-    app.include_router(speech_router)
-    logger.info("[OK] 语音服务路由已注册 (TTS/STT)")
-except Exception as e:
-    logger.warning(f"无法导入语音服务路由: {e}")
-
-# 注册 PDF 处理路由
-try:
-    from routes.pdf_routes import router as pdf_router
-    app.include_router(pdf_router)  # PDF 处理路由
-    logger.info("[OK] PDF 处理路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 PDF 处理路由: {e}")
-
-# 注册 Markdown 转 PDF 路由
-try:
-    from routes.md2pdf_routes import router as md2pdf_router
-    app.include_router(md2pdf_router)  # MD转PDF路由
-    logger.info("[OK] Markdown转PDF路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 MD2PDF 路由: {e}")
-
-# 注册知识卡片PDF报告路由
-try:
-    from routes.card_pdf_routes import router as card_pdf_router
-    app.include_router(card_pdf_router)
-    logger.info("[OK] 知识卡片PDF报告路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入知识卡片PDF路由: {e}")
-
-# 注册 Pandoc 风格转换路由（回退到any2pdf）
-try:
-    from routes.pandoc_routes import router as pandoc_router
-    app.include_router(pandoc_router)
-    logger.info("[OK] Pandoc风格转换路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 Pandoc 路由: {e}")
-
-# 注册 Markdown + Mermaid + CSV 完整工作流路由
-try:
-    from routes.markdown_converter_routes import router as markdown_converter_router
-    app.include_router(markdown_converter_router)
-    logger.info("[OK] Markdown+Mermaid+CSV工作流路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 Markdown转换路由: {e}")
-
-# 注册 PPT结构草稿路由
-try:
-    from routes.ppt_structure_routes import router as ppt_structure_router
-    app.include_router(ppt_structure_router)
-    logger.info("[OK] PPT结构草稿路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 PPT结构草稿路由: {e}")
-
-# 注册 PPT 处理路由
-try:
-    from routes.ppt_routes import router as ppt_router
-    from routes.ppt_routes import set_db_manager as set_ppt_db_manager
-    app.include_router(ppt_router)  # PPT 处理路由
-    set_ppt_db_manager(db_manager)
-    logger.info("[OK] PPT 处理路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 PPT 处理路由: {e}")
-
-# 注册 OCR 路由 (qwen2.5vl3b NPU模型)
-try:
-    from routes.ocr_routes import router as ocr_router
-    app.include_router(ocr_router)
-    logger.info("[OK] OCR 路由已注册 (qwen2.5vl3b)")
-except Exception as e:
-    logger.warning(f"无法导入 OCR 路由: {e}")
-
-# 注册报表自动化路由
-try:
-    from routes.report_routes import router as report_router
-    app.include_router(report_router)  # 报表自动化路由 (prefix已在router中定义)
-    logger.info("[OK] 报表自动化路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入报表自动化路由: {e}")
-
-# 注册 GTD 任务管理路由
-try:
-    from routes.gtd_routes import router as gtd_router
-    app.include_router(gtd_router)  # GTD 任务管理路由
-    logger.info("[OK] GTD 任务管理路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 GTD 任务管理路由: {e}")
-
-# 注册双向链接路由
-try:
-    from routes.backlink_routes import router as backlink_router
-    app.include_router(backlink_router)
-    logger.info("[OK] 双向链接路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入双向链接路由: {e}")
-
-# 注册整合路由（任务-笔记双向链接 + 日历整合）
-try:
-    from routes.integration_routes import router as integration_router
-    app.include_router(integration_router)
-    logger.info("[OK] 整合路由（任务-笔记-日历）已注册")
-except Exception as e:
-    logger.warning(f"无法导入整合路由: {e}")
-
-# 注册 MOC 多维筛选路由
-try:
-    from routes.moc_routes import router as moc_router
-    app.include_router(moc_router)
-    logger.info("[OK] MOC多维筛选路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入MOC路由: {e}")
-
-# 注册多模型API路由
-try:
-    from routes.multi_model_routes import router as multi_model_router
-    app.include_router(multi_model_router)  # 多模型API路由
-    logger.info("[OK] 多模型API路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入多模型API路由: {e}")
-
-# 注册视觉理解路由
-try:
-    from routes.vision_routes import router as vision_router
-    app.include_router(vision_router)  # 视觉理解路由
-    logger.info("[OK] 视觉理解路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入视觉理解路由: {e}")
-
-# 注册 Genie 模型测试场路由
-try:
-    from routes.genie_playground_routes import router as genie_playground_router
-    app.include_router(genie_playground_router)  # Genie模型测试场路由
-    logger.info("[OK] Genie 模型测试场路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入 Genie 模型测试场路由: {e}")
-
-# 注册8-Agent会议路由
-try:
-    from routes.meeting_routes import router as meeting_router
-    from routes.meeting_routes import set_db_manager as set_meeting_db_manager
-    app.include_router(meeting_router)  # 8-Agent会议路由
-    set_meeting_db_manager(db_manager)
-    logger.info("[OK] 8-Agent会议路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入8-Agent会议路由: {e}")
-
-# 注册增强版聊天路由
-try:
-    from routes.enhanced_chat_routes import router as enhanced_chat_router
-    from routes.enhanced_chat_routes import set_db_manager as set_chat_db_manager
-    app.include_router(enhanced_chat_router)  # 增强版聊天路由
-    set_chat_db_manager(db_manager)
-    logger.info("[OK] 增强版聊天路由已注册 (含知识图谱)")
-except Exception as e:
-    logger.warning(f"无法导入增强版聊天路由: {e}")
-
-# 注册自进化聊天路由（集成8-Agent、Memory、四色卡片）
-try:
-    from routes.evolving_chat_routes import router as evolving_chat_router
-    app.include_router(evolving_chat_router)  # 自进化聊天路由
-    logger.info("[OK] 自进化聊天路由已注册 (集成8-Agent+Memory+四色卡片)")
-except Exception as e:
-    logger.warning(f"无法导入自进化聊天路由: {e}")
-
-# 注册对话上下文链路由
-try:
-    from routes.chat_context_routes import router as context_router
-    from routes.chat_context_routes import set_context_manager as set_ctx_mgr
-    from routes.conversation_context import context_manager as ctx_mgr
-    app.include_router(context_router)
-    set_ctx_mgr(ctx_mgr)
-    logger.info("[OK] 对话上下文链路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入对话上下文链路由: {e}")
-
-# 注册向量搜索模块
-try:
-    from routes.vector_search import set_db_manager as set_vec_db, init_on_startup
-    from routes.auto_card import set_db_manager as set_card_db
-    set_vec_db(db_manager)
-    set_card_db(db_manager)
-    init_on_startup()  # 初始化语义嵌入模型
-    logger.info("[OK] 向量搜索和自动卡片模块已注册")
-except Exception as e:
-    logger.warning(f"无法导入向量搜索模块: {e}")
-
-# Wiki 知识网络路由
-try:
-    from routes.wiki import router as wiki_router
-    app.include_router(wiki_router)
-    logger.info("[OK] Wiki知识网络路由已注册")
-except Exception as e:
-    logger.warning(f"无法导入Wiki路由: {e}")
-
-# 调试端点
 @app.get("/api/debug/routes")
 async def debug_routes():
     """调试端点 - 列出所有已注册的路由"""
@@ -474,14 +253,21 @@ async def debug_routes():
         "routes": sorted(all_routes)
     }
 
-
+# ============================================================
+# 9. 启动服务
+# ============================================================
 if __name__ == "__main__":
     import uvicorn
+    
+    print(f"\n{'='*50}")
+    print(f"启动 {app_config.APP_NAME} v{app_config.APP_VERSION}")
+    print(f"服务地址: http://{app_config.HOST}:{app_config.PORT}")
+    print(f"{'='*50}\n")
+    
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8000,
+        host=app_config.HOST,
+        port=app_config.PORT,
         reload=False,
         log_level="info"
     )
-

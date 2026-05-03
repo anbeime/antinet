@@ -1,7 +1,17 @@
 // 自动生成的API配置文件
 // 生成时间: 2026-01-27 19:58:42.763318
 
-export const API_BASE_URL = 'http://localhost:8000';
+// 动态获取API地址，支持局域网访问
+const getApiBaseUrl = () => {
+  // 生产环境使用相对路径，由vite代理或nginx转发
+  if (import.meta.env.PROD) {
+    return '';
+  }
+  // 开发环境优先使用环境变量，否则使用当前主机地址
+  return import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 export const API_ENDPOINTS = {
 

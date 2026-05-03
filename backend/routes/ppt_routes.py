@@ -5,6 +5,7 @@ PPT 路由
 import logging
 import json
 import re
+import urllib.parse
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
@@ -238,10 +239,15 @@ async def get_ppt_file(filename: str):
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="文件不存在")
         
+        # RFC 5987 编码：filename*=UTF-8''{encoded}
+        encoded_filename = urllib.parse.quote(filename)
+        
+        # 使用 media_type 返回而不是 attachment，让浏览器可以在页面显示
         return FileResponse(
             path=str(file_path),
             filename=filename,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"}
         )
     except Exception as e:
         logger.error(f"获取PPT文件失败: {e}")
@@ -414,8 +420,8 @@ async def convert_ppt_to_pdf(file: UploadFile = File(...)):
     
     input_path = None
     try:
-        # 保存上传的 PPT 文件
-        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False) as tmp:
+        # 保存上传的 PPT 文件（二进制模式，避免编码问题）
+        with tempfile.NamedTemporaryFile(suffix='.pptx', delete=False, mode='wb') as tmp:
             content = await file.read()
             tmp.write(content)
             input_path = tmp.name
@@ -705,12 +711,20 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
     
     工作流：专题卡片 → 叙事逻辑组织 → PPT生成
     """
+    logger.info(f"[PPT Export] Received request for project_id={request.project_id}")
+    
     if not PPTX_AVAILABLE:
+        logger.error("[PPT Export] PPTX not available")
         raise HTTPException(status_code=503, detail="PPT 功能不可用，请安装 python-pptx")
     
     try:
         # 获取专题数据 - 使用共享数据库管理器
         db = get_db_manager()
+        logger.info(f"[PPT Export] Got db manager, project_id={request.project_id}")
+        
+        # 获取专题信息
+        project = db.get_research_project(request.project_id)
+        logger.info(f"[PPT Export] Got project: {project}")
         
         # 获取专题信息
         project = db.get_research_project(request.project_id)
@@ -787,7 +801,13 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"从专题导出PPT失败: {e}")
+        logger.error(f"从专题导出PPT失败: {e}", exc_info=True)
+        import traceback
+        logger.error(traceback.format_exc())
+        # 检查是否是数据库未初始化错误
+        error_detail = str(e)
+        if "数据库未初始化" in error_detail or "database" in error_detail.lower():
+            raise HTTPException(status_code=503, detail="数据库服务未初始化，请重启服务器")
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 
@@ -854,30 +874,87 @@ async def ppt_to_pdf(file: UploadFile = File(...)):
             c = canvas.Canvas(str(output_file), pagesize=A4)
             width, height = A4
             
+            # 使用支持 Unicode 的中文字体
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            import os
+            
+            # 尝试注册系统中的中文字体
+            font_registered = False
+            font_names = ["SimHei", "Microsoft YaHei", "Arial Unicode MS", "DejaVuSans"]
+            selected_font = "Helvetica"
+            
+            for font_name in font_names:
+                try:
+                    # 尝试从系统字体目录加载
+                    font_paths = [
+                        f"C:/Windows/Fonts/{font_name}.ttf",
+                        f"C:/Windows/Fonts/{font_name}.ttc",
+                        f"/usr/share/fonts/truetype/{font_name.lower()}.ttf",
+                        f"/usr/share/fonts/{font_name.lower()}.ttf",
+                    ]
+                    for font_path in font_paths:
+                        if os.path.exists(font_path):
+                            try:
+                                pdfmetrics.registerFont(TTFont(font_name, font_path))
+                                selected_font = font_name
+                                font_registered = True
+                                logger.info(f"[PPT2PDF] Successfully registered font: {font_name}")
+                                break
+                            except Exception as e:
+                                logger.warning(f"[PPT2PDF] Failed to register {font_name}: {e}")
+                    if font_registered:
+                        break
+                except Exception:
+                    continue
+            
+            if not font_registered:
+                logger.warning("[PPT2PDF] No Chinese fonts registered, using Helvetica")
+                selected_font = "Helvetica"
+            
             for slide_num, slide in enumerate(prs.slides, 1):
                 if slide_num > 1:
                     c.showPage()
-                c.setFont("Helvetica-Bold", 18)
-                c.drawString(inch, height - inch, f"Slide {slide_num}")
+                # 自定义注册的字体不能加-Bold后缀
+                if font_registered:
+                    c.setFont(selected_font, 18)
+                else:
+                    c.setFont("Helvetica-Bold", 18)
+                title_text = f"Slide {slide_num}"
+                c.drawString(inch, height - inch, title_text)
                 
                 y = height - 1.5*inch
-                c.setFont("Helvetica", 10)
+                if font_registered:
+                    c.setFont(selected_font, 10)
+                else:
+                    c.setFont("Helvetica", 10)
                 
                 for shape in slide.shapes:
                     if hasattr(shape, "text") and shape.text:
                         for para in shape.text.split('\n'):
                             para = para.strip()[:80]
                             if para and y > inch:
-                                c.drawString(inch, y, para)
+                                # 使用 drawString 的文本参数需要是字节字符串
+                                # 对于非 ASCII 字符，使用 UTF-8 编码
+                                try:
+                                    c.drawString(inch, y, para)
+                                except UnicodeEncodeError:
+                                    # 如果失败，尝试用 Latin-1 替换无法编码的字符
+                                    para_latin1 = para.encode('latin-1', errors='replace').decode('latin-1')
+                                    c.drawString(inch, y, para_latin1)
                                 y -= 0.25*inch
             
             c.save()
             
             pdf_content = output_file.read_bytes()
+            # 使用 RFC 5987 编码支持非 ASCII 字符（中文文件名）
+            from urllib.parse import quote
+            safe_filename = file.filename.replace('.pptx', '.pdf')
+            encoded_filename = quote(safe_filename)
             return Response(
                 content=pdf_content,
                 media_type="application/pdf",
-                headers={"Content-Disposition": f"attachment; filename={file.filename.replace('.pptx', '.pdf')}"}
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
             )
         except Exception as e:
             logger.error(f"[PPT2PDF] 错误: {e}, type: {type(e)}")

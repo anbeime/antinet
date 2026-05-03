@@ -3,7 +3,9 @@
  * 调用后端 8-Agent 系统进行数据分析
  */
 
-const API_BASE = 'http://localhost:8000/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+const API_BASE = getApiBaseUrl() + '/api'
 
 export interface FourColorCard {
   color: 'blue' | 'green' | 'yellow' | 'red';
@@ -282,7 +284,7 @@ export const npuService = {
    */
   async getHealth(): Promise<any> {
     try {
-      const response = await fetch('http://localhost:8000/api/health');
+      const response = await fetch(getApiBaseUrl() + '/api/health');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -318,7 +320,7 @@ export const npuService = {
    */
   async getSystemInfo(): Promise<any> {
     try {
-      const response = await fetch('http://localhost:8000/');
+      const response = await fetch(getApiBaseUrl() + '/');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

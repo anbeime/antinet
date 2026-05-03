@@ -30,7 +30,7 @@ interface CardExporterProps {
   showPPTVPreview?: boolean;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl() + ''
 
 const CardExporter: React.FC<CardExporterProps> = ({
   cards,

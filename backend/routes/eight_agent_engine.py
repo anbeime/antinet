@@ -82,10 +82,7 @@ class EightAgentEngine:
             
             # 2. 初始化密卷房 (Preprocessor) - 数据预处理
             from agents.preprocessor import PreprocessorAgent
-            self._agents["preprocessor"] = PreprocessorAgent(
-                genie_api_base_url=self.genie_api_base_url,
-                model_path=""
-            )
+            self._agents["preprocessor"] = PreprocessorAgent()
             logger.info("[8-Agent引擎] 密卷房(Preprocessor) 初始化完成")
             
             # 3. 初始化卡片分类器 (Card Classifier)
@@ -227,15 +224,15 @@ class EightAgentEngine:
         try:
             memory_agent = self._agents.get("memory")
             if memory_agent:
-                return memory_agent.retrieve(query, user_id)
+                return await memory_agent.retrieve_knowledge("conversation", query, limit=10)
         except Exception as e:
             logger.warning(f"[太史阁] 记忆检索失败: {e}")
-        return {"recent": [], "preferences": {}, "history": []}
+        return {"results": [], "recent": [], "preferences": {}, "history": []}
     
     async def _store_knowledge(
-        self, 
-        query: str, 
-        cards: FourColorCards, 
+        self,
+        query: str,
+        cards: FourColorCards,
         user_id: str
     ):
         """太史阁 - 知识存储"""
@@ -243,11 +240,11 @@ class EightAgentEngine:
             memory_agent = self._agents.get("memory")
             if memory_agent:
                 for card in cards.to_list():
-                    memory_agent.store(
-                        query=query,
-                        response=json.dumps(card),
-                        user_id=user_id
-                    )
+                    await memory_agent.store_knowledge("card", {
+                        "query": query,
+                        "card_data": card,
+                        "user_id": user_id
+                    })
         except Exception as e:
             logger.warning(f"[太史阁] 知识存储失败: {e}")
     
@@ -447,11 +444,22 @@ class EightAgentEngine:
     ) -> Dict[str, Any]:
         """驿传司 - 报告合成"""
         
+        # 防御性检查：确保cards是FourColorCards对象
+        if not isinstance(cards, FourColorCards):
+            logger.warning(f"[驿传司] cards不是FourColorCards对象，而是{type(cards)}，跳过报告合成")
+            return {
+                "query": query,
+                "sections": [],
+                "text": "",
+                "card_count": 0,
+                "generated_at": datetime.now().isoformat()
+            }
+        
         # 构建报告结构
         report_sections = []
         
         # 事实概览
-        if cards.blue_cards:
+        if cards.blue_cards and isinstance(cards.blue_cards, list):
             report_sections.append({
                 "type": "事实",
                 "color": "blue",
@@ -460,7 +468,7 @@ class EightAgentEngine:
             })
         
         # 解释说明
-        if cards.green_cards:
+        if cards.green_cards and isinstance(cards.green_cards, list):
             report_sections.append({
                 "type": "解释",
                 "color": "green",
@@ -469,7 +477,7 @@ class EightAgentEngine:
             })
         
         # 风险提示
-        if cards.yellow_cards:
+        if cards.yellow_cards and isinstance(cards.yellow_cards, list):
             report_sections.append({
                 "type": "风险",
                 "color": "yellow",
@@ -478,7 +486,7 @@ class EightAgentEngine:
             })
         
         # 行动建议
-        if cards.red_cards:
+        if cards.red_cards and isinstance(cards.red_cards, list):
             report_sections.append({
                 "type": "行动",
                 "color": "red",
@@ -499,27 +507,36 @@ class EightAgentEngine:
     
     def _build_report_text(self, query: str, cards: FourColorCards) -> str:
         """构建文本报告"""
+        # 防御性检查：确保cards是FourColorCards对象
+        if not isinstance(cards, FourColorCards):
+            logger.warning(f"[_build_report_text] cards不是FourColorCards对象，而是{type(cards)}")
+            return f"## 分析报告: {query}\n\n[数据不可用]"
+        
         lines = [f"## 分析报告: {query}\n"]
         
-        if cards.blue_cards:
+        if cards.blue_cards and isinstance(cards.blue_cards, list):
             lines.append("\n### 🔵 事实\n")
             for card in cards.blue_cards[:3]:
-                lines.append(f"- {card.get('title', card.get('content', ''))}")
+                if isinstance(card, dict):
+                    lines.append(f"- {card.get('title', card.get('content', ''))}")
         
-        if cards.green_cards:
+        if cards.green_cards and isinstance(cards.green_cards, list):
             lines.append("\n### 🟢 解释\n")
             for card in cards.green_cards[:2]:
-                lines.append(f"- {card.get('title', card.get('content', ''))}")
+                if isinstance(card, dict):
+                    lines.append(f"- {card.get('title', card.get('content', ''))}")
         
-        if cards.yellow_cards:
+        if cards.yellow_cards and isinstance(cards.yellow_cards, list):
             lines.append("\n### 🟡 风险\n")
             for card in cards.yellow_cards[:2]:
-                lines.append(f"- ⚠️ {card.get('title', card.get('content', ''))}")
+                if isinstance(card, dict):
+                    lines.append(f"- ⚠️ {card.get('title', card.get('content', ''))}")
         
-        if cards.red_cards:
+        if cards.red_cards and isinstance(cards.red_cards, list):
             lines.append("\n### 🔴 行动建议\n")
             for card in cards.red_cards[:2]:
-                lines.append(f"- 👉 {card.get('title', card.get('content', ''))}")
+                if isinstance(card, dict):
+                    lines.append(f"- 👉 {card.get('title', card.get('content', ''))}")
         
         return "\n".join(lines)
 

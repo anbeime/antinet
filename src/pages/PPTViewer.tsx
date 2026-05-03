@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
-import { 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
   Presentation, Upload, Download, ChevronLeft, ChevronRight,
   Play, Pause, Maximize2, Grid, List, FilePlus
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl()
 
 interface SlideData {
   title: string;

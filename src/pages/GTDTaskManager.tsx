@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Calendar, ListTodo, Plus, X, Maximize2, Minimize2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
 import { toast } from 'sonner';
@@ -42,7 +43,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
 
     setCreating(true);
     try {
-      const response = await fetch('http://localhost:8000/api/data/gtd/tasks', {
+      const response = await fetch(getApiBaseUrl() + '/api/data/gtd/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

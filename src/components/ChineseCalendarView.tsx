@@ -41,7 +41,7 @@ const ChineseCalendarView: React.FC<ChineseCalendarViewProps> = ({ onRefresh }) 
   useEffect(() => {
     const fetchTasks = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/data/gtd/tasks');
+        const response = await fetch(getApiBaseUrl() + '/api/data/gtd/tasks');
         if (response.ok) {
           const data = await response.json();
           setTasks(Array.isArray(data) ? data : []);
@@ -75,7 +75,7 @@ const ChineseCalendarView: React.FC<ChineseCalendarViewProps> = ({ onRefresh }) 
 
   const toggleTaskCompletion = async (taskId: number, currentStatus: boolean) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/data/gtd/tasks/${taskId}/complete?is_completed=${!currentStatus}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/data/gtd/tasks/${taskId}/complete?is_completed=${!currentStatus}`, {
         method: 'PUT'
       });
       if (response.ok) {
@@ -91,7 +91,7 @@ const ChineseCalendarView: React.FC<ChineseCalendarViewProps> = ({ onRefresh }) 
 
   const deleteTask = async (taskId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/data/gtd/tasks/${taskId}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/data/gtd/tasks/${taskId}`, {
         method: 'DELETE'
       });
       if (response.ok) {

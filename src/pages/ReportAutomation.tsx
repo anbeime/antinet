@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { FileSpreadsheet, FileText, Presentation, Download, Settings, BarChart3, FileCheck, Loader, Database } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface DataRow {
   [key: string]: any;
@@ -36,7 +37,7 @@ const ReportAutomation: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://localhost:8000/api/analysis/upload-and-analyze', {
+      const response = await fetch(getApiBaseUrl() + '/api/analysis/upload-and-analyze', {
         method: 'POST',
         body: formData
       });
@@ -64,7 +65,7 @@ const ReportAutomation: React.FC = () => {
     setResults(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/automation/generate', {
+      const response = await fetch(getApiBaseUrl() + '/api/automation/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -107,7 +108,7 @@ const ReportAutomation: React.FC = () => {
 
   const handleDownload = (url: string, filename: string) => {
     const link = document.createElement('a');
-    link.href = `http://localhost:8000${url}`;
+    link.href = `getApiBaseUrl() + ${url}`;
     link.download = filename;
     document.body.appendChild(link);
     link.click();

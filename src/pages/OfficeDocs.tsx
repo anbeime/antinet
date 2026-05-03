@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { 
-  FileSpreadsheet, FileText, Presentation, Download, Upload, 
+import {
+  FileSpreadsheet, FileText, Presentation, Download, Upload,
   Save, FolderOpen, X, Maximize2, Minimize2, Eye, Edit3,
   FileType, Search, FilePlus, Trash2, RefreshCw, Clock,
-  Edit, Check, ChevronRight, Zap, ArrowRight, File
+  Edit, Check, ChevronRight, Zap, ArrowRight, File,
+  FileCode, FileImage, Table, Settings, CheckCircle, AlertCircle, Loader2, Copy
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -13,7 +14,7 @@ import { toast } from 'sonner';
 interface DocFile {
   id: string;
   name: string;
-  type: 'excel' | 'pdf' | 'ppt' | 'doc';
+  type: 'excel' | 'pdf' | 'ppt' | 'doc' | 'other';
   path: string;
   size: number;
   modified: string;
@@ -46,12 +47,36 @@ const getFileType = (fileName: string): 'excel' | 'pdf' | 'ppt' | 'doc' | 'other
   return 'other';
 };
 
+// API 配置
+const API_BASE = '/api/markdown-converter';
+
+// 格式转换状态接口
+interface ConverterStatus {
+  pandoc: { available: boolean; path: string | null };
+  mermaid_cli: { available: boolean; path: string | null };
+  pdfplumber: boolean;
+  dependencies: Record<string, boolean>;
+  features: {
+    mermaid_rendering: boolean;
+    csv_extraction: boolean;
+    full_workflow: boolean;
+  };
+}
+
+const outputFormats = [
+  { value: 'pdf', label: 'PDF 文档', icon: FileText, color: 'red' },
+  { value: 'docx', label: 'Word 文档', icon: FileCode, color: 'blue' },
+  { value: 'html', label: 'HTML 网页', icon: FileText, color: 'green' },
+  { value: 'xlsx', label: 'Excel 表格', icon: Table, color: 'emerald' },
+  { value: 'pptx', label: 'PPT 演示', icon: Presentation, color: 'orange' },
+];
+
 const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   useTheme();
   const navigate = useNavigate();
   const [currentFile, setCurrentFile] = useState<DocFile | null>(null);
   const [viewMode, setViewMode] = useState<'edit' | 'view'>('edit');
-  const [activeTab, setActiveTab] = useState<'excel' | 'pdf' | 'ppt' | 'docs'>('excel');
+  const [activeTab, setActiveTab] = useState<'excel' | 'convert'>('excel');
   const [isLoading, setIsLoading] = useState(false);
   const [showFileList, setShowFileList] = useState(true);
   const [useSimpleTable, setUseSimpleTable] = useState(false);
@@ -59,8 +84,20 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   const [editingName, setEditingName] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showTools, setShowTools] = useState(false);
+  // 格式转换状态
+  const [markdown, setMarkdown] = useState('');
+  const [selectedFormat, setSelectedFormat] = useState('pdf');
+  const [mermaidTheme, setMermaidTheme] = useState('default');
+  const [mermaidPreview, setMermaidPreview] = useState('');
+  const [converterStatus, setConverterStatus] = useState<ConverterStatus | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
   const luckysheetRef = useRef<HTMLDivElement>(null);
+
+  const [renderMermaid, setRenderMermaid] = useState(true);
+  const [extractCsv, setExtractCsv] = useState(false);
 
   const [files, setFiles] = useState<DocFile[]>([
     { id: '1', name: '销售数据.xlsx', type: 'excel', path: '/data/exports/sales.xlsx', size: 25600, modified: '2025-01-20' },
@@ -136,8 +173,11 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       setCurrentFile(newFile);
       
       // 自动切换到对应标签页
-      if (fileType !== 'other') {
-        setActiveTab(fileType);
+      if (fileType === 'excel') {
+        setActiveTab('excel');
+      } else if (fileType === 'pdf' || fileType === 'ppt' || fileType === 'doc' || fileType === 'other') {
+        // 这些类型暂时都使用格式转换功能
+        setActiveTab('convert');
       }
       
       addToHistory(file.name, fileType, 'upload');
@@ -219,6 +259,8 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
     try {
       setIsLoading(true);
+      // 先加载 jQuery（Luckysheet sparkline 插件依赖 jQuery）
+      await loadScript('https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js');
       // 使用 jsDelivr CDN - 修复路径
       await loadCSS('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.css');
       await loadScript('https://cdn.jsdelivr.net/npm/luckysheet@latest/dist/luckysheet.umd.js');
@@ -292,12 +334,12 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
   const openPDF = (file: DocFile) => {
     setCurrentFile(file);
-    setActiveTab('pdf');
+    setActiveTab('convert');
   };
 
   const openPPT = (file: DocFile) => {
     setCurrentFile(file);
-    setActiveTab('ppt');
+    setActiveTab('convert');
   };
 
   const formatFileSize = (bytes: number) => {
@@ -305,6 +347,122 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
+
+  // 格式转换功能
+  const loadConverterStatus = useCallback(async () => {
+    try {
+      const response = await fetch('/api/markdown-converter/status');
+      if (response.ok) {
+        const data = await response.json();
+        setConverterStatus(data);
+      }
+    } catch (error) {
+      console.error('加载转换器状态失败:', error);
+    }
+  }, []);
+
+  const handleConvert = async () => {
+    if (!markdown.trim()) {
+      setError('请输入 Markdown 内容');
+      return;
+    }
+    if (!selectedFormat) {
+      setError('请选择输出格式');
+      return;
+    }
+
+    setIsConverting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch('/api/markdown-converter/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          markdown,
+          output_format: selectedFormat,
+          include_mermaid: true,
+          mermaid_theme: mermaidTheme,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '转换失败');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `converted.${selectedFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSuccess(`${selectedFormat.toUpperCase()} 文件已生成并下载`);
+    } catch (err: any) {
+      setError(err.message || '转换失败');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const handleRenderMermaid = async () => {
+    if (!markdown.trim()) {
+      setError('请输入包含 Mermaid 图表的 Markdown 内容');
+      return;
+    }
+
+    setIsConverting(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/markdown-converter/mermaid/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mermaid_code: extractMermaidCode(markdown),
+          theme: mermaidTheme,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '渲染失败');
+      }
+
+      const data = await response.json();
+      setMermaidPreview(data.svg);
+      setSuccess('Mermaid 图表渲染成功');
+    } catch (err: any) {
+      setError(err.message || '渲染失败');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const extractMermaidCode = (text: string): string => {
+    const match = text.match(/```mermaid\n([\s\S]*?)```/);
+    return match ? match[1].trim() : text;
+  };
+
+  const handleCopyMarkdown = () => {
+    navigator.clipboard.writeText(markdown);
+    setSuccess('Markdown 已复制到剪贴板');
+  };
+
+  const getStatusColor = (available: boolean) => {
+    return available ? 'text-green-500' : 'text-red-500';
+  };
+
+  // 加载转换器状态
+  useEffect(() => {
+    if (activeTab === 'convert') {
+      loadConverterStatus();
+    }
+  }, [activeTab, loadConverterStatus]);
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
@@ -377,16 +535,15 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
               
               <div className="flex space-x-1">
                 {[
-                  { id: 'excel', label: '表格', icon: FileSpreadsheet, color: 'text-green-500' },
-                  { id: 'pdf', label: 'PDF', icon: FileText, color: 'text-red-500' },
-                  { id: 'ppt', label: '演示', icon: Presentation, color: 'text-orange-500' },
+                  { id: 'excel', label: '文档查看', icon: FileSpreadsheet, color: 'text-green-500' },
+                  { id: 'convert', label: '格式转换', icon: FileCode, color: 'text-blue-500' },
                 ].map(tab => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as any)}
                     className={`flex items-center space-x-1 px-3 py-1.5 rounded ${
-                      activeTab === tab.id 
-                        ? 'bg-gray-200 dark:bg-gray-700' 
+                      activeTab === tab.id
+                        ? 'bg-gray-200 dark:bg-gray-700'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
@@ -478,51 +635,156 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
             </div>
           )}
 
-          {activeTab === 'pdf' && (
-            <div className="h-full flex items-center justify-center bg-gray-200 dark:bg-gray-800">
-              <div className="text-center p-8">
-                <FileText className="w-24 h-24 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold mb-2">PDF 查看器</h3>
-                <p className="text-gray-500 mb-4">
-                  支持PDF文件在线预览
-                </p>
-                <div className="flex justify-center space-x-3">
-                  <label className="block">
-                    <input type="file" accept=".pdf" className="hidden" />
-                    <div className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600">
-                      <Upload className="w-4 h-4" />
-                      <span>上传PDF</span>
-                    </div>
-                  </label>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
-                    <FolderOpen className="w-4 h-4" />
-                    <span>打开文件</span>
+          {activeTab === 'convert' && (
+            <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
+              {/* 状态栏 */}
+              <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">格式转换中心</h3>
+                  <button
+                    onClick={loadConverterStatus}
+                    className="flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span className="text-sm">刷新状态</span>
                   </button>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'ppt' && (
-            <div className="h-full flex items-center justify-center bg-gray-200 dark:bg-gray-800">
-              <div className="text-center p-8">
-                <Presentation className="w-24 h-24 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold mb-2">PPT 演示查看器</h3>
-                <p className="text-gray-500 mb-4">
-                  支持PowerPoint文件在线预览
-                </p>
-                <div className="flex justify-center space-x-3">
-                  <label className="block">
-                    <input type="file" accept=".pptx,.ppt" className="hidden" />
-                    <div className="flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600">
-                      <Upload className="w-4 h-4" />
-                      <span>上传PPT</span>
+                {converterStatus && (
+                  <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <span className={getStatusColor(converterStatus.pandoc.available)}>●</span>
+                      <span>Pandoc: {converterStatus.pandoc.available ? '可用' : '不可用'}</span>
                     </div>
-                  </label>
-                  <button className="flex items-center space-x-2 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
-                    <FolderOpen className="w-4 h-4" />
-                    <span>打开文件</span>
-                  </button>
+                    <div className="flex items-center space-x-2">
+                      <span className={getStatusColor(converterStatus.mermaid_cli.available)}>●</span>
+                      <span>Mermaid: {converterStatus.mermaid_cli.available ? '可用' : '不可用'}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className={getStatusColor(converterStatus.pdfplumber)}>●</span>
+                      <span>PDF处理: {converterStatus.pdfplumber ? '可用' : '不可用'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 错误和成功消息 */}
+              {error && (
+                <div className="mx-4 mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm">
+                  {error}
+                </div>
+              )}
+              {success && (
+                <div className="mx-4 mt-4 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-300 text-sm">
+                  {success}
+                </div>
+              )}
+
+              {/* 转换面板 */}
+              <div className="flex-1 overflow-auto p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
+                  {/* 左侧：输入区域 */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-col">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-medium">输入 Markdown</h4>
+                      <button
+                        onClick={handleCopyMarkdown}
+                        className="flex items-center space-x-1 text-sm text-blue-500 hover:text-blue-600"
+                      >
+                        <Copy className="w-4 h-4" />
+                        <span>复制</span>
+                      </button>
+                    </div>
+                    <textarea
+                      value={markdown}
+                      onChange={(e) => setMarkdown(e.target.value)}
+                      placeholder="在此输入 Markdown 内容，或粘贴文件内容..."
+                      className="flex-1 w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <div className="mt-4 flex items-center space-x-4">
+                      <label className="flex items-center space-x-2 text-sm">
+                        <span>Mermaid 主题:</span>
+                        <select
+                          value={mermaidTheme}
+                          onChange={(e) => setMermaidTheme(e.target.value)}
+                          className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                        >
+                          <option value="default">默认</option>
+                          <option value="dark">深色</option>
+                          <option value="forest">森林</option>
+                          <option value="neutral">中性</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 右侧：输出区域 */}
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-col">
+                    <h4 className="font-medium mb-4">输出格式</h4>
+                    
+                    {/* 格式选择 */}
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      {outputFormats.map((format) => (
+                        <button
+                          key={format.value}
+                          onClick={() => setSelectedFormat(format.value)}
+                          className={`flex items-center space-x-2 p-3 rounded-lg border-2 transition-all ${
+                            selectedFormat === format.value
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          <format.icon className={`w-5 h-5 text-${format.color}-500`} />
+                          <span className="text-sm">{format.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 转换按钮 */}
+                    <div className="flex space-x-3 mb-4">
+                      <button
+                        onClick={handleConvert}
+                        disabled={isConverting || !markdown.trim()}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isConverting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>转换中...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="w-4 h-4" />
+                            <span>转换为 {selectedFormat?.toUpperCase()}</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={handleRenderMermaid}
+                        disabled={isConverting || !markdown.trim()}
+                        className="flex items-center justify-center space-x-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FileImage className="w-4 h-4" />
+                        <span>渲染Mermaid</span>
+                      </button>
+                    </div>
+
+                    {/* Mermaid 预览 */}
+                    {mermaidPreview && (
+                      <div className="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900 overflow-auto">
+                        <h5 className="text-sm font-medium mb-2">Mermaid 预览</h5>
+                        <div dangerouslySetInnerHTML={{ __html: mermaidPreview }} />
+                      </div>
+                    )}
+
+                    {/* 无预览时的占位 */}
+                    {!mermaidPreview && (
+                      <div className="flex-1 border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+                        <p className="text-gray-400 text-sm">
+                          输入 Markdown 内容，点击"渲染Mermaid"查看图表预览
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

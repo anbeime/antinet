@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Book, 
@@ -27,9 +28,10 @@ import {
   Network
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { 
-  researchProjectService, 
-  ResearchProject, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  researchProjectService,
+  ResearchProject,
   GtdTask
 } from '@/services/dataService';
 import CreateCardModal from './CreateCardModal';
@@ -72,7 +74,7 @@ const cardTypeConfig: Record<string, { name: string; color: string; bgColor: str
   red:    { name: '行动', color: 'text-red-700',    bgColor: 'bg-red-50',    borderColor: 'border-red-200',    darkBgColor: 'dark:bg-red-950/40',    darkBorderColor: 'dark:border-red-800',    icon: '📕', headerBg: 'bg-red-500' },
 };
 
-const RESEARCH_API_BASE = 'http://localhost:8000/api/research';
+const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
 
 // ========== Portal 弹窗包装器 ==========
 // 将弹窗渲染到 document.body，避免被任何父容器的 overflow:hidden 裁剪
@@ -101,7 +103,8 @@ const CardDetailModal: React.FC<{
   projectId?: number;
   allProjects?: ResearchProject[];
   onRelatedCardClick?: (cardId: number) => void;
-}> = ({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick }) => {
+  onSaveSuccess?: () => void;
+}> = ({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick, onSaveSuccess }) => {
   const typeConfig = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(card.title);
@@ -121,17 +124,17 @@ const CardDetailModal: React.FC<{
     const loadData = async () => {
       try {
         // 加载所有卡片
-        const res = await fetch('http://localhost:8000/api/knowledge/cards?limit=10000');
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
         const data: AllCardsResponse = await res.json();
         setAllCards(data.cards || []);
         
         // 从 backlinks 表补充关联（确保关闭重开不丢）
         try {
-          const blRes = await fetch(`http://localhost:8000/api/backlinks/card/${card.id}/backlinks`);
+          const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/backlinks`);
           const backlinks = await blRes.json();
           const blIds = backlinks.map((b: any) => b.id);
           
-          const flRes = await fetch(`http://localhost:8000/api/backlinks/card/${card.id}/forwardlinks`);
+          const flRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/forwardlinks`);
           const forwardlinks = await flRes.json();
           const flIds = forwardlinks.map((f: any) => f.id);
           
@@ -144,7 +147,7 @@ const CardDetailModal: React.FC<{
         
         // 加载联想推荐
         try {
-          const sugRes = await fetch(`http://localhost:8000/api/research/cards/${card.id}/suggested-relations?limit=8`);
+          const sugRes = await fetch(getApiBaseUrl() + `/api/research/cards/${card.id}/suggested-relations?limit=8`);
           const sugData = await sugRes.json();
           setSuggestedCards(sugData.suggestions || []);
         } catch (e) {
@@ -181,7 +184,7 @@ const CardDetailModal: React.FC<{
   const saveRelatedCards = async () => {
     try {
       // 1. 更新 knowledge_cards 的 related_cards 字段
-      const response = await fetch(`http://localhost:8000/api/knowledge/cards/${card.id}`, {
+      const response = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${card.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,14 +201,14 @@ const CardDetailModal: React.FC<{
         // 后端 update_card 已经会自动同步，这里额外确认
         try {
           // 获取已有的backlinks
-          const blRes = await fetch(`http://localhost:8000/api/backlinks/card/${card.id}/forwardlinks`);
+          const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/forwardlinks`);
           const existingForward = await blRes.json();
           const existingTargetIds = new Set(existingForward.map((f: any) => f.id));
           
           // 新增的关联需要写入backlinks
           for (const targetId of relatedCards) {
             if (!existingTargetIds.has(targetId)) {
-              await fetch('http://localhost:8000/api/backlinks/add', {
+              await fetch(getApiBaseUrl() + '/api/backlinks/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -215,7 +218,7 @@ const CardDetailModal: React.FC<{
                 })
               });
               // 双向
-              await fetch('http://localhost:8000/api/backlinks/add', {
+              await fetch(getApiBaseUrl() + '/api/backlinks/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -309,6 +312,10 @@ const CardDetailModal: React.FC<{
         toast.success('保存成功');
         onSaveSuccess?.();
         onUpdate?.(card.id, { title: editTitle, content: editContent, related_cards: relatedCards });
+        onClose(); // 保存成功后关闭弹窗
+      } else {
+        const data = await response.json();
+        toast.error(data.message || '保存失败');
       }
     } catch (err) {
       toast.error('保存失败');
@@ -698,6 +705,17 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
+  // 刷新卡片数据
+  const refreshCards = async () => {
+    if (!project.id) return;
+    try {
+      const c = await researchProjectService.getCards(project.id);
+      setCards(c);
+    } catch (err) {
+      console.error('刷新卡片失败:', err);
+    }
+  };
+
   // 导出专题为PPT
   const handleExportPPT = async () => {
     if (!project.id || cards.length === 0) {
@@ -706,7 +724,7 @@ const ProjectDetailPanel: React.FC<{
     }
     setExportingPPT(true);
     try {
-      const response = await fetch('http://localhost:8000/api/ppt/export/collection', {
+      const response = await fetch(getApiBaseUrl() + '/api/ppt/export/collection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -750,7 +768,7 @@ throw new Error(err.detail || '导出失败');
   const handleCreateCardSave = async (cardData: any) => {
     try {
       // 使用专题专用API，会自动建立同专题双向链接
-      const response = await fetch(`http://localhost:8000/api/research/projects/${project.id}/cards`, {
+      const response = await fetch(getApiBaseUrl() + `/api/research/projects/${project.id}/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -828,6 +846,15 @@ throw new Error(err.detail || '导出失败');
                 <ExternalLink className="w-4 h-4 mr-1" />
                 {exportingPPT ? '导出中...' : '导出PPT'}
               </button>
+              <PDFDownloadLink
+                document={<ProjectPDF cards={cards} projectName={project.name} />}
+                fileName={`${project.name}-专题卡片.pdf`}
+                className="flex items-center px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors shadow-sm"
+              >
+                {({ loading }) => (
+                  loading ? '生成中...' : '导出PDF'
+                )}
+              </PDFDownloadLink>
               <button
                 onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}
                 className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
@@ -1178,6 +1205,10 @@ throw new Error(err.detail || '导出失败');
               onUpdate={(cardId, updates) => {
                 setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updates } : c));
               }}
+              onSaveSuccess={() => {
+                // 刷新卡片数据
+                refreshCards();
+              }}
             />
           )}
         </AnimatePresence>
@@ -1196,6 +1227,58 @@ throw new Error(err.detail || '导出失败');
     </Portal>
   );
 };
+
+// ========== 专题卡片PDF导出组件 ==========
+interface ProjectPDFProps {
+  cards: ProjectCard[];
+  projectName: string;
+}
+
+const projectStyles = StyleSheet.create({
+  page: { padding: 30, fontFamily: 'Helvetica' },
+  header: { marginBottom: 20, borderBottom: '2px solid #6366f1', paddingBottom: 10 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
+  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 5 },
+  cardContainer: { marginBottom: 15, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, overflow: 'hidden' },
+  cardHeader: { padding: 10, backgroundColor: '#f3f4f6' },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1f2937' },
+  cardBadge: { fontSize: 10, color: '#6b7280', marginTop: 2 },
+  cardBody: { padding: 12 },
+  cardContent: { fontSize: 11, color: '#374151', lineHeight: 1.5 },
+  cardFooter: { padding: 8, backgroundColor: '#f9fafb', borderTopWidth: 1, borderColor: '#e5e7eb' },
+  cardMeta: { fontSize: 9, color: '#9ca3af' },
+  footer: { marginTop: 30, paddingTop: 10, borderTopWidth: 1, borderColor: '#e5e7eb', fontSize: 10, color: '#9ca3af', textAlign: 'center' },
+});
+
+const cardTypeLabels: Record<string, string> = {
+  blue: '事实', green: '解释', yellow: '风险', red: '行动'
+};
+
+const ProjectPDF: React.FC<ProjectPDFProps> = ({ cards, projectName }) => (
+  <Document>
+    <Page size="A4" style={projectStyles.page}>
+      <View style={projectStyles.header}>
+        <Text style={projectStyles.title}>{projectName}</Text>
+        <Text style={projectStyles.subtitle}>专题卡片导出 | 共 {cards.length} 张</Text>
+      </View>
+      {cards.map((card, index) => (
+        <View key={card.id} style={projectStyles.cardContainer}>
+          <View style={projectStyles.cardHeader}>
+            <Text style={projectStyles.cardTitle}>{index + 1}. {card.title}</Text>
+            <Text style={projectStyles.cardBadge}>{cardTypeLabels[card.card_type] || card.card_type}</Text>
+          </View>
+          <View style={projectStyles.cardBody}>
+            <Text style={projectStyles.cardContent}>{card.content || '无内容'}</Text>
+          </View>
+          <View style={projectStyles.cardFooter}>
+            <Text style={projectStyles.cardMeta}>创建: {card.created_at ? new Date(card.created_at).toLocaleDateString('zh-CN') : '-'}</Text>
+          </View>
+        </View>
+      ))}
+      <Text style={projectStyles.footer}>由 Antinet 专题研究系统生成</Text>
+    </Page>
+  </Document>
+);
 
 
 // ========== 主组件 ==========
@@ -1236,7 +1319,7 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
       
       // 同步到知识卡片库
       try {
-        await fetch('http://localhost:8000/api/knowledge/cards', {
+        await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

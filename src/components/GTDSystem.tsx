@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Inbox,
   Clock,
@@ -19,12 +20,178 @@ import {
   ExternalLink,
   FileText,
   Copy,
-  ZoomIn
+  ZoomIn,
+  Download
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService, GtdTask as GtdTaskType } from '@/services/dataService';
 import ResearchProjectManager from './ResearchProjectManager';
 import CalendarView from './CalendarView';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
+
+// 注册中文字体
+Font.register({
+  family: 'Noto Sans SC',
+  src: 'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.woff2',
+});
+
+// GTD任务PDF样式
+const gtdStyles = StyleSheet.create({
+  page: {
+    padding: 40,
+    backgroundColor: '#ffffff',
+  },
+  header: {
+    marginBottom: 30,
+    borderBottom: '2pt solid #3b82f6',
+    paddingBottom: 15,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e40af',
+    marginBottom: 8,
+    fontFamily: 'Noto Sans SC',
+  },
+  subtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontFamily: 'Noto Sans SC',
+  },
+  taskContainer: {
+    marginBottom: 15,
+    padding: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  taskHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  taskTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    fontFamily: 'Noto Sans SC',
+  },
+  priorityBadge: {
+    padding: '3 8',
+    borderRadius: 4,
+    fontSize: 9,
+    fontFamily: 'Noto Sans SC',
+  },
+  taskDescription: {
+    fontSize: 11,
+    lineHeight: 1.5,
+    color: '#374151',
+    fontFamily: 'Noto Sans SC',
+    marginBottom: 8,
+  },
+  taskFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    borderTop: '1pt solid #e5e7eb',
+    paddingTop: 8,
+  },
+  taskMeta: {
+    fontSize: 9,
+    color: '#9ca3af',
+    fontFamily: 'Noto Sans SC',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 40,
+    right: 40,
+    textAlign: 'center',
+    fontSize: 10,
+    color: '#9ca3af',
+    fontFamily: 'Noto Sans SC',
+  },
+});
+
+// 优先级颜色配置
+const priorityColors = {
+  high: { border: '#ef4444', bg: '#fef2f2', badge: '#dc2626', name: '高优先级' },
+  medium: { border: '#f59e0b', bg: '#fffbeb', badge: '#d97706', name: '中优先级' },
+  low: { border: '#10b981', bg: '#ecfdf5', badge: '#047857', name: '低优先级' },
+};
+
+// 分类名称映射
+const categoryNames: Record<string, string> = {
+  inbox: '收集箱',
+  today: '等待处理',
+  later: '将来可能',
+  archive: '归档资料',
+  projects: '专题研究',
+};
+
+// GTD任务PDF文档组件
+interface GTDTaskPDFProps {
+  tasks: GtdTaskType[];
+  category?: string;
+}
+
+const GTDTaskPDF: React.FC<GTDTaskPDFProps> = ({ tasks, category }) => {
+  const currentDate = new Date().toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  return (
+    <Document>
+      <Page size="A4" style={gtdStyles.page}>
+        <View style={gtdStyles.header}>
+          <Text style={gtdStyles.title}>
+            {category ? `${categoryNames[category] || category} - GTD任务` : 'GTD任务导出'}
+          </Text>
+          <Text style={gtdStyles.subtitle}>
+            导出日期: {currentDate} | 任务数量: {tasks.length}
+          </Text>
+        </View>
+
+        {tasks.map((task, index) => {
+          const colorConfig = priorityColors[task.priority as keyof typeof priorityColors] || priorityColors.medium;
+          return (
+            <View
+              key={task.id}
+              style={[
+                gtdStyles.taskContainer,
+                { borderColor: colorConfig.border, backgroundColor: colorConfig.bg },
+              ]}
+            >
+              <View style={gtdStyles.taskHeader}>
+                <Text style={[gtdStyles.taskTitle, { color: colorConfig.badge }]}>
+                  {index + 1}. {task.title}
+                </Text>
+                <View style={[gtdStyles.priorityBadge, { backgroundColor: colorConfig.badge }]}>
+                  <Text style={{ color: '#ffffff', fontSize: 9 }}>{colorConfig.name}</Text>
+                </View>
+              </View>
+              <Text style={gtdStyles.taskDescription}>
+                {task.description || '无描述'}
+              </Text>
+              <View style={gtdStyles.taskFooter}>
+                <Text style={gtdStyles.taskMeta}>
+                  分类: {categoryNames[task.category] || task.category}
+                </Text>
+                <Text style={gtdStyles.taskMeta}>
+                  创建: {task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+
+        <Text style={gtdStyles.footer}>
+          由 Antinet GTD 系统生成 | 骁龙 AIPC 平台
+        </Text>
+      </Page>
+    </Document>
+  );
+};
 
 // 定义分类类型
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
@@ -59,6 +226,23 @@ const GTDSystem: React.FC = () => {
     reminder_enabled: false
   });
   const [zoomedTask, setZoomedTask] = useState<GtdTaskType | null>(null);
+  const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
+  
+  // 加载专题列表
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
+        if (res.ok) {
+          const data = await res.json();
+          setProjects(data.projects || data || []);
+        }
+      } catch (e) {
+        console.error('加载专题失败:', e);
+      }
+    };
+    loadProjects();
+  }, []);
   
   // 复制任务内容
   const handleCopyTask = (task: GtdTaskType, e: React.MouseEvent) => {
@@ -199,6 +383,23 @@ const GTDSystem: React.FC = () => {
         remind_at: newTask.remind_at || undefined,
         reminder_enabled: newTask.reminder_enabled
       });
+
+      // 同步到知识卡片库
+      try {
+        await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: newTask.title,
+            content: newTask.description || '',
+            card_type: 'green',
+            address: '',
+            related_cards: []
+          })
+        });
+      } catch (e) {
+        console.log('同步到知识卡片失败:', e);
+      }
 
       // 重新加载数据确保同步
       const allTasks = await gtdTaskService.getAll();
@@ -348,8 +549,16 @@ const GTDSystem: React.FC = () => {
     }
   };
 
+  // 获取当前分类的任务或全部任务
+  const getCurrentTasks = () => {
+    if (activeCategory === 'all') {
+      return Object.values(tasks).flat();
+    }
+    return tasks[activeCategory as Category] || [];
+  };
+
   // 按创建时间倒序（最新的在最前面）
-  const sortedTasks = [...tasks[activeCategory]].sort((a, b) => {
+  const sortedTasks = [...getCurrentTasks()].sort((a, b) => {
     if (!a.created_at) return 1;
     if (!b.created_at) return -1;
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -445,23 +654,26 @@ const GTDSystem: React.FC = () => {
         {/* 分类标签 */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 via-green-50 to-yellow-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => {
-              const isActive = activeCategory === category && viewMode === 'list';
-              const categoryColors = {
+            {(['all', 'inbox', 'today', 'later', 'archive', 'projects'] as (Category | 'all')[]).map(category => {
+              const isActive = category === 'all' ? activeCategory === 'all' : (activeCategory === category && viewMode === 'list');
+              const categoryColors: Record<string, {active: string, inactive: string}> = {
+                all: { active: 'bg-purple-600 text-white shadow-purple-200 dark:shadow-purple-900', inactive: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700' },
                 inbox: { active: 'bg-blue-600 text-white shadow-blue-200 dark:shadow-blue-900', inactive: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
                 today: { active: 'bg-red-600 text-white shadow-red-200 dark:shadow-red-900', inactive: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700' },
                 later: { active: 'bg-yellow-500 text-white shadow-yellow-200 dark:shadow-yellow-900', inactive: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700' },
                 archive: { active: 'bg-gray-600 text-white shadow-gray-200 dark:shadow-gray-900', inactive: 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600' },
                 projects: { active: 'bg-green-600 text-white shadow-green-200 dark:shadow-green-900', inactive: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
               };
-              const icons = {
+              const icons: Record<string, string> = {
+                all: '📋',
                 inbox: '📥',
                 today: '⏰',
                 later: '📅',
                 archive: '📁',
                 projects: '📚',
               };
-              const labels = {
+              const labels: Record<string, string> = {
+                all: '全部',
                 inbox: '收集箱',
                 today: '等待处理',
                 later: '将来可能',
@@ -471,7 +683,7 @@ const GTDSystem: React.FC = () => {
               return (
                 <button
                   key={category}
-                  onClick={() => { setActiveCategory(category); setViewMode('list'); }}
+                  onClick={() => { setActiveCategory(category as any); setViewMode('list'); }}
                   className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 border-2 flex items-center gap-2 ${
                     isActive
                       ? `${categoryColors[category].active} shadow-lg transform scale-105`
@@ -480,9 +692,14 @@ const GTDSystem: React.FC = () => {
                 >
                   <span className="text-base">{icons[category]}</span>
                   <span>{labels[category]}</span>
-                  {isActive && (
+                  {isActive && category !== 'all' && (
                     <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {tasks[category].length}
+                      {tasks[category as Category]?.length || 0}
+                    </span>
+                  )}
+                  {isActive && category === 'all' && (
+                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
+                      {Object.values(tasks).flat().length}
                     </span>
                   )}
                 </button>
@@ -503,7 +720,8 @@ const GTDSystem: React.FC = () => {
             <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {activeCategory === 'inbox' ? '收集箱' : 
+                  {activeCategory === 'all' ? '全部任务' : 
+                   activeCategory === 'inbox' ? '收集箱' : 
                    activeCategory === 'today' ? '等待处理' :
                    activeCategory === 'later' ? '将来可能' :
                    activeCategory === 'archive' ? '归档资料' : '专题研究'}
@@ -620,7 +838,23 @@ const GTDSystem: React.FC = () => {
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
-</select>
+                  </select>
+                  {selectedTaskIds.size > 0 && (
+                    <PDFDownloadLink
+                      document={<GTDTaskPDF tasks={filteredTasks.filter(t => selectedTaskIds.has(t.id!))} category={activeCategory === 'all' ? undefined : activeCategory} />}
+                      fileName={`gtd-tasks-selected-${new Date().toISOString().split('T')[0]}.pdf`}
+                    >
+                      {({ loading }) => (
+                        <button
+                          className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors"
+                          disabled={loading}
+                        >
+                          <Download size={14} />
+                          {loading ? '生成中...' : `导出选中(${selectedTaskIds.size})`}
+                        </button>
+                      )}
+                    </PDFDownloadLink>
+                  )}
                 </div>
               </div>
               
@@ -689,12 +923,6 @@ const GTDSystem: React.FC = () => {
                           >
                             编辑
                           </button>
-                          <button
-                            onClick={() => handleDeleteTask(task.id!)}
-                            className="text-red-500 text-sm hover:underline ml-2"
-                          >
-                            删除
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -724,42 +952,8 @@ const GTDSystem: React.FC = () => {
               </button>
             </div>
           )}
-        </div>
-
-        {/* 空状态 */}
-        {filteredTasks.length === 0 && (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 mx-auto mb-4 text-gray-300 dark:text-gray-600">
-              {getCategoryIcon(activeCategory)}
             </div>
-            <h3 className="text-xl font-semibold mb-2">
-              {searchQuery ? '未找到匹配的任务' : '暂无任务'}
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">
-              {searchQuery 
-                ? '尝试调整搜索关键词或清除筛选条件' 
-                : '点击"新建任务"开始添加任务'
-              }
-            </p>
-            {searchQuery ? (
-              <button 
-                className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-6 py-2 rounded-full text-sm font-medium transition-colors"
-                onClick={() => setSearchQuery('')}
-              >
-                清除搜索
-              </button>
-            ) : (
-              <button 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-full text-sm font-medium transition-colors"
-                onClick={() => setShowCreateModal(true)}
-              >
-                新建任务
-              </button>
-)}
-              </div>
-            )}
-
-        </>
+          </>
         )}
         </div>
 
@@ -1076,6 +1270,88 @@ const GTDSystem: React.FC = () => {
                     >
                       <Flag size={16} className="mr-1" />
                       <span>高</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 任务操作 */}
+                <div className="border-t pt-4 mt-4">
+                  <label className="block text-sm font-medium mb-2">任务操作</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        handleArchiveTask(editingTask.id!);
+                        setShowEditModal(false);
+                      }}
+                      className="px-4 py-2 bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 rounded-lg transition-colors"
+                    >
+                      归档
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleMoveTask(editingTask.id!, 'today');
+                        setShowEditModal(false);
+                      }}
+                      className="px-4 py-2 bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg transition-colors"
+                    >
+                      移至待处理
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleMoveTask(editingTask.id!, 'later');
+                        setShowEditModal(false);
+                      }}
+                      className="px-4 py-2 bg-yellow-100 text-yellow-700 hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-lg transition-colors"
+                    >
+                      移至将来可能
+                    </button>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleMoveTask(editingTask.id!, 'projects');
+                          toast('任务已加入专题', { className: 'bg-purple-50 text-purple-800' });
+                          setShowEditModal(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg border-0 cursor-pointer"
+                      defaultValue=""
+                    >
+                      <option value="">加入专题...</option>
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={async () => {
+                        // 将任务内容转换为Markdown并导出PDF
+                        const markdownContent = `# ${editingTask.title}\n\n${editingTask.description || ''}\n\n---\n*任务优先级: ${editingTask.priority} | 分类: ${editingTask.category}*`;
+                        const formData = new FormData();
+                        const blob = new Blob([markdownContent], { type: 'text/markdown' });
+                        formData.append('file', blob, 'task.md');
+                        
+                        try {
+                          const response = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
+                            method: 'POST',
+                            body: formData
+                          });
+                          if (!response.ok) throw new Error('导出PDF失败');
+                          const pdfBlob = await response.blob();
+                          const url = window.URL.createObjectURL(pdfBlob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${editingTask.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(url);
+                          toast.success('PDF导出成功');
+                        } catch (err) {
+                          toast.error('导出PDF失败');
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
+                    >
+                      导出PDF
                     </button>
                   </div>
                 </div>

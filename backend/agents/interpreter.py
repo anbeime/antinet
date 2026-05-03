@@ -141,7 +141,7 @@ class InterpreterAgent:
             logger.error(f"基于规则的检索失败: {e}", exc_info=True)
             return []
     
-async def _vector_search(self, query: str) -> List[str]:
+    async def _vector_search(self, query: str) -> List[str]:
         """
         向量检索 - 使用混合搜索（向量 + 关键词）
         """
@@ -173,10 +173,6 @@ async def _vector_search(self, query: str) -> List[str]:
             
             logger.info(f"[Vector] 检索到 {len(results)} 条相关知识")
             return context
-        
-        except Exception as e:
-            logger.error(f"向量检索失败: {e}")
-            return []
         
         except Exception as e:
             logger.error(f"向量检索失败: {e}", exc_info=True)

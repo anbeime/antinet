@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Zap, BrainCircuit, FileText, BarChart3, Database, Code, Settings, Shield, Eye, Target, Star, Users, History, MessageSquare, Crown } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 // Agent元数据
 const agentMeta: Record<string, { name: string; role: string; icon: any; color: string }> = {
@@ -59,7 +60,7 @@ const SkillCenter: React.FC = () => {
 
   // 从API获取技能列表
   useEffect(() => {
-    fetch('http://localhost:8000/api/skill/list')
+    fetch(getApiBaseUrl() + '/api/skill/list')
       .then(res => res.json())
       .then(data => {
         console.log('API返回数据:', data);
@@ -110,7 +111,7 @@ const SkillCenter: React.FC = () => {
   const handleExecuteSkill = async (skill: Skill, params?: string) => {
     setExecutingSkill(skill.id);
     try {
-      const response = await fetch('http://localhost:8000/api/skill/execute', {
+      const response = await fetch(getApiBaseUrl() + '/api/skill/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

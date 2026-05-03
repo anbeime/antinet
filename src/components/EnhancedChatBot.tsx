@@ -13,11 +13,13 @@ import {
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
   Upload, Mic, MicOff, Volume2, VolumeX,
-  Download, Eye, Maximize2, Minimize2
+  Download, Eye, Maximize2, Minimize2,
+  Brain
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import enhancedChatService from '@/services/enhancedChatService';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import type {
   ChatMessage,
   CardReference,
@@ -322,6 +324,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [evolutionMode, setEvolutionMode] = useState(() => {
+    return localStorage.getItem('evolutionMode') === 'true';
+  });
   
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -467,7 +472,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           formData.append('language', 'zh');
           formData.append('model_size', 'base');
           
-          const response = await fetch('http://localhost:8000/api/speech/stt/transcribe', {
+          const response = await fetch(getApiBaseUrl() + '/api/speech/stt/transcribe', {
             method: 'POST',
             body: formData,
           });
@@ -550,7 +555,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     if (!cleanText) return;
 
     try {
-      const response = await fetch('http://localhost:8000/api/speech/tts/speak-bytes', {
+      const response = await fetch(getApiBaseUrl() + '/api/speech/tts/speak-bytes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: cleanText, voice: 'zh-CN-XiaoxiaoNeural' }),
@@ -637,9 +642,48 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       };
       setMessages(prev => [...prev, userMessage]);
 
-      const response = await enhancedChatService.sendMessage(query, {
-        imageData: imgData
-      });
+      let response;
+      
+      if (evolutionMode) {
+        // 自进化模式 - 调用自进化聊天 API
+        try {
+          const evoResponse = await fetch(getApiBaseUrl() + '/api/evolving-chat/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query,
+              context: imgData ? { image: imgData } : {},
+              enable_evolution: true,
+              enable_memory: true,
+              enable_skill: true,
+              user_id: 'default_user'
+            })
+          });
+          
+          if (evoResponse.ok) {
+            const evoData = await evoResponse.json();
+            response = {
+              reply: evoData.response,
+              scene_type: 'general',
+              cards: evoData.cards || [],
+              skill_result: evoData.skill_used ? { result: evoData.skill_used } : null,
+              suggestions: evoData.suggested_questions || []
+            };
+          } else {
+            throw new Error('自进化API调用失败');
+          }
+        } catch (e) {
+          console.error('自进化聊天失败:', e);
+          toast.error('自进化模式暂时不可用，已切换到普通模式');
+          setEvolutionMode(false);
+          response = await enhancedChatService.sendMessage(query, { imageData: imgData });
+        }
+      } else {
+        // 普通模式
+        response = await enhancedChatService.sendMessage(query, {
+          imageData: imgData
+        });
+      }
       
       const replyContent = response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。';
       const assistantMessage: ChatMessage = {
@@ -808,6 +852,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
               </button>
 <button
+                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${evolutionMode ? 'bg-purple-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                onClick={() => {
+                  const newVal = !evolutionMode;
+                  setEvolutionMode(newVal);
+                  localStorage.setItem('evolutionMode', String(newVal));
+                  toast.success(newVal ? '已开启自进化模式 (8-Agent+四色卡片)' : '已关闭自进化模式', { duration: 2000 });
+                }}
+                title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
+              >
+                <Brain className="w-5 h-5" />
+              </button>
+              <button
                 className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
                 onClick={() => {
                   const newVal = !autoSpeak;

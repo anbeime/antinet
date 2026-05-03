@@ -3,7 +3,9 @@
  * 提供与后端技能系统的交互接口
  */
 
-const API_BASE = 'http://localhost:8000/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+const API_BASE = getApiBaseUrl() + '/api'
 
 export interface SkillInfo {
   name: string;

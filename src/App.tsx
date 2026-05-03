@@ -27,6 +27,7 @@ import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
 import EvolvingChatBot from "@/components/EvolvingChatBot";
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
+import { ReminderNotification } from "@/components/ReminderNotification";
 import { AuthProvider } from '@/contexts/authContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
+        <ReminderNotification />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/npu-analysis" element={<NPUAnalysis />} />

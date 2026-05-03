@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   FileText,
   Upload,
@@ -53,7 +54,7 @@ interface KnowledgeCard {
   createdAt: string;
 }
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl() + ''
 
 const PDFAnalysisEnhanced: React.FC = () => {
   useTheme();
@@ -139,8 +140,8 @@ const PDFAnalysisEnhanced: React.FC = () => {
       setAnalysisResult({
         fileName: uploadedFile.name,
         pageCount: result.pages || 1,
-        wordCount: result.text?.split(/\s+/).length || 0,
-        extractedText: result.text || '',
+        wordCount: result.full_text?.split(/\s+/).length || 0,
+        extractedText: result.full_text || '',
         summary: result.summary || '',
         keyPoints: result.key_points || [],
         tables: result.tables || [],

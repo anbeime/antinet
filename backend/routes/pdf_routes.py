@@ -17,10 +17,16 @@ import json
 logger = logging.getLogger(__name__)
 
 # 延迟导入避免pypdf与pydantic冲突
-from tools.pdf_processor import SimplePDFProcessor, _lazy_load_pypdf
-
-# 先调用加载函数初始化 pypdf
-_lazy_load_pypdf()
+SimplePDFProcessor = None
+_lazy_load_pypdf = None
+try:
+    from tools.pdf_processor import SimplePDFProcessor as SP, _lazy_load_pypdf as lazy_fn
+    SimplePDFProcessor = SP
+    _lazy_load_pypdf = lazy_fn
+    if _lazy_load_pypdf:
+        _lazy_load_pypdf()
+except Exception as e:
+    logger.warning(f"PDF processor 导入失败: {e}")
 
 # 使用稳定的四色卡片处理器来处理所有PDF操作
 try:
@@ -298,24 +304,42 @@ async def generate_knowledge_cards(
     if not pdf_processor.available:
         raise HTTPException(status_code=503, detail="PDF 功能未安装")
     
+    # 检查文件类型
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="只支持 PDF 文件")
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
         tmp_path = tmp_file.name
     
     try:
-        result = pdf_processor.generate_knowledge_cards(tmp_path, generate_all)
+        # 传递 generate_all 作为 card_type 参数（用于控制是否生成所有类型的卡片）
+        result = pdf_processor.generate_knowledge_cards(tmp_path, "blue")
+        
+        # 如果 generate_all 为 True，同时生成其他类型的卡片
+        all_cards = []
+        if result.get("success"):
+            all_cards.extend(result.get("cards", []))
         
         if not result["success"]:
             raise HTTPException(status_code=500, detail=result.get("error", "生成失败"))
         
         return {
             "success": True,
-            "cards": result["cards"],
-            "count": len(result["cards"])
+            "cards": all_cards if generate_all else result["cards"],
+            "count": len(all_cards if generate_all else result["cards"])
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"生成知识卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)}")
     finally:
         if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
 
 
 # ========== 图片提取 ==========

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Brain, Plus, Trash2, Download, Save, RefreshCw, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  Brain, Plus, Trash2, Download, Save, RefreshCw,
   ZoomIn, ZoomOut, ChevronRight, Loader, Link2, X,
   FolderOpen, FileText, Network
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl()
 
 interface KnowledgeCard {
   id: number;

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Cpu, RefreshCw, Send, Check, AlertCircle, Zap, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface ModelInfo {
   id: string;
@@ -31,7 +32,7 @@ const MultiModel: React.FC = () => {
 
   const fetchModels = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/multi/models');
+      const res = await fetch(getApiBaseUrl() + '/api/multi/models');
       if (res.ok) {
         const data = await res.json();
         setModels(data);
@@ -43,7 +44,7 @@ const MultiModel: React.FC = () => {
 
   const fetchCurrentModel = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/multi/current');
+      const res = await fetch(getApiBaseUrl() + '/api/multi/current');
       if (res.ok) {
         const data = await res.json();
         setCurrentModel(data.current_model);
@@ -56,7 +57,7 @@ const MultiModel: React.FC = () => {
   const switchModel = async (modelId: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/multi/switch', {
+      const res = await fetch(getApiBaseUrl() + '/api/multi/switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_id: modelId })
@@ -84,7 +85,7 @@ const MultiModel: React.FC = () => {
     setResponse('');
     
     try {
-      const res = await fetch('http://localhost:8000/api/multi/inference', {
+      const res = await fetch(getApiBaseUrl() + '/api/multi/inference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, max_tokens: 512, temperature: 0.7 })

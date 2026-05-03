@@ -190,6 +190,43 @@ class MemoryAgent:
             logger.error(f"知识检索失败: {e}", exc_info=True)
             raise
     
+    # ==================== 兼容接口 ====================
+    async def store(self, category: str, data: Dict) -> bool:
+        """
+        兼容接口 - 存储数据（统一store/retrieve接口）
+        
+        参数：
+            category: 数据类型
+            data: 数据内容
+        
+        返回：
+            是否存储成功
+        """
+        try:
+            result = await self.store_knowledge(category, data)
+            return result.get("id") is not None
+        except Exception as e:
+            logger.warning(f"[太史阁] 兼容store接口失败: {e}")
+            return False
+    
+    async def retrieve(self, category: str, query: str, limit: int = 10) -> Dict:
+        """
+        兼容接口 - 检索数据（统一store/retrieve接口）
+        
+        参数：
+            category: 数据类型
+            query: 查询内容
+            limit: 返回数量限制
+        
+        返回：
+            检索结果
+        """
+        try:
+            return await self.retrieve_knowledge(category, query, limit)
+        except Exception as e:
+            logger.warning(f"[太史阁] 兼容retrieve接口失败: {e}")
+            return {"results": [], "total": 0, "query": query}
+    
     async def update_knowledge(self, knowledge_id: str, data: Dict) -> Dict:
         """
         更新知识

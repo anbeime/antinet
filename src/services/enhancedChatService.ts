@@ -5,9 +5,10 @@
  */
 
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 // API 基础路径
-const API_BASE = 'http://localhost:8000/api/chat/enhanced';
+const API_BASE = getApiBaseUrl() + '/api/chat/enhanced'
 
 // 简单的 fetch wrapper
 const api = {

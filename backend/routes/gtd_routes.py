@@ -723,17 +723,18 @@ async def set_task_reminder(task_id: int, remind_at: str, remind_before_minutes:
 
 @router.get("/reminders/pending")
 async def get_pending_reminders():
-    """获取待提醒的任务"""
+    """获取待提醒的任务（包括已到期未提醒的）"""
     try:
         conn = get_db()
         cursor = conn.cursor()
         
+        # 获取所有未完成且已启用的任务，提醒时间在未来或刚刚过期（5分钟内）
         cursor.execute("""
             SELECT id, title, description, remind_at, due_date, remind_before_minutes
             FROM gtd_tasks
             WHERE reminder_enabled = 1
               AND is_completed = 0
-              AND remind_at > datetime('now')
+              AND (remind_at <= datetime('now', '+5 minutes') AND remind_at >= datetime('now', '-1 day'))
             ORDER BY remind_at ASC
             LIMIT 20
         """)

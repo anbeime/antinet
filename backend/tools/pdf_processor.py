@@ -128,6 +128,13 @@ class SimplePDFProcessor:
         Returns:
             生成的卡片列表
         """
+        if not PDF_AVAILABLE:
+            return {
+                "success": False,
+                "error": "PDF 功能不可用，请安装 pypdf",
+                "cards": []
+            }
+        
         try:
             # 提取文本
             result = self.extract_text(pdf_path)
@@ -142,6 +149,13 @@ class SimplePDFProcessor:
             # 简单分段生成卡片
             cards = []
             full_text = result["full_text"]
+            
+            if not full_text or len(full_text.strip()) == 0:
+                return {
+                    "success": False,
+                    "error": "PDF 中未找到可提取的文本内容",
+                    "cards": []
+                }
             
             # 按段落分割
             paragraphs = [p.strip() for p in full_text.split('\n\n') if p.strip()]
@@ -167,18 +181,18 @@ class SimplePDFProcessor:
             return {
                 "success": True,
                 "cards": cards,
-                "message": f"成功生成 {len(cards)} 张知识卡片"
+                "count": len(cards)
             }
-            
         except Exception as e:
-            self.logger.error(f"生成知识卡片失败: {e}", exc_info=True)
+            logger.error(f"生成知识卡片失败: {e}")
             return {
                 "success": False,
-                "error": str(e),
+                "error": f"处理失败: {str(e)}",
                 "cards": []
             }
 
-    def extract_knowledge(self, pdf_path: str) -> Dict[str, Any]:
+    def extract_knowledge(self, pdf_path: str):
+        from typing import Dict, Any
         """
         从 PDF 提取知识内容（用于生成四色卡片）
         
@@ -188,6 +202,7 @@ class SimplePDFProcessor:
         Returns:
             提取的知识内容
         """
+        result: Dict[str, Any] = {}
         try:
             # 提取文本
             text_result = self.extract_text(pdf_path)

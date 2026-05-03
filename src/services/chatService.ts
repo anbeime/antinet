@@ -2,8 +2,9 @@
 // 提供与后端知识库对话机器人API的接口
 import { toast } from 'sonner';
 import { speechService } from '@/config/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE_URL = 'http://localhost:8000/api/chat';
+const API_BASE_URL = getApiBaseUrl() + '/api/chat'
 
 // 如果后端在其他端口运行，可以修改这个常量
 // const API_BASE_URL = 'http://localhost:8910/api/chat';
@@ -144,7 +145,7 @@ export const chatService = {
     offset: number = 0
   ): Promise<CardSearchResponse> => {
     try {
-      let url = `http://localhost:8000/api/knowledge/cards?limit=${limit}&offset=${offset}`;
+      let url = `${getApiBaseUrl()}/api/knowledge/cards?limit=${limit}&offset=${offset}`;
       if (cardType) {
         url += `&card_type=${cardType}`;
       }
@@ -165,7 +166,7 @@ export const chatService = {
    */
   getCard: async (cardId: string): Promise<any> => {
     try {
-      const response = await fetch(`http://localhost:8000/api/knowledge/cards/${cardId}`);
+      const response = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${cardId}`);
       if (!response.ok) throw new Error('获取卡片详情失败');
       return await response.json();
     } catch (error) {

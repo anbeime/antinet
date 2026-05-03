@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, Sparkles, BarChart3, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import WikiGraphView from './WikiGraphView';
 import KnowledgeGraph from './KnowledgeGraph';
 import { renderMarkdown } from '@/lib/utils';
@@ -88,7 +89,7 @@ const WikiEditor = () => {
 
   const loadPages = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/wiki/pages');
+      const res = await fetch(getApiBaseUrl() + '/api/wiki/pages');
       if (!res.ok) {
         console.warn('Wiki API not available');
         return;
@@ -103,8 +104,8 @@ const WikiEditor = () => {
   const loadGraph = async () => {
     try {
       const [nodesRes, edgesRes] = await Promise.all([
-        fetch('http://localhost:8000/api/wiki/graph/nodes'),
-        fetch('http://localhost:8000/api/wiki/graph/edges')
+        fetch(getApiBaseUrl() + '/api/wiki/graph/nodes'),
+        fetch(getApiBaseUrl() + '/api/wiki/graph/edges')
       ]);
       if (!nodesRes.ok || !edgesRes.ok) {
         console.warn('Wiki graph API not available');
@@ -123,7 +124,7 @@ const WikiEditor = () => {
     try {
       // 确保pageId正确编码
       const encodedId = encodeURIComponent(pageId);
-      const res = await fetch(`http://localhost:8000/api/wiki/pages/${encodedId}`);
+      const res = await fetch(getApiBaseUrl() + `/api/wiki/pages/${encodedId}`);
       if (!res.ok) {
         console.error('Failed to load page:', res.status);
         return;
@@ -179,14 +180,14 @@ const WikiEditor = () => {
 
     try {
       if (currentPage) {
-        await fetch(`http://localhost:8000/api/wiki/pages/${currentPage.id}`, {
+        await fetch(getApiBaseUrl() + `/api/wiki/pages/${currentPage.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, content, node_type: pageType, tags })
         });
         toast.success('页面已更新');
       } else {
-        await fetch('http://localhost:8000/api/wiki/pages', {
+        await fetch(getApiBaseUrl() + '/api/wiki/pages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ page_id: pageId, title, content, node_type: pageType, tags })
@@ -205,7 +206,7 @@ const WikiEditor = () => {
     if (!confirm('确定要删除这个页面吗？')) return;
 
     try {
-      await fetch(`http://localhost:8000/api/wiki/pages/${pageId}`, { method: 'DELETE' });
+      await fetch(getApiBaseUrl() + `/api/wiki/pages/${pageId}`, { method: 'DELETE' });
       toast.success('页面已删除');
       if (currentPage?.id === pageId) {
         setCurrentPage(null);
@@ -223,7 +224,7 @@ const WikiEditor = () => {
 
     setIsSearching(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/wiki/search?q=${encodeURIComponent(searchQuery)}&limit=20`);
+      const res = await fetch(getApiBaseUrl() + `/api/wiki/search?q=${encodeURIComponent(searchQuery)}&limit=20`);
       const data = await res.json();
       setSearchResults(data.results || []);
     } catch (e) {
@@ -234,7 +235,7 @@ const WikiEditor = () => {
 
   const loadCompilStats = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/wiki/compiler/stats');
+      const res = await fetch(getApiBaseUrl() + '/api/wiki/compiler/stats');
       const data = await res.json();
       setCompilerStats(data);
     } catch (e) {
@@ -245,7 +246,7 @@ const WikiEditor = () => {
   const triggerCompile = async () => {
     try {
       toast.info('正在运行智能编译...');
-      const res = await fetch('http://localhost:8000/api/wiki/compiler/run', { method: 'POST' });
+      const res = await fetch(getApiBaseUrl() + '/api/wiki/compiler/run', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         toast.success('编译完成!');
@@ -260,7 +261,7 @@ const WikiEditor = () => {
     if (!searchQuery.trim()) return;
     setSemanticLoading(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/wiki/semantic/search?q=${encodeURIComponent(searchQuery)}&limit=10`);
+      const res = await fetch(getApiBaseUrl() + `/api/wiki/semantic/search?q=${encodeURIComponent(searchQuery)}&limit=10`);
       const data = await res.json();
       setSemanticResults(data.results || []);
     } catch (e) {

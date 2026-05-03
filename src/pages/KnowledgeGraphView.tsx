@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import * as echarts from 'echarts';
-import { 
-  Share2, Plus, Trash2, Download, Search, RefreshCw, 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import {
+  Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
-  Database, GitBranch, Network
+  Database, GitBranch, Network, X, ExternalLink
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = getApiBaseUrl()
 
 interface GraphNode {
   id: string;
@@ -75,6 +76,8 @@ const KnowledgeGraphView: React.FC = () => {
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
+  const [modalCard, setModalCard] = useState<any>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   
   // 从URL参数加载指定卡片的链接图谱
   useEffect(() => {
@@ -339,6 +342,38 @@ roam: true,
       }
     });
     
+    // 点击查看节点对应的卡片详情
+    chartInstance.current.on('click', async (params) => {
+      if (params.dataType === 'node') {
+        const nodeId = params.data.id;
+        if (nodeId && viewMode === 'api') {
+          try {
+            const res = await fetch(`${API_BASE}/api/knowledge/cards/${nodeId}`);
+            if (res.ok) {
+              const card = await res.json();
+              setModalCard(card);
+              setModalOpen(true);
+            } else {
+              setModalCard({
+                title: params.data.name || `卡片 ${nodeId}`,
+                content: '卡片不存在或已删除',
+                color: 'blue'
+              });
+              setModalOpen(true);
+            }
+          } catch (e) {
+            console.error('加载卡片失败:', e);
+            setModalCard({
+              title: params.data.name || `卡片 ${nodeId}`,
+              content: '加载失败: ' + String(e),
+              color: 'red'
+            });
+            setModalOpen(true);
+          }
+        }
+      }
+    });
+    
     setIsLoading(false);
   };
 
@@ -427,6 +462,12 @@ return (
             <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
               {apiData?.nodes?.length || 0} 个关联节点
             </div>
+            <button
+              onClick={() => window.open(`/?highlightCard=${currentCardId}`, '_blank')}
+              className="mt-2 w-full py-1.5 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
+            >
+              在新窗口打开
+            </button>
           </div>
         )}
 
@@ -537,6 +578,37 @@ return (
         )}
         <div ref={chartRef} className="w-full h-full" />
       </main>
+
+      {/* 卡片详情弹窗 */}
+      {modalOpen && modalCard && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setModalOpen(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+              <h3 className="text-lg font-semibold">{modalCard.title}</h3>
+              <button onClick={() => setModalOpen(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="text-sm text-gray-500 mb-2">类型: {modalCard.color || modalCard.type || 'blue'}</div>
+              <div className="prose dark:prose-invert max-w-none">{modalCard.content}</div>
+              {modalCard.address && (
+                <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm">
+                  地址: {modalCard.address}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t dark:border-gray-700">
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
