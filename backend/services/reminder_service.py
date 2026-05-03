@@ -102,6 +102,10 @@ class ReminderService:
     def _save_sent_reminder(self, task_id: int, remind_time: str):
         """保存已发送的提醒到数据库"""
         try:
+            # 标准化 remind_time 到分钟精度
+            if len(remind_time) > 16:
+                remind_time = remind_time[:16]
+            
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             cursor.execute("""
@@ -141,7 +145,11 @@ class ReminderService:
             
             for task in tasks:
                 task_id = task["id"]
-                remind_time = task["remind_at"][:16]  # 格式: YYYY-MM-DD HH:MM
+                # 标准化 remind_at 到分钟精度，避免格式不一致导致重复提醒
+                remind_at = task["remind_at"]
+                if len(remind_at) > 16:
+                    remind_at = remind_at[:16]  # 去掉秒和更精确的时间
+                remind_time = remind_at
                 reminder_key = f"{task_id}_{remind_time}"
                 
                 # 避免重复发送
