@@ -444,6 +444,34 @@ def detect_scene(query: str) -> SceneType:
 
 # ============ 卡片知识库查询 ============
 
+# ============ 太史阁同步调用辅助函数 ============
+import asyncio
+
+def _get_memory_agent_sync():
+    """同步获取太史阁检索结果"""
+    try:
+        from agents.memory import MemoryAgent
+        import concurrent.futures
+        
+        memory_agent = MemoryAgent()
+        
+        # 在线程池中运行async函数
+        def run_async():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(memory_agent.retrieve_knowledge("fact", "", 10))
+            finally:
+                loop.close()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_async)
+            return future.result(timeout=15)
+    except Exception as e:
+        logger.warning(f"[EnhancedChat] 太史阁同步调用失败: {e}")
+        return None
+
+
 def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     """
     语义搜索知识卡片
@@ -456,37 +484,43 @@ def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     
     # 1. 优先使用太史阁记忆系统（memory.db）
     try:
-        from agents.memory import MemoryAgent
-        import asyncio
-        
-        memory_agent = MemoryAgent()
-        memory_result = asyncio.run(memory_agent.retrieve_knowledge("fact", query, limit))
+        # 获取所有记忆，然后本地过滤（解决空query问题）
+        memory_result = _get_memory_agent_sync()
         
         if memory_result and memory_result.get("results"):
             results = memory_result["results"]
             cards = []
-            for r in results[:limit]:
+            for r in results[:limit*2]:  # 多取一些，后面过滤
+                # 简单关键词过滤
+                r_title = r.get("title", "")
+                r_desc = r.get("description", "")
+                if query and query.lower() not in r_title.lower() and \
+                   query.lower() not in r_desc.lower():
+                    continue
                 card = CardReference(
                     card_id=r.get("id", ""),
                     card_type=r.get("knowledge_type", "blue"),
-                    title=r.get("title", ""),
-                    content=r.get("description", "")[:150] if r.get("description") else "",
+                    title=r_title,
+                    content=r_desc[:150] if r_desc else "",
                     similarity=r.get("similarity", 0.8),
                     color=get_card_color(r.get("knowledge_type", "blue"))
                 )
                 cards.append(card)
-            logger.info(f"[EnhancedChat] 太史阁找到 {len(cards)} 条记忆")
+                if len(cards) >= limit:
+                    break
             if cards:
+                logger.info(f"[EnhancedChat] 太史阁找到 {len(cards)} 条记忆")
                 return cards
     except Exception as e:
         logger.warning(f"[EnhancedChat] 太史阁检索失败: {e}")
     
-    # 2. 回退到向量搜索模块
+    # 2. 使用关键词快速搜索
     try:
         from routes import vector_search
         vector_search.set_db_manager(db_manager)
         
-        results = vector_search.search_hybrid(query, limit=min(limit, 20))
+        # 使用快速的关键词回退搜索
+        results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
         
         if not results:
             # 回退到关键词搜索
@@ -1242,6 +1276,7 @@ async def enhanced_chat(request: ChatRequest):
         
         # 自动提取卡片建议（不自动创建）
         try:
+            from routes import auto_card
             suggestions = auto_card.suggest_cards_api(query, response_data.get("response", ""))
             response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
         except Exception as e:

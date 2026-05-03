@@ -42,7 +42,7 @@ class ReminderService:
     def __init__(self):
         self.scheduler = None
         self.sent_reminders = set()  # 已发送的提醒 (task_id + remind_time)
-        self._check_interval_minutes = 1  # 每分钟检查一次
+        self._check_interval_minutes = 1440  # 每天检查一次 (1440分钟 = 24小时)
         self._load_sent_reminders()  # 从数据库加载已发送的提醒
     
     def start(self):
@@ -53,7 +53,7 @@ class ReminderService:
             
             self.scheduler = AsyncIOScheduler()
             
-            # 每分钟检查一次（而不是每小时）
+            # 每天检查一次（而不是每分钟）
             self.scheduler.add_job(
                 self.check_reminders,
                 trigger=IntervalTrigger(minutes=self._check_interval_minutes),

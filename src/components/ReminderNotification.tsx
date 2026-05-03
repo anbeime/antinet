@@ -219,8 +219,8 @@ export const ReminderNotification: React.FC = () => {
       }
     };
 
-    // 每30秒检查一次
-    const interval = setInterval(checkReminders, 30000);
+    // 每天检查一次
+    const interval = setInterval(checkReminders, 86400000); // 24 hours in milliseconds
     checkReminders();
 
     return () => clearInterval(interval);
