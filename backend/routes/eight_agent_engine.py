@@ -43,13 +43,17 @@ class FourColorCards:
     def to_list(self) -> List[Dict]:
         result = []
         for card in self.blue_cards:
-            result.append({**card, "card_type": "blue", "card_type_cn": "事实"})
+            if isinstance(card, dict):
+                result.append({**card, "card_type": "blue", "card_type_cn": "事实"})
         for card in self.green_cards:
-            result.append({**card, "card_type": "green", "card_type_cn": "解释"})
+            if isinstance(card, dict):
+                result.append({**card, "card_type": "green", "card_type_cn": "解释"})
         for card in self.yellow_cards:
-            result.append({**card, "card_type": "yellow", "card_type_cn": "风险"})
+            if isinstance(card, dict):
+                result.append({**card, "card_type": "yellow", "card_type_cn": "风险"})
         for card in self.red_cards:
-            result.append({**card, "card_type": "red", "card_type_cn": "行动"})
+            if isinstance(card, dict):
+                result.append({**card, "card_type": "red", "card_type_cn": "行动"})
         return result
     
     @property
@@ -303,41 +307,60 @@ class EightAgentEngine:
         current_date: str,
         card_types: Dict[str, Any]
     ) -> FourColorCards:
-        """四色卡片生成 - 并行执行"""
+        """四色卡片生成 - 两阶段执行
+        阶段1: 并行生成蓝、绿、黄卡片
+        阶段2: 基于前三者的结果生成红卡（行动建议）
+        """
         needed_types = card_types.get("needed_types", ["blue", "green", "yellow", "red"])
         
         cards = FourColorCards()
         
-        # 并行生成任务
-        tasks = []
+        # ========== 阶段1: 并行生成蓝、绿、黄卡片 ==========
+        phase1_tasks = []
+        phase1_types = []
         
         if "blue" in needed_types:
-            tasks.append(self._generate_blue_cards(preprocessed_data, query, current_date))
+            phase1_tasks.append(self._generate_blue_cards(preprocessed_data, query, current_date))
+            phase1_types.append("blue")
         if "green" in needed_types:
-            tasks.append(self._generate_green_cards(preprocessed_data, query, current_date))
+            phase1_tasks.append(self._generate_green_cards(preprocessed_data, query, current_date))
+            phase1_types.append("green")
         if "yellow" in needed_types:
-            tasks.append(self._generate_yellow_cards(preprocessed_data, query, current_date))
+            phase1_tasks.append(self._generate_yellow_cards(preprocessed_data, query, current_date))
+            phase1_types.append("yellow")
+        
+        # 并行执行阶段1
+        if phase1_tasks:
+            phase1_results = await asyncio.gather(*phase1_tasks, return_exceptions=True)
+            
+            # 收集阶段1结果
+            for i, result in enumerate(phase1_results):
+                if isinstance(result, Exception):
+                    logger.warning(f"[四色卡片生成] {phase1_types[i]}类型生成失败: {result}")
+                    continue
+                    
+                type_name = phase1_types[i]
+                if type_name == "blue":
+                    cards.blue_cards = result.get("facts", {}).get("blue", [])
+                elif type_name == "green":
+                    cards.green_cards = result.get("interpretations", [])
+                elif type_name == "yellow":
+                    cards.yellow_cards = result.get("risks", {}).get("high", []) + result.get("risks", {}).get("medium", [])
+        
+        # ========== 阶段2: 基于阶段1结果生成红卡 ==========
         if "red" in needed_types:
-            tasks.append(self._generate_red_cards(preprocessed_data, query, current_date))
-        
-        # 并行执行
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 收集结果
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.warning(f"[四色卡片生成] 某类型生成失败: {result}")
-                continue
-                
-            type_name = needed_types[i] if i < len(needed_types) else "blue"
-            if type_name == "blue":
-                cards.blue_cards = result.get("facts", {}).get("blue", [])
-            elif type_name == "green":
-                cards.green_cards = result.get("interpretations", [])
-            elif type_name == "yellow":
-                cards.yellow_cards = result.get("risks", {}).get("high", []) + result.get("risks", {}).get("medium", [])
-            elif type_name == "red":
-                cards.red_cards = result.get("actions", [])
+            try:
+                red_result = await self._generate_red_cards(
+                    preprocessed_data,
+                    query,
+                    current_date,
+                    facts=cards.blue_cards,
+                    interpretations=cards.green_cards,
+                    risks=cards.yellow_cards
+                )
+                cards.red_cards = red_result.get("actions", [])
+            except Exception as e:
+                logger.warning(f"[四色卡片生成] 红色卡片生成失败: {e}")
         
         return cards
     
@@ -415,19 +438,42 @@ class EightAgentEngine:
         return {"risks": {"high": [], "medium": [], "low": []}}
     
     async def _generate_red_cards(
-        self, 
-        preprocessed_data: Dict, 
-        query: str, 
-        current_date: str
+        self,
+        preprocessed_data: Dict,
+        query: str,
+        current_date: str,
+        facts: List = None,
+        interpretations: List = None,
+        risks: List = None
     ) -> Dict[str, Any]:
-        """参谋司 - 行动卡片生成"""
+        """参谋司 - 行动卡片生成（基于蓝、绿、黄卡片的结果）"""
         try:
             action_advisor = self._agents.get("action_advisor")
             if action_advisor:
+                # 构建事实字典（按颜色分类）
+                facts_dict = {
+                    "blue": facts or [],
+                    "green": interpretations or [],  # 解释也作为事实
+                    "yellow": risks or [],  # 风险也作为事实
+                    "red": []
+                }
+                
+                # 构建解释字典
+                explanations_dict = {
+                    "interpretations": interpretations or []
+                }
+                
+                # 构建风险字典
+                risks_dict = {
+                    "high": [r for r in (risks or []) if isinstance(r, dict) and r.get("severity") == "high"],
+                    "medium": [r for r in (risks or []) if isinstance(r, dict) and r.get("severity") == "medium"],
+                    "low": [r for r in (risks or []) if isinstance(r, dict) and r.get("severity") == "low"]
+                }
+                
                 result = await action_advisor.generate_actions(
-                    facts={},
-                    explanations={},
-                    risks={},
+                    facts=facts_dict,
+                    explanations=explanations_dict,
+                    risks=risks_dict,
                     user_query=query
                 )
                 return result

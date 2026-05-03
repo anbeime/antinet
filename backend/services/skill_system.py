@@ -1705,5 +1705,11 @@ def get_skill_registry() -> SkillRegistry:
     """获取技能注册表单例"""
     global _skill_registry
     if _skill_registry is None:
-        _skill_registry = SkillRegistry()
+        logger.info("[SkillRegistry] 正在初始化技能注册表...")
+        try:
+            _skill_registry = SkillRegistry()
+            logger.info(f"[SkillRegistry] 技能注册表初始化完成，共 {len(_skill_registry.skills)} 个技能")
+        except Exception as e:
+            logger.error(f"[SkillRegistry] 初始化失败: {e}", exc_info=True)
+            raise
     return _skill_registry

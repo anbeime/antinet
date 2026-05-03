@@ -567,17 +567,17 @@ loadCardsFromAPI();
         
         // 设置功能亮点
         setFeatureHighlights([
-          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms' },
-          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理' },
-          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析' },
-          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/Excel报告' },
+          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms', link: '/genie-playground' },
+          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理', link: 'tab:cards-management' },
+          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析', link: '/agent-system' },
+          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/PDF/Excel报告', link: '/report-automation' },
         ]);
         
         // 设置应用场景
         setApplicationScenarios([
-          { icon: 'Co', title: '企业知识管理', description: '构建企业知识库，支持团队协作' },
-          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告' },
-          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域' },
+          { icon: 'Co', title: '企业知识管理', description: '构建企业知识库，支持团队协作', link: 'tab:team-collaboration' },
+          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告', link: '/excel-analysis' },
+          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:document-center' },
         ]);
         
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
@@ -1013,13 +1013,14 @@ loadCardsFromAPI();
                  ) : (
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      {featureHighlights.map((feature, index) => (
-                       <motion.div 
+                       <motion.div
                          key={index}
                          whileHover={{ x: 5 }}
-                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                       >
-                         <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
-                           {feature.icon}
+                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                        onClick={() => feature.link.startsWith('tab:') ? setActiveTab(feature.link.slice(4) as any) : navigate(feature.link)}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
+                          {feature.icon}
                          </div>
                          <div>
                            <h3 className="font-medium">{feature.title}</h3>
@@ -1086,19 +1087,23 @@ loadCardsFromAPI();
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                     <div className="grid grid-cols-2 gap-2 mt-4">
-                       {[
-                         { name: '蓝色卡片', color: '#3b82f6' },
-                         { name: '绿色卡片', color: '#22c55e' },
-                         { name: '黄色卡片', color: '#eab308' },
-                         { name: '红色卡片', color: '#ef4444' },
-                       ].map((stat, index) => (
-                         <div key={index} className="flex items-center space-x-2">
-                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
-                           <span className="text-sm">{stat.name}</span>
-                         </div>
-                       ))}
-                     </div>
+<div className="grid grid-cols-2 gap-2 mt-4">
+                        {[
+                          { name: '蓝色卡片', color: '#3b82f6', cardColor: 'blue' },
+                          { name: '绿色卡片', color: '#22c55e', cardColor: 'green' },
+                          { name: '黄色卡片', color: '#eab308', cardColor: 'yellow' },
+                          { name: '红色卡片', color: '#ef4444', cardColor: 'red' },
+                        ].map((stat, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded p-1 transition-colors"
+                            onClick={() => setActiveTab('cards-management')}
+                          >
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
+                            <span className="text-sm">{stat.name}</span>
+                          </div>
+                        ))}
+                      </div>
                    </>
                  )}
                </motion.div>
@@ -1174,10 +1179,11 @@ loadCardsFromAPI();
                  ) : (
                    <div className="space-y-4">
                      {applicationScenarios.map((scenario, index) => (
-                       <motion.div 
+                       <motion.div
                          key={index}
                          whileHover={{ x: 5 }}
-                         className="flex items-start"
+                         className="flex items-start cursor-pointer"
+                         onClick={() => scenario.link.startsWith('tab:') ? setActiveTab(scenario.link.slice(4) as any) : navigate(scenario.link)}
                        >
                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
                            {scenario.icon}
@@ -1541,16 +1547,6 @@ loadCardsFromAPI();
                   <Presentation className="w-10 h-10 text-orange-400 mb-3" />
                   <h3 className="font-semibold">PPT演示</h3>
                   <p className="text-sm text-gray-500">在线演示PPT文件</p>
-                </button>
-                <button onClick={() => setActiveTab('excel-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Table className="w-10 h-10 text-green-500 mb-3" />
-                  <h3 className="font-semibold">Excel/在线表格</h3>
-                  <p className="text-sm text-gray-500">数据分析与可视化</p>
-                </button>
-                <button onClick={() => setActiveTab('excel-viewer')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Table className="w-10 h-10 text-green-400 mb-3" />
-                  <h3 className="font-semibold">在线表格</h3>
-                  <p className="text-sm text-gray-500">在线编辑表格</p>
                 </button>
                 <button onClick={() => setActiveTab('report-automation')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <BarChart3 className="w-10 h-10 text-purple-500 mb-3" />

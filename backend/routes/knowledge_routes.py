@@ -15,6 +15,8 @@ import json
 import html
 import hashlib
 from pathlib import Path
+import time
+from functools import lru_cache
 
 from config import settings
 from database import DatabaseManager
@@ -275,16 +277,30 @@ async def get_knowledge_graph(
     limit: int = 500
 ):
     """
-    获取知识图谱数据
-    
-    参数：
-        card_type: 卡片类型过滤（可选）
-        project_id: 专题ID过滤（可选）
-        limit: 节点数量限制，默认500
-    
-    返回：
-        知识图谱数据（节点+边）
+    获取知识图谱数据（带缓存）
     """
+    from functools import partial
+    
+    # 初始化缓存
+    if not hasattr(get_knowledge_graph, '_cache'):
+        get_knowledge_graph._cache = {}
+        get_knowledge_graph._cache_time = {}
+        get_knowledge_graph._clear = lambda: (
+            get_knowledge_graph._cache.clear(),
+            get_knowledge_graph._cache_time.clear()
+        )
+    
+    # 检查缓存（5分钟内有效）
+    cache_key = f"graph_{card_type}_{project_id}_{limit}"
+    current_time = time.time()
+    
+    if cache_key in get_knowledge_graph._cache:
+        cached_time = get_knowledge_graph._cache_time.get(cache_key, 0)
+        if current_time - cached_time < 300:
+            logger.info(f"[GRAPH] 使用缓存: {cache_key}")
+            return get_knowledge_graph._cache[cache_key]
+    
+    logger.info(f"[GRAPH] 构建新图谱: {cache_key}")
     try:
         from services.skill_system import get_skill_registry
         
@@ -323,7 +339,13 @@ async def get_knowledge_graph(
             cards=cards
         )
         
-        return result.get("result", {})
+        graph_data = result.get("result", {})
+        
+        # 缓存结果
+        get_knowledge_graph._cache[cache_key] = graph_data
+        get_knowledge_graph._cache_time[cache_key] = current_time
+        
+        return graph_data
         
     except Exception as e:
         logger.error(f"获取知识图谱失败: {e}", exc_info=True)
@@ -551,6 +573,11 @@ async def create_card(card: KnowledgeCard):
 
         conn.close()
         logger.info(f"[CREATE_CARD] 返回新卡片: {new_card}")
+        
+        # 清除图谱缓存
+        if hasattr(get_knowledge_graph, '_clear'):
+            get_knowledge_graph._clear()
+        
         return new_card
 
     except Exception as e:
@@ -655,6 +682,11 @@ async def update_card(card_id: int, card: KnowledgeCard):
 
         conn.close()
         logger.info(f"[UPDATE_CARD] 更新成功: {updated_card}")
+        
+        # 清除图谱缓存
+        if hasattr(get_knowledge_graph, '_clear'):
+            get_knowledge_graph._clear()
+        
         return updated_card
 
     except HTTPException:
@@ -683,6 +715,10 @@ async def delete_card(card_id: int):
     conn.commit()
 
     conn.close()
+    
+    # 清除图谱缓存
+    if hasattr(get_knowledge_graph, '_clear'):
+        get_knowledge_graph._clear()
 
     return {"success": True, "message": "卡片已删除"}
 

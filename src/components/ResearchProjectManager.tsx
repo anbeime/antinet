@@ -76,6 +76,34 @@ const cardTypeConfig: Record<string, { name: string; color: string; bgColor: str
 
 const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
 
+// ========== 内容渲染组件（处理图片） ==========
+const RenderContent: React.FC<{ content: string }> = ({ content }) => {
+  if (!content) return null;
+  
+  const parts = content.split(/(!\[image\]\([^)]+\))/g);
+  
+  return (
+    <span>
+      {parts.map((part, index) => {
+        const imageMatch = part.match(/!\[image\]\(([^)]+)\)/);
+        if (imageMatch) {
+          const url = imageMatch[1];
+          return (
+            <img 
+              key={index} 
+              src={url} 
+              alt="card image" 
+              className="max-w-full h-auto rounded my-1"
+              style={{ maxHeight: '80px' }}
+            />
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </span>
+  );
+};
+
 // ========== Portal 弹窗包装器 ==========
 // 将弹窗渲染到 document.body，避免被任何父容器的 overflow:hidden 裁剪
 const Portal: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -322,6 +350,73 @@ const CardDetailModal: React.FC<{
     }
   };
 
+  const renderContent = (content: string) => {
+    if (!content) return '暂无内容';
+    
+    const parts = content.split(/(!\[image\]\([^)]+\))/g);
+    
+    return parts.map((part, index) => {
+      const imageMatch = part.match(/!\[image\]\(([^)]+)\)/);
+      if (imageMatch) {
+        const url = imageMatch[1];
+        return (
+          <img 
+            key={index} 
+            src={url} 
+            alt="card image" 
+            className="max-w-full h-auto rounded-lg my-2 border border-gray-200 dark:border-gray-600"
+          />
+        );
+      }
+      // 处理换行和其他格式
+      const formatted = part
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code class="px-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">$1</code>')
+        .replace(/\n/g, '<br/>');
+      return <span key={index} dangerouslySetInnerHTML={{ __html: formatted }} />;
+    });
+  };
+
+  const handlePasteImage = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        
+        toast.info('正在上传图片...');
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+          const response = await fetch(`${RESEARCH_API_BASE}/upload/image`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.url) {
+              const imageMarkdown = `\n![image](${data.url})\n`;
+              setEditContent(prev => prev + imageMarkdown);
+              toast.success('图片已插入');
+            }
+          } else {
+            toast.error('图片上传失败');
+          }
+        } catch (err) {
+          console.error('上传图片失败:', err);
+          toast.error('图片上传失败');
+        }
+        return;
+      }
+    }
+  };
+
   const currentProject = allProjects.find(p => p.id === selectedProjectId);
 
   return (
@@ -402,14 +497,18 @@ const CardDetailModal: React.FC<{
                 <textarea
                   value={editContent}
                   onChange={e => setEditContent(e.target.value)}
+                  onPaste={handlePasteImage}
                   className="w-full h-64 px-3 py-2 border rounded-lg resize-none dark:bg-gray-700"
-                  placeholder="卡片内容"
+                  placeholder="卡片内容（支持粘贴图片）"
                 />
               </div>
             ) : (
-              <div className="text-base text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap break-words">
-                {card.content || '暂无内容'}
-              </div>
+              <div 
+              className="text-base text-gray-700 dark:text-gray-200 leading-relaxed break-words whitespace-pre-wrap"
+              style={{ whiteSpace: 'pre-wrap' }}
+            >
+              {renderContent(card.content)}
+            </div>
             )}
             
             {/* 关联卡片面板 */}
@@ -789,6 +888,27 @@ throw new Error(err.detail || '导出失败');
     }
   };
 
+  // 删除专题卡片
+  const handleDeleteCard = async (cardId: number) => {
+    if (!confirm('确定要删除这张卡片吗？此操作不可恢复。')) return;
+    
+    try {
+      const response = await fetch(getApiBaseUrl() + `/api/research/cards/${cardId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        toast.success('卡片已删除');
+        loadData();
+      } else {
+        const data = await response.json();
+        toast.error(data.detail || '删除失败');
+      }
+    } catch (err) {
+      toast.error('删除失败');
+    }
+  };
+
   const handleConvertToTask = async (cardId: number) => {
     try {
       const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
@@ -990,6 +1110,13 @@ throw new Error(err.detail || '导出失败');
                                   >
                                     <Maximize2 className="w-4 h-4 text-gray-500" />
                                   </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
+                                    className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                    title="删除卡片"
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                  </button>
                                 </div>
                               </div>
 
@@ -999,9 +1126,11 @@ throw new Error(err.detail || '导出失败');
                               </h3>
 
                               {/* 内容预览 */}
-                              <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-4 leading-relaxed mb-3">
-                                {card.content || '暂无内容'}
-                              </p>
+                              <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-4 leading-relaxed mb-3">
+                                {card.content ? (
+                                  <RenderContent content={card.content} />
+                                ) : '暂无内容'}
+                              </div>
 
                               {/* 底部 */}
                               {card.created_at && (

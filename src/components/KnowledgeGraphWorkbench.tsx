@@ -82,7 +82,11 @@ type EditorSide = 'edit' | 'preview' | 'split';
 type SortField = 'created_at' | 'updated_at' | 'title' | 'card_type';
 type SortOrder = 'asc' | 'desc';
 
-const KnowledgeGraphWorkbench: React.FC = () => {
+interface KnowledgeGraphWorkbenchProps {
+  initialColorFilter?: string;
+}
+
+const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initialColorFilter }) => {
   // ============ 状态定义 ============
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -110,12 +114,25 @@ const KnowledgeGraphWorkbench: React.FC = () => {
   
   // 搜索/筛选状态
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterColor, setFilterColor] = useState<CardColor | 'all'>('all');
+  const [filterColor, setFilterColor] = useState<CardColor | 'all'>(initialColorFilter as CardColor || 'all');
   const [sortField, setSortField] = useState<SortField>('updated_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   
   // 列表展开状态
   const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
+  
+  // 新建卡片
+  const [showNewCardModal, setShowNewCardModal] = useState(false);
+  const [newCardTitle, setNewCardTitle] = useState('');
+  const [newCardType, setNewCardType] = useState<CardColor>('blue');
+  
+  // 删除确认
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [cardToDelete, setCardToDelete] = useState<number | null>(null);
+  
+  // 关联卡片
+  const [showRelatedModal, setShowRelatedModal] = useState(false);
+  const [relatedCardId, setRelatedCardId] = useState<string>('');
   
   // ============ 数据加载 ============
   const loadGraphData = useCallback(async () => {
@@ -467,11 +484,126 @@ const KnowledgeGraphWorkbench: React.FC = () => {
       
       toast.success('卡片保存成功');
       setIsEditing(false);
-      loadCards(); // 刷新列表
-      loadGraphData(); // 刷新图谱
+      loadCards();
+      loadGraphData();
     } catch (error) {
       console.error('保存卡片失败:', error);
       toast.error('保存卡片失败');
+    }
+  };
+
+  // ============ 新建卡片 ============
+  const handleCreateCard = async () => {
+    if (!newCardTitle.trim()) {
+      toast.error('请输入标题');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: newCardType,
+          title: newCardTitle.trim(),
+          content: ''
+        })
+      });
+      
+      if (!response.ok) throw new Error('创建失败');
+      
+      const newCard = await response.json();
+      toast.success('卡片创建成功');
+      setShowNewCardModal(false);
+      setNewCardTitle('');
+      setNewCardType('blue');
+      loadCards();
+      loadGraphData();
+      loadCardDetail(newCard.id);
+    } catch (error) {
+      console.error('创建卡片失败:', error);
+      toast.error('创建卡片失败');
+    }
+  };
+
+  // ============ 删除卡片 ============
+  const handleDeleteCard = async () => {
+    if (!cardToDelete) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards/${cardToDelete}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) throw new Error('删除失败');
+      
+      toast.success('卡片已删除');
+      setShowDeleteConfirm(false);
+      setCardToDelete(null);
+      if (selectedCard?.id === cardToDelete) {
+        setSelectedCard(null);
+        setMarkdownContent('');
+      }
+      loadCards();
+      loadGraphData();
+    } catch (error) {
+      console.error('删除卡片失败:', error);
+      toast.error('删除卡片失败');
+    }
+  };
+
+  // ============ 关联卡片 ============
+  const handleAddRelatedCard = async () => {
+    if (!selectedCard || !relatedCardId.trim()) return;
+    
+    const targetId = parseInt(relatedCardId);
+    if (isNaN(targetId)) {
+      toast.error('请输入有效的卡片ID');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/backlinks/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source_card_id: selectedCard.id,
+          target_card_id: targetId
+        })
+      });
+      
+      if (!response.ok) throw new Error('关联失败');
+      
+      toast.success('卡片关联成功');
+      setShowRelatedModal(false);
+      setRelatedCardId('');
+      loadCardDetail(selectedCard.id);
+      loadCards();
+      loadGraphData();
+    } catch (error) {
+      console.error('关联卡片失败:', error);
+      toast.error('关联卡片失败');
+    }
+  };
+
+  const handleRemoveRelatedCard = async (targetId: number) => {
+    if (!selectedCard) return;
+    
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/backlinks/remove?source_card_id=${selectedCard.id}&target_card_id=${targetId}`,
+        { method: 'DELETE' }
+      );
+      
+      if (!response.ok) throw new Error('取消关联失败');
+      
+      toast.success('已取消关联');
+      loadCardDetail(selectedCard.id);
+      loadCards();
+      loadGraphData();
+    } catch (error) {
+      console.error('取消关联失败:', error);
+      toast.error('取消关联失败');
     }
   };
 
@@ -635,7 +767,7 @@ const KnowledgeGraphWorkbench: React.FC = () => {
   }, [loadGraphData, loadCards]);
 
   // ============ 渲染 ============
-  return (
+  const mainContent = (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
       {/* 左侧边栏 - 卡片列表 */}
       <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
@@ -777,7 +909,7 @@ const KnowledgeGraphWorkbench: React.FC = () => {
                   )}
                 </div>
                 
-                {/* 展开详情 */}
+{/* 展开详情 */}
                 <AnimatePresence>
                   {isExpanded && (
                     <motion.div
@@ -791,246 +923,103 @@ const KnowledgeGraphWorkbench: React.FC = () => {
                           创建: {card.created_at ? new Date(card.created_at).toLocaleDateString() : '-'}
                         </div>
                         <div className="text-gray-500">
-                          修改: {card.updated_at ? new Date(card.updated_at).toLocaleDateString() : '-'}
+修改: {card.updated_at ? new Date(card.updated_at).toLocaleDateString() : '-'}
                         </div>
                       </div>
                     </motion.div>
-                  )}
+)}
                 </AnimatePresence>
               </motion.div>
             );
           })}
-          
-          {filteredCards.length === 0 && (
-            <div className="p-8 text-center text-gray-500">
-              <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p>暂无卡片</p>
-            </div>
-          )}
         </div>
-        
-        {/* 统计信息 */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-          <div className="grid grid-cols-4 gap-2 text-center">
-            <div>
-              <div className="text-lg font-bold text-blue-500">{cards.filter(c => c.card_type === 'blue').length}</div>
-              <div className="text-xs text-gray-500">事实</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-green-500">{cards.filter(c => c.card_type === 'green').length}</div>
-              <div className="text-xs text-gray-500">解释</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-yellow-500">{cards.filter(c => c.card_type === 'yellow').length}</div>
-              <div className="text-xs text-gray-500">风险</div>
-            </div>
-            <div>
-              <div className="text-lg font-bold text-red-500">{cards.filter(c => c.card_type === 'red').length}</div>
-              <div className="text-xs text-gray-500">行动</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* 主工作区 */}
-      <div className="flex-1 flex flex-col">
-        {viewMode === 'graph' ? (
-          /* 知识图谱视图 */
-          <div className="flex-1 relative">
-            {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
-                <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-              </div>
-            )}
-            <div ref={chartRef} className="w-full h-full" />
-            
-            {/* 图谱控制栏 */}
-            <div className="absolute top-4 right-4 flex gap-2">
-              <Button variant="outline" size="sm" onClick={loadGraphData}>
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => chartInstance.current?.dispatchAction({ type: 'graphRoam', zoom: 1.2 })}>
-                <ZoomIn className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => chartInstance.current?.dispatchAction({ type: 'graphRoam', zoom: 0.8 })}>
-                <ZoomOut className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => chartInstance.current?.dispatchAction({ type: 'restore' })}>
-                <Maximize2 className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-        ) : (
-          /* 双栏编辑/预览视图 */
-          <div className="flex-1 flex flex-col">
-            {/* 编辑器工具栏 */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <h3 className="font-semibold">
-                  {selectedCard ? selectedCard.title || '无标题' : '选择一张卡片'}
-                </h3>
-                {selectedCard && (
-                  <span 
-                    className="text-xs px-2 py-1 rounded text-white"
-                    style={{ backgroundColor: CARD_COLOR_CSS[selectedCard.card_type as CardColor] }}
-                  >
-                    {CARD_COLOR_MAP[selectedCard.card_type as CardColor]}
-                  </span>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                {/* 编辑器视图切换 */}
-                <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 mr-4">
-                  <button
-                    onClick={() => setEditorSide('edit')}
-                    className={`px-3 py-1 text-sm rounded ${editorSide === 'edit' ? 'bg-blue-500 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                  >
-                    <Edit3 className="w-4 h-4 inline mr-1" />
-                    编辑
-                  </button>
-                  <button
-                    onClick={() => setEditorSide('split')}
-                    className={`px-3 py-1 text-sm rounded ${editorSide === 'split' ? 'bg-blue-500 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                  >
-                    <Edit3 className="w-4 h-4 inline mr-1" />
-                    <Eye className="w-4 h-4 inline mr-1" />
-                    分栏
-                  </button>
-                  <button
-                    onClick={() => setEditorSide('preview')}
-                    className={`px-3 py-1 text-sm rounded ${editorSide === 'preview' ? 'bg-blue-500 text-white' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
-                  >
-                    <Eye className="w-4 h-4 inline mr-1" />
-                    预览
-                  </button>
-                </div>
-                
-                {/* 导出按钮 */}
-                {selectedCard && (
-                  <>
-                    <Button variant="outline" size="sm" onClick={handleCopyMarkdown} title="复制Markdown">
-                      <CopyIcon className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleCopyRichText} title="复制富文本">
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleExportHTML} title="导出HTML">
-                      <FileDown className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleExportPNG} title="导出PNG">
-                      <Image className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleExportPPT} title="导出PPT">
-                      <Presentation className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
-                
-                {isEditing && (
-                  <Button variant="default" size="sm" onClick={handleSaveCard}>
-                    保存
-                  </Button>
-                )}
-              </div>
-            </div>
-            
-            {/* 编辑器内容区 */}
-            <div className="flex-1 flex overflow-hidden">
-              {/* 左侧编辑区 */}
-              {(editorSide === 'edit' || editorSide === 'split') && (
-                <div className={`${editorSide === 'split' ? 'w-1/2' : 'w-full'} border-r border-gray-200 dark:border-gray-700`}>
-                  <textarea
-                    value={markdownContent}
-                    onChange={(e) => {
-                      setMarkdownContent(e.target.value);
-                      setIsEditing(true);
-                    }}
-                    className="w-full h-full p-4 resize-none focus:outline-none font-mono text-sm bg-white dark:bg-gray-900"
-                    placeholder="使用 Markdown 编写内容...
-
-支持的功能:
-- 标题: # ## ###
-- 列表: - 1.
-- 代码: `inline` 或 ```block```
-- 链接: [[卡片标题]] 或 [text](url)
-- 引用: > quote
-- 表格: | header | row |"
-                    disabled={!selectedCard}
-                  />
-                </div>
-              )}
-              
-              {/* 右侧预览区 */}
-              {(editorSide === 'preview' || editorSide === 'split') && (
-                <div className={`${editorSide === 'split' ? 'w-1/2' : 'w-full'} overflow-y-auto bg-gray-50 dark:bg-gray-900`}>
-                  {selectedCard ? (
-                    <div className="p-6">
-                      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                        {/* 卡片头部 */}
-                        <div 
-                          className="px-6 py-4 flex items-center gap-3"
-                          style={{ backgroundColor: CARD_COLOR_CSS[selectedCard.card_type as CardColor] }}
-                        >
-                          <span className="text-2xl">
-                            {selectedCard.card_type === 'blue' ? '📘' : 
-                             selectedCard.card_type === 'green' ? '📗' :
-                             selectedCard.card_type === 'yellow' ? '📙' : '📕'}
-                          </span>
-                          <div className="flex-1">
-                            <h2 className="text-white font-bold text-lg">
-                              {selectedCard.title || '无标题'}
-                            </h2>
-                            <span className="text-white/80 text-sm">
-                              {CARD_COLOR_MAP[selectedCard.card_type as CardColor]}
-                            </span>
-                          </div>
-                          {selectedCard.address && (
-                            <span className="text-white/60 text-sm">
-                              {selectedCard.address}
-                            </span>
-                          )}
-                        </div>
-                        
-                        {/* 卡片内容 */}
-                        <div className="p-6">
-                          <ReactMarkdown
-                          >
-                            {markdownContent}
-                          </ReactMarkdown>
-                        </div>
-                        
-                        {/* 卡片底部 */}
-                        {selectedCard.tags && selectedCard.tags.length > 0 && (
-                          <div className="px-6 pb-4">
-                            <div className="flex gap-2 flex-wrap">
-                              {selectedCard.tags.map((tag, i) => (
-                                <span key={i} className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-full">
-                                  #{tag}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-gray-500">
-                      <div className="text-center">
-                        <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
-                        <p>从左侧列表选择一张卡片开始编辑</p>
-                        <p className="text-sm mt-2">或双击图谱中的节点</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
+
+  // Render modals at the end using helper function
+  const renderModals = () => {
+    if (!showNewCardModal && !showDeleteConfirm && !showRelatedModal) return null;
+    return (
+      <>
+        {showNewCardModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">新建卡片</h3>
+                <button onClick={() => setShowNewCardModal(false)}><X className="w-5 h-5" /></button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm block mb-1">标题</label>
+                  <input type="text" value={newCardTitle} onChange={e => setNewCardTitle(e.target.value)} placeholder="输入卡片标题" className="w-full px-3 py-2 border rounded-lg" autoFocus />
+                </div>
+                <div>
+                  <label className="text-sm block mb-1">类型</label>
+                  <div className="flex gap-2">
+                    {(Object.keys(CARD_COLOR_MAP) as CardColor[]).map(color => (
+                      <button key={color} onClick={() => setNewCardType(color)} className={`flex-1 py-2 rounded-lg text-white text-sm ${newCardType === color ? '' : 'opacity-50'}`} style={{ backgroundColor: CARD_COLOR_CSS[color] }}>
+                        {CARD_COLOR_MAP[color]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <Button variant="outline" onClick={() => setShowNewCardModal(false)}>取消</Button>
+                <Button variant="default" onClick={handleCreateCard}>创建</Button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-semibold mb-2">确认删除</h3>
+              <p className="text-gray-600 mb-4">确定要删除这张卡片吗？此操作无法撤销。</p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>取消</Button>
+                <Button variant="default" onClick={handleDeleteCard} className="bg-red-500">删除</Button>
+              </div>
+            </div>
+          </div>
+        )}
+        {showRelatedModal && selectedCard && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold">管理关联卡片</h3>
+                <button onClick={() => setShowRelatedModal(false)}><X className="w-5 h-5" /></button>
+              </div>
+              <div className="mb-4">
+                <h4 className="text-sm font-medium mb-2">当前关联</h4>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {selectedCard.related_cards?.map((relId: number) => {
+                    const relCard = cards.find(c => c.id === relId);
+                    return relCard ? (
+                      <div key={relId} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                        <span className="text-sm truncate">{relCard.title}</span>
+                        <button onClick={() => handleRemoveRelatedCard(relId)} className="text-red-500"><X className="w-4 h-4" /></button>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium mb-2">添加关联</h4>
+                <div className="flex gap-2">
+                  <input type="number" value={relatedCardId} onChange={e => setRelatedCardId(e.target.value)} placeholder="输入卡片ID" className="flex-1 px-3 py-2 border rounded-lg" />
+                  <Button variant="default" onClick={handleAddRelatedCard}>添加</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
+return <>{mainContent}{renderModals()}</>;
 };
 
 export default KnowledgeGraphWorkbench;

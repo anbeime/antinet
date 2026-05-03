@@ -158,6 +158,9 @@ register_router("routes.speech_routes")
 register_router("routes.research_routes")
 register_router("routes.ppt_structure_routes")
 register_router("routes.analysis_routes")
+register_router("routes.data_routes")
+register_router("routes.report_routes")
+register_router("routes.report_routes")
 
 # ============================================================
 # 8. 初始化各模块的数据库连接
@@ -190,6 +193,14 @@ try:
     auto_card.db_manager = db_manager
 except Exception as e:
     print(f"[WARN] auto_card: {e}")
+
+try:
+    from routes import data_routes
+    if hasattr(data_routes, 'set_db_manager'):
+        data_routes.set_db_manager(db_manager)
+        print("[OK] data_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] data_routes: {e}")
 
 try:
     from routes import enhanced_chat_routes

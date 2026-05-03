@@ -525,7 +525,7 @@ def hybrid_search_all(query: str, limit: int = 5) -> HybridSearchResult:
 
 
 def generate_hybrid_response(query: str, result: HybridSearchResult) -> str:
-    """生成混合搜索响应"""
+    """生成混合搜索响应（简单列表格式，用于无LLM情况）"""
     parts = []
     
     # 知识卡片结果
@@ -552,6 +552,65 @@ def generate_hybrid_response(query: str, result: HybridSearchResult) -> str:
         return f"关于「{query}」，我在知识库中没有找到相关信息。"
     
     return "\n".join(parts)
+
+
+async def synthesize_response_with_llm(query: str, result: HybridSearchResult, user_id: str = "default_user") -> str:
+    """
+    使用 LLM 综合知识库搜索结果生成回答
+    将检索到的卡片内容注入到提示词中，让LLM生成自然语言回答
+    """
+    if not result.cards and not result.kg_entities:
+        return None
+    
+    # 构建上下文
+    context_parts = []
+    
+    # 添加知识卡片内容
+    if result.cards:
+        context_parts.append("【知识库检索结果】")
+        for i, card in enumerate(result.cards[:5], 1):
+            card_type_cn = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}.get(card.card_type, card.card_type)
+            context_parts.append(f"{i}. [{card_type_cn}] {card.title}")
+            context_parts.append(f"   {card.content[:200]}")
+        context_parts.append("")
+    
+    # 添加知识图谱实体
+    if result.kg_entities:
+        context_parts.append("【相关实体】")
+        for entity in result.kg_entities[:3]:
+            context_parts.append(f"• {entity.name}: {entity.description[:100] if entity.description else '无描述'}")
+        context_parts.append("")
+    
+    # 构建提示词
+    prompt = f"""你是一个智能助手，请根据以下知识库检索结果，用自然语言回答用户的问题。
+
+检索到的知识：
+{chr(10).join(context_parts)}
+
+用户问题：{query}
+
+请基于上述知识，用流畅自然的语言回答问题。如果知识中有相关信息，请综合整理后回答。如果知识不足以回答，请说明并提供建议。
+
+回答："""
+    
+    # 尝试使用 NPU 模型生成（快速）- 直接实例化避免单例问题
+    try:
+        from models.model_loader import NPUModelLoader
+        loader = NPUModelLoader("llama3.2-3b")  # 直接实例化，使用快速的3B模型
+        if not loader.is_loaded:
+            loader.load()  # 加载模型
+        if loader and loader.is_loaded:
+            response = loader.infer(prompt=prompt, max_new_tokens=512, temperature=0.3)
+            if response and len(response) > 10:
+                # 清理特殊token
+                for tok in ['<|im_start|>', '<|im_end|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
+                    response = response.replace(tok, '')
+                return response.strip()
+    except Exception as e:
+        logger.warning(f"[Synthesize] NPU生成失败: {e}")
+    
+    # 回退到简单格式
+    return generate_hybrid_response(query, result)
 
 
 def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str]:
@@ -1041,17 +1100,25 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["response"] = "深度思考服务暂时不可用，请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。\n\n安装方法：\n1. 安装 Ollama: https://ollama.ai\n2. 运行: ollama pull gemma4"
             
         else:
-            # 通用对话 - 使用混合搜索（知识卡片 + 知识图谱）
+            # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
             result = hybrid_search_all(query, limit=5)
             
             if result.cards or result.kg_entities:
-                # 有搜索结果，用混合搜索结果生成回复
+                # 有搜索结果，用LLM综合生成自然语言回答
                 response_data["cards"] = result.cards[:3]
                 response_data["kg_entities"] = [
                     {"id": e.id, "name": e.name, "type": e.entity_type, "description": e.description}
                     for e in result.kg_entities[:3]
                 ]
-                response_data["response"] = generate_hybrid_response(query, result)
+                
+                # 使用LLM综合检索结果生成自然语言回答（注入知识到prompt）
+                synthesized = await synthesize_response_with_llm(query, result, user_id)
+                if synthesized:
+                    response_data["response"] = synthesized
+                    response_data["metadata"]["model"] = "npu-synthesized"
+                else:
+                    # 回退到混合搜索回复
+                    response_data["response"] = generate_hybrid_response(query, result)
             else:
                 # 无匹配时，先尝试 NPU 本地模型（最快）
                 npu_reply = _try_npu_generate(query, user_id)

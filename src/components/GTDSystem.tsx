@@ -683,7 +683,10 @@ const GTDSystem: React.FC = () => {
               return (
                 <button
                   key={category}
-                  onClick={() => { setActiveCategory(category as any); setViewMode('list'); }}
+                  onClick={() => {
+                    setActiveCategory(category as any);
+                    setViewMode('list');
+                  }}
                   className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 border-2 flex items-center gap-2 ${
                     isActive
                       ? `${categoryColors[category].active} shadow-lg transform scale-105`

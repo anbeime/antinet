@@ -11,6 +11,9 @@ import {
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -156,6 +159,46 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         delete newErrors[name as keyof CardFormData];
         return newErrors;
       });
+    }
+  };
+
+  // 处理粘贴图片
+  const handlePasteImage = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        
+        toast.info('正在上传图片...');
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+          const response = await fetch(`${RESEARCH_API_BASE}/upload/image`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.url) {
+              const imageMarkdown = `\n![image](${data.url})\n`;
+              setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
+              toast.success('图片已插入');
+            }
+          } else {
+            toast.error('图片上传失败');
+          }
+        } catch (err) {
+          console.error('上传图片失败:', err);
+          toast.error('图片上传失败');
+        }
+        return;
+      }
     }
   };
 
@@ -370,7 +413,8 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               name="content"
               value={formData.content}
               onChange={(e) => handleContentChange(e.target.value)}
-              placeholder="输入卡片内容..."
+              onPaste={handlePasteImage}
+              placeholder="输入卡片内容（支持粘贴图片）..."
               rows={5}
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none ${
                 errors.content 
