@@ -118,6 +118,29 @@ export const useNotifications = () => {
   const { speak } = useEdgeTTS();
   const notifiedIds = useRef<Set<number>>(new Set());
 
+  // 从 localStorage 恢复已通知的 ID
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('notified_reminder_ids');
+      if (saved) {
+        const ids = JSON.parse(saved) as number[];
+        ids.forEach(id => notifiedIds.current.add(id));
+      }
+    } catch (e) {
+      console.error('[Reminder] 恢复已通知ID失败:', e);
+    }
+  }, []);
+
+  // 保存已通知的 ID 到 localStorage
+  const saveNotifiedIds = () => {
+    try {
+      const ids = Array.from(notifiedIds.current);
+      localStorage.setItem('notified_reminder_ids', JSON.stringify(ids));
+    } catch (e) {
+      console.error('[Reminder] 保存已通知ID失败:', e);
+    }
+  };
+
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
@@ -130,6 +153,7 @@ export const useNotifications = () => {
       return;
     }
     notifiedIds.current.add(taskId);
+    saveNotifiedIds();
 
     // 语音通知
     if (enableVoice && 'speechSynthesis' in window) {

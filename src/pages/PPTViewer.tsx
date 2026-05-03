@@ -290,10 +290,10 @@ const parsePPTX = async (file: File) => {
 
           <div className="w-px h-6 bg-gray-600" />
 
-          <a href="/home?tab=ppt-analysis" className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
+          <button onClick={() => window.location.href = '/?tab=ppt-analysis'} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
             <Presentation className="w-4 h-4" />
             <span className="text-sm">生成PPT</span>
-          </a>
+          </button>
         </div>
       </header>
 
