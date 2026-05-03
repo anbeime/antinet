@@ -1523,15 +1523,44 @@ const PDFAnalysis: React.FC = () => {
                         className="w-full h-64 p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="提取的文本将显示在这里，您可以编辑修改..."
                       />
-                      <div className="mt-2 flex justify-end">
+                      <div className="mt-2 flex justify-end space-x-2">
                         <button
                           onClick={() => {
-                            // Save edited text - could add API call here
+                            const blob = new Blob([editedText], { type: 'text/plain;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = uploadedFile?.name?.replace('.pdf', '_edited.txt') || 'edited.txt';
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            toast.success('已导出TXT文件');
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          导出TXT
+                        </button>
+                        <button
+                          onClick={() => {
+                            const blob = new Blob([editedText], { type: 'text/markdown;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = uploadedFile?.name?.replace('.pdf', '_edited.md') || 'edited.md';
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            toast.success('已导出Markdown');
+                          }}
+                          className="px-4 py-2 bg-purple-500 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors"
+                        >
+                          导出MD
+                        </button>
+                        <button
+                          onClick={() => {
                             toast.success('文本已保存');
                           }}
                           className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors"
                         >
-                          保存修改
+                          保存
                         </button>
                       </div>
                     </div>

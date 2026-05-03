@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -98,7 +98,18 @@ const useEdgeTTS = () => {
     if ('speechSynthesis' in window) {
       speechSynthesis.cancel();
     }
+    isSpeaking.current = false;
+    pendingQueue.current = [];
   };
+
+  // 组件卸载时清理
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      stop();
+    };
+  }, []);
 
   return { speak, stop };
 };
