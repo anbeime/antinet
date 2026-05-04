@@ -21,7 +21,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # ============================================================
-# 2. NPU 库路径配置（使用新的配置模块）
+# 2. NPU 库路径配置（使用新的配置模块）AAAA
 # ============================================================
 from conf.npu import NPUConfig
 
@@ -120,14 +120,17 @@ def register_router(module_name: str):
                 # 直接使用路由自己的 prefix
                 actual_prefix = getattr(router, 'prefix', '') or '(无前缀)'
                 app.include_router(router)
-                print(f"[OK] 路由已注册: {actual_prefix}")
+                print(f"[OK] 路由已注册: {module_name} -> {actual_prefix}")
                 return True
+            else:
+                print(f"[WARN] {module_name} 无 router 属性")
         return False
     except Exception as e:
         print(f"[WARN] 无法导入 {module_name}: {e}")
         return False
 
 # 核心路由 - 使用各自的 prefix
+print("[INFO] 开始注册路由...")
 register_router("routes.knowledge_routes")
 register_router("routes.chat_routes")
 register_router("routes.data_routes")
@@ -144,6 +147,8 @@ register_router("routes.backlink_routes")
 register_router("routes.integration_routes")
 register_router("routes.moc_routes")
 register_router("routes.vision_routes")
+
+print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
 register_router("routes.evolving_chat_routes")
 register_router("routes.chat_context_routes")
@@ -158,6 +163,9 @@ register_router("routes.speech_routes")
 register_router("routes.research_routes")
 register_router("routes.ppt_structure_routes")
 register_router("routes.analysis_routes")
+register_router("routes.data_routes")
+register_router("routes.report_routes")
+register_router("routes.report_routes")
 
 # ============================================================
 # 8. 初始化各模块的数据库连接
@@ -190,6 +198,14 @@ try:
     auto_card.db_manager = db_manager
 except Exception as e:
     print(f"[WARN] auto_card: {e}")
+
+try:
+    from routes import data_routes
+    if hasattr(data_routes, 'set_db_manager'):
+        data_routes.set_db_manager(db_manager)
+        print("[OK] data_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] data_routes: {e}")
 
 try:
     from routes import enhanced_chat_routes

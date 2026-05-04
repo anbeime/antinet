@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
@@ -34,9 +34,35 @@ const ExcelAnalysis: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
 
+  // 检查是否需要直接打开编辑器
+  useEffect(() => {
+    if (localStorage.getItem('openExcelEditor') === 'true') {
+      localStorage.removeItem('openExcelEditor');
+      setActiveFeature('editor');
+    }
+  }, []);
+
   // 在线编辑功能
   const [editData, setEditData] = useState<string[][]>([]);
-  const [editMode, setEditMode] = useState(false);
+  const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  // 将分析数据转换为可编辑格式
+  useEffect(() => {
+    if (data.length > 0 && columns.length > 0) {
+      const editable: string[][] = [
+        columns.map(c => c.name),
+        ...data.slice(0, 1000).map(row => columns.map(c => String(row[c.key] ?? '')))
+      ];
+      setEditData(editable);
+    }
+  }, [data, columns]);
+
+  const updateCell = (rowIdx: number, colIdx: number, value: string) => {
+    const newData = [...editData];
+    newData[rowIdx][colIdx] = value;
+    setEditData(newData);
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -391,15 +417,16 @@ const ExcelAnalysis: React.FC = () => {
                       数据预览
                     </h3>
                     <span className="text-sm text-gray-500">
-                      显示前 {Math.min(data.length, 100)} 行
+                      显示 {editData.length > 0 ? editData.length - 1 : data.length} 行
                     </span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50 dark:bg-gray-700">
                         <tr>
+                          <th className="px-2 py-2 text-xs w-8">#</th>
                           {columns.map(col => (
-                            <th key={col.key} className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            <th key={col.key} className="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                               <div className="flex items-center space-x-1">
                                 <span>{col.name}</span>
                                 <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -415,10 +442,36 @@ const ExcelAnalysis: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {data.slice(0, 100).map((row, idx) => (
+                        {editData.length > 0 ? editData.slice(1).map((row, idx) => (
                           <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="px-2 py-1 text-xs text-gray-400 w-8">{idx + 1}</td>
+                            {row.map((cell, cidx) => (
+                              <td key={cidx} className="px-1 py-1">
+                                {editingCell?.row === idx + 1 && editingCell?.col === cidx ? (
+                                  <input
+                                    value={editValue}
+                                    onChange={e => setEditValue(e.target.value)}
+                                    onBlur={() => { updateCell(idx + 1, cidx, editValue); setEditingCell(null); }}
+                                    onKeyDown={e => e.key === 'Enter' && (updateCell(idx + 1, cidx, editValue), setEditingCell(null))}
+                                    className="w-full px-2 py-1 bg-blue-50 outline-blue-500 text-sm"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <div 
+                                    onClick={() => { setEditingCell({row: idx + 1, col: cidx}); setEditValue(cell); }} 
+                                    className="px-2 py-1 cursor-text hover:bg-blue-50 min-h-[28px] text-sm"
+                                  >
+                                    {cell || '-'}
+                                  </div>
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        )) : data.slice(0, 100).map((row, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                            <td className="px-2 py-1 text-xs text-gray-400 w-8">{idx + 1}</td>
                             {columns.map(col => (
-                              <td key={col.key} className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                              <td key={col.key} className="px-2 py-1 text-sm text-gray-900 dark:text-gray-100">
                                 {row[col.key] !== null && row[col.key] !== undefined ? String(row[col.key]) : '-'}
                               </td>
                             ))}
@@ -468,7 +521,16 @@ const ExcelAnalysis: React.FC = () => {
           </motion.div>
         </div>
         ) : (
-          <SimpleSpreadsheetEditor onSave={(data) => console.log('Saved:', data)} />
+          <SimpleSpreadsheetEditor 
+            initialData={data.length > 0 ? [
+              columns.map(c => c.name),
+              ...data.slice(0, 100).map(row => columns.map(c => String(row[c.key] ?? '')))
+            ] : undefined}
+            onSave={(savedData) => {
+              console.log('Saved data:', savedData);
+              // 可以选择导出或进一步处理
+            }} 
+          />
         )}
       </div>
     </div>
@@ -476,8 +538,8 @@ const ExcelAnalysis: React.FC = () => {
 };
 
 // 简单在线表格编辑器
-const SimpleSpreadsheetEditor: React.FC<{ initialData?: string[][], onSave?: (data: string[][]) => void }> = ({ onSave }) => {
-  const [rows, setRows] = useState<string[][]>([['字段1', '字段2', '字段3'], ['', '', '']]);
+const SimpleSpreadsheetEditor: React.FC<{ initialData?: string[][], onSave?: (data: string[][]) => void }> = ({ initialData, onSave }) => {
+  const [rows, setRows] = useState<string[][]>(initialData || [['字段1', '字段2', '字段3'], ['', '', '']]);
   const [editingCell, setEditingCell] = useState<{row: number, col: number} | null>(null);
   const [editValue, setEditValue] = useState('');
 

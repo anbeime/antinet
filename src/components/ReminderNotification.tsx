@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
 const useEdgeTTS = () => {
   const currentAudio = useRef<HTMLAudioElement | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
+  const isMounted = useRef(true);
+  const isSpeaking = useRef(false);
+  const pendingQueue = useRef<string[]>([]);
 
-  const speak = async (text: string, voice: string = '晓伊') => {
+  const processQueue = async () => {
+    if (isSpeaking.current || pendingQueue.current.length === 0 || !isMounted.current) return;
+    
+    isSpeaking.current = true;
+    const text = pendingQueue.current.shift()!;
+    
     try {
       // 停止当前播放
       if (currentAudio.current) {
@@ -21,22 +29,50 @@ const useEdgeTTS = () => {
         body: JSON.stringify({ text, voice: 'zh-CN-XiaoxiaoNeural' })
       });
 
+      if (!isMounted.current) return;
+
       if (response.ok && response.headers.get('content-type')?.includes('audio')) {
         // 直接播放返回的音频
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          isSpeaking.current = false;
+          processQueue();
+        };
+        audio.onerror = () => {
+          isSpeaking.current = false;
+          processQueue();
+        };
         await audio.play();
         currentAudio.current = audio;
       } else {
         // 回退到浏览器 TTS
         console.log('[Reminder] Edge-TTS 不可用，使用浏览器 TTS');
         _fallbackSpeak(text);
+        isSpeaking.current = false;
+        processQueue();
       }
     } catch (e) {
       console.error('[Reminder] TTS 播放失败:', e);
-      _fallbackSpeak(text);
+      if (isMounted.current) {
+        _fallbackSpeak(text);
+      }
+      isSpeaking.current = false;
+      processQueue();
+    }
+  };
+
+  const speak = async (text: string, voice: string = '晓伊') => {
+    if (!isMounted.current) return;
+    
+    // 将文本添加到队列
+    pendingQueue.current.push(text);
+    
+    // 如果没有正在播放，立即开始处理队列
+    if (!isSpeaking.current) {
+      processQueue();
     }
   };
 
@@ -62,7 +98,18 @@ const useEdgeTTS = () => {
     if ('speechSynthesis' in window) {
       speechSynthesis.cancel();
     }
+    isSpeaking.current = false;
+    pendingQueue.current = [];
   };
+
+  // 组件卸载时清理
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      stop();
+    };
+  }, []);
 
   return { speak, stop };
 };
@@ -70,6 +117,34 @@ const useEdgeTTS = () => {
 export const useNotifications = () => {
   const { speak } = useEdgeTTS();
   const notifiedIds = useRef<Set<number>>(new Set());
+  const isInitialized = useRef(false);
+
+  // 从 localStorage 恢复已通知的 ID
+  useEffect(() => {
+    if (isInitialized.current) return;
+    isInitialized.current = true;
+    
+    try {
+      const saved = localStorage.getItem('notified_reminder_ids');
+      if (saved) {
+        const ids = JSON.parse(saved) as number[];
+        ids.forEach(id => notifiedIds.current.add(id));
+        console.log('[Reminder] 已恢复已通知ID:', ids.length);
+      }
+    } catch (e) {
+      console.error('[Reminder] 恢复已通知ID失败:', e);
+    }
+  }, []);
+
+  // 保存已通知的 ID 到 localStorage
+  const saveNotifiedIds = () => {
+    try {
+      const ids = Array.from(notifiedIds.current);
+      localStorage.setItem('notified_reminder_ids', JSON.stringify(ids));
+    } catch (e) {
+      console.error('[Reminder] 保存已通知ID失败:', e);
+    }
+  };
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -77,12 +152,15 @@ export const useNotifications = () => {
     }
   }, []);
 
-  const showNotification = (title: string, body: string, taskId: number, enableVoice: boolean = true) => {
+  const showNotification = React.useCallback((title: string, body: string, taskId: number, enableVoice: boolean = true) => {
     // 避免重复通知
     if (notifiedIds.current.has(taskId)) {
+      console.log('[Reminder] 跳过已通知的任务:', taskId);
       return;
     }
     notifiedIds.current.add(taskId);
+    saveNotifiedIds();
+    console.log('[Reminder] 发送通知:', taskId, title);
 
     // 语音通知
     if (enableVoice && 'speechSynthesis' in window) {
@@ -106,7 +184,7 @@ export const useNotifications = () => {
       duration: 10000,
       id: `reminder-${taskId}`,
     });
-  };
+  }, [speak]);
 
   return { showNotification };
 };
@@ -141,8 +219,8 @@ export const ReminderNotification: React.FC = () => {
       }
     };
 
-    // 每30秒检查一次
-    const interval = setInterval(checkReminders, 30000);
+    // 每天检查一次
+    const interval = setInterval(checkReminders, 86400000); // 24 hours in milliseconds
     checkReminders();
 
     return () => clearInterval(interval);

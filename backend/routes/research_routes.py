@@ -1650,3 +1650,96 @@ async def get_unified_projects():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取统一项目列表失败: {str(e)}")
+
+
+# ========== 图片上传 API ==========
+from fastapi import UploadFile, File
+from fastapi.responses import FileResponse
+import uuid
+import aiofiles
+
+UPLOAD_DIR = Path(__file__).parent.parent / "data" / "uploads" / "images"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+@router.post("/upload/image")
+async def upload_image(file: UploadFile = File(...)):
+    """上传图片到服务器，返回图片URL"""
+    try:
+        # 生成唯一文件名
+        ext = Path(file.filename).suffix.lower()
+        allowed_exts = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
+        if ext not in allowed_exts:
+            raise HTTPException(status_code=400, detail="不支持的图片格式")
+        
+        file_id = str(uuid.uuid4())[:12]
+        filename = f"{file_id}{ext}"
+        file_path = UPLOAD_DIR / filename
+        
+        # 保存文件
+        content = await file.read()
+        async with aiofiles.open(file_path, 'wb') as f:
+            await f.write(content)
+        
+        # 返回图片URL
+        image_url = f"/api/research/uploads/images/{filename}"
+        return {
+            "success": True,
+            "url": image_url,
+            "filename": filename
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"上传图片失败: {str(e)}")
+
+
+@router.get("/uploads/images/{filename}")
+async def get_uploaded_image(filename: str):
+    """获取上传的图片"""
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    
+    # 根据文件扩展名返回正确的 Content-Type
+    ext = Path(filename).suffix.lower()
+    media_type = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp'
+    }.get(ext, 'image/jpeg')
+    
+    return FileResponse(file_path, media_type=media_type)
+
+
+# ========== 删除卡片 API ==========
+@router.delete("/cards/{card_id}")
+async def delete_card(card_id: int):
+    """删除卡片"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # 检查卡片是否存在
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (card_id,))
+        card = cursor.fetchone()
+        if not card:
+            conn.close()
+            raise HTTPException(status_code=404, detail="卡片不存在")
+        
+        # 删除关联的 backlinks
+        cursor.execute("DELETE FROM card_backlinks WHERE source_card_id = ? OR target_card_id = ?", (card_id, card_id))
+        
+        # 删除卡片
+        cursor.execute("DELETE FROM knowledge_cards WHERE id = ?", (card_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {"success": True, "message": "卡片已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除卡片失败: {str(e)}")

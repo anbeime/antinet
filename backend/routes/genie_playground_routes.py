@@ -207,7 +207,7 @@ async def check_genie_service():
     # 检查 model_loader 状态
     loader = get_model_loader()
     model_loader_available = loader is not None and loader.is_loaded
-    model_loader_model = loader.model_name if loader else None
+    model_loader_model = loader.model_key if loader else None
     
     # 前端兼容字段（扁平化）
     return {

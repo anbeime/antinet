@@ -445,30 +445,50 @@ async def generate_four_color_cards_compat(
 
 @router.post("/export/cards-docx")
 async def export_cards_to_docx(
-    cards: List[UploadFile] = File(...)
+    cards: Optional[List[UploadFile]] = File(None),
+    cards_data: Optional[str] = Form(None)
 ):
-    """导出知识卡片到 Word"""
+    """导出知识卡片到 Word（支持文件上传或JSON数据）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
-    all_text = []
-    try:
-        for f in cards:
-            content = await f.read()
-            import io
+    all_cards = []
+    
+    # 方式1：从文件提取
+    if cards:
+        try:
             from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(content))
-            text = "\n".join([p.extract_text() for p in reader.pages])
-            all_text.append(text)
-        
+            import io
+            for f in cards:
+                content = await f.read()
+                reader = PdfReader(io.BytesIO(content))
+                text = "\n".join([p.extract_text() for p in reader.pages])
+                
+                from tools.pdf_four_color_processor import PDFourColorProcessor
+                processor = PDFourColorProcessor()
+                result = processor._analyze_content(text, 50)
+                all_cards.extend(result.get('cards', []))
+        except Exception as e:
+            logger.error(f"从PDF提取失败: {e}")
+    
+    # 方式2：从JSON数据
+    if cards_data:
+        try:
+            import json
+            cards_list = json.loads(cards_data)
+            all_cards.extend(cards_list)
+        except Exception as e:
+            logger.error(f"解析JSON失败: {e}")
+    
+    if not all_cards:
+        raise HTTPException(status_code=400, detail="没有可导出的卡片数据")
+    
+    try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
         
-        combined_text = "\n\n".join(all_text)
-        result = processor._analyze_content(combined_text, 50)
-        
         output_path = os.path.join(tempfile.gettempdir(), "cards_export.docx")
-        processor.export_to_docx(result, output_path)
+        processor.export_to_docx({'cards': all_cards}, output_path)
         
         return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     except Exception as e:
@@ -477,30 +497,50 @@ async def export_cards_to_docx(
 
 @router.post("/export/four-color-excel")
 async def export_four_color_excel(
-    files: List[UploadFile] = File(...)
+    files: Optional[List[UploadFile]] = File(None),
+    cards_data: Optional[str] = Form(None)
 ):
-    """导出四色卡片到 Excel"""
+    """导出四色卡片到 Excel（支持文件上传或JSON数据）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
-    all_text = []
-    try:
-        for f in files:
-            content = await f.read()
-            import io
+    all_cards = []
+    
+    # 方式1：从文件提取
+    if files:
+        try:
             from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(content))
-            text = "\n".join([p.extract_text() for p in reader.pages])
-            all_text.append(text)
-        
+            import io
+            for f in files:
+                content = await f.read()
+                reader = PdfReader(io.BytesIO(content))
+                text = "\n".join([p.extract_text() for p in reader.pages])
+                
+                from tools.pdf_four_color_processor import PDFourColorProcessor
+                processor = PDFourColorProcessor()
+                result = processor._analyze_content(text, 50)
+                all_cards.extend(result.get('cards', []))
+        except Exception as e:
+            logger.error(f"从PDF提取失败: {e}")
+    
+    # 方式2：从JSON数据
+    if cards_data:
+        try:
+            import json
+            cards_list = json.loads(cards_data)
+            all_cards.extend(cards_list)
+        except Exception as e:
+            logger.error(f"解析JSON失败: {e}")
+    
+    if not all_cards:
+        raise HTTPException(status_code=400, detail="没有可导出的卡片数据")
+    
+    try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
         
-        combined_text = "\n\n".join(all_text)
-        result = processor._analyze_content(combined_text, 50)
-        
         output_path = os.path.join(tempfile.gettempdir(), "cards_export.xlsx")
-        processor.export_to_excel(result, output_path)
+        processor.export_to_excel({'cards': all_cards}, output_path)
         
         return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:
@@ -594,11 +634,11 @@ async def generate_ai_cards(
 
 @router.post("/toolkit/images-to-pdf")
 async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
-    """图片转 PDF"""
-    if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+    """图片转 PDF（使用 pypdf + img2pdf 或 PIL）"""
+    from fastapi import HTTPException
     
     temp_files = []
+    temp_pdfs = []
     try:
         for f in files:
             ext = os.path.splitext(f.filename)[1].lower()
@@ -606,13 +646,48 @@ async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
                 shutil.copyfileobj(f.file, tmp)
                 temp_files.append(tmp.name)
         
-        result = pdf_processor.images_to_pdf(temp_files)
+        output_pdf = tempfile.mktemp(suffix='.pdf')
         
-        if not result["success"]:
-            raise HTTPException(status_code=500, detail=result.get("error", "转换失败"))
+        # 尝试使用 PIL + img2pdf
+        try:
+            from img2pdf import convert
+            convert(temp_files, outputfile=output_pdf)
+            return FileResponse(output_pdf, media_type="application/pdf")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"img2pdf失败，回退到PIL: {e}")
         
-        return FileResponse(result["output_file"], media_type="application/pdf")
+        # 回退：使用 PIL + pypdf
+        from pypdf import PdfWriter, PdfReader
+        from PIL import Image
+        writer = PdfWriter()
+        
+        for img_path in temp_files:
+            img = Image.open(img_path)
+            # 转换为RGB
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            # 保存为临时PDF页
+            img_pdf = tempfile.mktemp(suffix='.pdf')
+            img.save(img_pdf, 'PDF', resolution=100.0)
+            temp_pdfs.append(img_pdf)
+            # 读取并添加到writer
+            reader = PdfReader(img_pdf)
+            for page in reader.pages:
+                writer.add_page(page)
+        
+        writer.write(output_pdf)
+        return FileResponse(output_pdf, media_type="application/pdf")
+    except Exception as e:
+        logger.error(f"图片转PDF失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         for fp in temp_files:
             if os.path.exists(fp):
-                os.unlink(fp)
+                try: os.unlink(fp)
+                except: pass
+        for fp in temp_pdfs:
+            if os.path.exists(fp):
+                try: os.unlink(fp)
+                except: pass

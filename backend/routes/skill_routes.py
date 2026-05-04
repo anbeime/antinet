@@ -59,14 +59,16 @@ async def list_skills(agent_name: Optional[str] = None, category: Optional[str] 
         category: 按类别过滤（可选）
     """
     try:
+        logger.info(f"[SkillRoutes] 获取技能列表, agent={agent_name}, category={category}")
         skills = skill_registry.list_skills(agent_name=agent_name, category=category)
+        logger.info(f"[SkillRoutes] 返回 {len(skills)} 个技能")
         
         return {
             "total": len(skills),
             "skills": skills
         }
     except Exception as e:
-        logger.error(f"列出技能失败: {e}")
+        logger.error(f"列出技能失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

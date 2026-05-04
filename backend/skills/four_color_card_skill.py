@@ -268,6 +268,18 @@ class FourColorCardSkill:
         self.card_storage: List[FourColorCard] = []
         self.relations: List[Dict[str, str]] = []
     
+    def get_info(self) -> Dict:
+        """获取技能信息"""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "category": self.category,
+            "agent_name": self.agent_name,
+            "enabled": self.enabled,
+            "last_used": self.last_used,
+            "usage_count": self.usage_count
+        }
+    
     def get_system_prompt(self) -> str:
         """获取系统提示词"""
         return HERMES_SYSTEM_PROMPT

@@ -290,11 +290,10 @@ const parsePPTX = async (file: File) => {
 
           <div className="w-px h-6 bg-gray-600" />
 
-          <label className="cursor-pointer flex items-center space-x-1 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600">
-            <Upload className="w-4 h-4" />
-            <span className="text-sm">导入</span>
-            <input type="file" accept=".pptx" className="hidden" />
-          </label>
+          <button onClick={() => window.location.href = '/?tab=ppt-analysis'} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
+            <Presentation className="w-4 h-4" />
+            <span className="text-sm">生成PPT</span>
+          </button>
         </div>
       </header>
 

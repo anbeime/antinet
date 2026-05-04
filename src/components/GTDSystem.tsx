@@ -374,6 +374,8 @@ const GTDSystem: React.FC = () => {
 
     try {
       // 新任务默认添加到收集箱
+      // 确保当设置了提醒时间时，reminder_enabled 自动为 true
+      const hasRemindTime = !!(newTask.remind_at && newTask.remind_at.trim());
       await gtdTaskService.add({
         title: newTask.title,
         description: newTask.description,
@@ -381,7 +383,7 @@ const GTDSystem: React.FC = () => {
         category: 'inbox',
         due_date: newTask.due_date,
         remind_at: newTask.remind_at || undefined,
-        reminder_enabled: newTask.reminder_enabled
+        reminder_enabled: hasRemindTime || newTask.reminder_enabled
       });
 
       // 同步到知识卡片库
@@ -517,11 +519,15 @@ const GTDSystem: React.FC = () => {
     if (!editingTask || !editingTask.id || !newTask.title.trim()) return;
     
     try {
+      // 确保当设置了提醒时间时，reminder_enabled 自动为 true
+      const hasRemindTime = !!(newTask.remind_at && newTask.remind_at.trim());
       await gtdTaskService.update(editingTask.id, {
         title: newTask.title,
         description: newTask.description,
         priority: newTask.priority,
-        due_date: newTask.due_date
+        due_date: newTask.due_date,
+        remind_at: newTask.remind_at || undefined,
+        reminder_enabled: hasRemindTime || newTask.reminder_enabled
       });
       
       // 重新加载数据
@@ -683,7 +689,10 @@ const GTDSystem: React.FC = () => {
               return (
                 <button
                   key={category}
-                  onClick={() => { setActiveCategory(category as any); setViewMode('list'); }}
+                  onClick={() => {
+                    setActiveCategory(category as any);
+                    setViewMode('list');
+                  }}
                   className={`px-4 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 border-2 flex items-center gap-2 ${
                     isActive
                       ? `${categoryColors[category].active} shadow-lg transform scale-105`

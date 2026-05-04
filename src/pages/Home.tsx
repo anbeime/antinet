@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Brain,
@@ -152,8 +152,14 @@ interface HomeProps {
 
 const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'cards' | 'cards-management' | 'data-management' | 'pdf-analysis' | 'ppt-analysis' | 'excel-analysis' | 'batch-process' | 'data-analysis' | 'agent-system' | 'skill-center' | 'multi-model' | 'format-converter' | 'team-collaboration' | 'virtual-office-meeting' | 'gtd-tasks' | 'genie-playground' | 'genie-npu-test' | 'knowledge-network' | 'remotion' | 'document-center' | 'excel-viewer' | 'pdf-viewer' | 'ppt-viewer' | 'report-automation' | 'mindmap' | 'knowledge-graph' | 'markdown-converter'>(() => {
+  
+  // 从URL参数获取tab
+  const urlTab = searchParams.get('tab');
+  
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
     return 'dashboard';
   });
@@ -169,6 +175,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAllCardsModal, setShowAllCardsModal] = useState(false);
+  
+  // 同步activeTab到URL参数
+  useEffect(() => {
+    if (activeTab && activeTab !== 'dashboard') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', activeTab);
+      window.history.replaceState(null, '', `?${params.toString()}`);
+    }
+  }, [activeTab]);
   
   // 卡片管理筛选和分页
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
@@ -472,9 +487,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 从后端API加载卡片
   React.useEffect(() => {
+    let isMounted = true;
     const loadCardsFromAPI = async () => {
       try {
         const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
+        if (!isMounted) return;
         if (response.ok) {
           const data = await response.json();
           const apiCards = data.cards || data || [];
@@ -520,13 +537,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
     };
     
-loadCardsFromAPI();
+    loadCardsFromAPI();
+    return () => { isMounted = false; };
   }, []);
 
 
 
   // 加载仪表板数据
   useEffect(() => {
+    let isMounted = true;
     const loadDashboardData = async () => {
       if (activeTab !== 'dashboard') return;
       
@@ -536,6 +555,7 @@ loadCardsFromAPI();
       try {
         // 从知识卡片API获取真实数据
         const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
+        if (!isMounted) return;
         if (!response.ok) throw new Error('API请求失败');
         const data = await response.json();
         const rawCards = data.cards || data || [];
@@ -567,29 +587,31 @@ loadCardsFromAPI();
         
         // 设置功能亮点
         setFeatureHighlights([
-          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms' },
-          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理' },
-          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析' },
-          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/Excel报告' },
+          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms', link: '/genie-playground' },
+          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理', link: 'tab:cards-management' },
+          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析', link: '/agent-system' },
+          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/PDF/Excel报告', link: '/report-automation' },
         ]);
         
         // 设置应用场景
         setApplicationScenarios([
-          { icon: 'Co', title: '企业知识管理', description: '构建企业知识库，支持团队协作' },
-          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告' },
-          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域' },
+          { icon: 'Co', title: '企业知识管理', description: '构建企业知识库，支持团队协作', link: 'tab:team-collaboration' },
+          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告', link: '/excel-analysis' },
+          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:document-center' },
         ]);
         
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
       } catch (error) {
         console.error('加载仪表板数据失败:', error);
+        if (!isMounted) return;
         setStatsError('加载统计数据失败');
       } finally {
-        setStatsLoading(false);
+        if (isMounted) setStatsLoading(false);
       }
     };
 
     loadDashboardData();
+    return () => { isMounted = false; };
   }, [activeTab]);
 
   // 更新卡片
@@ -1013,13 +1035,14 @@ loadCardsFromAPI();
                  ) : (
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                      {featureHighlights.map((feature, index) => (
-                       <motion.div 
+                       <motion.div
                          key={index}
                          whileHover={{ x: 5 }}
-                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-                       >
-                         <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
-                           {feature.icon}
+                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+                        onClick={() => feature.link.startsWith('tab:') ? setActiveTab(feature.link.slice(4) as any) : navigate(feature.link)}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
+                          {feature.icon}
                          </div>
                          <div>
                            <h3 className="font-medium">{feature.title}</h3>
@@ -1086,19 +1109,23 @@ loadCardsFromAPI();
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                     <div className="grid grid-cols-2 gap-2 mt-4">
-                       {[
-                         { name: '蓝色卡片', color: '#3b82f6' },
-                         { name: '绿色卡片', color: '#22c55e' },
-                         { name: '黄色卡片', color: '#eab308' },
-                         { name: '红色卡片', color: '#ef4444' },
-                       ].map((stat, index) => (
-                         <div key={index} className="flex items-center space-x-2">
-                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
-                           <span className="text-sm">{stat.name}</span>
-                         </div>
-                       ))}
-                     </div>
+<div className="grid grid-cols-2 gap-2 mt-4">
+                        {[
+                          { name: '蓝色卡片', color: '#3b82f6', cardColor: 'blue' },
+                          { name: '绿色卡片', color: '#22c55e', cardColor: 'green' },
+                          { name: '黄色卡片', color: '#eab308', cardColor: 'yellow' },
+                          { name: '红色卡片', color: '#ef4444', cardColor: 'red' },
+                        ].map((stat, index) => (
+                          <div
+                            key={index}
+                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded p-1 transition-colors"
+                            onClick={() => setActiveTab('cards-management')}
+                          >
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
+                            <span className="text-sm">{stat.name}</span>
+                          </div>
+                        ))}
+                      </div>
                    </>
                  )}
                </motion.div>
@@ -1174,10 +1201,11 @@ loadCardsFromAPI();
                  ) : (
                    <div className="space-y-4">
                      {applicationScenarios.map((scenario, index) => (
-                       <motion.div 
+                       <motion.div
                          key={index}
                          whileHover={{ x: 5 }}
-                         className="flex items-start"
+                         className="flex items-start cursor-pointer"
+                         onClick={() => scenario.link.startsWith('tab:') ? setActiveTab(scenario.link.slice(4) as any) : navigate(scenario.link)}
                        >
                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
                            {scenario.icon}
@@ -1547,9 +1575,9 @@ loadCardsFromAPI();
                   <h3 className="font-semibold">Excel/在线表格</h3>
                   <p className="text-sm text-gray-500">数据分析与可视化</p>
                 </button>
-                <button onClick={() => setActiveTab('excel-viewer')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                <button onClick={() => { localStorage.setItem('openExcelEditor', 'true'); setActiveTab('excel-analysis'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Table className="w-10 h-10 text-green-400 mb-3" />
-                  <h3 className="font-semibold">在线表格</h3>
+                  <h3 className="font-semibold">在线编辑</h3>
                   <p className="text-sm text-gray-500">在线编辑表格</p>
                 </button>
                 <button onClick={() => setActiveTab('report-automation')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">

@@ -2,6 +2,7 @@
 // 集成到Hermes Agent系统
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
@@ -46,7 +47,10 @@ interface ExtractionResult {
 const API_BASE = getApiBaseUrl() + '/api/skill'
 
 const FourColorCardPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'extract' | 'storage' | 'prompt'>('extract');
+  const [searchParams] = useSearchParams();
+  const initialColor = searchParams.get('color') || undefined;
+  
+  const [activeTab, setActiveTab] = useState<'extract' | 'storage' | 'prompt'>(initialColor ? 'storage' : 'extract');
   const [inputText, setInputText] = useState('');
   const [source, setSource] = useState('');
   const [loading, setLoading] = useState(false);

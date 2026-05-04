@@ -615,17 +615,17 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 60 } : t
     ));
 
-    // 第二步：将卡片导出为Word（正确的后端接口: /api/pdf/export/cards-docx）
-    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
+    // 第二步：将卡片导出为Word
+    const wordFormData = new FormData();
+    wordFormData.append('cards_data', JSON.stringify({
         cards: analysisData.cards || [],
         title: `${task.fileName.replace('.pdf', '')}_分析报告`,
         author: 'Antinet 智能知识管家'
-      })
+    }));
+    
+    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
+      method: 'POST',
+      body: wordFormData
     });
 
     if (!wordResponse.ok) {
@@ -655,9 +655,12 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 30 } : t
     ));
 
+    const excelFormData = new FormData();
+    excelFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
+    
     const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
       method: 'POST',
-      body: formData
+      body: excelFormData
     });
 
     if (!response.ok) {
@@ -1523,15 +1526,44 @@ const PDFAnalysis: React.FC = () => {
                         className="w-full h-64 p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="提取的文本将显示在这里，您可以编辑修改..."
                       />
-                      <div className="mt-2 flex justify-end">
+                      <div className="mt-2 flex justify-end space-x-2">
                         <button
                           onClick={() => {
-                            // Save edited text - could add API call here
+                            const blob = new Blob([editedText], { type: 'text/plain;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = uploadedFile?.name?.replace('.pdf', '_edited.txt') || 'edited.txt';
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            toast.success('已导出TXT文件');
+                          }}
+                          className="px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          导出TXT
+                        </button>
+                        <button
+                          onClick={() => {
+                            const blob = new Blob([editedText], { type: 'text/markdown;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = uploadedFile?.name?.replace('.pdf', '_edited.md') || 'edited.md';
+                            a.click();
+                            URL.revokeObjectURL(url);
+                            toast.success('已导出Markdown');
+                          }}
+                          className="px-4 py-2 bg-purple-500 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors"
+                        >
+                          导出MD
+                        </button>
+                        <button
+                          onClick={() => {
                             toast.success('文本已保存');
                           }}
                           className="px-4 py-2 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 transition-colors"
                         >
-                          保存修改
+                          保存
                         </button>
                       </div>
                     </div>
@@ -1881,10 +1913,10 @@ const PDFViewerInternal: React.FC = () => {
     const pdfjsLib = (window as any).pdfjsLib;
     if (pdfjsLib) return;
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
     script.onload = () => {
       const pdfjs = (window as any).pdfjsLib;
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
     };
     document.head.appendChild(script);
   };
@@ -1903,7 +1935,7 @@ const PDFViewerInternal: React.FC = () => {
       try {
         const pdfjs = (window as any).pdfjsLib;
         if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data }).promise;
+          const pdf = await pdfjs.getDocument({ data });
           setPdfDoc(pdf);
           setTotalPages(pdf.numPages);
           setCurrentPage(1);

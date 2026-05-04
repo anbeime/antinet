@@ -29,9 +29,7 @@ router = APIRouter(prefix="/api/chat/enhanced", tags=["增强版聊天机器人"
 # 数据库管理器
 db_manager = None
 
-# 知识图谱管理器
-from routes import knowledge_graph, conversation_context
-from routes import vector_search, auto_card
+# 知识图谱管理器 - 延迟到函数内导入
 kg_manager = None
 context_manager = None
 
@@ -43,8 +41,12 @@ def set_db_manager(manager):
     """设置数据库管理器"""
     global db_manager, kg_manager
     db_manager = manager
-    knowledge_graph.set_db_manager(manager)
-    logger.info("[Chat] 知识图谱模块已连接")
+    try:
+        from routes import knowledge_graph
+        knowledge_graph.set_db_manager(manager)
+        logger.info("[Chat] 知识图谱模块已连接")
+    except Exception as e:
+        logger.warning(f"[Chat] 知识图谱模块连接失败: {e}")
 
 # 技能注册表
 skill_registry: Dict[str, Dict[str, Any]] = {}
@@ -442,22 +444,83 @@ def detect_scene(query: str) -> SceneType:
 
 # ============ 卡片知识库查询 ============
 
+# ============ 太史阁同步调用辅助函数 ============
+import asyncio
+
+def _get_memory_agent_sync():
+    """同步获取太史阁检索结果"""
+    try:
+        from agents.memory import MemoryAgent
+        import concurrent.futures
+        
+        memory_agent = MemoryAgent()
+        
+        # 在线程池中运行async函数
+        def run_async():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(memory_agent.retrieve_knowledge("fact", "", 10))
+            finally:
+                loop.close()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_async)
+            return future.result(timeout=15)
+    except Exception as e:
+        logger.warning(f"[EnhancedChat] 太史阁同步调用失败: {e}")
+        return None
+
+
 def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     """
     语义搜索知识卡片
-    使用混合搜索：向量 + 关键词
+    优先级：太史阁(memory.db) > 向量搜索 > 关键词搜索
     """
     global db_manager
     if db_manager is None:
         logger.error("数据库管理器未初始化")
         return []
     
+    # 1. 优先使用太史阁记忆系统（memory.db）
     try:
-        # 使用向量搜索模块的混合搜索
+        # 获取所有记忆，然后本地过滤（解决空query问题）
+        memory_result = _get_memory_agent_sync()
+        
+        if memory_result and memory_result.get("results"):
+            results = memory_result["results"]
+            cards = []
+            for r in results[:limit*2]:  # 多取一些，后面过滤
+                # 简单关键词过滤
+                r_title = r.get("title", "")
+                r_desc = r.get("description", "")
+                if query and query.lower() not in r_title.lower() and \
+                   query.lower() not in r_desc.lower():
+                    continue
+                card = CardReference(
+                    card_id=r.get("id", ""),
+                    card_type=r.get("knowledge_type", "blue"),
+                    title=r_title,
+                    content=r_desc[:150] if r_desc else "",
+                    similarity=r.get("similarity", 0.8),
+                    color=get_card_color(r.get("knowledge_type", "blue"))
+                )
+                cards.append(card)
+                if len(cards) >= limit:
+                    break
+            if cards:
+                logger.info(f"[EnhancedChat] 太史阁找到 {len(cards)} 条记忆")
+                return cards
+    except Exception as e:
+        logger.warning(f"[EnhancedChat] 太史阁检索失败: {e}")
+    
+    # 2. 使用关键词快速搜索
+    try:
         from routes import vector_search
         vector_search.set_db_manager(db_manager)
         
-        results = vector_search.search_hybrid(query, limit=min(limit, 20))
+        # 使用快速的关键词回退搜索
+        results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
         
         if not results:
             # 回退到关键词搜索
@@ -504,6 +567,7 @@ def hybrid_search_all(query: str, limit: int = 5) -> HybridSearchResult:
     # 搜索知识图谱
     kg_entities = []
     try:
+        from routes import knowledge_graph
         kg_entities = knowledge_graph.search_entities(query, limit)
     except Exception as e:
         logger.warning(f"知识图谱搜索失败: {e}")
@@ -525,7 +589,7 @@ def hybrid_search_all(query: str, limit: int = 5) -> HybridSearchResult:
 
 
 def generate_hybrid_response(query: str, result: HybridSearchResult) -> str:
-    """生成混合搜索响应"""
+    """生成混合搜索响应（简单列表格式，用于无LLM情况）"""
     parts = []
     
     # 知识卡片结果
@@ -552,6 +616,65 @@ def generate_hybrid_response(query: str, result: HybridSearchResult) -> str:
         return f"关于「{query}」，我在知识库中没有找到相关信息。"
     
     return "\n".join(parts)
+
+
+async def synthesize_response_with_llm(query: str, result: HybridSearchResult, user_id: str = "default_user") -> str:
+    """
+    使用 LLM 综合知识库搜索结果生成回答
+    将检索到的卡片内容注入到提示词中，让LLM生成自然语言回答
+    """
+    if not result.cards and not result.kg_entities:
+        return None
+    
+    # 构建上下文
+    context_parts = []
+    
+    # 添加知识卡片内容
+    if result.cards:
+        context_parts.append("【知识库检索结果】")
+        for i, card in enumerate(result.cards[:5], 1):
+            card_type_cn = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}.get(card.card_type, card.card_type)
+            context_parts.append(f"{i}. [{card_type_cn}] {card.title}")
+            context_parts.append(f"   {card.content[:200]}")
+        context_parts.append("")
+    
+    # 添加知识图谱实体
+    if result.kg_entities:
+        context_parts.append("【相关实体】")
+        for entity in result.kg_entities[:3]:
+            context_parts.append(f"• {entity.name}: {entity.description[:100] if entity.description else '无描述'}")
+        context_parts.append("")
+    
+    # 构建提示词
+    prompt = f"""你是一个智能助手，请根据以下知识库检索结果，用自然语言回答用户的问题。
+
+检索到的知识：
+{chr(10).join(context_parts)}
+
+用户问题：{query}
+
+请基于上述知识，用流畅自然的语言回答问题。如果知识中有相关信息，请综合整理后回答。如果知识不足以回答，请说明并提供建议。
+
+回答："""
+    
+    # 尝试使用 NPU 模型生成（快速）- 直接实例化避免单例问题
+    try:
+        from models.model_loader import NPUModelLoader
+        loader = NPUModelLoader("llama3.2-3b")  # 直接实例化，使用快速的3B模型
+        if not loader.is_loaded:
+            loader.load()  # 加载模型
+        if loader and loader.is_loaded:
+            response = loader.infer(prompt=prompt, max_new_tokens=512, temperature=0.3)
+            if response and len(response) > 10:
+                # 清理特殊token
+                for tok in ['<|im_start|>', '<|im_end|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
+                    response = response.replace(tok, '')
+                return response.strip()
+    except Exception as e:
+        logger.warning(f"[Synthesize] NPU生成失败: {e}")
+    
+    # 回退到简单格式
+    return generate_hybrid_response(query, result)
 
 
 def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str]:
@@ -1005,80 +1128,145 @@ async def enhanced_chat(request: ChatRequest):
                 response_data["skill_result"] = skill_result
                 response_data["response"] = generate_skill_response(skill_result)
             else:
-                # 技能未注册时，使用 Ollama 生成指导性回复
-                ollama_reply = _try_ollama_generate(
-                    f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}", user_id
-                )
-                if ollama_reply:
-                    response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n{ollama_reply}"
-                    response_data["metadata"]["model"] = "ollama"
-                else:
-                    response_data["response"] = f"该技能暂时不可用。请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。"
+                # 技能未注册时，使用Genie生成指导性回复
+                try:
+                    import httpx
+                    resp = httpx.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "llama3.2-3b-8380-qnn2.37",
+                            "messages": [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
+                            "max_tokens": 512,
+                            "temperature": 0.3
+                        },
+                        timeout=15.0
+                    )
+                    if resp.status_code == 200:
+                        result_data = resp.json()
+                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        response_data["metadata"]["model"] = "genie-npu"
+                    else:
+                        raise Exception("Genie不可用")
+                except Exception:
+                    response_data["response"] = f"该技能暂时不可用。"
                 
         elif scene_type == SceneType.GREETING:
-            response_data["response"] = "你好呀！我是小易，愿借古今智慧，助你从容应对今日之事。🍵✨"
+            response_data["response"] = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
             
         elif scene_type == SceneType.HELP:
             response_data["response"] = """**功能使用指南**
 📚 知识库查询 | 🖼️ 图片分析 | 🛠️ 技能调用 | 🧠 深度思考"""
             
         elif scene_type == SceneType.SELF_INTRO:
-            response_data["response"] = '你好呀！我叫小易（知易），一个融合中国传统文化与现代科技的AI助手。名字寓意"知晓易理"，我擅长知识库查询、图片分析、技能调用和深度思考。愿借古今智慧，助你从容应对！🍵✨'
+            # 自我介绍 - 使用Genie快速响应
+            try:
+                import httpx
+                resp = httpx.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "llama3.2-3b-8380-qnn2.37",
+                        "messages": [{"role": "user", "content": "请用50字以内介绍自己，你叫小易，是知易智能知识管家的AI助手"}],
+                        "max_tokens": 100,
+                        "temperature": 0.3
+                    },
+                    timeout=10.0
+                )
+                if resp.status_code == 200:
+                    result_data = resp.json()
+                    response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    response_data["metadata"]["model"] = "genie-npu"
+                else:
+                    raise Exception("Genie不可用")
+            except Exception:
+                response_data["response"] = "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
             
         elif scene_type == SceneType.OLLAMA_CHAT:
-            # 深度思考模式 - 直接使用 Ollama 大模型
-            ollama_reply = _try_ollama_generate(query, user_id)
-            if ollama_reply:
-                response_data["response"] = ollama_reply
-                response_data["metadata"]["model"] = "ollama"
-            else:
-                # 回退到 NPU
-                npu_reply = _try_npu_generate(query, user_id)
-                if npu_reply:
-                    response_data["response"] = npu_reply
-                    response_data["metadata"]["model"] = "npu"
+            # 深度思考模式 - 使用Genie API
+            try:
+                import httpx
+                resp = httpx.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "llama3.2-3b-8380-qnn2.37",
+                        "messages": [{"role": "user", "content": query}],
+                        "max_tokens": 512,
+                        "temperature": 0.5
+                    },
+                    timeout=20.0
+                )
+                if resp.status_code == 200:
+                    result_data = resp.json()
+                    response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    response_data["response"] = "深度思考服务暂时不可用，请确保 Ollama 服务已启动并安装了 gemma4:latest 模型。\n\n安装方法：\n1. 安装 Ollama: https://ollama.ai\n2. 运行: ollama pull gemma4"
-            
+                    raise Exception("Genie不可用")
+            except Exception as e:
+                logger.warning(f"[Chat] Genie深度思考失败: {e}")
+                response_data["response"] = "深度思考服务暂时不可用。"
+             
         else:
-            # 通用对话 - 使用混合搜索（知识卡片 + 知识图谱）
+            # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
             result = hybrid_search_all(query, limit=5)
             
             if result.cards or result.kg_entities:
-                # 有搜索结果，用混合搜索结果生成回复
+                # 有搜索结果，用LLM综合生成自然语言回答
                 response_data["cards"] = result.cards[:3]
                 response_data["kg_entities"] = [
                     {"id": e.id, "name": e.name, "type": e.entity_type, "description": e.description}
                     for e in result.kg_entities[:3]
                 ]
-                response_data["response"] = generate_hybrid_response(query, result)
+                
+                # 使用LLM综合检索结果生成自然语言回答（注入知识到prompt）
+                # 简化：优先使用Genie API (端口8910)，跳过Ollama
+                try:
+                    import httpx
+                    import json
+                    context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
+                    quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
+                    
+                    # 使用Genie API (端口8910)
+                    resp = httpx.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "llama3.2-3b-8380-qnn2.37",
+                            "messages": [{"role": "user", "content": quick_prompt}],
+                            "max_tokens": 512,
+                            "temperature": 0.3
+                        },
+                        timeout=15.0
+                    )
+                    if resp.status_code == 200:
+                        result_data = resp.json()
+                        response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")[:500]
+                        response_data["metadata"]["model"] = "genie-npu"
+                    else:
+                        raise Exception(f"Genie不可用: {resp.status_code}")
+                except Exception as e:
+                    logger.warning(f"Genie生成失败，回退到简单格式: {e}")
+                    response_data["response"] = generate_hybrid_response(query, result)
             else:
-                # 无匹配时，先尝试 NPU 本地模型（最快）
-                npu_reply = _try_npu_generate(query, user_id)
-                if npu_reply:
-                    response_data["response"] = npu_reply
-                    response_data["metadata"]["model"] = "npu"
-                else:
-                    # NPU 不可用时，尝试 Ollama
-                    try:
-                        import httpx
-                        resp = httpx.post(
-                            "http://localhost:11434/api/chat",
-                            json={
-                                "model": "gemma4:latest",
-                                "messages": [{"role": "user", "content": query}],
-                                "stream": False
-                            },
-                            timeout=60.0
-                        )
-                        if resp.status_code == 200:
-                            response_data["response"] = resp.json()["message"]["content"]
-                            response_data["metadata"]["model"] = "ollama"
-                        else:
-                            raise Exception("Ollama failed")
-                    except Exception as e2:
-                        logger.warning(f"[Chat] NPU和Ollama都不可用: {e2}")
-                        response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
+                # 无匹配时，优先使用Genie API快速响应
+                try:
+                    import httpx
+                    resp = httpx.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "llama3.2-3b-8380-qnn2.37",
+                            "messages": [{"role": "user", "content": query}],
+                            "max_tokens": 256,
+                            "temperature": 0.3
+                        },
+                        timeout=15.0
+                    )
+                    if resp.status_code == 200:
+                        result_data = resp.json()
+                        response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        response_data["metadata"]["model"] = "genie-npu"
+                    else:
+                        raise Exception(f"Genie不可用: {resp.status_code}")
+                except Exception as e2:
+                    logger.warning(f"[Chat] Genie不可用: {e2}")
+                    response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
         
         response_data["suggested_questions"] = generate_suggested_questions(
             scene_type, 
@@ -1088,6 +1276,7 @@ async def enhanced_chat(request: ChatRequest):
         
         # 自动提取卡片建议（不自动创建）
         try:
+            from routes import auto_card
             suggestions = auto_card.suggest_cards_api(query, response_data.get("response", ""))
             response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
         except Exception as e:

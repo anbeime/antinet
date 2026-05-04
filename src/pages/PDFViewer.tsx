@@ -40,7 +40,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data }).promise;
+      const pdf = await pdfjsLib.getDocument({ data });
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
@@ -63,10 +63,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
 
     return new Promise<any>((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
       script.onload = () => {
         const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
         resolve(pdfjs);
       };
       script.onerror = reject;
@@ -90,7 +90,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
       
       try {
         const pdfjsLib = await loadPDFJS();
-        const pdf = await pdfjsLib.getDocument({ data }).promise;
+        const pdf = await pdfjsLib.getDocument({ data });
         
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
