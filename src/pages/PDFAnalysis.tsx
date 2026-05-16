@@ -1909,14 +1909,23 @@ const PDFViewerInternal: React.FC = () => {
     }
   }, [pdfDoc, currentPage, scale]);
 
-  const loadPDFJS = async () => {
+const loadPDFJS = async () => {
     const pdfjsLib = (window as any).pdfjsLib;
     if (pdfjsLib) return;
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
+    script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
     script.onload = () => {
       const pdfjs = (window as any).pdfjsLib;
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
+    };
+    script.onerror = () => {
+      const script2 = document.createElement('script');
+      script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script2.onload = () => {
+        const pdfjs = (window as any).pdfjsLib;
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      };
+      document.head.appendChild(script2);
     };
     document.head.appendChild(script);
   };

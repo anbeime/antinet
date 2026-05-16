@@ -79,7 +79,7 @@ class EnhancedPDFProcessor:
             for font_path in font_paths:
                 if os.path.exists(font_path):
                     font_name = Path(font_path).stem
-                    pdfmetrics.registerFont(TTFont(font_name, font_path))
+                    pdfmetrics.registerFont(TTFont(font_name, font_path, 'Identity-H'))
                     self.chinese_font = font_name
                     print(f"[OK] 已注册中文字体: {font_name}")
                     return

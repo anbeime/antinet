@@ -224,19 +224,19 @@ const ReportAutomation: React.FC = () => {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span className={`w-2 h-2 rounded-full ${status?.excel_available ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">Excel</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span className={`w-2 h-2 rounded-full ${status?.pdf_available ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">PDF</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span className={`w-2 h-2 rounded-full ${status?.ppt_available ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">PPT</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                <span className={`w-2 h-2 rounded-full ${status?.features?.chart_generation ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">图表</span>
               </div>
             </div>

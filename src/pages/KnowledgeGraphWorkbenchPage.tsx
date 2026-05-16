@@ -7,12 +7,13 @@ import KnowledgeGraphWorkbench from '@/components/KnowledgeGraphWorkbench';
 const KnowledgeGraphWorkbenchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // Get initial color filter from URL if present
+  // Get initial color filter and project ID from URL
   const initialColor = searchParams.get('color') || undefined;
+  const projectId = searchParams.get('project_id') ? parseInt(searchParams.get('project_id')!) : undefined;
   
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
-      <KnowledgeGraphWorkbench initialColorFilter={initialColor} />
+      <KnowledgeGraphWorkbench initialColorFilter={initialColor} projectId={projectId} />
     </div>
   );
 };

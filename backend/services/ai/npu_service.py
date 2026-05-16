@@ -23,7 +23,7 @@ class NPUService(BaseAI):
         super().__init__(config)
         
         # NPU 配置
-        self.model_name = self.config.get('model_name', 'llama3.2-3b')
+        self.model_name = self.config.get('model_name', 'qwen2.0-7b')
         self.model_path = self.config.get('model_path', '')
         self.qnn_backend = self.config.get('backend', 'HTP')
         self.qnn_device = self.config.get('device', 'NPU')

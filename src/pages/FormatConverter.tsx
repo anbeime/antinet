@@ -6,6 +6,7 @@ import {
   Upload,
   Download,
   Loader,
+  Loader2,
   CheckCircle,
   FileType,
   FileSpreadsheet,
@@ -61,9 +62,79 @@ const FormatConverter: React.FC = () => {
   const [pdfAuthor, setPdfAuthor] = useState('');
   const [libreOfficeFormat, setLibreOfficeFormat] = useState('pdf');
   const [documentSearch, setDocumentSearch] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [markdownEditor, setMarkdownEditor] = useState('# 标题\n\n## 二级标题\n\n报告内容...\n');
+  const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
+  const [renderMermaid, setRenderMermaid] = useState(true);
+  const [isConverting, setIsConverting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 预览 Mermaid 图表
+  const handlePreviewMermaid = async () => {
+    const mermaidCode = markdownEditor.match(/```mermaid\s*\n([\s\S]*?)```/)?.[1] || '';
+    if (!mermaidCode) {
+      toast.error('未找到 Mermaid 代码块');
+      return;
+    }
+    try {
+      const response = await fetch(`${API_BASE}/api/markdown-converter/mermaid/render`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: mermaidCode, output_format: 'svg' })
+      });
+      if (response.ok) {
+        const svg = await response.text();
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+          newWindow.document.write(svg);
+          newWindow.document.close();
+        }
+      }
+    } catch (err) {
+      toast.error('Mermaid 渲染失败');
+    }
+  };
+
+  // 直接转换 Markdown 编辑器内容
+  const handleConvertMarkdown = async () => {
+    if (!markdownEditor) return;
+    setIsConverting(true);
+    try {
+      const formData = new FormData();
+      const blob = new Blob([markdownEditor], { type: 'text/markdown' });
+      formData.append('file', blob, 'input.md');
+      formData.append('output_format', 'docx'); // 默认转 DOCX
+      formData.append('render_mermaid', String(renderMermaid));
+      formData.append('theme', selectedTheme);
+      if (pdfTitle) formData.append('title', pdfTitle);
+      if (pdfAuthor) formData.append('author', pdfAuthor);
+
+      const response = await fetch(`${API_BASE}/api/markdown-converter/convert/file`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const resultBlob = await response.blob();
+        const url = window.URL.createObjectURL(resultBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `converted_${Date.now()}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        toast.success('Markdown 转换成功！');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || '转换失败');
+      }
+    } catch (err) {
+      toast.error('转换失败，请检查后端服务');
+    } finally {
+      setIsConverting(false);
+    }
+  };
 
   // 主题配置
   const themeOptions = [
@@ -323,82 +394,22 @@ const FormatConverter: React.FC = () => {
     }
   };
 
-  // 转换为 Word
+  // 转换为 Word（通过 LibreOffice 真实转换）
   const convertToWord = async (task: ConversionTask, formData: FormData) => {
-    // 第一步：分析 PDF 生成四色卡片
     setTasks(prev => prev.map(t => 
       t.id === task.id ? { ...t, progress: 20 } : t
     ));
 
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/cards`, {
-      method: 'POST',
-      body: formData
-    });
+    formData.append('output_format', 'docx');
 
-    if (!analyzeResponse.ok) {
-      const errorData = await analyzeResponse.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'PDF 分析失败');
-    }
-
-    const analysisResult = await analyzeResponse.json();
-    
-    setTasks(prev => prev.map(t => 
-      t.id === task.id ? { ...t, progress: 60 } : t
-    ));
-
-    // 第二步：导出为 Word
-    const cardsForExport = analysisResult.cards.map((card: any) => ({
-      type: card.type === 'explanation' ? 'interpret' : card.type,
-      title: card.title,
-      content: card.content,
-      tags: card.tags || [],
-      source: task.fileName
-    }));
-
-    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        cards: cardsForExport,
-        title: `${task.fileName.replace('.pdf', '')}_分析报告`,
-        author: 'Antinet 智能知识管家'
-      })
-    });
-
-    if (!wordResponse.ok) {
-      throw new Error('Word 导出失败');
-    }
-
-    const blob = await wordResponse.blob();
-    const url = window.URL.createObjectURL(blob);
-    
-    setTasks(prev => prev.map(t => 
-      t.id === task.id ? { 
-        ...t, 
-        status: 'completed', 
-        progress: 100,
-        resultUrl: url,
-        resultBlob: blob
-      } : t
-    ));
-
-    toast.success(`${task.fileName} 转换为 Word 成功！`);
-  };
-
-  // 转换为 Excel
-  const convertToExcel = async (task: ConversionTask, formData: FormData) => {
-    setTasks(prev => prev.map(t => 
-      t.id === task.id ? { ...t, progress: 30 } : t
-    ));
-
-    const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
+    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
       method: 'POST',
       body: formData
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'Excel 导出失败');
+      throw new Error(errorData.detail || 'Word 转换失败');
     }
 
     setTasks(prev => prev.map(t => 
@@ -407,6 +418,7 @@ const FormatConverter: React.FC = () => {
 
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
+    const outputName = task.fileName.replace(/\.[^.]+$/, '.docx');
     
     setTasks(prev => prev.map(t => 
       t.id === task.id ? { 
@@ -414,46 +426,79 @@ const FormatConverter: React.FC = () => {
         status: 'completed', 
         progress: 100,
         resultUrl: url,
-        resultBlob: blob
+        resultBlob: blob,
+        fileName: outputName
+      } : t
+    ));
+
+    toast.success(`${task.fileName} 转换为 Word 成功！`);
+  };
+
+  // 转换为 Excel（通过 LibreOffice 真实转换）
+  const convertToExcel = async (task: ConversionTask, formData: FormData) => {
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    formData.append('output_format', 'xlsx');
+
+    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'Excel 转换失败');
+    }
+
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { ...t, progress: 80 } : t
+    ));
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const outputName = task.fileName.replace(/\.[^.]+$/, '.xlsx');
+    
+    setTasks(prev => prev.map(t => 
+      t.id === task.id ? { 
+        ...t, 
+        status: 'completed', 
+        progress: 100,
+        resultUrl: url,
+        resultBlob: blob,
+        fileName: outputName
       } : t
     ));
 
     toast.success(`${task.fileName} 转换为 Excel 成功！`);
   };
 
-  // 转换为 PDF - 使用浏览器打印功能生成 PDF
+  // 转换为 PDF（通过 LibreOffice 真实转换）
   const convertToPDF = async (task: ConversionTask, formData: FormData) => {
     setTasks(prev => prev.map(t => 
       t.id === task.id ? { ...t, progress: 20 } : t
     ));
 
-    // 分析 PDF 内容
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/cards`, {
+    formData.append('output_format', 'pdf');
+
+    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
       method: 'POST',
       body: formData
     });
 
-    if (!analyzeResponse.ok) {
-      const errorData = await analyzeResponse.json().catch(() => ({}));
-      throw new Error(errorData.detail || 'PDF 分析失败');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'PDF 转换失败');
     }
 
-    const analysisResult = await analyzeResponse.json();
-    
-    setTasks(prev => prev.map(t => 
-      t.id === task.id ? { ...t, progress: 50 } : t
-    ));
-
-    // 创建 PDF 内容
-    const pdfContent = generatePDFContent(analysisResult, task.fileName);
-    
     setTasks(prev => prev.map(t => 
       t.id === task.id ? { ...t, progress: 80 } : t
     ));
 
-    // 转换为 Blob
-    const blob = new Blob([pdfContent], { type: 'text/html' });
+    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
+    const outputName = task.fileName.replace(/\.[^.]+$/, '.pdf');
     
     setTasks(prev => prev.map(t => 
       t.id === task.id ? { 
@@ -461,11 +506,12 @@ const FormatConverter: React.FC = () => {
         status: 'completed', 
         progress: 100,
         resultUrl: url,
-        resultBlob: blob
+        resultBlob: blob,
+        fileName: outputName
       } : t
     ));
 
-    toast.success(`${task.fileName} 准备就绪，点击预览查看`);
+    toast.success(`${task.fileName} 转换为 PDF 成功！`);
   };
 
   // Markdown 转 PDF
@@ -621,6 +667,8 @@ const FormatConverter: React.FC = () => {
         action: '行动'
       };
 
+      const safeTags = Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' && card.tags ? JSON.parse(card.tags) : []);
+
       return `
         <div style="
           margin-bottom: 20px;
@@ -641,7 +689,7 @@ const FormatConverter: React.FC = () => {
             <span style="color: #9ca3af; font-size: 12px;">#${index + 1}</span>
           </div>
           <p style="margin: 0; line-height: 1.6; color: #374151;">${card.content}</p>
-          ${card.tags ? `<p style="margin-top: 10px; font-size: 12px; color: #6b7280;">标签: ${card.tags.join(', ')}</p>` : ''}
+          ${safeTags.length > 0 ? `<p style="margin-top: 10px; font-size: 12px; color: #6b7280;">标签: ${safeTags.join(', ')}</p>` : ''}
         </div>
       `;
     }).join('');
@@ -797,19 +845,30 @@ const FormatConverter: React.FC = () => {
   };
 
   // 加载 PDF.js
-  const loadPdfJs = async (): Promise<any> => {
+const loadPdfJs = async (): Promise<any> => {
     const pdfjsLib = (window as any).pdfjsLib;
     if (pdfjsLib) return pdfjsLib;
 
     return new Promise<any>((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
       script.onload = () => {
         const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
         resolve(pdfjs);
       };
-      script.onerror = reject;
+      script.onerror = () => {
+        // Fallback to bootcss
+        const script2 = document.createElement('script');
+        script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script2.onload = () => {
+          const pdfjs = (window as any).pdfjsLib;
+          pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          resolve(pdfjs);
+        };
+        script2.onerror = reject;
+        document.head.appendChild(script2);
+      };
       document.head.appendChild(script);
     });
   };
@@ -1156,45 +1215,180 @@ const FormatConverter: React.FC = () => {
           </motion.div>
         )}
 
-        {/* 文件上传区域 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
-        >
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
-              isDragging
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
-            }`}
+{/* Markdown 编辑与转换面板 */}
+        {selectedFormat === 'markdown' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md,.pptx,.ppt"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <Upload className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              点击或拖拽文件到此处
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              支持批量上传，将自动转换为 {formatConfig[selectedFormat].name}
-            </p>
-            <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-              <FileType className="w-4 h-4" />
-              <span>支持 PDF/Word/Excel/PPT/TXT/MD</span>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                📝 Markdown 编辑器
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.readText().then(text => {
+                      if (text) setMarkdownEditor(text);
+                    }).catch(() => {});
+                  }}
+                  className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                >
+                  粘贴
+                </button>
+                <button
+                  onClick={() => setShowMarkdownPreview(!showMarkdownPreview)}
+                  className={`px-3 py-1.5 text-sm rounded-lg ${
+                    showMarkdownPreview ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 dark:bg-gray-700'
+                  }`}
+                >
+                  {showMarkdownPreview ? '编辑' : '预览'}
+                </button>
+              </div>
             </div>
-          </div>
-        </motion.div>
+
+            {/* Markdown 编辑器 */}
+            {!showMarkdownPreview ? (
+              <textarea
+                value={markdownEditor}
+                onChange={(e) => setMarkdownEditor(e.target.value)}
+                className="w-full h-80 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="# 标题
+
+## 二级标题
+
+```mermaid
+graph TD
+    A[开始] --> B{判断}
+    B -->|是| C[处理中]
+    B -->|否| D[结束]
+```
+
+| 表格 | 列1 | 列2 |
+|------|-----|-----|
+| 数据1 | 100 | 200 |
+"
+                spellCheck={false}
+              />
+            ) : (
+              <div className="w-full h-80 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-auto prose dark:prose-invert max-w-none">
+                <pre className="whitespace-pre-wrap text-sm">{markdownEditor || '预览内容...'}</pre>
+              </div>
+            )}
+
+            {/* Mermaid 选项 */}
+            <div className="mt-4 flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={renderMermaid}
+                  onChange={(e) => setRenderMermaid(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">渲染 Mermaid 图表</span>
+              </label>
+              <button
+                onClick={handlePreviewMermaid}
+                disabled={!markdownEditor}
+                className="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg hover:bg-purple-200 disabled:opacity-50"
+              >
+                预览 Mermaid
+              </button>
+            </div>
+
+            {/* 快速模板 */}
+            <div className="mt-4">
+              <p className="text-xs text-gray-500 mb-2">快速模板：</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMarkdownEditor(markdownEditor + `\n\n\`\`\`mermaid\ngraph TD\nA[开始] --> B[结束]\n\`\`\`\n`)}
+                  className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200"
+                >
+                  + 流程图
+                </button>
+                <button
+                  onClick={() => setMarkdownEditor(markdownEditor + `\n\n| 列1 | 列2 | 列3 |\n|------|------|------|\n| 数据 | 数据 | 数据 |\n`)}
+                  className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200"
+                >
+                  + 表格
+                </button>
+                <button
+                  onClick={() => setMarkdownEditor(markdownEditor + `\n\n\`\`\`python\nprint("Hello")\n\`\`\`\n`)}
+                  className="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200"
+                >
+                  + 代码块
+                </button>
+              </div>
+            </div>
+
+            {/* 转换按钮 */}
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={handleConvertMarkdown}
+                disabled={!markdownEditor || isConverting}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-xl transition-colors"
+              >
+                {isConverting ? (
+                  <>
+                    <Loader2 size={20} className="animate-spin" />
+                    转换中...
+                  </>
+                ) : (
+                  <>
+                    <Download size={20} />
+                    转换为 PDF/DOCX/HTML
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-gray-500 text-center mt-2">
+                使用 Pandoc + Mermaid 渲染，支持 PDF/Word/HTML 等格式
+              </p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 文件上传区域（Markdown 格式时隐藏） */}
+        {selectedFormat !== 'markdown' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
+          >
+            <div
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${
+                isDragging
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.md,.pptx,.ppt"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Upload className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                点击或拖拽文件到此处
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                支持批量上传，将自动转换为 {formatConfig[selectedFormat].name}
+              </p>
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                <FileType className="w-4 h-4" />
+                <span>支持 PDF/Word/Excel/PPT/TXT/MD</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* 任务列表 */}
         {tasks.length > 0 && (

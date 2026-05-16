@@ -33,7 +33,8 @@ import {
   ChevronUp,
   Calendar,
   Brain,
-  GitBranch
+GitBranch,
+  Eye
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
 import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
@@ -2612,13 +2613,25 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
   const chartInstanceRef = useRef<echarts.ECharts | null>(null);
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showPreview, setShowPreview] = useState(true);
 
   useEffect(() => {
     const fetchCards = async () => {
       try {
         const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=100');
         const data = await res.json();
-        setCards(Array.isArray(data) ? data : (data.cards || []));
+        const fetched = Array.isArray(data) ? data : (data.cards || []);
+        setCards(fetched);
+        if (fetched.length > 0 && !selectedCard) {
+          setSelectedCard(fetched[0]);
+          setEditTitle(fetched[0].title || '');
+          setEditContent(fetched[0].content || '');
+        }
       } catch (e) {
         console.error('Failed to load cards:', e);
       } finally {
@@ -2628,9 +2641,66 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
     fetchCards();
   }, []);
 
+  const handleCardClick = (card: any) => {
+    setSelectedCard(card);
+    setEditTitle(card.title || '');
+    setEditContent(card.content || '');
+    setIsEditing(false);
+    setShowPreview(true);
+  };
+
+  const handleEditToggle = () => {
+    if (!isEditing) {
+      setEditTitle(selectedCard?.title || '');
+      setEditContent(selectedCard?.content || '');
+    }
+    setIsEditing(!isEditing);
+    setShowPreview(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedCard) return;
+    try {
+      const res = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${selectedCard.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle, content: editContent })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setCards(prev => prev.map(c => c.id === selectedCard.id ? { ...c, ...updated } : c));
+        setSelectedCard({ ...selectedCard, title: editTitle, content: editContent });
+        setIsEditing(false);
+        toast.success('卡片已更新');
+      } else {
+        toast.error('更新失败');
+      }
+    } catch (e) {
+      toast.error('更新失败: ' + String(e));
+    }
+  };
+
+  const filteredCards = cards.filter(card =>
+    (card.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (card.content || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const colorMap: Record<string, string> = {
+    'blue': '#3b82f6',
+    'green': '#22c55e',
+    'yellow': '#eab308',
+    'red': '#ef4444'
+  };
+  const colorLabel: Record<string, string> = {
+    'blue': '蓝色',
+    'green': '绿色',
+    'yellow': '黄色',
+    'red': '红色'
+  };
+
   useEffect(() => {
     if (!chartRef.current) return;
-    
+
     if (chartInstanceRef.current) {
       chartInstanceRef.current.dispose();
     }
@@ -2638,14 +2708,7 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
     const chart = echarts.init(chartRef.current);
     chartInstanceRef.current = chart;
 
-    const colorMap: Record<string, string> = {
-      'blue': '#3b82f6',
-      'green': '#22c55e', 
-      'yellow': '#eab308',
-      'red': '#ef4444'
-    };
-
-    const nodes = cards.map((card: any, idx: number) => ({
+    const nodes = cards.map((card: any) => ({
       id: String(card.id),
       name: card.title || `卡片${card.id}`,
       category: card.card_type || 'blue',
@@ -2683,7 +2746,7 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
     ];
 
     const option = {
-      tooltip: { trigger: 'item', formatter: '{b}' },
+      tooltip: { trigger: 'item', formatter: (params: any) => `${params.name}` },
       legend: { data: categories.map(c => c.name), top: 10 },
       series: [{
         type: 'graph',
@@ -2703,6 +2766,13 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
 
     chart.setOption(option);
 
+    // Click on graph node to select card
+    chart.off('click');
+    chart.on('click', (params: any) => {
+      const card = cards.find(c => String(c.id) === params.name || String(c.id) === params.data?.id);
+      if (card) handleCardClick(card);
+    });
+
     return () => {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.dispose();
@@ -2711,34 +2781,192 @@ const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) =
     };
   }, [cards, userInfo]);
 
-  return (
-    <div className="space-y-6">
+  const typeColorBg: Record<string, string> = {
+    'blue': 'bg-blue-100 dark:bg-blue-900/30',
+    'green': 'bg-green-100 dark:bg-green-900/30',
+    'yellow': 'bg-yellow-100 dark:bg-yellow-900/30',
+    'red': 'bg-red-100 dark:bg-red-900/30'
+  };
+
+return (
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold mb-2">团队知识图谱</h2>
-          <p className="text-gray-600 dark:text-gray-300">基于4色卡片构建的知识网络</p>
+          <h2 className="text-xl font-bold">团队知识图谱</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400">点击左侧卡片或图谱节点查看详情并编辑</p>
         </div>
-        <button 
-          onClick={() => window.location.reload()}
-          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-        >
-          <RefreshCw size={18} className="mr-2" />
-          刷新图谱
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedCard(null)}
+            className="flex items-center px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
+          >
+            <X size={14} className="mr-1" /> 清除选择
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="flex items-center px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+          >
+            <RefreshCw size={14} className="mr-1" /> 刷新图谱
+          </button>
+        </div>
       </div>
-      
+
       {loading ? (
-        <div className="text-center py-8">加载中...</div>
+        <div className="text-center py-12 text-gray-400">加载中...</div>
       ) : (
-        <>
-          <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-            <div ref={chartRef} className="w-full h-[500px]" />
+        <div className="flex gap-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
+          {/* Left: Card list */}
+          <div className="w-64 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="relative">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="搜索卡片..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-1 mt-2 flex-wrap">
+                {['blue','green','yellow','red'].map(t => (
+                  <span key={t} className={`text-xs px-1.5 py-0.5 rounded ${typeColorBg[t]} font-medium`} style={{ color: colorMap[t] }}>
+                    {colorLabel[t]}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {filteredCards.length === 0 && (
+                <div className="text-center py-8 text-gray-400 text-sm">无匹配卡片</div>
+              )}
+              {filteredCards.map(card => (
+                <div
+                  key={card.id}
+                  onClick={() => handleCardClick(card)}
+                  className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
+                    selectedCard?.id === card.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <div
+                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                      style={{ backgroundColor: colorMap[card.card_type] || colorMap['blue'] }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{card.title || `卡片${card.id}`}</div>
+                      <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">
+                        {card.content?.slice(0, 60) || '暂无内容'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 text-center">
+              共 {filteredCards.length} 张卡片
+            </div>
           </div>
-          <div className="flex items-center justify-between text-sm text-gray-500">
-            <span>当前用户: {userInfo.avatar} {userInfo.name || '匿名'}</span>
-            <span>共 {cards.length} 张知识卡片</span>
+
+          {/* Center: Graph */}
+          <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 overflow-hidden">
+            <div ref={chartRef} className="w-full h-full" />
           </div>
-        </>
+
+          {/* Right: Detail panel */}
+          <div className="w-80 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {!selectedCard ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                <Eye size={32} className="mb-2 opacity-30" />
+                <p className="text-sm">选择左侧卡片查看详情</p>
+              </div>
+            ) : (
+              <>
+                <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: colorMap[selectedCard.card_type] || colorMap['blue'] }}
+                    />
+                    <span className="text-sm font-medium truncate max-w-[160px]">
+                      {selectedCard.title || `卡片${selectedCard.id}`}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setShowPreview(!showPreview)}
+                      className={`p-1.5 rounded-lg text-xs ${showPreview ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
+                      title="预览"
+                    >
+                      <Eye size={14} />
+                    </button>
+                    <button
+                      onClick={handleEditToggle}
+                      className={`p-1.5 rounded-lg text-xs ${isEditing ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
+                      title="编辑"
+                    >
+                      <Edit3 size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-3">
+                  {isEditing ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">标题</label>
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={e => setEditTitle(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 mb-1 block">内容</label>
+                        <textarea
+                          value={editContent}
+                          onChange={e => setEditContent(e.target.value)}
+                          rows={10}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                        />
+                      </div>
+                      <button
+                        onClick={handleSaveEdit}
+                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <Save size={14} className="mr-1" /> 保存修改
+                      </button>
+                    </div>
+                  ) : showPreview ? (
+                    <div>
+                      <div className="mb-3">
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${typeColorBg[selectedCard.card_type] || ''}`} style={{ color: colorMap[selectedCard.card_type] }}>
+                          {colorLabel[selectedCard.card_type] || '蓝色'} 卡片
+                        </span>
+                      </div>
+                      <h3 className="text-base font-semibold mb-2">{selectedCard.title || `卡片${selectedCard.id}`}</h3>
+                      <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                        {selectedCard.content || '暂无内容'}
+                      </div>
+                      {selectedCard.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {(selectedCard.tags as string[]).map((tag: string) => (
+                            <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 text-center py-8">预览已隐藏</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

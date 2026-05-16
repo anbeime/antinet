@@ -62,6 +62,7 @@ class GTDTaskUpdate(BaseModel):
     recurrence: Optional[str] = None
     recurrence_end_date: Optional[str] = None
     is_completed: Optional[bool] = None
+    project_id: Optional[int] = None
 
 
 def get_db():
@@ -81,7 +82,7 @@ async def get_all_tasks():
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date, 
-                   created_at, updated_at, remind_at, remind_before_minutes,
+                   created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
                    is_completed, completed_at
             FROM gtd_tasks
@@ -107,7 +108,8 @@ async def get_all_tasks():
                 "recurrence": row["recurrence"] or "none",
                 "recurrence_end_date": row["recurrence_end_date"],
                 "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -126,7 +128,7 @@ async def get_tasks_by_category(category: str):
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at, remind_at, remind_before_minutes,
+                   created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
                    is_completed, completed_at
             FROM gtd_tasks
@@ -153,7 +155,8 @@ async def get_tasks_by_category(category: str):
                 "recurrence": row["recurrence"] or "none",
                 "recurrence_end_date": row["recurrence_end_date"],
                 "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -177,7 +180,7 @@ async def get_task(task_id: int):
         
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at, remind_at, remind_before_minutes,
+                   created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
                    is_completed, completed_at
             FROM gtd_tasks
@@ -205,7 +208,8 @@ async def get_task(task_id: int):
             "recurrence": row["recurrence"] or "none",
             "recurrence_end_date": row["recurrence_end_date"],
             "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
-            "completed_at": row["completed_at"]
+            "completed_at": row["completed_at"],
+                    "project_id": row["project_id"],
         }
     
     except HTTPException:
@@ -246,7 +250,7 @@ async def create_task(task: GTDTaskCreate):
         # 获取创建的任务
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at, remind_at, remind_before_minutes,
+                   created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
                    is_completed, completed_at
             FROM gtd_tasks
@@ -271,7 +275,8 @@ async def create_task(task: GTDTaskCreate):
             "recurrence": row["recurrence"] or "none",
             "recurrence_end_date": row["recurrence_end_date"],
             "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
-            "completed_at": row["completed_at"]
+            "completed_at": row["completed_at"],
+                    "project_id": row["project_id"],
         }
     
     except Exception as e:
@@ -335,17 +340,21 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
             update_fields.append("recurrence_end_date = ?")
             update_values.append(task.recurrence_end_date)
         
-        if task.is_completed is not None:
-            update_fields.append("is_completed = ?")
-            update_values.append(1 if task.is_completed else 0)
-            if task.is_completed:
-                update_fields.append("completed_at = datetime('now')")
-            else:
-                update_fields.append("completed_at = NULL")
+        
+            if task.is_completed is not None:
+                update_fields.append("is_completed = ?")
+                update_values.append(1 if task.is_completed else 0)
+                if task.is_completed:
+                    update_fields.append("completed_at = datetime('now')")
+                else:
+                    update_fields.append("completed_at = NULL")
+        
+        if task.project_id is not None:
+            update_fields.append("project_id = ?")
+            update_values.append(task.project_id)
         
         update_fields.append("updated_at = datetime('now')")
         update_values.append(task_id)
-        
         if update_fields:
             sql = f"UPDATE gtd_tasks SET {', '.join(update_fields)} WHERE id = ?"
             cursor.execute(sql, update_values)
@@ -354,7 +363,7 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
         # 获取更新后的任务
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
-                   created_at, updated_at, remind_at, remind_before_minutes,
+                   created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
                    is_completed, completed_at
             FROM gtd_tasks
@@ -379,7 +388,8 @@ async def update_task(task_id: int, task: GTDTaskUpdate):
             "recurrence": row["recurrence"] or "none",
             "recurrence_end_date": row["recurrence_end_date"],
             "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
-            "completed_at": row["completed_at"]
+            "completed_at": row["completed_at"],
+                    "project_id": row["project_id"],
         }
     
     except HTTPException:
@@ -491,7 +501,7 @@ async def get_tasks_by_date_range(start_date: str, end_date: str):
             SELECT id, title, description, category, priority, due_date,
                    remind_at, reminder_enabled, is_completed,
                    created_at, updated_at, remind_before_minutes,
-                   recurrence, completed_at
+                   recurrence, project_id, completed_at
             FROM gtd_tasks
             WHERE (due_date BETWEEN ? AND ?)
                OR (remind_at BETWEEN ? AND ?)
@@ -517,7 +527,8 @@ async def get_tasks_by_date_range(start_date: str, end_date: str):
                 "updated_at": row["updated_at"],
                 "remind_before_minutes": row["remind_before_minutes"],
                 "recurrence": row["recurrence"] or "none",
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -543,7 +554,7 @@ async def get_today_tasks():
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
                    remind_at, reminder_enabled, is_completed,
-                   created_at, updated_at, remind_before_minutes,
+                   created_at, updated_at, remind_before_minutes, project_id,
                    recurrence, completed_at
             FROM gtd_tasks
             WHERE is_completed = 0
@@ -571,7 +582,8 @@ async def get_today_tasks():
                 "updated_at": row["updated_at"],
                 "remind_before_minutes": row["remind_before_minutes"],
                 "recurrence": row["recurrence"] or "none",
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -593,7 +605,7 @@ async def get_upcoming_tasks(days: int = 7):
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
                    remind_at, reminder_enabled, is_completed,
-                   created_at, updated_at, remind_before_minutes,
+                   created_at, updated_at, remind_before_minutes, project_id,
                    recurrence, completed_at
             FROM gtd_tasks
             WHERE is_completed = 0
@@ -618,7 +630,8 @@ async def get_upcoming_tasks(days: int = 7):
                 "updated_at": row["updated_at"],
                 "remind_before_minutes": row["remind_before_minutes"],
                 "recurrence": row["recurrence"] or "none",
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -639,7 +652,7 @@ async def get_overdue_tasks():
         cursor.execute("""
             SELECT id, title, description, category, priority, due_date,
                    remind_at, reminder_enabled, is_completed,
-                   created_at, updated_at, remind_before_minutes,
+                   created_at, updated_at, remind_before_minutes, project_id,
                    recurrence, completed_at
             FROM gtd_tasks
             WHERE is_completed = 0
@@ -664,7 +677,8 @@ async def get_overdue_tasks():
                 "updated_at": row["updated_at"],
                 "remind_before_minutes": row["remind_before_minutes"],
                 "recurrence": row["recurrence"] or "none",
-                "completed_at": row["completed_at"]
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"]
             })
         
         conn.close()
@@ -730,7 +744,7 @@ async def get_pending_reminders():
         
         # 获取所有未完成且已启用的任务，提醒时间在未来或刚刚过期（5分钟内）
         cursor.execute("""
-            SELECT id, title, description, remind_at, due_date, remind_before_minutes
+            SELECT id, title, description, remind_at, due_date, remind_before_minutes, project_id
             FROM gtd_tasks
             WHERE reminder_enabled = 1
               AND is_completed = 0

@@ -303,6 +303,10 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN address TEXT")
             except:
                 pass
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN images TEXT DEFAULT '[]'")
+            except:
+                pass
             
             # 数据修复：将 topic_id 有值但 project_id 为空的卡片统一
             try:
@@ -555,6 +559,37 @@ class DatabaseManager:
                 )
             """)
 
+            # 可视化知识图谱状态表（节点位置、连线、自定义布局）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS knowledge_graph_state (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    nodes TEXT NOT NULL DEFAULT '[]',
+                    links TEXT NOT NULL DEFAULT '[]',
+                    categories TEXT NOT NULL DEFAULT '[]',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.commit()
+
+            # 知识图谱工作流状态表（跟踪每个Agent的输出）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS kg_workflow_state (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    workflow_id TEXT NOT NULL,
+                    agent_name TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    output TEXT,
+                    status TEXT DEFAULT 'pending',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(workflow_id, agent_name, stage)
+                )
+            """)
+
+            conn.commit()
+            logger.info("[GraphState] 知识图谱状态表初始化完成")
             conn.commit()
 
     def insert_default_data(self):
@@ -2020,3 +2055,133 @@ class DatabaseManager:
                 "nodes": nodes,
                 "links": links
             }
+
+    def save_graph_state(self, name: str, nodes: List[Dict], links: List[Dict], categories: List[Dict] = None) -> bool:
+        """保存可视化知识图谱状态（节点/连线/分类）"""
+        import json
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                nodes_json = json.dumps(nodes, ensure_ascii=False)
+                links_json = json.dumps(links, ensure_ascii=False)
+                cats_json = json.dumps(categories or [], ensure_ascii=False)
+                cursor.execute("""
+                    INSERT OR REPLACE INTO knowledge_graph_state (id, name, nodes, links, categories, updated_at)
+                    VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (name, nodes_json, links_json, cats_json))
+                conn.commit()
+                logger.info(f"[GraphState] 已保存图谱状态: {name}, {len(nodes)} 节点")
+                return True
+        except Exception as e:
+            logger.error(f"[GraphState] 保存失败: {e}")
+            return False
+
+    def load_graph_state(self, name: str = "default") -> Optional[Dict[str, Any]]:
+        """加载可视化知识图谱状态"""
+        import json
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT name, nodes, links, categories, updated_at FROM knowledge_graph_state WHERE id = 1",
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {
+                    "name": row["name"],
+                    "nodes": json.loads(row["nodes"]),
+                    "links": json.loads(row["links"]),
+                    "categories": json.loads(row["categories"]),
+                    "updated_at": row["updated_at"]
+                }
+        except Exception as e:
+            logger.error(f"[GraphState] 加载失败: {e}")
+            return None
+
+    # ========== 知识图谱工作流协调 ==========
+
+    def save_workflow_stage(
+        self,
+        workflow_id: str,
+        agent_name: str,
+        stage: str,
+        output: str,
+        status: str = "done"
+    ) -> bool:
+        """保存工作流中某个Agent的执行结果"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO kg_workflow_state
+                        (workflow_id, agent_name, stage, output, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (workflow_id, agent_name, stage, output, status))
+                conn.commit()
+                logger.info(f"[KG-Workflow] {agent_name}.{stage} -> {status}")
+                return True
+        except Exception as e:
+            logger.error(f"[KG-Workflow] 保存失败: {e}")
+            return False
+
+    def get_workflow_state(self, workflow_id: str) -> List[Dict[str, Any]]:
+        """获取某个工作流的所有阶段状态"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT agent_name, stage, output, status, created_at, updated_at
+                    FROM kg_workflow_state
+                    WHERE workflow_id = ?
+                    ORDER BY created_at ASC
+                """, (workflow_id,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"[KG-Workflow] 读取失败: {e}")
+            return []
+
+    def get_workflow_status(self, workflow_id: str) -> str:
+        """获取工作流整体状态：running / done / failed"""
+        rows = self.get_workflow_state(workflow_id)
+        if not rows:
+            return "not_found"
+        statuses = {r["status"] for r in rows}
+        if "failed" in statuses:
+            return "failed"
+        if all(s == "done" for s in statuses):
+            return "done"
+        return "running"
+
+    def get_workflow_results(self, workflow_id: str, stage: str = None) -> Dict[str, str]:
+        """获取工作流各阶段的输出，格式 {agent_name.stage: output}"""
+        rows = self.get_workflow_state(workflow_id)
+        if stage:
+            rows = [r for r in rows if r["stage"] == stage]
+        return {f"{r['agent_name']}.{r['stage']}": r["output"] or "" for r in rows}
+
+    def clear_workflow(self, workflow_id: str) -> bool:
+        """清除工作流记录"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM kg_workflow_state WHERE workflow_id = ?", (workflow_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"[KG-Workflow] 清除失败: {e}")
+            return False
+
+    def save_knowledge_graph(
+        self,
+        workflow_id: str,
+        nodes: List[Dict],
+        links: List[Dict],
+        categories: List[Dict] = None
+    ) -> bool:
+        """将工作流最终结果（节点+连线）保存到图谱状态表"""
+        return self.save_graph_state(f"kg_{workflow_id}", nodes, links, categories)
+
+    def load_knowledge_graph(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """加载指定工作流生成的图谱"""
+        return self.load_graph_state(f"kg_{workflow_id}")

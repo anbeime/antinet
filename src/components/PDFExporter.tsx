@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, PDFViewer as ReactPDFViewer, Font } from '@react-pdf/renderer';
 
-// 注册中文字体支持
+// 注册中文字体（使用 ?url 让 Vite 返回正确的 URL）
+// @react-pdf/renderer 在 Web Worker 中运行，必须用可 fetch 的 URL
+const FONT_URL = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
+
 Font.register({
   family: 'Noto Sans SC',
-  src: 'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.woff2',
+  fonts: [
+    { src: FONT_URL, fontWeight: 'normal' },
+    { src: FONT_URL, fontWeight: 'bold' },
+  ],
 });
 
 // 定义卡片类型

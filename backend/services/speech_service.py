@@ -98,8 +98,9 @@ async def tts_speak(text: str, voice: str = "zh-CN-XiaoxiaoNeural", output_path:
     return output_path
 
 
-async def tts_speak_bytes(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> bytes:
+async def tts_speak_bytes(text: str, voice: str = "zh-CN-XiaoxiaoNeural", timeout: int = 10) -> bytes:
     """文字转语音 - 返回字节数据（用于API响应）"""
+    import asyncio
     from edge_tts import Communicate
     
     if not text or not text.strip():
@@ -107,13 +108,19 @@ async def tts_speak_bytes(text: str, voice: str = "zh-CN-XiaoxiaoNeural") -> byt
     
     text = text[:4000]
     
-    communicate = Communicate(text, voice)
-    audio_buffer = b""
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_buffer += chunk["data"]
-    
-    return audio_buffer
+    try:
+        communicate = Communicate(text, voice)
+        audio_buffer = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_buffer += chunk["data"]
+        return audio_buffer
+    except asyncio.TimeoutError:
+        raise RuntimeError("TTS 服务超时（网络问题或无法访问 Microsoft TTS 服务器）")
+    except Exception as e:
+        if "connection" in str(e).lower() or "timeout" in str(e).lower() or "network" in str(e).lower():
+            raise RuntimeError(f"TTS 服务连接失败：{e}")
+        raise
 
 
 def stt_transcribe_audio(audio_path: str, language: str = "zh", model_size: str = "base") -> dict:

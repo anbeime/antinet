@@ -172,6 +172,14 @@ class SkillRegistry:
             logger.info("[SkillRegistry] 四色卡片知识库技能已注册")
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册四色卡片知识库技能: {e}")
+
+        # Book Skill Generator - 书籍方法论提取与四色系统集成
+        try:
+            from skills.book_skill import BookSkillGenerator
+            self.register(BookSkillGenerator())
+            logger.info("[SkillRegistry] Book Skill Generator 技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册 Book Skill Generator 技能: {e}")
         
         # 驿传司技能
         self.register(TaskDispatchSkill())

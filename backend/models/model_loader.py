@@ -364,15 +364,6 @@ class ModelConfig:
             "description": "推荐首选，基础模式，3个分片，轻量快速",
             "max_tokens": 2048,
             "recommended": True
-        },
-        "bge-base-zh": {
-            "name": "BGE-Base-ZH",
-            "path": str(PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),
-            "params": "110M",
-            "quantization": "QNN",
-            "description": "中文文本嵌入模型，RAG知识库，完整单文件",
-            "max_tokens": 512,
-            "recommended": True
         }
     }
 

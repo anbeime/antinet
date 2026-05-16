@@ -1,9 +1,10 @@
 # ---------------------------------------------------------------------
-# OCR API 路由 - 使用 NPU qwen2.5vl3b 模型
+# OCR API 路由 - 使用 Genie HTTP 服务 (qwen2.5vl3b)
 # ---------------------------------------------------------------------
 """
-PDF/图片 OCR识别 - 使用 qwen2.5vl3b NPU模型
+PDF/图片 OCR识别 - 通过 8910 Genie 服务调用 qwen2.5vl3b 模型
 """
+import httpx
 
 import logging
 import base64
@@ -17,45 +18,30 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Genie VL 服务地址
+_GENIE_SERVICE_URL = "http://127.0.0.1:8910"
+
 router = APIRouter(prefix="/api/ocr", tags=["OCR识别"])
-
-# NPU模型加载器
-_npu_core = None
-_model_loaded = False
-
-def _get_npu_core():
-    """获取或初始化 NPU 推理核心"""
-    global _npu_core, _model_loaded
-    if _npu_core is not None and _model_loaded:
-        return _npu_core
-    
-    try:
-        from npu_core import NPUInferenceCore
-        _npu_core = NPUInferenceCore(
-            model_config_path=os.path.join(
-                NPUInferenceCore.MODELS_BASE_DIR,
-                "qwen2.5vl3b-8380-2.42",
-                "config.json"
-            )
-        )
-        _npu_core.load_model()
-        _model_loaded = True
-        logger.info("[OCR] qwen2.5vl3b 模型加载成功")
-        return _npu_core
-    except Exception as e:
-        logger.error(f"[OCR] NPU模型加载失败: {e}")
-        return None
 
 
 @router.get("/status")
 async def get_ocr_status():
-    """获取 OCR 功能状态"""
-    npu = _get_npu_core()
+    """获取 OCR 功能状态 - 通过 ping Genie 服务检测"""
+    available = False
+    try:
+        async with httpx.AsyncClient(timeout=5.0, proxy=None) as client:
+            resp = await client.post(
+                f"{_GENIE_SERVICE_URL}/v1/chat/completions",
+                json={"model": "qwen2.5vl3b-8380-2.42", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1}
+            )
+            available = resp.status_code == 200
+    except Exception:
+        pass
     return {
-        "available": npu is not None,
+        "available": available,
         "model": "qwen2.5vl3b-8380-2.42",
-        "type": "NPU (QnnHtp)",
-        "platform": "ARM64"
+        "type": "Genie HTTP (qwen2.5vl3b)",
+        "platform": "8910"
     }
 
 
@@ -66,16 +52,44 @@ def _image_to_base64(image: Image.Image) -> str:
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 
+async def _call_genie_vl(image_b64: str, prompt: str, task_id: str = None) -> str:
+    """通过 Genie HTTP 服务调用 qwen2.5vl3b 进行视觉理解"""
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}"}},
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+    request_data = {
+        "model": "qwen2.5vl3b-8380-2.42",
+        "messages": messages,
+        "size": 2048,
+        "seed": 42,
+        "temp": 0.7,
+        "top_k": 1,
+        "top_p": 1.0
+    }
+    async with httpx.AsyncClient(timeout=60.0, proxy=None) as client:
+        response = await client.post(
+            f"{_GENIE_SERVICE_URL}/v1/chat/completions",
+            json=request_data
+        )
+        response.raise_for_status()
+        result = response.json()
+        if "choices" in result and len(result["choices"]) > 0:
+            return result["choices"][0]["message"]["content"]
+        return ""
+
+
 @router.post("/extract/text")
 async def extract_text(
     file: UploadFile = File(...),
     prompt: str = Form("请识别图片中的所有文字内容，按原格式输出")
 ):
     """使用 qwen2.5vl3b 识别图片中的文字"""
-    npu = _get_npu_core()
-    if npu is None:
-        raise HTTPException(status_code=503, detail="NPU模型不可用")
-    
     # 读取图片
     content = await file.read()
     
@@ -90,20 +104,7 @@ async def extract_text(
         raise HTTPException(status_code=400, detail=f"图片格式错误: {e}")
     
     try:
-        # 调用NPU推理
-        response = npu.model.chat(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": {"b64": img_b64}},
-                        {"type": "text", "text": prompt}
-                    ]
-                }
-            ]
-        )
-        
-        text = response.get("content", [{}])[0].get("text", "") if response else ""
+        text = await _call_genie_vl(img_b64, prompt)
         
         return {
             "success": True,
@@ -134,10 +135,6 @@ async def analyze_image(
     prompt: str = Form("请详细描述这张图片的内容")
 ):
     """分析图片内容"""
-    npu = _get_npu_core()
-    if npu is None:
-        raise HTTPException(status_code=503, detail="NPU模型不可用")
-    
     content = await file.read()
     
     try:
@@ -149,19 +146,7 @@ async def analyze_image(
         raise HTTPException(status_code=400, detail=f"图片格式错误: {e}")
     
     try:
-        response = npu.model.chat(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": {"b64": img_b64}},
-                        {"type": "text", "text": prompt}
-                    ]
-                }
-            ]
-        )
-        
-        text = response.get("content", [{}])[0].get("text", "") if response else ""
+        text = await _call_genie_vl(img_b64, prompt)
         
         return {
             "success": True,
@@ -181,10 +166,6 @@ async def ocr_pdf(
     dpi: int = Form(150)
 ):
     """OCR识别PDF文件（先转图片再识别）"""
-    npu = _get_npu_core()
-    if npu is None:
-        raise HTTPException(status_code=503, detail="NPU模型不可用")
-    
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="仅支持PDF文件")
     
@@ -205,19 +186,7 @@ async def ocr_pdf(
                 img_b64 = _image_to_base64(page_image.original)
                 
                 # OCR识别
-                response = npu.model.chat(
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "image", "image": {"b64": img_b64}},
-                                {"type": "text", "text": "请识别图片中的所有文字内容"}
-                            ]
-                        }
-                    ]
-                )
-                
-                text = response.get("content", [{}])[0].get("text", "") if response else ""
+                text = await _call_genie_vl(img_b64, "请识别图片中的所有文字内容")
                 all_text[page_num] = text
         
         return {

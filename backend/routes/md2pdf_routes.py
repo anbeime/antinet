@@ -1,63 +1,154 @@
 """
 Markdown 转 PDF API 路由
-使用 reportlab 将 Markdown 转换为专业版式的 PDF
+使用 reportlab 直接生成 PDF，支持中文字体
 """
 
 import logging
-import os
 import tempfile
-import subprocess
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from typing import Optional
-import shutil
-import json
-from urllib.parse import quote
+import markdown
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/md2pdf", tags=["Markdown转PDF"])
 
-# 获取脚本目录
-SKILL_DIR = Path(__file__).parent.parent.parent / "skills" / "lovstudio-any2pdf" / "scripts"
-MD2PDF_SCRIPT = SKILL_DIR / "md2pdf.py"
+# ============ 中文字体注册（单例）============
+_FONT_REGISTERED = False
+_CHINESE_FONT_NAME = 'Helvetica'
+
+def _get_chinese_font_path():
+    """查找中文字体"""
+    base_dirs = [Path(__file__).parent.parent.parent]
+    font_names = ["NotoSansSC-Regular.ttf", "SimHei.ttf"]
+    for base in base_dirs:
+        for subdir in ["public/fonts", "fonts"]:
+            for fname in font_names:
+                path = base / subdir / fname
+                if path.exists():
+                    return str(path)
+    return None
+
+def _ensure_chinese_font():
+    global _FONT_REGISTERED, _CHINESE_FONT_NAME
+    if _FONT_REGISTERED:
+        return _CHINESE_FONT_NAME
+    _FONT_REGISTERED = True
+
+    font_path = _get_chinese_font_path()
+    if font_path:
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            pdfmetrics.registerFont(TTFont('ChineseFont', font_path, 'Identity-H'))
+            _CHINESE_FONT_NAME = 'ChineseFont'
+            logger.info(f"[MD2PDF] 中文字体注册成功: {font_path}")
+            return 'ChineseFont'
+        except Exception as e:
+            logger.warning(f"[MD2PDF] 中文字体注册失败: {e}")
+
+    logger.warning("[MD2PDF] 未找到中文字体，使用Helvetica（可能显示乱码）")
+    return 'Helvetica'
 
 # 检查依赖
-MD2PDF_AVAILABLE = False
-
-def check_dependencies():
-    """检查 MD2PDF 依赖是否可用"""
-    global MD2PDF_AVAILABLE
-    try:
-        import reportlab
-        MD2PDF_AVAILABLE = True
-        logger.info("[MD2PDF] reportlab 已安装")
-        return True
-    except ImportError:
-        logger.warning("[MD2PDF] reportlab 未安装，请运行: pip install reportlab")
-        return False
-
-# 延迟检查
 try:
     import reportlab
+    import markdown
     MD2PDF_AVAILABLE = True
-except:
-    pass
+except ImportError:
+    MD2PDF_AVAILABLE = False
+
+
+def _md_to_pdf_bytes(md_content: str, title: str, theme: str) -> bytes:
+    """将 Markdown 内容转换为 PDF 字节"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
+    from reportlab.lib import colors
+    from io import BytesIO
+
+    font_name = _ensure_chinese_font()
+
+    # Markdown → HTML
+    html_body = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72, leftMargin=72,
+        topMargin=72, bottomMargin=18
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'],
+        fontName=font_name, fontSize=20, spaceAfter=20, textColor=colors.HexColor('#4472C4'))
+    heading_style = ParagraphStyle('Heading', parent=styles['Heading2'],
+        fontName=font_name, fontSize=14, spaceAfter=10, textColor=colors.HexColor('#2F5496'))
+    normal_style = ParagraphStyle('Normal', parent=styles['Normal'],
+        fontName=font_name, fontSize=10, spaceAfter=6, leading=14)
+    code_style = ParagraphStyle('Code', parent=styles['Normal'],
+        fontName='Courier', fontSize=8, spaceAfter=6, leftIndent=20,
+        backColor=colors.HexColor('#F5F5F5'))
+
+    story = []
+
+    # 标题
+    story.append(Paragraph(title, title_style))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#4472C4')))
+    story.append(Spacer(1, 0.2*inch))
+
+    # 简单解析 HTML，转为 Paragraph
+    import re
+    lines = md_content.split('\n')
+    in_code = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            story.append(Paragraph(line or ' ', code_style))
+            continue
+        if not stripped:
+            story.append(Spacer(1, 0.1*inch))
+            continue
+        if stripped.startswith('# '):
+            story.append(Paragraph(stripped[2:], title_style))
+        elif stripped.startswith('## '):
+            story.append(Paragraph(stripped[3:], heading_style))
+        elif stripped.startswith('### '):
+            story.append(Paragraph(stripped[4:], ParagraphStyle('H3', parent=heading_style, fontSize=12)))
+        elif stripped.startswith('- ') or stripped.startswith('* '):
+            story.append(Paragraph(f"• {stripped[2:]}", normal_style))
+        elif stripped.startswith('|'):
+            continue  # 表格暂不处理
+        elif re.match(r'^\d+\. ', stripped):
+            story.append(Paragraph(stripped, normal_style))
+        else:
+            # 处理粗体斜体
+            text = stripped
+            text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+            text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+            story.append(Paragraph(text, normal_style))
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 @router.get("/status")
 async def get_md2pdf_status():
     """获取 MD2PDF 功能状态"""
-    deps_ok = check_dependencies()
-    script_exists = MD2PDF_SCRIPT.exists()
-    
     return {
-        "available": deps_ok and script_exists,
-        "message": "MD转PDF功能可用" if (deps_ok and script_exists) else "依赖未安装",
+        "available": MD2PDF_AVAILABLE,
+        "message": "MD转PDF功能可用" if MD2PDF_AVAILABLE else "依赖未安装",
         "dependencies": {
             "reportlab": MD2PDF_AVAILABLE,
-            "script": script_exists
+            "markdown": MD2PDF_AVAILABLE
         }
     }
 
@@ -70,117 +161,37 @@ async def convert_md_to_pdf(
     theme: str = Form("warm-academic"),
     watermark: str = Form("")
 ):
-    """
-    将 Markdown 文件转换为 PDF
-    
-    参数:
-    - file: Markdown 文件
-    - title: 文档标题（可选，默认从文件名提取）
-    - author: 作者（可选）
-    - theme: 主题风格 (warm-academic, classic-thesis, tufte, ieee-journal, elegant-book, chinese-red, ink-wash, github-light, nord-frost, ocean-breeze)
-    - watermark: 水印文字（可选）
-    """
+    """将 Markdown 文件转换为 PDF"""
     if not MD2PDF_AVAILABLE:
-        raise HTTPException(status_code=500, detail="reportlab 未安装")
-    
-    if not MD2PDF_SCRIPT.exists():
-        raise HTTPException(status_code=500, detail=f"转换脚本不存在: {MD2PDF_SCRIPT}")
-    
-    # 验证文件类型
+        raise HTTPException(status_code=500, detail="reportlab 或 markdown 未安装")
+
     if not file.filename.endswith('.md'):
         raise HTTPException(status_code=400, detail="只支持 .md 文件")
-    
-    # 创建临时目录
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        
-        # 保存上传的 Markdown 文件
-        input_file = temp_path / file.filename
-        content = await file.read()
-        input_file.write_bytes(content)
-        
-        # 准备输出文件
-        output_filename = file.filename.replace('.md', '.pdf')
-        output_file = temp_path / output_filename
-        
-        # 构建命令 - 使用 venv 中的 python
-        backend_dir = Path(__file__).parent.parent
-        project_root = backend_dir.parent
-        venv_path = project_root / "venv_arm64"
-        python_exe = str(venv_path / "Scripts" / "python.exe")
-        
-        # 检查 venv 是否存在
-        if not venv_path.exists():
-            # 尝试其他可能的 venv 目录
-            for venv_name in ["venv_x64", "venv"]:
-                alt_venv = project_root / venv_name
-                if alt_venv.exists():
-                    python_exe = str(alt_venv / "Scripts" / "python.exe")
-                    break
-        
-        cmd = [
-            python_exe,
-            str(MD2PDF_SCRIPT),
-            "--input", str(input_file),
-            "--output", str(output_file),
-            "--theme", theme
-        ]
-        
-        if title:
-            cmd.extend(["--title", title])
-        if author:
-            cmd.extend(["--author", author])
-        if watermark:
-            cmd.extend(["--watermark", watermark])
-        
-        # 添加默认值
-        cmd.extend(["--cover", "true", "--toc", "true"])
-        
-        logger.info(f"[MD2PDF] 执行命令: {' '.join(cmd)}")
-        
-        # 执行转换 - 使用 shell=True 来处理 Windows 路径
-        try:
-            result = subprocess.run(
-                ' '.join(cmd),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            logger.info(f"[MD2PDF] stdout: {result.stdout}")
-            if result.stderr:
-                logger.error(f"[MD2PDF] stderr: {result.stderr}")
-            return_code = result.returncode
-            
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=500, detail="转换超时")
-        except Exception as e:
-            logger.error(f"[MD2PDF] 执行异常: {e}")
-            raise HTTPException(status_code=500, detail=f"转换异常: {str(e)}")
-        
-        if return_code != 0:
-            logger.error(f"[MD2PDF] 转换失败，返回码: {return_code}")
-            raise HTTPException(status_code=500, detail="PDF 转换失败")
-        
-        # 检查输出文件
-        output_file = temp_path / output_filename
-        if not output_file.exists():
-            logger.error(f"[MD2PDF] 文件不存在: {output_file}")
-            raise HTTPException(status_code=500, detail="PDF 文件未生成")
-        
-        # 读取 PDF 内容到内存后再返回
-        pdf_content = output_file.read_bytes()
-        
-        # 使用 ASCII 安全的方式处理文件名
-        safe_filename = output_filename.replace('.pdf', '') + '.pdf'
-        # 仅保留 ASCII 字符
-        ascii_filename = ''.join(c if ord(c) < 128 else '_' for c in safe_filename)
-        
-        return Response(
-            content=pdf_content,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={ascii_filename}"}
-        )
+
+    content = await file.read()
+    try:
+        md_content = content.decode('utf-8')
+    except UnicodeDecodeError:
+        md_content = content.decode('gbk', errors='replace')
+
+    if not title:
+        title = file.filename.replace('.md', '')
+
+    try:
+        pdf_bytes = _md_to_pdf_bytes(md_content, title, theme)
+    except Exception as e:
+        logger.error(f"[MD2PDF] 转换失败: {e}")
+        raise HTTPException(status_code=500, detail=f"转换失败: {e}")
+
+    from urllib.parse import quote
+    output_name = f"{title}.pdf"
+    ascii_name = ''.join(c if ord(c) < 128 else '_' for c in output_name)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(ascii_name)}"}
+    )
 
 
 @router.get("/themes")

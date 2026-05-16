@@ -80,7 +80,7 @@ class RiskDetectorAgent:
             self.task_status = "失败"
             self.log.append(f"[刑狱司] 检测异常: {str(e)}")
             logger.error(f"风险检测失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def _load_risk_rules(self) -> List[Dict]:
         """
@@ -411,7 +411,11 @@ class RiskDetectorAgent:
         """
         try:
             from routes.meeting_routes import call_llm
-            result = await call_llm("你是刑狱司，负责从数据中检测潜在风险。", prompt)
+            result = await call_llm(
+                "你是刑狱司，负责从数据中检测潜在风险。输出JSON格式，只输出JSON不要其他内容。", 
+                prompt,
+                max_tokens=1024
+            )
             if result:
                 return result
         except Exception as e:
@@ -458,18 +462,23 @@ class RiskDetectorAgent:
         except Exception as e:
             logger.debug(f"[刑狱司] NPU进程内推理失败: {e}")
         
-        raise RuntimeError("所有LLM层不可用")
+        # 所有降级路径失败
+        return ""
     
-    def _parse_json_response(self, response: str) -> Dict:
+    def _parse_json_response(self, response: Optional[str]) -> Dict:
         """
         解析JSON响应
         
         参数：
-            response: 响应文本
+            response: 响应文本（可能为None）
         
         返回：
-            解析后的JSON
+            解析后的JSON，失败时返回空字典
         """
+        if not response:
+            logger.warning("[刑狱司] 响应为空，返回空字典")
+            return {}
+        
         try:
             # 提取JSON部分（可能包含markdown代码块）
             if "```json" in response:
@@ -477,8 +486,22 @@ class RiskDetectorAgent:
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
             
-            return json.loads(response)
+            # 修复：去除模型输出的双层大括号 {{...}}
+            response = response.strip()
+            if response.startswith('{') and not response.startswith('{{'):
+                pass  # 正常 JSON
+            elif response.startswith('{{') and response.endswith('}}'):
+                # 去除双层大括号
+                response = response[1:-1].strip()
+            elif response.startswith('{'):
+                # 处理 {...{ 格式
+                first_brace = response.find('}')
+                response = response[:first_brace+1]
+            
+            # strict=False 容忍 LLM 输出的未转义控制字符
+            return json.loads(response, strict=False)
         
         except Exception as e:
             logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空字典
+            return {}

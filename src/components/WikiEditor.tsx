@@ -129,7 +129,7 @@ const WikiEditor = () => {
       }
       // 确保pageId正确编码
       const encodedId = encodeURIComponent(pageId);
-      const res = await fetch(getApiBaseUrl() + `/api/wiki/pages/${encodedId}`);
+      const res = await fetch(getApiBaseUrl() + `/api/wiki/pages?page_id=${encodedId}`);
       if (!res.ok) {
         console.error('Failed to load page:', res.status);
         return;
@@ -185,7 +185,7 @@ const WikiEditor = () => {
 
     try {
       if (currentPage) {
-        await fetch(getApiBaseUrl() + `/api/wiki/pages/${currentPage.id}`, {
+        await fetch(getApiBaseUrl() + `/api/wiki/pages?page_id=${encodeURIComponent(currentPage.id)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title, content, node_type: pageType, tags })
@@ -211,7 +211,7 @@ const WikiEditor = () => {
     if (!confirm('确定要删除这个页面吗？')) return;
 
     try {
-      await fetch(getApiBaseUrl() + `/api/wiki/pages/${pageId}`, { method: 'DELETE' });
+      await fetch(getApiBaseUrl() + `/api/wiki/pages?page_id=${encodeURIComponent(pageId)}`, { method: 'DELETE' });
       toast.success('页面已删除');
       if (currentPage?.id === pageId) {
         setCurrentPage(null);

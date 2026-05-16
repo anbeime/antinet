@@ -67,11 +67,11 @@ class AIServiceFactory:
         
         # 注册 OpenAI 服务
         openai_service = OpenAIService(config.get('openai', {}))
-        cls.register('openai', openai_service, set_default=True)
+        cls.register('openai', openai_service)
         
-        # 注册 NPU 服务
+        # 注册 NPU 服务（默认使用 NPU）
         npu_service = NPUService(config.get('npu', {}))
-        cls.register('npu', npu_service)
+        cls.register('npu', npu_service, set_default=True)
         
         logger.info(f"[AI Factory] 默认服务已创建，当前默认: {cls._default_service_name}")
 

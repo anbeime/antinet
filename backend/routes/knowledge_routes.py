@@ -2,10 +2,10 @@
 知识管理路由
 提供知识库的 CRUD 接口
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
 import tempfile
@@ -16,6 +16,7 @@ import html
 import hashlib
 from pathlib import Path
 import time
+import asyncio
 from functools import lru_cache
 
 from config import settings
@@ -127,6 +128,7 @@ async def get_network_cards(request: NetworkCardsRequest):
         conn.close()
 
 
+@router.get("/network/suggest")
 @router.post("/network/suggest")
 async def suggest_network_cards(topic: str, limit: int = 10000):
     """
@@ -354,8 +356,10 @@ async def get_knowledge_graph(
 
 class KnowledgeCard(BaseModel):
     """知识卡片模型"""
+    model_config = {"populate_by_name": True}
+    
     id: Optional[int] = None
-    type: str  # 使用 type 与数据库一致
+    type: str = Field(validation_alias='card_type')  # 使用 type 内部，card_type 来自前端
     title: Optional[str] = None  # 允许为空，由系统自动生成
     content: str
     source: Optional[str] = None
@@ -365,7 +369,8 @@ class KnowledgeCard(BaseModel):
     related_cards: Optional[List[int]] = []  # 关联的卡片ID列表
     address: Optional[str] = None  # Antinet 地址
     source_file_id: Optional[str] = None  # 源文件ID（文件导入时关联）
-
+    images: Optional[List[Dict[str, Any]]] = []  # 图片列表 [{id, filename, path, url, size}]
+    
     def get_valid_category(self) -> str:
         """获取有效的 category"""
         valid_categories = {'事实', '解释', '风险', '行动'}
@@ -461,6 +466,14 @@ async def get_cards(
                 card_dict['related_cards'] = []
         else:
             card_dict['related_cards'] = []
+        # 解析 images JSON
+        if card_dict.get('images'):
+            try:
+                card_dict['images'] = json.loads(card_dict['images'])
+            except:
+                card_dict['images'] = []
+        else:
+            card_dict['images'] = []
         cards.append(card_dict)
 
     conn.close()
@@ -489,7 +502,25 @@ async def get_card(card_id: int):
     if not card:
         raise HTTPException(status_code=404, detail="卡片不存在")
 
-    return dict(card)
+    card_dict = dict(card)
+    # 解析 related_cards JSON
+    if card_dict.get('related_cards'):
+        try:
+            card_dict['related_cards'] = json.loads(card_dict['related_cards'])
+        except:
+            card_dict['related_cards'] = []
+    else:
+        card_dict['related_cards'] = []
+    # 解析 images JSON
+    if card_dict.get('images'):
+        try:
+            card_dict['images'] = json.loads(card_dict['images'])
+        except:
+            card_dict['images'] = []
+    else:
+        card_dict['images'] = []
+
+    return card_dict
 
 
 @router.post("/cards")
@@ -528,13 +559,14 @@ async def create_card(card: KnowledgeCard):
         
         # 使用正确的字段名 card_type（与数据库表结构一致）
         related_cards_json = json.dumps(card.related_cards) if card.related_cards else None
+        images_json = json.dumps(card.images) if card.images else '[]'  # 图片列表JSON
         
         # 过滤 HTML 内容防止 XSS
         safe_content = sanitize_html(card.content) if card.content else ''
         
         cursor.execute('''
-            INSERT INTO knowledge_cards (card_type, title, content, category, project_id, related_cards, address)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO knowledge_cards (card_type, title, content, category, project_id, related_cards, address, images)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             card.type,
             card_title,
@@ -542,7 +574,8 @@ async def create_card(card: KnowledgeCard):
             valid_category,
             card.project_id,
             related_cards_json,
-            card_address
+            card_address,
+            images_json
         ))
 
         new_card_id = cursor.lastrowid
@@ -1132,9 +1165,12 @@ async def import_file(file: UploadFile = File(...)):
 
         # 验证支持的文件格式
         supported_extensions = {'.pdf', '.txt', '.md', '.docx', '.doc', '.xlsx', '.xls',
+                              '.pptx', '.ppt',
+                              '.mp3', '.wav', '.flac',
+                              '.zip', '.rar', '.7z',
                               '.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
         if file_ext not in supported_extensions:
-            raise HTTPException(status_code=400, detail=f"请确保文件有正确的扩展名。检测到的格式: {file_ext}。支持的格式: {', '.join(supported_extensions)}")
+            raise HTTPException(status_code=400, detail=f"请确保文件有正确的扩展名。检测到的格式: {file_ext}。支持的格式: {', '.join(sorted(supported_extensions))}")
 
         # 保存上传的文件到临时目录
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
@@ -1227,54 +1263,226 @@ async def import_file(file: UploadFile = File(...)):
                 logger.warning(f"图片视觉分析失败: {e}")
                 extracted_text = ""
 
-        # 分析提取的文本
+        # ========== 新增格式支持 ==========
+        elif file_ext == '.pptx':
+            try:
+                from pptx import Presentation
+                prs = Presentation(tmp_path)
+                for slide in prs.slides:
+                    for shape in slide.shapes:
+                        if shape.has_text_frame:
+                            for para in shape.text_frame.paragraphs:
+                                extracted_text += para.text + '\n'
+                        if shape.has_table:
+                            for row in shape.table.rows:
+                                for cell in row.cells:
+                                    extracted_text += cell.text + '\t'
+                                extracted_text += '\n'
+                    extracted_text += '\n---\n'
+            except ImportError:
+                raise HTTPException(status_code=503, detail="PPT解析未安装，请运行: pip install python-pptx")
+
+        elif file_ext == '.ppt':
+            # 旧版PPT，尝试通过LibreOffice转换
+            try:
+                import subprocess
+                lo_paths = [
+                    r'C:\Program Files\LibreOffice\program\soffice.exe',
+                    r'C:\Program Files (x86)\LibreOffice\program\soffice.exe',
+                ]
+                soffice = None
+                for p in lo_paths:
+                    if os.path.exists(p):
+                        soffice = p
+                        break
+                if not soffice:
+                    soffice = 'soffice'
+                pptx_path = tmp_path + 'x'  # .ppt -> .pptx
+                result = subprocess.run(
+                    [soffice, '--headless', '--convert-to', 'pptx', '--outdir', os.path.dirname(pptx_path), tmp_path],
+                    capture_output=True, text=True, timeout=60
+                )
+                if os.path.exists(pptx_path):
+                    from pptx import Presentation
+                    prs = Presentation(pptx_path)
+                    for slide in prs.slides:
+                        for shape in slide.shapes:
+                            if shape.has_text_frame:
+                                for para in shape.text_frame.paragraphs:
+                                    extracted_text += para.text + '\n'
+                        extracted_text += '\n---\n'
+                    os.unlink(pptx_path)
+                else:
+                    extracted_text = f"[PPT文件转换失败]: {result.stderr[:200]}"
+            except Exception as e:
+                extracted_text = f"[PPT文件无法解析，建议转换为pptx格式]: {e}"
+
+        elif file_ext in ['.mp3', '.wav', '.flac']:
+            # 音频文件 -> STT语音识别转文字
+            try:
+                from services.speech_service import stt_transcribe_audio
+                result = stt_transcribe_audio(str(tmp_path))
+                if isinstance(result, dict):
+                    extracted_text = result.get('text', '')
+                else:
+                    extracted_text = str(result)
+            except ImportError:
+                extracted_text = "[音频STT服务未安装，请确保已安装faster-whisper]"
+            except Exception as e:
+                logger.warning(f"音频STT识别失败: {e}")
+                extracted_text = "[音频转文字失败]"
+
+        elif file_ext in ['.zip', '.rar', '.7z']:
+            # 压缩包：提取所有文本并合并
+            import shutil
+            extract_dir = tempfile.mkdtemp()
+            try:
+                all_texts = []
+                if file_ext == '.zip':
+                    import zipfile
+                    with zipfile.ZipFile(tmp_path, 'r') as zf:
+                        zf.extractall(extract_dir)
+                elif file_ext == '.7z':
+                    try:
+                        import py7zr
+                        with py7zr.SevenZipFile(tmp_path, 'r') as szf:
+                            szf.extractall(extract_dir)
+                    except ImportError:
+                        raise HTTPException(status_code=503, detail="7z解析需要py7zr: pip install py7zr")
+                elif file_ext == '.rar':
+                    try:
+                        import subprocess
+                        # 尝试系统命令unrar
+                        subprocess.run(['unrar', 'x', '-o+', tmp_path, extract_dir + os.sep],
+                                      capture_output=True, timeout=60)
+                    except Exception:
+                        try:
+                            import patoolib
+                            patoolib.extract_archive(tmp_path, outdir=extract_dir)
+                        except ImportError:
+                            raise HTTPException(status_code=503, detail="RAR解析需要安装unrar或patool")
+
+                # 递归读取提取出的文本文件
+                for root, dirs, files in os.walk(extract_dir):
+                    for fname in files:
+                        fpath = os.path.join(root, fname)
+                        fname_lower = fname.lower()
+                        if fname_lower.endswith(('.txt', '.md', '.py', '.json', '.xml', '.html', '.csv')):
+                            try:
+                                with open(fpath, 'r', encoding='utf-8') as f:
+                                    all_texts.append(f"### 文件: {fname}\n{f.read()}")
+                            except Exception:
+                                pass
+                        elif fname_lower.endswith('.pdf'):
+                            try:
+                                from tools.pdf_processor import SimplePDFProcessor
+                                proc = SimplePDFProcessor()
+                                res = proc.extract_text(fpath)
+                                all_texts.append(f"### 文件: {fname}\n{res.get('full_text', '')}")
+                            except Exception:
+                                pass
+                        elif fname_lower.endswith(('.xlsx', '.xls')):
+                            try:
+                                import pandas as pd
+                                df = pd.read_excel(fpath)
+                                all_texts.append(f"### 文件: {fname}\n{df.to_string()}")
+                            except Exception:
+                                pass
+                        elif fname_lower.endswith(('.docx', '.doc')):
+                            try:
+                                from docx import Document
+                                doc = Document(fpath)
+                                all_texts.append(f"### 文件: {fname}\n" + '\n'.join([p.text for p in doc.paragraphs if p.text]))
+                            except Exception:
+                                pass
+                        elif fname_lower.endswith(('.pptx', '.ppt')):
+                            try:
+                                from pptx import Presentation
+                                prs = Presentation(fpath)
+                                ppt_text = ""
+                                for slide in prs.slides:
+                                    for shape in slide.shapes:
+                                        if shape.has_text_frame:
+                                            for p in shape.text_frame.paragraphs:
+                                                ppt_text += p.text + '\n'
+                                all_texts.append(f"### 文件: {fname}\n{ppt_text}")
+                            except Exception:
+                                pass
+
+                extracted_text = '\n\n'.join(all_texts) if all_texts else f"[压缩包 {filename} 内未找到可解析的文本文件]"
+            finally:
+                shutil.rmtree(extract_dir, ignore_errors=True)
+
+        # ========== 8智能体生成四色卡片（取代关键词规则） ==========
         cards = []
-        paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
-        if not paragraphs:
-            paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
-        
-        for idx, para in enumerate(paragraphs):
-            if len(para) < 10:
-                continue
-            
-            # 过滤系统提示泄露内容（NPU模型有时会输出内部系统信息）
-            leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
-                           'instruction', 'prompt', 'special token', '#### Instruction',
-                           '#### Response', 'system', '<|assistant', '<|end']
-            if any(pat.lower() in para.lower() for pat in leak_patterns):
-                continue
-            # 过滤Markdown格式化的编号标题（如 "5. **xxx**:"）且内容过短
-            if re.match(r'^\d+\.\s+\*\*', para) and len(para) < 80:
-                continue
-            
-            lower_para = para.lower()
-            card_type = 'blue'
-            confidence = 0.5
-            
-            if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
+        if extracted_text and len(extracted_text.strip()) > 20:
+            try:
+                # 调用8智能体引擎生成四色卡片
+                from routes.eight_agent_engine import EightAgentEngine
+                agent_engine = EightAgentEngine()
+                agent_result = await agent_engine.process(
+                    query=f"分析文件 '{filename}' 的内容并提取知识卡片",
+                    context={
+                        "raw_material": extracted_text[:8000],  # 限制输入长度
+                        "file_name": filename,
+                        "file_type": file_ext
+                    },
+                    user_id="batch_import"
+                )
+                if agent_result.get("status") == "success":
+                    agent_cards = agent_result.get("four_color_cards", [])
+                    for card in agent_cards:
+                        cards.append({
+                            'title': card.get('title', '知识卡片')[:100],
+                            'content': card.get('content', ''),
+                            'card_type': card.get('card_type', 'blue'),
+                            'confidence': card.get('confidence', 0.7),
+                            'address': f"{card.get('card_type', 'BLUE').upper()}{len(cards) + 1}"
+                        })
+                    logger.info(f"[8智能体] {filename}: 成功生成 {len(cards)} 张卡片")
+            except Exception as e:
+                logger.warning(f"[8智能体] 卡片生成失败，回退到关键词模式: {e}")
+
+        # 回退：如果8智能体未生成任何卡片，使用关键词规则
+        if not cards:
+            paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
+            if not paragraphs:
+                paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
+
+            for idx, para in enumerate(paragraphs):
+                if len(para) < 10:
+                    continue
+                leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                               'instruction', 'prompt', 'special token', '#### Instruction',
+                               '#### Response', 'system', '<|assistant', '<|end']
+                if any(pat.lower() in para.lower() for pat in leak_patterns):
+                    continue
+                if re.match(r'^\d+\.\s+\*\*', para) and len(para) < 80:
+                    continue
+
+                lower_para = para.lower()
                 card_type = 'blue'
-                confidence = 0.8
-            elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
-                card_type = 'green'
-                confidence = 0.8
-            elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
-                card_type = 'yellow'
-                confidence = 0.8
-            elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
-                card_type = 'red'
-                confidence = 0.8
-            
-            title = para[:50] + '...' if len(para) > 50 else para
-            if '\n' in title:
-                title = title.split('\n')[0]
-            
-            cards.append({
-                'title': title,
-                'content': para,
-                'card_type': card_type,
-                'confidence': confidence,
-                'address': f"{card_type.upper()}{idx + 1}"
-            })
+                confidence = 0.5
+                if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
+                    card_type = 'blue'; confidence = 0.8
+                elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
+                    card_type = 'green'; confidence = 0.8
+                elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
+                    card_type = 'yellow'; confidence = 0.8
+                elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
+                    card_type = 'red'; confidence = 0.8
+
+                title = para[:50] + '...' if len(para) > 50 else para
+                if '\n' in title:
+                    title = title.split('\n')[0]
+
+                cards.append({
+                    'title': title,
+                    'content': para,
+                    'card_type': card_type,
+                    'confidence': confidence,
+                    'address': f"{card_type.upper()}{idx + 1}"
+                })
 
         saved_count = 0
         card_ids = []
@@ -1342,6 +1550,73 @@ async def import_file(file: UploadFile = File(...)):
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+@router.post("/import/batch")
+async def import_files_batch(files: List[UploadFile] = File(...)):
+    """
+    批量导入多个文件并解析为知识卡片
+
+    并行处理多个文件的导入，返回每个文件的处理结果汇总
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少上传一个文件")
+
+    results = []
+    total_cards = 0
+    success_count = 0
+    fail_count = 0
+
+    # 逐个处理（保持原导入逻辑，使用8智能体增强卡片生成）
+    for idx, file in enumerate(files):
+        try:
+            # 复用单文件导入逻辑
+            file_result = await import_file(file=file)
+            results.append({
+                "index": idx,
+                "filename": file.filename or f"file_{idx}",
+                "success": True,
+                "file_type": file_result.get("file_type", ""),
+                "cards_count": file_result.get("total", 0),
+                "extracted_length": file_result.get("extracted_length", 0),
+                "source_file_id": file_result.get("source_file_id", ""),
+                "error": None
+            })
+            total_cards += file_result.get("total", 0)
+            success_count += 1
+        except HTTPException as e:
+            fail_count += 1
+            results.append({
+                "index": idx,
+                "filename": file.filename or f"file_{idx}",
+                "success": False,
+                "error": e.detail,
+                "file_type": "",
+                "cards_count": 0,
+                "extracted_length": 0,
+                "source_file_id": None
+            })
+        except Exception as e:
+            fail_count += 1
+            results.append({
+                "index": idx,
+                "filename": file.filename or f"file_{idx}",
+                "success": False,
+                "error": str(e),
+                "file_type": "",
+                "cards_count": 0,
+                "extracted_length": 0,
+                "source_file_id": None
+            })
+
+    return {
+        "success": success_count > 0,
+        "total": len(files),
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "total_cards": total_cards,
+        "results": results
+    }
 
 
 @router.post("/import")
@@ -1576,4 +1851,39 @@ async def download_source_file(source_file_id: str):
         raise
     except Exception as e:
         logger.error(f"下载源文件失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# 可视化图谱状态 API（持久化节点/连线/分类）
+@router.get("/graph/state")
+async def get_graph_state():
+    """加载已保存的图谱状态"""
+    try:
+        state = db_manager.load_graph_state("default")
+        if state:
+            logger.info(f"[GraphState] 加载图谱: {len(state['nodes'])} 节点")
+            return state
+        return None
+    except Exception as e:
+        logger.error(f"[GraphState] 加载失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/graph/state")
+async def save_graph_state(req: Request):
+    """保存图谱状态（节点、连线、分类）"""
+    try:
+        body = await req.json()
+        name = body.get("name", "default")
+        nodes = body.get("nodes", [])
+        links = body.get("links", [])
+        categories = body.get("categories", [])
+        success = db_manager.save_graph_state(name, nodes, links, categories)
+        if success:
+            return {"status": "ok", "nodes": len(nodes), "links": len(links)}
+        raise HTTPException(status_code=500, detail="保存失败")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[GraphState] 保存失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))

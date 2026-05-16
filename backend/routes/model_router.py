@@ -8,39 +8,6 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Ollama 可用性缓存
-_ollama_available_cache: Dict[str, Any] = {"available": None, "last_check": 0}
-
-
-def _is_ollama_available() -> bool:
-    """检查 Ollama 服务是否可用（带缓存，30秒内不重复检查）"""
-    import time
-    now = time.time()
-    if _ollama_available_cache["available"] is not None and (now - _ollama_available_cache["last_check"]) < 30:
-        return _ollama_available_cache["available"]
-    
-    try:
-        import httpx
-        with httpx.Client(timeout=3.0) as client:
-            resp = client.get("http://localhost:11434/api/tags")
-            if resp.status_code == 200:
-                data = resp.json()
-                models = [m.get("name", "") for m in data.get("models", [])]
-                # 检查是否有 gemma4 相关模型
-                has_gemma = any("gemma" in m.lower() for m in models)
-                _ollama_available_cache["available"] = has_gemma
-                if has_gemma:
-                    logger.info(f"[Ollama] 可用，已安装模型: {[m for m in models if 'gemma' in m.lower()]}")
-                else:
-                    logger.warning(f"[Ollama] 服务可用但未找到gemma模型，已安装: {models}")
-            else:
-                _ollama_available_cache["available"] = False
-    except Exception as e:
-        _ollama_available_cache["available"] = False
-        logger.debug(f"[Ollama] 不可用: {e}")
-    
-    _ollama_available_cache["last_check"] = now
-    return _ollama_available_cache["available"]
 
 def estimate_complexity(query: str) -> Dict[str, Any]:
     """
@@ -129,10 +96,10 @@ def select_model(query: str) -> str:
     """
     根据查询复杂度选择模型
 
-    策略（本地NPU优先，Ollama仅作备选）：
+    策略（本地NPU优先）：
     - simple (<30分): llama3.2-3b (NPU极速)
     - medium (30-59分): llama3.2-3b (NPU快速)
-    - complex (>=60分): qwen2.0-7b (NPU中文最佳) > llama3.2-3b > gemma4(Ollama备选)
+    - complex (>=60分): qwen2.0-7b (NPU中文最佳)
     """
     try:
         # 估算复杂度
@@ -143,7 +110,7 @@ def select_model(query: str) -> str:
         logger.info(f"  级别: {estimation['complexity']}")
         logger.info(f"  原因: {', '.join(estimation['reasons'])}")
 
-        # 选择模型
+# 选择模型
         if estimation['complexity'] == 'simple':
             model_key = 'llama3.2-3b'
             model_reason = '简单查询，选择NPU极速模型'
@@ -151,7 +118,7 @@ def select_model(query: str) -> str:
             model_key = 'llama3.2-3b'
             model_reason = '中等复杂度，选择NPU快速模型'
         else:  # complex
-            # 本地NPU优先：qwen2.0-7b(中文最佳) > llama3.2-3b > gemma4(Ollama备选)
+            # 本地NPU优先：qwen2.0-7b(中文最佳)
             model_key = 'qwen2.0-7b'
             model_reason = '复杂查询，选择NPU中文高质量模型'
 
@@ -172,12 +139,6 @@ def get_model_info(model_key: str) -> Dict[str, str]:
     models = ModelConfig.MODELS
     if model_key in models:
         return models[model_key]
-    elif model_key == "gemma4":
-        return {
-            "name": "Gemma 4 8B (Ollama)",
-            "params": "8B",
-            "description": "Ollama远程大模型，适合复杂任务"
-        }
     else:
         # 默认返回第一个
         return list(models.values())[0]

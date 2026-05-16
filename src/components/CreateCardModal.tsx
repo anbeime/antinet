@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { 
@@ -9,11 +9,26 @@ import {
   X, 
   Plus,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Image,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
+const API_BASE = getApiBaseUrl()
+// 确保 API_BASE 不以 /api 结尾，避免重复
+const IMAGE_API_BASE = API_BASE.replace(/\/api$/, '') + '/api/images'
+
+// 图片信息类型
+interface ImageInfo {
+  id: string;
+  filename: string;
+  original_name: string;
+  path: string;
+  url: string;
+  size: number;
+}
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -65,6 +80,7 @@ interface CardFormData {
   address: string;
   relatedCards: string[];
   projectId?: number;
+  images: ImageInfo[];  // 图片列表
 }
 
 interface CreateCardModalProps {
@@ -91,8 +107,11 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     content: '',
     color: initialColor,
     address: '',
-    relatedCards: []
+    relatedCards: [],
+    images: []
   })
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingCount, setUploadingCount] = useState(0)
   // 自动从内容提取标题
   const extractTitle = (content: string): string => {
     if (!content.trim()) return '';
@@ -139,7 +158,8 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         content: '',
         color: initialColor,
         address: '',
-        relatedCards: []
+        relatedCards: [],
+        images: []
       });
       setErrors({});
       setSearchQuery('');
@@ -162,44 +182,156 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     }
   };
 
-  // 处理粘贴图片
+  // 处理粘贴（支持富文本内容中的图片自动上传）
   const handlePasteImage = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. 先处理独立的图片文件粘贴
+    const items = clipboardData.items;
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
         const file = item.getAsFile();
         if (!file) return;
         
-        toast.info('正在上传图片...');
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        try {
-          const response = await fetch(`${RESEARCH_API_BASE}/upload/image`, {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.url) {
-              const imageMarkdown = `\n![image](${data.url})\n`;
-              setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
-              toast.success('图片已插入');
-            }
-          } else {
-            toast.error('图片上传失败');
-          }
-        } catch (err) {
-          console.error('上传图片失败:', err);
-          toast.error('图片上传失败');
-        }
-        return;
+        await uploadImage(file);
+        return;  // 独立图片只处理第一张
       }
     }
+
+    // 2. 处理富文本内容中的嵌入图片（base64 或 URL）
+    const html = clipboardData.getData('text/html');
+    if (html) {
+      const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi);
+      let hasImages = false;
+      
+      for (const match of imgMatches) {
+        const src = match[1];
+        hasImages = true;
+        
+        if (src.startsWith('data:image/')) {
+          // base64 图片，需要提取并上传
+          e.preventDefault();
+          const base64Data = src.split(',')[1];
+          const mimeMatch = src.match(/data:image\/([^;]+);/);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'png';
+          const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
+          
+          try {
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: mimeType });
+            const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+            
+            toast.info('正在上传粘贴的图片...');
+            await uploadImage(file);
+          } catch (err) {
+            console.error('处理粘贴图片失败:', err);
+          }
+        }
+        // 外部 URL 图片暂不处理（保持原样）
+      }
+      
+      // 如果检测到图片，等待上传完成后再处理内容
+      if (hasImages) {
+        // 延迟一下让图片上传完成，然后提示用户
+        setTimeout(() => {
+          if (formData.images.length > 0) {
+            toast.success('粘贴内容中的图片已上传');
+          }
+        }, 500);
+      }
+    }
+  };
+
+  // 上传单张图片
+  const uploadImage = async (file: File) => {
+    toast.info('正在上传图片...');
+    setUploadingCount(prev => prev + 1);
+    const formDataUpload = new FormData();
+    formDataUpload.append('file', file);
+    
+    try {
+      const response = await fetch(`${IMAGE_API_BASE}/upload`, {
+        method: 'POST',
+        body: formDataUpload
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          // 1. 添加到图片列表（备用）
+          setFormData(prev => ({ 
+            ...prev, 
+            images: [...prev.images, data]
+          }));
+          // 2. 自动插入到内容区（作为markdown图片）
+          const imageMarkdown = `\n![${file.name}](${data.url})\n`;
+          setFormData(prev => ({ 
+            ...prev, 
+            content: prev.content + imageMarkdown
+          }));
+          toast.success('图片已插入内容');
+        }
+      } else {
+        toast.error('图片上传失败');
+      }
+    } catch (err) {
+      console.error('上传图片失败:', err);
+      toast.error('图片上传失败');
+    } finally {
+      setUploadingCount(prev => prev - 1);
+    }
+  };
+
+  // 处理文件选择
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await uploadImage(file);
+      }
+    }
+    
+    // 清空input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // 处理拖放
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await uploadImage(file);
+      }
+    }
+  };
+
+  // 删除图片
+  const removeImage = async (imageId: string) => {
+    const image = formData.images.find(img => img.id === imageId);
+    if (image) {
+      try {
+        await fetch(`${IMAGE_API_BASE}/${image.filename}`, { method: 'DELETE' });
+      } catch (err) {
+        console.error('删除图片失败:', err);
+      }
+    }
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter(img => img.id !== imageId)
+    }));
   };
 
   // 处理卡片类型选择
@@ -252,7 +384,9 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         // 如果标题为空，自动从内容生成
         title: formData.title.trim() || extractTitle(formData.content),
         // 如果地址为空，自动生成
-        address: formData.address.trim() || generateAddressSuggestion()
+        address: formData.address.trim() || generateAddressSuggestion(),
+        // 传递图片列表
+        images: formData.images
       });
       onClose();
       toast('卡片创建成功！', {
@@ -414,7 +548,9 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               value={formData.content}
               onChange={(e) => handleContentChange(e.target.value)}
               onPaste={handlePasteImage}
-              placeholder="输入卡片内容（支持粘贴图片）..."
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+              placeholder="输入卡片内容（支持粘贴、拖放图片）..."
               rows={5}
               className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none ${
                 errors.content 
@@ -463,6 +599,65 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
                 <AlertCircle size={12} className="mr-1" />
                 {errors.address}
               </p>
+            )}
+          </div>
+
+          {/* 图片附件 — 紧凑版，依赖粘贴/拖放，仅显示小按钮 */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium">
+                <Image size={14} className="inline mr-1" />
+                图片附件
+              </label>
+              <div className="flex items-center space-x-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingCount > 0}
+                  className="flex items-center px-2.5 py-1 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md transition-colors disabled:opacity-50"
+                >
+                  <Upload size={12} className="mr-1" />
+                  添加图片
+                </button>
+                {uploadingCount > 0 && (
+                  <span className="text-xs text-blue-500 animate-pulse">上传中...</span>
+                )}
+              </div>
+            </div>
+            
+            {/* 拖放提示（仅文字） */}
+            <p className="text-xs text-gray-400 mb-2">
+              支持粘贴、拖放图片到内容区，或点击「添加图片」按钮
+            </p>
+            
+            {/* 已上传图片预览 */}
+            {formData.images.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {formData.images.map(image => (
+                  <div key={image.id} className="relative group">
+                    <img
+                      src={`${API_BASE}${image.url}`}
+                      alt={image.original_name}
+                      className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(image.id)}
+                      className="absolute -top-2 -right-2 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
           

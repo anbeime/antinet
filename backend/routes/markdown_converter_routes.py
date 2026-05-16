@@ -18,7 +18,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from skills.markdown_converter_skill import (
-    PandocConverter,
+    MarkdownConverter,
     MarkdownPreprocessor,
     MermaidRenderer,
     CSVTableExtractor,
@@ -56,25 +56,34 @@ class CSVExtractRequest(BaseModel):
 async def get_converter_status():
     """获取转换器状态"""
     import shutil
-    
-    # 检查 pandoc
-    pandoc_path = shutil.which('pandoc')
-    
+
     # 检查 mmdc
     mmdc_path = shutil.which('mmdc')
-    
+
     # 检查 pdfplumber
     pdfplumber_available = True
     try:
         import pdfplumber
     except ImportError:
         pdfplumber_available = False
-    
+
+    # 检查 LibreOffice
+    lo_path = None
+    lo_paths = [
+        r"C:\Program Files\LibreOffice\program\soffice.exe",
+        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+    ]
+    for p in lo_paths:
+        if Path(p).exists():
+            lo_path = p
+            break
+    if not lo_path:
+        lo_path = shutil.which("soffice")
+
     # 检查依赖
     dependencies = {}
     for lib, import_name in [
-        ('pypandoc', 'pypandoc'),
-        ('python-docx', 'docx'),
+        ('reportlab', 'reportlab'),
         ('openpyxl', 'openpyxl'),
         ('pdfplumber', 'pdfplumber'),
         ('markdown', 'markdown'),
@@ -84,11 +93,11 @@ async def get_converter_status():
             dependencies[lib] = True
         except ImportError:
             dependencies[lib] = False
-    
+
     return {
-        "pandoc": {
-            "available": pandoc_path is not None,
-            "path": pandoc_path
+        "libreoffice": {
+            "available": lo_path is not None,
+            "path": lo_path
         },
         "mermaid_cli": {
             "available": mmdc_path is not None,
@@ -99,10 +108,9 @@ async def get_converter_status():
         "features": {
             "mermaid_rendering": True,  # 使用在线服务
             "csv_extraction": pdfplumber_available,
-            "full_workflow": pandoc_path is not None or dependencies.get('pypandoc', False)
+            "full_workflow": lo_path is not None
         }
-    }
-
+}
 
 @router.post("/convert")
 async def convert_markdown(request: MarkdownConvertRequest):
@@ -129,7 +137,7 @@ async def convert_markdown(request: MarkdownConvertRequest):
                 detail=f"Unsupported format: {request.output_format}. Supported: pdf, docx, html, xlsx, pptx"
             )
         
-        converter = PandocConverter()
+        converter = MarkdownConverter()
         result = await converter.convert(
             input_content=request.content,
             input_format='markdown',
@@ -199,7 +207,7 @@ async def convert_markdown_file(
                 detail=f"Unsupported format: {output_format}"
             )
         
-        converter = PandocConverter()
+        converter = MarkdownConverter()
         result = await converter.convert(
             input_content=text,
             input_format='markdown',
@@ -339,7 +347,7 @@ async def full_workflow(
                 detail=f"Unsupported format: {output_format}"
             )
         
-        converter = PandocConverter()
+        converter = MarkdownConverter()
         result = await converter.convert(
             input_content=text,
             input_format='markdown',

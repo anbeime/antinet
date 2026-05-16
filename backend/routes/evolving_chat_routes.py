@@ -295,38 +295,44 @@ class EvolvingChatEngine:
         query: str,
         context: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """检查并执行技能"""
+        """检查并执行技能（内置 + Hermes）"""
         try:
-            if self._skill_registry is None:
-                return None
-            
-            # 查找匹配的技能
-            skill_name = self._find_matching_skill(query)
-            if not skill_name:
-                return None
-            
-            # 执行技能
-            skill = self._skill_registry.get_skill(skill_name)
-            if skill and skill.enabled:
-                result = await self._skill_registry.execute_skill(
-                    skill_name,
-                    query=query,
-                    context=context
-                )
-                
+            # 1. 先检查内置 8-Agent 技能
+            if self._skill_registry is not None:
+                skill_name = self._find_matching_skill(query)
+                if skill_name:
+                    skill = self._skill_registry.get_skill(skill_name)
+                    if skill and skill.enabled:
+                        result = await self._skill_registry.execute_skill(
+                            skill_name,
+                            query=query,
+                            context=context
+                        )
+                        return {
+                            "skill_name": skill_name,
+                            "response": result.get("result", {}).get("response", "技能执行完成"),
+                            "suggestions": self._generate_skill_suggestions(skill_name)
+                        }
+
+            # 2. 检查 Hermes 技能（基于关键词匹配）
+            from services.hermes_skill_loader import get_hermes_skill_loader
+            loader = get_hermes_skill_loader()
+            skill = loader.find_matching(query)
+            if skill:
+                result = await skill.execute(query)
                 return {
-                    "skill_name": skill_name,
-                    "response": result.get("result", {}).get("response", "技能执行完成"),
-                    "suggestions": self._generate_skill_suggestions(skill_name)
+                    "skill_name": f"hermes:{skill.name}",
+                    "response": result.get("result") or result.get("error", "技能执行失败"),
+                    "suggestions": [f"查看 {skill.name} 帮助", f"执行其他 {skill.name} 命令"]
                 }
-        
+
         except Exception as e:
             logger.warning(f"[EvolvingChat] 技能执行失败: {e}")
-        
+
         return None
     
     def _find_matching_skill(self, query: str) -> Optional[str]:
-        """查找匹配的技能"""
+        """查找匹配的内置技能"""
         skill_patterns = {
             "four_color_cards": [r"提取.*卡片", r"四色.*知识", r"构建.*知识库"],
             "html_report": [r"生成.*报告", r"制作.*报告", r"报告.*HTML"],
@@ -413,61 +419,73 @@ class EvolvingChatEngine:
                             "source": "skill"
                         })
             
-            # 2. 搜索主知识库 (knowledge_cards表)
+            # 2. 用向量搜索搜主知识库 (knowledge_cards表)
             try:
-                from database import DatabaseManager
-                from config import settings
-                
-                # 每次创建新连接可能导致问题，改用共享的db_manager
-                if hasattr(EvolvingChatService, '_db_instance'):
-                    db = EvolvingChatService._db_instance
-                else:
-                    db = DatabaseManager(settings.DB_PATH)
-                    EvolvingChatService._db_instance = db
-                
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                
-                # 调试：先检查有多少数据
-                cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
-                total_count = cursor.fetchone()[0]
-                logger.info(f"[EvolvingChat] 知识库总卡片数: {total_count}")
-                
-                if total_count > 0:
-                    cursor.execute("""
-                        SELECT id, card_type, title, content, category, created_at
-                        FROM knowledge_cards
-                        WHERE title LIKE ? OR content LIKE ?
-                        ORDER BY created_at DESC
-                        LIMIT 50
-                    """, [f"%{query}%", f"%{query}%"])
-                    
-                    rows = cursor.fetchall()
-                    logger.info(f"[EvolvingChat] 搜索'{query}'找到 {len(rows)} 条")
-                    
-                    for row in rows:
-                        content = (row["content"] or "").lower()
-                        title = (row["title"] or "").lower()
-                        score = 0
-                        for word in query_words:
-                            if word in content:
-                                score += 1
-                            if word in title:
-                                score += 2
-                        if score > 0:
-                            all_cards.append({
-                                "card_id": str(row["id"]),
-                                "card_type": row["card_type"],
-                                "title": row["title"],
-                                "content": row["content"],
-                                "category": row["category"],
-                                "similarity": min(score / len(query_words), 1.0),
-                                "source": "knowledge_db"
-                            })
-                
-                conn.close()
+                from routes import vector_search
+                vector_results = vector_search.search_hybrid(query, limit=20)
+                logger.info(f"[EvolvingChat] 向量搜索'{query}'找到 {len(vector_results)} 条")
+                for r in vector_results:
+                    all_cards.append({
+                        "card_id": str(r.id),
+                        "card_type": r.card_type,
+                        "title": r.title,
+                        "content": r.content,
+                        "similarity": r.score,
+                        "source": "knowledge_db"
+                    })
             except Exception as e:
-                logger.warning(f"[EvolvingChat] 主知识库搜索失败: {e}")
+                logger.warning(f"[EvolvingChat] 向量搜索失败，回退到关键词: {e}")
+                # 回退：关键词搜索
+                try:
+                    from database import DatabaseManager
+                    from config import settings
+                    if hasattr(EvolvingChatService, '_db_instance'):
+                        db = EvolvingChatService._db_instance
+                    else:
+                        db = DatabaseManager(settings.DB_PATH)
+                        EvolvingChatService._db_instance = db
+
+                    conn = db.get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM knowledge_cards")
+                    total_count = cursor.fetchone()[0]
+                    logger.info(f"[EvolvingChat] 知识库总卡片数: {total_count}")
+
+                    if total_count > 0:
+                        cursor.execute("""
+                            SELECT id, card_type, title, content, category, created_at
+                            FROM knowledge_cards
+                            WHERE title LIKE ? OR content LIKE ?
+                            ORDER BY created_at DESC
+                            LIMIT 50
+                        """, [f"%{query}%", f"%{query}%"])
+
+                        rows = cursor.fetchall()
+                        logger.info(f"[EvolvingChat] 关键词搜索'{query}'找到 {len(rows)} 条")
+
+                        for row in rows:
+                            content = (row["content"] or "").lower()
+                            title = (row["title"] or "").lower()
+                            score = 0
+                            for word in query_words:
+                                if word in content:
+                                    score += 1
+                                if word in title:
+                                    score += 2
+                            if score > 0:
+                                all_cards.append({
+                                    "card_id": str(row["id"]),
+                                    "card_type": row["card_type"],
+                                    "title": row["title"],
+                                    "content": row["content"],
+                                    "category": row["category"],
+                                    "similarity": min(score / len(query_words), 1.0),
+                                    "source": "knowledge_db"
+                                })
+
+                    conn.close()
+                except Exception as e2:
+                    logger.warning(f"[EvolvingChat] 关键词搜索也失败: {e2}")
             
             # 按相似度排序并去重
             all_cards.sort(key=lambda x: x.get("similarity", 0), reverse=True)

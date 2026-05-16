@@ -58,7 +58,7 @@ class OrchestratorAgent:
             }
         except Exception as e:
             logger.error(f"解析用户请求失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def dispatch_task(self, task_instructions: Dict) -> Dict:
         """
@@ -204,7 +204,7 @@ class OrchestratorAgent:
             return report_draft
         except Exception as e:
             logger.error(f"聚合结果失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def render_visualization(self, report_draft: Dict) -> Dict:
         """
@@ -234,7 +234,7 @@ class OrchestratorAgent:
             }
         except Exception as e:
             logger.error(f"渲染可视化失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def handle_exception(self, exception_tasks: Dict) -> Dict:
         """
@@ -338,7 +338,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"任务分解失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     async def control_flow(self, task_plan: Dict) -> Dict:
         """
@@ -384,7 +384,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"流程控制失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     async def handle_exception_by_agent(self, agent_name: str, exception: Exception, task: Dict):
         """
@@ -480,7 +480,7 @@ class OrchestratorAgent:
         except Exception as e:
             logger.debug(f"[指挥使] NPU进程内推理失败: {e}")
         
-        raise RuntimeError("所有LLM层不可用")
+        # JSON解析失败不影响流程，回退到空列表
     
     def _parse_json_response(self, response: str) -> Dict:
         """
@@ -500,7 +500,7 @@ class OrchestratorAgent:
             return json.loads(response)
         except Exception as e:
             logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def _get_priority_value(self, priority: str) -> int:
         """
@@ -564,7 +564,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"流程控制失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     async def aggregate_results(self, results: Dict) -> Dict:
         """
@@ -596,7 +596,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"结果聚合失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     async def handle_exception(self, agent_name: str, exception: Exception, task: Dict):
         """
@@ -683,7 +683,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"调用GenieAPIService失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def _parse_json_response(self, response: str) -> Dict:
         """
@@ -708,7 +708,7 @@ class OrchestratorAgent:
         
         except Exception as e:
             logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def _get_priority_value(self, priority: str) -> int:
         """

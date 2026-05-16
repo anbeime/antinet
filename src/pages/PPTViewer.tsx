@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -32,6 +33,7 @@ const defaultSlides: SlideData[] = [
 
 const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   useTheme();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -39,6 +41,7 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   const [playInterval, setPlayInterval] = useState<NodeJS.Timeout | null>(null);
   const [loadedSlides, setLoadedSlides] = useState<SlideData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentFileName, setCurrentFileName] = useState<string>('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   const displaySlides = (loadedSlides && loadedSlides.length > 0) 
@@ -70,6 +73,7 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
             const blob = await response.blob();
             if (blob.size > 0) {
               console.log('[PPTViewer] 文件大小:', blob.size);
+              setCurrentFileName(fileName);
               const file = new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
               await parsePPTX(file);
               console.log('[PPTViewer] 解析成功');
@@ -200,6 +204,7 @@ const parsePPTX = async (file: File) => {
     if (!file) return;
     
     if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) {
+      setCurrentFileName(file.name);
       await parsePPTX(file);
     } else {
       alert('请上传PPT文件(.pptx, .ppt)');
@@ -218,6 +223,21 @@ const parsePPTX = async (file: File) => {
   const handleLast = () => setCurrentSlide(totalSlides - 1);
 
   const togglePlay = () => setIsPlaying(!isPlaying);
+
+  // 下载PPT文件
+  const handleDownload = () => {
+    if (!currentFileName) {
+      toast.error('没有可下载的PPT文件');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = `${API_BASE}/api/ppt/file?filename=${encodeURIComponent(currentFileName)}`;
+    link.download = currentFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('开始下载: ' + currentFileName);
+  };
 
   const themeColors = {
     blue: { bg: 'bg-blue-600', text: 'text-blue-600' },
@@ -290,9 +310,21 @@ const parsePPTX = async (file: File) => {
 
           <div className="w-px h-6 bg-gray-600" />
 
-          <button onClick={() => window.location.href = '/?tab=ppt-analysis'} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
+          <button onClick={() => navigate('/?tab=ppt-analysis')} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
             <Presentation className="w-4 h-4" />
             <span className="text-sm">生成PPT</span>
+          </button>
+
+          <div className="w-px h-6 bg-gray-600" />
+
+          <button
+            onClick={handleDownload}
+            disabled={!currentFileName}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="下载PPT"
+          >
+            <Download className="w-4 h-4" />
+            <span className="text-sm">下载</span>
           </button>
         </div>
       </header>
@@ -300,7 +332,7 @@ const parsePPTX = async (file: File) => {
       <main className="flex-1 flex overflow-hidden">
         {viewMode === 'slide' ? (
           <div className="flex-1 flex items-center justify-center p-8">
-            <div className="w-full max-w-5xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden">
+            <div className="w-full max-w-5xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden cursor-pointer" onClick={handleNext}>
               <div className={`h-full flex flex-col ${theme.bg} p-6 overflow-y-auto`}>
                 <div className="flex-1 flex flex-col justify-start overflow-y-auto">
                   <motion.div

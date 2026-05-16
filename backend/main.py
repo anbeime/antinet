@@ -21,7 +21,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # ============================================================
-# 2. NPU 库路径配置（使用新的配置模块）AAAA
+# 2. NPU 库路径配置（使用新的配置模块）
 # ============================================================
 from conf.npu import NPUConfig
 
@@ -95,6 +95,10 @@ AIServiceFactory.create_default_services()
 print("[OK] AI 服务工厂已初始化")
 
 # ============================================================
+# 6.5 AI 模型预热（使用 QAI/QAIRT SDK 的本地模型，无须 Ollama）
+# ============================================================
+
+# ============================================================
 # 7. 提醒服务启动（后台定时任务）
 # ============================================================
 try:
@@ -138,6 +142,8 @@ register_router("routes.agent_routes")
 register_router("routes.skill_routes")
 register_router("routes.npu_routes")
 register_router("routes.pdf_routes")
+register_router("routes.pdf_opendataloader_routes")  # OpenDataLoader 长 PDF 专用路由
+register_router("routes.ocr_routes")  # OCR 路由已存在但未注册
 register_router("routes.excel_routes")
 register_router("routes.ppt_routes")
 register_router("routes.multi_model_routes")
@@ -151,6 +157,7 @@ register_router("routes.vision_routes")
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
 register_router("routes.evolving_chat_routes")
+register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
 register_router("routes.card_pdf_routes")
@@ -162,10 +169,11 @@ register_router("routes.meeting_routes")
 register_router("routes.speech_routes")
 register_router("routes.research_routes")
 register_router("routes.ppt_structure_routes")
+register_router("routes.image_routes")  # 图片上传路由
 register_router("routes.analysis_routes")
-register_router("routes.data_routes")
 register_router("routes.report_routes")
-register_router("routes.report_routes")
+register_router("routes.collaboration_routes")  # 实时协作 (WebSocket + REST)
+register_router("routes.mindmap_routes")  # 思维导图
 
 # ============================================================
 # 8. 初始化各模块的数据库连接
@@ -231,7 +239,9 @@ except Exception as e:
 try:
     from routes import vector_search
     vector_search.set_db_manager(db_manager)
-    print("[OK] vector_search 数据库已连接")
+    vector_search.init_on_startup()
+    vector_search._precompute_all_embeddings_async()
+    print("[OK] vector_search 数据库已连接，embedding 已初始化")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
 
@@ -241,6 +251,13 @@ try:
     print("[OK] ppt_routes 数据库已连接")
 except Exception as e:
     print(f"[WARN] ppt_routes: {e}")
+
+try:
+    from routes import collaboration_routes
+    collaboration_routes.set_db_manager(db_manager)
+    print("[OK] collaboration_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] collaboration_routes: {e}")
 
 print("[INFO] 数据库连接初始化完成")
 

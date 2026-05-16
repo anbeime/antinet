@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -25,7 +25,8 @@ import {
   Settings,
   Save
 } from 'lucide-react';
-import { teamMemberService, activityService, analyticsService } from '../services/dataService';
+import { analyticsService } from '../services/dataService';
+import { collaborationService, collaborationREST } from '../services/collaborationService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import { 
@@ -159,7 +160,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   // 加载状态
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+  const historyLoadedRef = useRef(false); // 标记是否已通过 WS 收到历史数据
   // 编辑状态
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [editingGap, setEditingGap] = useState<KnowledgeGap | null>(null);
@@ -180,10 +181,16 @@ const TeamCollaborationEnhanced: React.FC = () => {
         setLoading(true);
         setError(null);
 
+        // 如果 WebSocket 已经推送了历史数据，跳过 REST 加载
+        if (historyLoadedRef.current) {
+          setLoading(false);
+          return;
+        }
+
         // 调用后端API获取真实协作数据
         const [members, activities] = await Promise.all([
-          teamMemberService.getAll(),
-          activityService.getRecent(30)
+          collaborationREST.getMembers(),
+          collaborationREST.getActivities(30).catch(() => [])
         ]);
 
         // 设置团队成员数据
@@ -203,14 +210,14 @@ const TeamCollaborationEnhanced: React.FC = () => {
           { id: 4, area: '测试覆盖', gapScore: 60, priority: '低', description: '测试覆盖率有待提高', suggestions: ['制定测试规范', '引入自动化测试'] }
         ]);
 
-        // 初始化协作消息
-        setMessages([
-          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略，结合AI技术和用户体验研究的最新成果。', timestamp: '2026-02-20 10:30' },
-          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手，识别关键痛点和机会点，然后用AI技术来优化这些环节。', timestamp: '2026-02-20 10:35', replies: [
-            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研，收集一些初步反馈。', timestamp: '2026-02-20 10:40' }
-          ]},
-          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制，制定一个分阶段的实施计划。', timestamp: '2026-02-20 10:45' }
-        ]);
+        // 初始化协作消息（从后端加载历史）
+        setMessages(activities.map((a: any, idx: number) => ({
+          id: parseInt(a.id || String(idx + 1), 10),
+          user: a.user || '未知',
+          avatar: a.avatar || '👤',
+          content: a.content || '',
+          timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
+        })));
 
       } catch (err) {
         setError('加载协作数据失败，请检查后端连接');
@@ -223,6 +230,79 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
     loadCollaborationData();
   }, []);
+
+  // ========== WebSocket 实时协作 ==========
+  const [collabUserId] = useState(() => {
+    // 生成或复用本地用户ID
+    let id = localStorage.getItem('collab_user_id');
+    if (!id) {
+      id = `user_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      localStorage.setItem('collab_user_id', id);
+    }
+    return id;
+  });
+
+  useEffect(() => {
+    console.log('[Collab] useEffect 触发, collabUserId:', collabUserId);
+    if (!collabUserId) return;
+    collaborationService.connect(collabUserId);
+
+    const unsubscribe = collaborationService.onMessage((msg) => {
+      if (msg.type === 'history' && msg.activities) {
+        // WebSocket 连接后推送的历史数据（刷新后恢复记录）
+        console.log(`[Collab] 收到历史数据: ${msg.activities.length} 条活动, ${msg.members?.length || 0} 个成员`);
+        historyLoadedRef.current = true;
+        if (msg.activities.length > 0) {
+          setMessages(msg.activities.map((a: any) => ({
+            id: parseInt(a.id || '0', 10) || Date.now(),
+            user: a.user,
+            avatar: a.avatar || '👤',
+            content: a.content,
+            timestamp: new Date(a.timestamp).toLocaleString('zh-CN'),
+          })));
+        }
+        if (msg.members && msg.members.length > 0) {
+          setTeamMembers(msg.members.map((m: any, idx: number) => ({
+            ...m,
+            id: m.id || idx + 1,
+            avatar: m.avatar || '👤',
+            online: m.status === 'online',
+            contribution: m.contribution || Math.floor(Math.random() * 100),
+          })));
+        }
+        setLoading(false);
+      }
+      if (msg.type === 'new_activity' && msg.activity) {
+        const act = msg.activity;
+        const incoming: CollaborationMessage = {
+          id: parseInt(act.id || '0', 10) || Date.now(),
+          user: act.user,
+          avatar: act.avatar || '👤',
+          content: act.content,
+          timestamp: new Date(act.timestamp).toLocaleString('zh-CN'),
+        };
+        // 避免重复添加自己发的消息（已由 handleSendMessage 乐观添加）
+        setMessages(prev => {
+          if (prev.some(m => m.id === incoming.id)) return prev;
+          return [...prev, incoming];
+        });
+      }
+      if (msg.type === 'user_online' || msg.type === 'user_offline') {
+        // 团队成员状态更新
+        setTeamMembers(prev => prev.map(m => {
+          if (m.id.toString() === msg.userId) {
+            return { ...m, online: msg.type === 'user_online' };
+          }
+          return m;
+        }));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      collaborationService.disconnect();
+    };
+  }, [collabUserId]);
 
   // ========== 团队成员管理 ==========
   const handleAddMember = () => {
@@ -313,9 +393,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
       timestamp: new Date().toLocaleString('zh-CN')
     };
     
+    // 乐观更新：立即显示自己发的消息
     setMessages([...messages, message]);
     setNewMessage('');
-    toast.success('消息发送成功');
+    
+    // 通过 WebSocket 广播给所有在线用户
+    collaborationService.sendActivity({
+      user: message.user,
+      userId: collabUserId,
+      avatar: message.avatar,
+      action: '发言',
+      content: message.content,
+    });
+    toast.success('消息已发送');
   };
 
   const handleReply = (messageId: number) => {
@@ -334,6 +424,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       timestamp: new Date().toLocaleString('zh-CN')
     };
     
+    // 乐观更新：立即显示回复
     setMessages(messages.map(m => {
       if (m.id === parentId) {
         return { ...m, replies: [...(m.replies || []), reply] };
@@ -343,7 +434,18 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     setReplyingTo(null);
     setReplyContent('');
-    toast.success('回复发送成功');
+    
+    // 通过 WebSocket 发送评论（带 parentId）
+    collaborationService.sendComment({
+      user: reply.user,
+      userId: collabUserId,
+      avatar: reply.avatar,
+      content: reply.content,
+      parentId,
+      targetId: parentId,
+      targetType: 'space',
+    });
+    toast.success('回复已发送');
   };
 
   // ========== 报告配置 ==========

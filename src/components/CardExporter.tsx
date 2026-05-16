@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileText, FileSpreadsheet, FileType, Loader, ChevronDown, Eye } from 'lucide-react';
+import { Download, FileText, FileSpreadsheet, FileType, Loader, ChevronDown, Eye, FilePen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -46,8 +46,8 @@ const CardExporter: React.FC<CardExporterProps> = ({
   className = '',
   showPPTVPreview = true
 }) => {
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'word' | 'excel'>('word');
+const [isExporting, setIsExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'word' | 'excel' | 'pdf'>('word');
   const [showDropdown, setShowDropdown] = useState(false);
   const navigate = useNavigate();
 
@@ -192,12 +192,77 @@ const CardExporter: React.FC<CardExporterProps> = ({
     }
   };
 
+  // 导出为 PDF
+  const exportToPdf = async () => {
+    if (!cards || cards.length === 0) {
+      toast.warning('没有可导出的卡片');
+      return;
+    }
+
+    setIsExporting(true);
+    setExportFormat('pdf');
+    onExportStart?.();
+
+    try {
+      const cardsForExport = cards.map(card => ({
+        type: card.color === 'blue' ? 'fact' :
+              card.color === 'green' ? 'interpret' :
+              card.color === 'yellow' ? 'risk' : 'action',
+        title: card.title,
+        content: card.content,
+        tags: card.tags || [],
+        source: card.source || card.address || 'Antinet'
+      }));
+
+      const formData = new FormData();
+      formData.append('cards_data', JSON.stringify(cardsForExport));
+      formData.append('title', title);
+      formData.append('author', author);
+
+      const response = await fetch(`${apiBase}/api/pdf/export/cards-pdf`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const finalFileName = `${fileName}.pdf`;
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = finalFileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast.success('PDF 导出成功！');
+        onExportComplete?.();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.detail || '导出失败';
+        toast.error(`导出失败: ${errorMsg}`);
+        onExportError?.(errorMsg);
+      }
+    } catch (error) {
+      console.error('PDF 导出失败:', error);
+      const errorMsg = 'PDF 导出失败，请检查后端服务';
+      toast.error(errorMsg);
+      onExportError?.(errorMsg);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // 根据格式导出
-  const handleExport = async (format: 'word' | 'excel') => {
+  const handleExport = async (format: 'word' | 'excel' | 'pdf') => {
     if (format === 'word') {
       await exportToWord();
-    } else {
+    } else if (format === 'excel') {
       await exportToExcel();
+    } else {
+      await exportToPdf();
     }
     setShowDropdown(false);
   };
@@ -222,6 +287,23 @@ const CardExporter: React.FC<CardExporterProps> = ({
             <FileType className={sizeConfig[size].icon} />
           )}
           <span>导出 Word</span>
+        </button>
+        <button
+          onClick={() => handleExport('pdf')}
+          disabled={isExporting}
+          className={`
+            flex items-center ${sizeConfig[size].gap} ${sizeConfig[size].button}
+            bg-red-600 hover:bg-red-700 text-white rounded-lg 
+            transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+          `}
+          title="导出为 PDF 文档（排版精美，适合打印分享）"
+        >
+          {isExporting && exportFormat === 'pdf' ? (
+            <Loader className={`${sizeConfig[size].icon} animate-spin`} />
+          ) : (
+            <FilePen className={sizeConfig[size].icon} />
+          )}
+          <span>导出 PDF</span>
         </button>
         
         <button
@@ -303,6 +385,19 @@ const CardExporter: React.FC<CardExporterProps> = ({
             <div 
               className="fixed inset-0 z-10" 
               onClick={() => setShowDropdown(false)}
+              <button
+                onClick={() => {
+                  setExportFormat('pdf');
+                  handleExport('pdf');
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-t border-gray-200 dark:border-gray-700"
+              >
+                <FilePen className="w-5 h-5 text-red-600" />
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-white">PDF 文档</div>
+                  <div className="text-xs text-gray-500">排版精美，适合打印</div>
+                </div>
+              </button>
             />
             <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
@@ -408,6 +503,19 @@ const CardExporter: React.FC<CardExporterProps> = ({
               className="fixed inset-0 z-10" 
               onClick={() => setShowDropdown(false)}
             />
+              <button
+                onClick={() => {
+                  setExportFormat('pdf');
+                  handleExport('pdf');
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+              >
+                <FilePen className="w-5 h-5 text-red-600" />
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-white">导出 PDF</div>
+                  <div className="text-xs text-gray-500">排版精美，适合打印</div>
+                </div>
+              </button>
             <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
                 onClick={() => handleExport('excel')}

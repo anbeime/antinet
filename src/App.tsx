@@ -1,5 +1,4 @@
 import { Routes, Route } from "react-router-dom";
-import "./i18n";
 import Home from "@/pages/Home";
 import NPUAnalysis from "@/pages/NPUAnalysis";
 import NPUDashboard from "@/pages/NPUDashboard";
@@ -26,17 +25,17 @@ import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
 import EvolvingChatBot from "@/components/EvolvingChatBot";
+
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
+import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
 import { AuthProvider } from '@/contexts/authContext';
-import { LanguageProvider } from '@/contexts/LanguageContext';
 
 export default function App() {
   return (
     <AuthProvider>
-      <LanguageProvider>
-        <ReminderNotification />
-        <Routes>
+      <ReminderNotification />
+      <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/npu-analysis" element={<NPUAnalysis />} />
           <Route path="/npu-dashboard" element={<NPUDashboard />} />
@@ -61,6 +60,7 @@ export default function App() {
           <Route path="/genie-playground" element={<GeniePlayground />} />
           <Route path="/genie-npu-test" element={<GenieNPUTest />} />
           <Route path="/hermes-manager" element={<HermesManager />} />
+          <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
           <Route path="/evolving-chat" element={<EvolvingChatBot />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
@@ -70,7 +70,6 @@ export default function App() {
             </div>
           } />
         </Routes>
-      </LanguageProvider>
     </AuthProvider>
   );
 }

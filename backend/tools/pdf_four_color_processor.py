@@ -44,6 +44,66 @@ else:
 
 logger = logging.getLogger(__name__)
 
+REPORTLAB_AVAILABLE = True
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm, mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+
+# ============ 中文字体注册（单例）============
+_FONT_REGISTERED = False
+_CHINESE_FONT_NAME = 'Helvetica'
+
+
+def _get_chinese_font_path():
+    """查找中文字体路径"""
+    base_dirs = [
+        Path(__file__).parent.parent.parent,  # 项目根目录
+    ]
+    font_names = ["NotoSansSC-Regular.ttf", "SimHei.ttf"]
+    for base in base_dirs:
+        for subdir in ["public/fonts", "fonts"]:
+            for fname in font_names:
+                path = base / subdir / fname
+                if path.exists():
+                    return str(path)
+    return None
+
+
+def _ensure_chinese_font():
+    """确保中文字体已注册到 reportlab"""
+    global _FONT_REGISTERED, _CHINESE_FONT_NAME
+    if _FONT_REGISTERED:
+        return _CHINESE_FONT_NAME
+    _FONT_REGISTERED = True
+
+    font_path = _get_chinese_font_path()
+    if font_path:
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            # 注册常规体
+            pdfmetrics.registerFont(TTFont('NotoSansSC', font_path, 'Identity-H'))
+            # 注册粗体（如果存在单独文件，否则复用同一文件，reportlab 会做向量粗化）
+            bold_path = font_path.replace('Regular', 'Bold')
+            if not Path(bold_path).exists():
+                bold_path = font_path  # 用同一文件，reportlab 自动加粗
+            pdfmetrics.registerFont(TTFont('NotoSansSC-Bold', bold_path, 'Identity-H'))
+            _CHINESE_FONT_NAME = 'NotoSansSC'
+            logger.info(f"[FourColorPDF] 中文字体注册成功: {font_path}")
+            return 'NotoSansSC'
+        except Exception as e:
+            logger.warning(f"[FourColorPDF] 中文字体注册失败: {e}")
+
+    logger.warning("[FourColorPDF] 未找到中文字体，使用 Helvetica（可能显示乱码）")
+    return 'Helvetica'
+
 
 class PDFourColorProcessor:
     """PDF 四色卡片处理器"""
@@ -440,18 +500,222 @@ class PDFourColorProcessor:
                 
                 doc.add_paragraph(card.get("content", "")[:500])
                 doc.add_paragraph("")
-            
+
             doc.save(output_path)
             result["success"] = True
             logger.info(f"Word 导出成功: {output_path}")
         except Exception as e:
             result["error"] = str(e)
             logger.error(f"Word 导出失败: {e}")
-        
+
         return result
 
+    def export_to_pdf(self, cards: List[Dict[str, Any]], output_path: str,
+                      title: str = "四色知识卡片报告", author: str = "Antinet 智能知识管家") -> Dict[str, Any]:
+        """将卡片导出为 PDF 文档（纯 reportlab，无需系统依赖）"""
+        result = {"success": False, "output_path": output_path, "error": None}
 
-# 便捷函数
+        if not REPORTLAB_AVAILABLE:
+            result["error"] = "reportlab 未安装，请运行: pip install reportlab"
+            return result
+
+        try:
+            font_name = _ensure_chinese_font()
+            bold_font = f'{font_name}-Bold' if font_name != 'Helvetica' else 'Helvetica-Bold'
+            doc = SimpleDocTemplate(
+                output_path,
+                pagesize=A4,
+                leftMargin=2*cm, rightMargin=2*cm,
+                topMargin=2*cm, bottomMargin=2*cm,
+                title=title,
+                author=author,
+            )
+
+            # 颜色定义 (r, g, b) — 与四色卡片一致
+            COLOR_BLUE   = colors.HexColor('#0052CC')  # 核心概念/事实
+            COLOR_GREEN  = colors.HexColor('#009900')  # 关联链接/解释
+            COLOR_YELLOW = colors.HexColor('#FFC000')  # 参考来源/风险
+            COLOR_RED    = colors.HexColor('#C00000')  # 索引关键词/行动
+
+            type_color_map = {
+                "fact":       ("事实",       COLOR_BLUE),
+                "explanation":("解释",        COLOR_GREEN),
+                "risk":       ("风险",        COLOR_YELLOW),
+                "action":     ("行动",        COLOR_RED),
+                # 兼容中文类型
+                "blue":       ("核心概念",   COLOR_BLUE),
+                "green":      ("关联链接",   COLOR_GREEN),
+                "yellow":     ("参考来源",   COLOR_YELLOW),
+                "red":        ("索引关键词", COLOR_RED),
+            }
+
+            styles = getSampleStyleSheet()
+            styles.add(ParagraphStyle(
+                name='DocTitle',
+                parent=styles['Title'],
+                fontSize=22,
+                leading=28,
+                fontName=bold_font,
+                textColor=colors.HexColor('#1a1a2e'),
+                alignment=TA_CENTER,
+                spaceAfter=6,
+            ))
+            styles.add(ParagraphStyle(
+                name='DocSubtitle',
+                parent=styles['Normal'],
+                fontSize=11,
+                leading=14,
+                fontName=font_name,
+                textColor=colors.HexColor('#666666'),
+                alignment=TA_CENTER,
+                spaceAfter=20,
+            ))
+            styles.add(ParagraphStyle(
+                name='CardTitle',
+                parent=styles['Normal'],
+                fontSize=13,
+                leading=18,
+                fontName=bold_font,
+                textColor=colors.HexColor('#1a1a2e'),
+                spaceAfter=4,
+            ))
+            styles.add(ParagraphStyle(
+                name='CardContent',
+                parent=styles['Normal'],
+                fontSize=10,
+                leading=15,
+                fontName=font_name,
+                textColor=colors.HexColor('#333333'),
+                spaceAfter=4,
+            ))
+            styles.add(ParagraphStyle(
+                name='CardMeta',
+                parent=styles['Normal'],
+                fontSize=8,
+                leading=11,
+                fontName=font_name,
+                textColor=colors.HexColor('#999999'),
+            ))
+
+            story = []
+
+            # 封面标题
+            story.append(Paragraph(title, styles['DocTitle']))
+            story.append(Paragraph(f"作者：{author}  |  共 {len(cards)} 张知识卡片", styles['DocSubtitle']))
+            story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#e0e0e0'), spaceAfter=16))
+
+            # 统计摘要
+            type_count: Dict[str, int] = {}
+            for card in cards:
+                ct = card.get("type", "fact")
+                type_name, _ = type_color_map.get(ct, ("其他", COLOR_BLUE))
+                type_count[type_name] = type_count.get(type_name, 0) + 1
+
+            if type_count:
+                stats_row = [
+                    Paragraph(f"<b><font color='#0052CC'>核心概念 {type_count.get('核心概念', 0)}</font></b>", styles['CardMeta']),
+                    Paragraph(f"<b><font color='#009900'>关联链接 {type_count.get('关联链接', 0)}</font></b>", styles['CardMeta']),
+                    Paragraph(f"<b><font color='#FFC000'>参考来源 {type_count.get('参考来源', 0)}</font></b>", styles['CardMeta']),
+                    Paragraph(f"<b><font color='#C00000'>索引关键词 {type_count.get('索引关键词', 0)}</font></b>", styles['CardMeta']),
+                ]
+                stats_table = Table([stats_row], colWidths=[4*cm, 4*cm, 4*cm, 4*cm])
+                stats_table.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8f8f8')),
+                    ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.HexColor('#f8f8f8'), colors.HexColor('#f0f0f0')]),
+                    ('TOPPADDING', (0, 0), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                    ('ROUNDEDCORNERS', [4, 4, 4, 4]),
+                ]))
+                story.append(stats_table)
+                story.append(Spacer(1, 16))
+
+            # 卡片列表
+            for i, card in enumerate(cards):
+                ct = card.get("type", "fact")
+                type_name, type_color = type_color_map.get(ct, ("其他", COLOR_BLUE))
+
+                # 颜色标识条
+                color_bar = Table([['']], colWidths=[18], rowHeights=[52])
+                color_bar.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, 0), type_color),
+                    ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
+                    ('TOPPADDING', (0, 0), (0, 0), 0),
+                    ('BOTTOMPADDING', (0, 0), (0, 0), 0),
+                    ('LEFTPADDING', (0, 0), (0, 0), 0),
+                    ('RIGHTPADDING', (0, 0), (0, 0), 0),
+                ]))
+
+                content_text = card.get("content", "")
+                # 截断过长内容
+                if len(content_text) > 800:
+                    content_text = content_text[:800] + "..."
+
+                source_text = ""
+                if card.get("source"):
+                    source_text = f"来源：{card.get('source')}"
+                elif card.get("address"):
+                    source_text = f"来源：{card.get('address')}"
+
+                # 标题行
+                title_para = Paragraph(
+                    f'<font color="#{type_color.hexval()[2:]}"><b>[{type_name}]</b></font>  {card.get("title", "")}',
+                    styles['CardTitle']
+                )
+                content_para = Paragraph(content_text.replace('\n', '<br/>'), styles['CardContent'])
+
+                card_content = [title_para, content_para]
+                if source_text:
+                    card_content.append(Paragraph(source_text, styles['CardMeta']))
+
+                # 卡片行：[颜色条 | 内容]
+                card_table = Table(
+                    [[color_bar, card_content]],
+                    colWidths=[0.5*cm, 16.5*cm],
+                )
+                card_table.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('LEFTPADDING', (0, 0), (0, 0), 0),
+                    ('RIGHTPADDING', (0, 0), (0, 0), 0),
+                    ('LEFTPADDING', (1, 0), (1, 0), 10),
+                    ('RIGHTPADDING', (1, 0), (1, 0), 0),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]))
+
+                story.append(card_table)
+                story.append(Spacer(1, 8))
+
+                # 分页
+                if (i + 1) % 5 == 0 and i < len(cards) - 1:
+                    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e0e0e0'), spaceAfter=8))
+                    story.append(Spacer(1, 8))
+
+            # 页脚
+            story.append(Spacer(1, 20))
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=6))
+            footer_style = ParagraphStyle(
+                name='Footer',
+                parent=styles['Normal'],
+                fontSize=8,
+                fontName=font_name,
+                textColor=colors.HexColor('#aaaaaa'),
+                alignment=TA_CENTER,
+            )
+            story.append(Paragraph("由 Antinet 智能知识管家自动生成  |  八府巡按，各司其职", footer_style))
+
+            doc.build(story)
+            result["success"] = True
+            logger.info(f"PDF 导出成功: {output_path}，共 {len(cards)} 张卡片")
+
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"PDF 导出失败: {e}", exc_info=True)
+
+        return result
 def generate_four_color_cards(pdf_path: str, max_cards: int = 50) -> Dict[str, Any]:
     """
     便捷函数：从 PDF 生成四色卡片

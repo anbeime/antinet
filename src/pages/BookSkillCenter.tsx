@@ -1,0 +1,707 @@
+/**
+ * BookSkillCenter - 书籍方法论中心
+ * 四色知识管理系统集成：提取方法论(黄) → 问题匹配 → 案例回填(蓝)
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
+import {
+  BookOpen, BookMarked, Search, MessageSquare, Plus,
+  ArrowRight, Save, FileText, BrainCircuit, Sparkles,
+  Library, Lightbulb, TrendingUp, CheckCircle, Zap,
+  Loader, AlertCircle, ChevronRight, Star, Clock,
+  Book, FileUp, Download, Link2, X, ExternalLink, Filter
+} from 'lucide-react';
+import { skillService } from '@/services/skillService';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
+
+// ============ Types ============
+interface BookMethodology {
+  methodology_id: string;
+  book_name: string;
+  book_author: string;
+  name_en: string;
+  name_cn: string;
+  trigger_scenario: string;
+  description: string;
+  steps: string[];
+  output_format: string;
+  examples: string;
+  usage_count: number;
+  created_at: string;
+  command_name: string;
+}
+
+interface BookSkillData {
+  book_name: string;
+  book_author: string;
+  book_id: string;
+  methodology_count: number;
+  extracted_at: string;
+  methodologies: BookMethodology[];
+  total_cards_generated: Record<string, number>;
+}
+
+interface CaseStudy {
+  case_id: string;
+  book_name: string;
+  methodology_name: string;
+  problem: string;
+  solution: string;
+  outcome: string;
+  created_at: string;
+}
+
+// ============ Color Theme ============
+const FOUR_COLORS = {
+  yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-200 dark:border-yellow-700', text: 'text-yellow-700 dark:text-yellow-300', icon: Lightbulb, label: '方法论' },
+  blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-700', text: 'text-blue-700 dark:text-blue-300', icon: BookMarked, label: '案例' },
+  green: { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-200 dark:border-green-700', text: 'text-green-700 dark:text-green-300', icon: BrainCircuit, label: '解释' },
+  red: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-700', text: 'text-red-700 dark:text-red-300', icon: Zap, label: '行动' },
+};
+
+// ============ Tab Config ============
+type TabType = 'extract' | 'query' | 'case' | 'bookshelf';
+
+interface TabConfig {
+  key: TabType;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}
+
+const TABS: TabConfig[] = [
+  { key: 'extract', label: '提取方法论', icon: BookOpen, color: 'text-yellow-500' },
+  { key: 'query', label: '问题匹配', icon: Search, color: 'text-blue-500' },
+  { key: 'case', label: '案例沉淀', icon: CheckCircle, color: 'text-green-500' },
+  { key: 'bookshelf', label: '书籍书架', icon: Library, color: 'text-purple-500' },
+];
+
+// ============ Main Component ============
+const BookSkillCenter: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabType>('extract');
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<any>(null);
+
+  // Load statistics on mount
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      const data = await skillService.getBookSkillStats();
+      setStats(data);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+      >
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            <BookMarked className="text-yellow-500" size={32} />
+            Book Skill Generator
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">
+            把书籍方法论变成随时待命的 AI 顾问 · 四色知识管理系统集成
+          </p>
+        </div>
+        {stats && (
+          <div className="flex gap-3 flex-wrap">
+            <StatBadge icon={BookOpen} value={stats.total_books} label="书籍" color="yellow" />
+            <StatBadge icon={Lightbulb} value={stats.total_methodologies} label="方法论" color="yellow" />
+            <StatBadge icon={CheckCircle} value={stats.total_case_studies} label="案例" color="blue" />
+          </div>
+        )}
+      </motion.div>
+
+      {/* Four-Color Flow Diagram */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-gradient-to-r from-yellow-50 via-blue-50 to-green-50 dark:from-yellow-900/10 dark:via-blue-900/10 dark:to-green-900/10 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+      >
+        <div className="flex items-center justify-center gap-2 md:gap-4 text-xs md:text-sm flex-wrap">
+          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 font-medium text-yellow-700 dark:text-yellow-300">
+            📕 书籍输入
+          </span>
+          <ArrowRight size={16} className="text-gray-400" />
+          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 font-medium text-yellow-700 dark:text-yellow-300">
+            🟡 提取方法论
+          </span>
+          <ArrowRight size={16} className="text-gray-400" />
+          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-300">
+            🤖 AI 顾问推演
+          </span>
+          <ArrowRight size={16} className="text-gray-400" />
+          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 font-medium text-green-700 dark:text-green-300">
+            🔵 案例沉淀
+          </span>
+        </div>
+      </motion.div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              activeTab === tab.key
+                ? 'bg-white dark:bg-gray-700 shadow-sm text-gray-900 dark:text-white'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            <tab.icon size={16} className={activeTab === tab.key ? tab.color : ''} />
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeTab}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.2 }}
+        >
+          {activeTab === 'extract' && <ExtractPanel onComplete={loadStats} />}
+          {activeTab === 'query' && <QueryPanel />}
+          {activeTab === 'case' && <CasePanel onComplete={loadStats} />}
+          {activeTab === 'bookshelf' && <BookshelfPanel />}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+};
+
+// ============ Stat Badge ============
+const StatBadge: React.FC<{
+  icon: React.ComponentType<{ className?: string }>;
+  value: number;
+  label: string;
+  color: string;
+}> = ({ icon: Icon, value, label, color }) => (
+  <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+    color === 'yellow' ? 'border-yellow-200 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20' :
+    color === 'blue' ? 'border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20' :
+    'border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
+  }`}>
+    <Icon size={16} className={`${color === 'yellow' ? 'text-yellow-500' : color === 'blue' ? 'text-blue-500' : 'text-green-500'}`} />
+    <span className="font-bold text-lg">{value}</span>
+    <span className="text-xs text-gray-500">{label}</span>
+  </div>
+);
+
+// ============ Extract Panel ============
+const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
+  const [mode, setMode] = useState<'text' | 'notes'>('text');
+  const [bookName, setBookName] = useState('');
+  const [bookAuthor, setBookAuthor] = useState('');
+  const [content, setContent] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const handleExtract = async () => {
+    if (!content.trim()) {
+      toast.error('请填写书籍内容或笔记');
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      let data;
+      if (mode === 'text') {
+        data = await skillService.extractBookSkill(content, bookName, bookAuthor);
+      } else {
+        data = await skillService.extractBookSkillFromNotes(content, bookName, bookAuthor);
+      }
+      setResult(data);
+      toast.success(`成功提取 ${data.methodologies?.length || 0} 个方法论`);
+      onComplete();
+    } catch (err: any) {
+      toast.error(err.message || '提取失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+          <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <FileText size={18} className="text-yellow-500" />
+            书籍输入
+          </h2>
+
+          {/* Mode toggle */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode('text')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                mode === 'text' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+              }`}
+            >
+              <Book size={14} className="inline mr-1" /> 书籍原文
+            </button>
+            <button
+              onClick={() => setMode('notes')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                mode === 'notes' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+              }`}
+            >
+              <FileText size={14} className="inline mr-1" /> 我的笔记
+            </button>
+          </div>
+
+          <input
+            type="text"
+            placeholder="书籍名称（选填）"
+            value={bookName}
+            onChange={(e) => setBookName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none"
+          />
+          <input
+            type="text"
+            placeholder="作者（选填）"
+            value={bookAuthor}
+            onChange={(e) => setBookAuthor(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none"
+          />
+          <textarea
+            placeholder={mode === 'text' ? "粘贴书籍核心章节内容..." : "粘贴你的四色笔记/读书总结..."}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={10}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none resize-none"
+          />
+          <button
+            onClick={handleExtract}
+            disabled={loading || !content.trim()}
+            className="w-full py-2.5 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+          >
+            {loading ? (
+              <><Loader size={16} className="animate-spin" /> 提取中...</>
+            ) : (
+              <><Sparkles size={16} /> 提取方法论</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Results */}
+      <div>
+        {result && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4"
+          >
+            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <Lightbulb size={18} className="text-yellow-500" />
+              提取结果
+            </h2>
+            <p className="text-sm text-gray-500">
+              从《{result.book_skill?.book_name || bookName}》提取了 <strong className="text-yellow-600">{result.methodologies?.length || 0}</strong> 个方法论
+            </p>
+
+            {/* Four-color sync indicator */}
+            {result.yellow_cards_synced > 0 && (
+              <div className="px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+                <CheckCircle size={14} />
+                已同步 {result.yellow_cards_synced} 个方法论到四色系统🟡黄色卡片
+              </div>
+            )}
+
+            <div className="space-y-3 max-h-[500px] overflow-y-auto">
+              {(result.methodologies || []).map((m: BookMethodology, i: number) => (
+                <div key={m.methodology_id} className="p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-lg">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">#{i + 1}</span>
+                      <h3 className="font-medium text-gray-900 dark:text-white text-sm mt-0.5">{m.name_cn}</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">{m.name_en}</p>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-200 dark:bg-yellow-800 text-yellow-700 dark:text-yellow-300 font-medium">🟡 方法论</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">{m.trigger_scenario}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(m.steps || []).slice(0, 3).map((step, si) => (
+                      <span key={si} className="text-[10px] px-1.5 py-0.5 bg-white dark:bg-gray-700 rounded text-gray-500">
+                        {si + 1}. {step.slice(0, 20)}...
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-2 font-mono">{m.command_name}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============ Query Panel ============
+const QueryPanel: React.FC = () => {
+  const [problem, setProblem] = useState('');
+  const [bookFilter, setBookFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [showCaseForm, setShowCaseForm] = useState(false);
+  const [caseOutcome, setCaseOutcome] = useState('');
+
+  const handleQuery = async () => {
+    if (!problem.trim()) {
+      toast.error('请描述你遇到的问题');
+      return;
+    }
+    setLoading(true);
+    setResult(null);
+    try {
+      const data = await skillService.queryBookMethodology(problem, bookFilter || undefined);
+      setResult(data);
+      setShowCaseForm(false);
+    } catch (err: any) {
+      toast.error(err.message || '查询失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveCase = async () => {
+    if (!result?.matched_methodologies?.length) return;
+    const m = result.matched_methodologies[0];
+    try {
+      await skillService.saveBookCaseStudy(
+        m.book_name,
+        m.name_cn,
+        problem,
+        result.guide?.slice(0, 500) || '',
+        caseOutcome
+      );
+      toast.success('✅ 案例已沉淀到四色蓝色卡片！');
+      setShowCaseForm(false);
+      setCaseOutcome('');
+    } catch (err: any) {
+      toast.error(err.message || '保存失败');
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-4">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+          <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Search size={18} className="text-blue-500" />
+            描述你的问题
+          </h2>
+          <p className="text-xs text-gray-500">AI 会自动匹配最合适的书籍方法论，像教练一样引导你解决问题</p>
+          <input
+            type="text"
+            placeholder="限定书籍范围（选填，如《精益创业》）"
+            value={bookFilter}
+            onChange={(e) => setBookFilter(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+          />
+          <textarea
+            placeholder="描述你遇到的实际问题，越具体越好..."
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+            rows={8}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+          />
+          <button
+            onClick={handleQuery}
+            disabled={loading || !problem.trim()}
+            className="w-full py-2.5 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+          >
+            {loading ? (
+              <><Loader size={16} className="animate-spin" /> 匹配中...</>
+            ) : (
+              <><MessageSquare size={16} /> 匹配方法论</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* AI Guide Result */}
+      <div>
+        {result && result.status === 'success' && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4"
+          >
+            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <BrainCircuit size={18} className="text-blue-500" />
+              AI 顾问建议
+            </h2>
+
+            {result.matched_methodologies?.length > 0 && (
+              <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  📖 匹配到来自《{result.matched_methodologies[0].book_name}》的方法论：<strong>{result.matched_methodologies[0].name_cn}</strong>
+                </p>
+              </div>
+            )}
+
+            <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+              {result.guide}
+            </div>
+
+            {!showCaseForm ? (
+              <button
+                onClick={() => setShowCaseForm(true)}
+                className="w-full py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                <Save size={16} /> 把这次实践记入蓝色案例卡片
+              </button>
+            ) : (
+              <div className="space-y-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+                <p className="text-sm font-medium text-green-700 dark:text-green-300 flex items-center gap-1">
+                  <CheckCircle size={14} /> 记录实践结果
+                </p>
+                <textarea
+                  placeholder="描述你的实际执行结果..."
+                  value={caseOutcome}
+                  onChange={(e) => setCaseOutcome(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveCase}
+                    className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    保存蓝色卡片 🔵
+                  </button>
+                  <button
+                    onClick={() => setShowCaseForm(false)}
+                    className="py-2 px-4 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-sm"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {result && result.status === 'no_methodologies' && (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+            <AlertCircle size={48} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500">还没有提取过书籍方法论</p>
+            <p className="text-sm text-gray-400 mt-1">请先在「提取方法论」页面添加书籍</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ============ Case Panel ============
+const CasePanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
+  const [bookName, setBookName] = useState('');
+  const [methodName, setMethodName] = useState('');
+  const [problem, setProblem] = useState('');
+  const [solution, setSolution] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSave = async () => {
+    if (!bookName || !methodName || !problem || !solution) {
+      toast.error('请填写完整信息');
+      return;
+    }
+    setLoading(true);
+    try {
+      await skillService.saveBookCaseStudy(bookName, methodName, problem, solution, outcome);
+      toast.success('✅ 案例已保存为蓝色卡片！');
+      setBookName('');
+      setMethodName('');
+      setProblem('');
+      setSolution('');
+      setOutcome('');
+      onComplete();
+    } catch (err: any) {
+      toast.error(err.message || '保存失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+        <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+          <CheckCircle size={18} className="text-green-500" />
+          手动记录案例 → 蓝色卡片回填
+        </h2>
+        <p className="text-xs text-gray-500">
+          将使用方法论解决问题的过程记录为蓝色案例卡片，形成「理论 → 推演 → 实践」的增强回路
+        </p>
+        {[
+          { label: '书籍名称', val: bookName, set: setBookName, ph: '如《非暴力沟通》' },
+          { label: '方法论名称', val: methodName, set: setMethodName, ph: '如「对话氛围重建法」' },
+        ].map((f) => (
+          <input
+            key={f.label}
+            type="text"
+            placeholder={f.ph}
+            value={f.val}
+            onChange={(e) => f.set(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+          />
+        ))}
+        {[
+          { label: '遇到的问题', val: problem, set: setProblem, rows: 3 },
+          { label: '解决方案', val: solution, set: setSolution, rows: 4 },
+          { label: '实际结果（选填）', val: outcome, set: setOutcome, rows: 2 },
+        ].map((f) => (
+          <textarea
+            key={f.label}
+            placeholder={f.label}
+            value={f.val}
+            onChange={(e) => f.set(e.target.value)}
+            rows={f.rows}
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none resize-none"
+          />
+        ))}
+        <button
+          onClick={handleSave}
+          disabled={loading}
+          className="w-full py-2.5 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+        >
+          {loading ? <><Loader size={16} className="animate-spin" /> 保存中...</> : <><Save size={16} /> 保存 → 蓝色卡片 🔵</>}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============ Bookshelf Panel ============
+const BookshelfPanel: React.FC = () => {
+  const [books, setBooks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBook, setSelectedBook] = useState<any>(null);
+
+  useEffect(() => {
+    loadBooks();
+  }, []);
+
+  const loadBooks = async () => {
+    setLoading(true);
+    try {
+      const data = await skillService.listBookSkills();
+      setBooks(data.books || []);
+    } catch {
+      setBooks([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectBook = async (bookName: string) => {
+    setSelectedBook(null);
+    try {
+      const data = await skillService.getBookSkill(bookName);
+      setSelectedBook(data);
+    } catch {
+      toast.error('获取书籍详情失败');
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-12"><Loader size={32} className="animate-spin mx-auto text-blue-500" /></div>;
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-3">
+        {books.length === 0 ? (
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
+            <Library size={48} className="mx-auto text-gray-300 mb-3" />
+            <p className="text-gray-500">书架还是空的</p>
+            <p className="text-sm text-gray-400 mt-1">先在「提取方法论」页面添加书籍吧</p>
+          </div>
+        ) : (
+          (books || []).map((b: any) => (
+            <button
+              key={b.book_id}
+              onClick={() => handleSelectBook(b.book_name)}
+              className="w-full text-left bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-yellow-300 dark:hover:border-yellow-700 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <BookOpen size={20} className="text-yellow-500" />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white text-sm">《{b.book_name}》</p>
+                    {b.book_author && <p className="text-xs text-gray-400">{b.book_author}</p>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded-full">
+                    🟡 {b.methodology_count} 方法论
+                  </span>
+                  <ChevronRight size={16} className="text-gray-400" />
+                </div>
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Book Detail */}
+      <div>
+        {selectedBook && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4"
+          >
+            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <BookMarked size={18} className="text-yellow-500" />
+              《{selectedBook.book_name}》
+            </h2>
+            <div className="flex gap-2 flex-wrap">
+              <span className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded">
+                🟡 方法论: {selectedBook.methodology_count}
+              </span>
+              <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
+                🔵 蓝色卡片: {selectedBook.total_cards_generated?.blue || 0}
+              </span>
+            </div>
+
+            <div className="max-h-[500px] overflow-y-auto space-y-2">
+              {(selectedBook.methodologies || []).map((m: BookMethodology) => (
+                <div key={m.methodology_id} className="p-3 border border-gray-100 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-750">
+                  <div className="flex items-center gap-2">
+                    <Lightbulb size={14} className="text-yellow-500" />
+                    <span className="font-medium text-sm text-gray-900 dark:text-white">{m.name_cn}</span>
+                    <span className="text-[10px] text-gray-400">{m.name_en}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">适用场景: {m.trigger_scenario}</p>
+                  <p className="text-[10px] text-gray-400 mt-1 font-mono">{m.command_name}</p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default BookSkillCenter;

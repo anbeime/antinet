@@ -522,3 +522,200 @@ async def clear_four_color_cards():
     except Exception as e:
         logger.error(f"清空四色卡片失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Book Skill Generator API ====================
+
+# Request models
+class BookExtractRequest(BaseModel):
+    book_content: str = Field(..., description="书籍文本内容")
+    book_name: str = Field(default="", description="书籍名称")
+    book_author: str = Field(default="", description="书籍作者")
+
+
+class BookQueryRequest(BaseModel):
+    problem: str = Field(..., description="用户遇到的问题描述")
+    book_name: Optional[str] = Field(default=None, description="限定书籍名称")
+
+
+class BookCaseRequest(BaseModel):
+    book_name: str = Field(..., description="书籍名称")
+    methodology_name: str = Field(..., description="方法论名称")
+    problem: str = Field(..., description="遇到的问题")
+    solution: str = Field(..., description="解决方案")
+    outcome: str = Field(default="", description="最终结果")
+
+
+@router.post("/book-skill/extract")
+async def book_skill_extract(request: BookExtractRequest):
+    """
+    从书籍文本内容中提取方法论，生成 Book Skill
+    方法论会自动同步到四色知识管理系统的黄色卡片
+    """
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        result = generator.extract_from_text(
+            book_content=request.book_content,
+            book_name=request.book_name,
+            book_author=request.book_author
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[BookSkill] 提取失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/book-skill/extract-from-notes")
+async def book_skill_extract_from_notes(
+    notes: str,
+    book_name: str = "",
+    book_author: str = ""
+):
+    """
+    从用户笔记/总结中提取方法论
+    适用于用户已经有四色笔记的情况
+    """
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        result = generator.extract_from_notes(
+            notes=notes,
+            book_name=book_name,
+            book_author=book_author
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[BookSkill] 笔记提取失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/book-skill/query")
+async def book_skill_query(request: BookQueryRequest):
+    """
+    根据问题匹配方法论，AI 引导解决问题
+    """
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        result = generator.query_methodology(
+            problem=request.problem,
+            book_name=request.book_name
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[BookSkill] 查询失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/book-skill/case")
+async def book_skill_save_case(request: BookCaseRequest):
+    """
+    保存案例研究（回填四色系统的蓝色卡片）
+    形成：书本理论(黄) → AI推演 → 个人案例(蓝) 的增强回路
+    """
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        result = generator.save_case_study(
+            book_name=request.book_name,
+            methodology_name=request.methodology_name,
+            problem=request.problem,
+            solution=request.solution,
+            outcome=request.outcome
+        )
+        return result
+    except Exception as e:
+        logger.error(f"[BookSkill] 保存案例失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/book-skill/list")
+async def book_skill_list():
+    """列出所有已提取的书籍技能"""
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        return generator.list_book_skills()
+    except Exception as e:
+        logger.error(f"[BookSkill] 列出失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/book-skill/{book_name}")
+async def book_skill_get(book_name: str):
+    """获取指定书籍的技能详情"""
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        result = generator.get_book_skill(book_name)
+        if not result:
+            raise HTTPException(status_code=404, detail=f"未找到书籍: {book_name}")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[BookSkill] 获取失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/book-skill/stats")
+async def book_skill_stats():
+    """获取 Book Skill 统计信息"""
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        return generator.get_statistics()
+    except Exception as e:
+        logger.error(f"[BookSkill] 获取统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Hermes 技能路由 ====================
+
+@router.get("/hermes/list")
+async def list_hermes_skills():
+    """列出所有 Hermes 技能"""
+    try:
+        from services.hermes_skill_loader import get_hermes_skill_loader
+        loader = get_hermes_skill_loader()
+        skills = loader.list_skills()
+        return {"total": len(skills), "skills": skills}
+    except Exception as e:
+        logger.error(f"[Hermes] 列出技能失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class HermesSkillExecuteRequest(BaseModel):
+    skill_name: str
+    query: str
+
+
+@router.post("/hermes/execute", response_model=Dict[str, Any])
+async def execute_hermes_skill(request: HermesSkillExecuteRequest):
+    """执行 Hermes 技能"""
+    try:
+        from services.hermes_skill_loader import get_hermes_skill_loader
+        loader = get_hermes_skill_loader()
+        result = await loader.execute_skill(request.skill_name, request.query)
+        return result
+    except Exception as e:
+        logger.error(f"[Hermes] 执行技能失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/hermes/{skill_name}")
+async def get_hermes_skill_info(skill_name: str):
+    """获取 Hermes 技能详情"""
+    try:
+        from services.hermes_skill_loader import get_hermes_skill_loader
+        loader = get_hermes_skill_loader()
+        skill = loader.get_skill(skill_name)
+        if not skill:
+            raise HTTPException(status_code=404, detail=f"Skill '{skill_name}' not found")
+        return skill.get_info()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Hermes] 获取技能信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -5,7 +5,8 @@ import {
   Layers, CheckCircle, Clock, Settings,
   Play, RotateCcw, Loader, AlertTriangle,
   BarChart3, Upload, FileText, FileSpreadsheet,
-  Presentation, Image, X, FolderOpen, Database, FileDown
+  Presentation, Image, X, FolderOpen, Database, FileDown,
+  FileAudio, FileArchive
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -14,7 +15,7 @@ interface BatchFile {
   file: File;
   name: string;
   size: number;
-  type: 'pdf' | 'excel' | 'ppt' | 'image' | 'other';
+  type: 'pdf' | 'excel' | 'ppt' | 'image' | 'audio' | 'archive' | 'other';
   status: 'waiting' | 'processing' | 'completed' | 'failed';
   progress: number;
   result?: any;
@@ -61,6 +62,8 @@ const BatchProcess: React.FC = () => {
     if (['xlsx', 'xls', 'csv'].includes(ext || '')) return 'excel';
     if (['pptx', 'ppt'].includes(ext || '')) return 'ppt';
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return 'image';
+    if (['mp3', 'wav', 'flac'].includes(ext || '')) return 'audio';
+    if (['zip', 'rar', '7z'].includes(ext || '')) return 'archive';
     return 'other';
   };
 
@@ -71,6 +74,8 @@ const BatchProcess: React.FC = () => {
       case 'excel': return <FileSpreadsheet className="w-5 h-5 text-green-500" />;
       case 'ppt': return <Presentation className="w-5 h-5 text-orange-500" />;
       case 'image': return <Image className="w-5 h-5 text-blue-500" />;
+      case 'audio': return <FileAudio className="w-5 h-5 text-purple-500" />;
+      case 'archive': return <FileArchive className="w-5 h-5 text-amber-500" />;
       default: return <FileText className="w-5 h-5 text-gray-500" />;
     }
   };
@@ -195,7 +200,7 @@ const BatchProcess: React.FC = () => {
     }
   };
 
-  // 开始批量处理
+  // 开始批量处理（使用批量导入端点）
   const startBatchProcessing = async () => {
     if (files.length === 0) {
       toast.error('请先选择要处理的文件');
@@ -211,17 +216,84 @@ const BatchProcess: React.FC = () => {
     setIsProcessing(true);
     setSavedCardsCount(0);
 
-    for (const file of waitingFiles) {
-      await processFile(file);
+    // 全部标记为处理中
+    setFiles(prev => prev.map(f =>
+      waitingFiles.find(wf => wf.id === f.id)
+        ? { ...f, status: 'processing', progress: 10 }
+        : f
+    ));
+
+    try {
+      // 使用批量上传端点 POST /api/knowledge/import/batch
+      const formData = new FormData();
+      waitingFiles.forEach((bf, idx) => {
+        formData.append('files', bf.file);
+      });
+
+      const apiUrl = `${getApiBaseUrl()}/api/knowledge/import/batch`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (response.ok) {
+        const batchResult = await response.json();
+        const results = batchResult.results || [];
+
+        // 更新每个文件的状态
+        let totalAgentCards = 0;
+        for (const result of results) {
+          const matchedFile = waitingFiles.find(wf => wf.name === result.filename);
+          if (matchedFile) {
+            const extractedCards: ExtractedCard[] = [];
+            // 尝试从返回结果读取卡片（不同格式兼容）
+            if (result.success && result.cards_count > 0) {
+              // 如果结果中有详细卡片数据会更好，但API返回只有计数
+              // 卡片详细信息在单个文件导入时会返回，批量模式下我们只统计
+            }
+            setFiles(prev => prev.map(f =>
+              f.id === matchedFile.id
+                ? {
+                    ...f,
+                    status: result.success ? 'completed' : 'failed',
+                    progress: result.success ? 100 : 0,
+                    result,
+                    extractedCards,
+                    error: result.error
+                  }
+                : f
+            ));
+            if (result.success) totalAgentCards += result.cards_count || 0;
+          }
+        }
+
+        if (totalAgentCards > 0) {
+          toast.success(`批量处理完成！共提取 ${totalAgentCards} 张知识卡片`);
+        } else {
+          toast.success(`批量处理完成！${batchResult.success_count}/${batchResult.total} 个文件处理成功`);
+        }
+      } else {
+        // 回退：逐文件处理
+        toast.warning('批量端点不可用，切换为逐文件处理...');
+        for (const file of waitingFiles) {
+          await processFile(file);
+        }
+      }
+    } catch (error) {
+      // 网络错误，回退到逐文件处理
+      toast.warning('批量端点出错，切换为逐文件处理...');
+      for (const file of waitingFiles) {
+        await processFile(file);
+      }
     }
 
     setIsProcessing(false);
-    
-    const totalCards = files.reduce((sum, f) => sum + (f.extractedCards?.length || 0), 0);
+
+    const completedFiles = files.filter(f => f.status === 'completed');
+    const totalCards = completedFiles.reduce((sum, f) => sum + (f.extractedCards?.length || 0), 0);
     if (options.autoSaveCards && savedCardsCount > 0) {
       toast.success(`处理完成！已保存 ${savedCardsCount} 张卡片到知识库`);
-    } else {
-      toast.success(`处理完成！共提取 ${totalCards} 张卡片`);
     }
   };
 
@@ -403,7 +475,7 @@ const BatchProcess: React.FC = () => {
                   ref={fileInputRef}
                   onChange={handleFileSelect}
                   multiple
-                  accept=".pdf,.xlsx,.xls,.csv,.pptx,.ppt,.jpg,.jpeg,.png"
+                  accept=".pdf,.doc,.docx,.txt,.md,.ppt,.pptx,.xlsx,.xls,.csv,.jpg,.jpeg,.png,.gif,.webp,.mp3,.wav,.flac,.zip,.rar,.7z"
                   className="hidden"
                 />
                 <input
@@ -434,7 +506,7 @@ const BatchProcess: React.FC = () => {
               </div>
               
               <p className="text-xs text-gray-500 mt-3">
-                支持: PDF, Excel, PPT, 图片
+                支持: PDF, Word, Excel, PPT, 图片, 音频(MP3/WAV/FLAC), 压缩包(ZIP/RAR/7Z)
               </p>
             </div>
 

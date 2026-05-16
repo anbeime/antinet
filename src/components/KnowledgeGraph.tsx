@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { RefreshCw, ZoomIn, ZoomOut, Maximize2, Link2, Network, Filter, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 import { backlinkService, type BacklinkGraph } from '../services/integrationService';
 
 interface GraphNode {
@@ -605,11 +606,33 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
             </div>
           </div>
         )}
-        <div
-          ref={chartRef}
-          className="w-full"
-          style={{ height: '600px' }}
-        />
+        <div className="relative w-full" style={{ height: '600px' }}>
+          {/* 加载状态 */}
+          {loading && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm rounded-lg">
+              <RefreshCw className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+              <p className="text-sm text-gray-500 dark:text-gray-400">正在构建知识网络...</p>
+            </div>
+          )}
+          {/* 空数据状态 */}
+          {!loading && !graphData && !backlinkGraphData && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white dark:bg-gray-800 rounded-lg">
+              <Network className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+              <p className="text-base font-medium text-gray-500 dark:text-gray-400 mb-1">暂无知识网络数据</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                {filterProjectId ? '该专题下暂无卡片关联' : '请先创建卡片，卡片间的链接将自动形成知识网络'}
+              </p>
+              <button
+                onClick={handleRefresh}
+                className="mt-4 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 inline mr-1" />
+                刷新
+              </button>
+            </div>
+          )}
+          <div ref={chartRef} className="w-full h-full" />
+        </div>
       </CardContent>
     </Card>
   );
