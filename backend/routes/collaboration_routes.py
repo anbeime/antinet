@@ -106,17 +106,20 @@ class CollaborationStore:
             status="online",
             lastActive=datetime.now().isoformat()
         )
-        # 连接后立即推送历史数据（刷新后恢复记录）
+# 连接后立即推送历史数据（刷新后恢复记录）
         try:
             history = await self._get_history_data()
             await websocket.send_json(history)
         except Exception as e:
             logger.warning(f"发送历史数据失败: {e}")
-        await self._broadcast({
-            "type": "user_online",
-            "userId": user_id,
-            "timestamp": datetime.now().isoformat()
-        }, exclude=None)
+        try:
+            await self._broadcast({
+                "type": "user_online",
+                "userId": user_id,
+                "timestamp": datetime.now().isoformat()
+            }, exclude=None)
+        except Exception as e:
+            logger.warning(f"广播用户上线失败: {e}")
         logger.info(f"用户 {user_id} 连接 WebSocket，当前在线: {len(self.active_connections)}")
 
     async def disconnect(self, user_id: str):
@@ -351,7 +354,11 @@ store = CollaborationStore()
 @router.websocket("/ws/collaboration/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     """WebSocket 端点，客户端连接后持续接收实时消息"""
-    await store.connect(user_id, websocket)
+    try:
+        await store.connect(user_id, websocket)
+    except Exception as e:
+        logger.error(f"WebSocket connect 失败: {e}")
+        return
     try:
         while True:
             # 接收客户端消息（心跳/发送）
@@ -390,6 +397,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 
     except WebSocketDisconnect:
         await store.disconnect(user_id)
+    except Exception as e:
+        logger.error(f"WebSocket 连接异常: {e}")
 
 
 # ============== REST 路由 ==============

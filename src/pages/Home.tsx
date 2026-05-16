@@ -717,7 +717,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
               <Users size={18} />
-              <span>八府巡按 · 虚拟会议</span>
+              <span>团队会议</span>
             </button>
 
             {/* 文档处理下拉菜单 */}
@@ -890,7 +890,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button onClick={() => { setActiveTab('virtual-office-meeting'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <Users size={16} /><span>八府巡按·虚拟会议</span>
+                <Users size={16} /><span>团队会议</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
                 文档处理

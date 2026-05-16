@@ -1485,10 +1485,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             </div>
           </div>
 
-          {/* 实时讨论流面板 —— 会议进行中实时显示各Agent发言 */}
+{/* 实时讨论流面板 —— 会议进行中实时显示各Agent发言 */}
           {(isLoading || liveDiscussions.length > 0) && !showResults && (
-            <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', maxHeight: '580px' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
                 <MessageSquare className="w-4 h-4 text-blue-400" />
                 <span className="text-white font-medium text-sm">实时讨论</span>
                 <span className="text-gray-500 text-xs ml-auto">
@@ -1501,7 +1501,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </span>
                 )}
               </div>
-              <div className="p-4 space-y-3 max-h-[350px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+              <div className="p-4 space-y-3 overflow-y-auto flex-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                 {liveDiscussions.length === 0 && isLoading && (
                   <div className="text-gray-500 text-sm text-center py-4">等待 Agent 发言...</div>
                 )}
@@ -1547,8 +1547,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                 })}
                 <div ref={liveDiscussionsEndRef} />
               </div>
-              {/* 人类发言入口 */}
-              <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center">
+{/* 人类发言入口 */}
+              <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
                 <span className="text-green-400 text-xs font-medium whitespace-nowrap">
                   {collabUserName}:
                 </span>

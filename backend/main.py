@@ -297,8 +297,8 @@ if __name__ == "__main__":
     print(f"服务地址: http://{app_config.HOST}:{app_config.PORT}")
     print(f"{'='*50}\n")
     
-    uvicorn.run(
-        "main:app",
+uvicorn.run(
+        app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
         host=app_config.HOST,
         port=app_config.PORT,
         reload=False,
