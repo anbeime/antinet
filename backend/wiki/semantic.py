@@ -20,7 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class VectorStore:
-    def __init__(self, data_dir: str = "data/wiki"):
+    def __init__(self, data_dir: str = "backend/data/wiki"):
         self.data_dir = Path(data_dir)
         self.vectors_file = self.data_dir / "vectors.json"
         self.vectors: Dict[str, np.ndarray] = {}
@@ -145,7 +145,7 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 class SemanticSearch:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.vector_store = VectorStore(str(self.wiki_root.parent))
         self.embedding_service = None
@@ -259,7 +259,7 @@ class SemanticSearch:
 
 
 if __name__ == "__main__":
-    search = SemanticSearch("data/wiki")
+    search = SemanticSearch("backend/data/wiki")
     search.build_index()
     
     results = search.search("知识管理")

@@ -146,7 +146,7 @@ class EntityExtractor:
 
 
 class AutoCompiler:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.data_dir = self.wiki_root.parent / "wiki"
         self.entity_extractor = EntityExtractor()
@@ -274,7 +274,7 @@ class AutoCompiler:
 
 
 class CompilerAgent:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.auto_compiler = AutoCompiler(wiki_root)
         self.running = False
@@ -330,7 +330,7 @@ def compile_page_cli(page_id: str):
     from wiki.wiki import WikiFileManager
     from wiki.graph import KnowledgeGraph
     
-    wiki_root = "data/wiki"
+    wiki_root = "backend/data/wiki"
     fm = WikiFileManager(wiki_root)
     page = fm.read_page(page_id)
     
@@ -350,6 +350,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         compile_page_cli(sys.argv[1])
     else:
-        agent = CompilerAgent("data/wiki")
+        agent = CompilerAgent("backend/data/wiki")
         stats = agent.force_compile()
         print(f"Compilation complete: {stats}")

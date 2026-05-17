@@ -22,7 +22,7 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/cdn/, '')
       },
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true,
         secure: false
       },

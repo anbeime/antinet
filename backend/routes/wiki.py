@@ -26,7 +26,7 @@ from wiki.compiler import CompilerAgent, AutoCompiler
 router = APIRouter(prefix="/api/wiki", tags=["wiki"])
 
 DATA_DIR = PROJECT_ROOT / "data"
-WIKI_ROOT = DATA_DIR / "wiki"
+WIKI_ROOT = PROJECT_ROOT / "data" / "wiki"
 GRAPH_DATA_DIR = DATA_DIR / "wiki"
 
 import logging

@@ -414,7 +414,7 @@ if PDF_TOOLKIT_AVAILABLE:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
     
-    @router.post("/toolkit/split")
+@router.post("/toolkit/split")
     async def toolkit_split(file: UploadFile = File(...)):
         """工具包：拆分 PDF"""
         if not PDF_TOOLKIT_AVAILABLE:
@@ -430,6 +430,33 @@ if PDF_TOOLKIT_AVAILABLE:
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+
+    @router.post("/toolkit/merge")
+    async def toolkit_merge(files: List[UploadFile] = File(...)):
+        """工具包：合并 PDF（前端兼容别名）"""
+        if not pdf_processor.available:
+            raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        
+        temp_files = []
+        try:
+            for f in files:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    shutil.copyfileobj(f.file, tmp)
+                    temp_files.append(tmp.name)
+            
+            result = pdf_processor.merge_pdfs(temp_files)
+            
+            if not result["success"]:
+                raise HTTPException(status_code=500, detail=result.get("error", "合并失败"))
+            
+            return {
+                "success": True,
+                "output_file": result["output_file"]
+            }
+        finally:
+            for fp in temp_files:
+                if os.path.exists(fp):
+                    os.unlink(fp)
 
 
 # ========== 前端兼容别名 ==========
