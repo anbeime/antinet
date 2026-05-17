@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTranslation } from 'react-i18next';
 import {
   Users,
   MessageSquare,
@@ -328,7 +327,6 @@ const PixelOfficeCanvas: React.FC<{
 
 // ==================== 主页面组件 ====================
 const VirtualOfficeMeeting: React.FC = () => {
-  const { t } = useTranslation();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
@@ -340,14 +338,75 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history' | 'agents' | 'tasks' | 'health'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'history' | 'tasks'>('new');
   const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [agentList, setAgentList] = useState<any[]>([]);
   const [taskList, setTaskList] = useState<any[]>([]);
-  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [hybridMode, setHybridMode] = useState(true);
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
+  const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
+  const [collabStatus, setCollabStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [collabUserName, setCollabUserName] = useState(() => localStorage.getItem('collabUserName') || '参与者');
+  const collabWsRef = useRef<WebSocket | null>(null);
+  const collabUserId = useRef('meeting_' + Date.now());
+
+  // 发送人类消息（混合模式）
+  const sendHumanMessage = async (msg: string) => {
+    // 本地显示人类消息
+    setLiveDiscussions(prev => [...prev, {
+      type: 'speech',
+      agent: { name: collabUserName, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
+      message: msg,
+      timestamp: new Date().toISOString()
+    }]);
+    
+    // 发送 WebSocket 广播给其他用户
+    if (collabWsRef.current?.readyState === WebSocket.OPEN) {
+      collabWsRef.current.send(JSON.stringify({
+        type: 'send_activity',
+        user: collabUserName,
+        userId: collabUserId.current,
+        avatar: '👤',
+        action: '插嘴',
+        content: msg,
+        meetingContext: { topic, currentRound: liveDiscussions.filter(d => d.round).length }
+      }));
+    }
+    
+    // 如果开启混合模式，调用后端获取智能体响应
+    if (hybridMode && isLoading) {
+      try {
+        const res = await fetch('http://localhost:8000/api/hybrid/question', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: msg, topic })
+        });
+        const data = await res.json();
+        if (data.answer) {
+          // 显示智能体响应
+          setTimeout(() => {
+            setLiveDiscussions(prev => [...prev, {
+              type: 'speech',
+              agent: { 
+                name: '太史阁', 
+                title: '知识管理官', 
+                avatar: '📚', 
+                color: 'from-blue-500 to-blue-600',
+                systemPrompt: data.sources?.map((s: any) => s.title).join(', ')
+              },
+              message: data.answer,
+              timestamp: new Date().toISOString()
+            }]);
+          }, 500);
+        }
+      } catch (err) {
+        console.error('[Hybrid] 获取响应失败:', err);
+      }
+    }
+  };
+  
   const meetingTimerRef = useRef<any>(null);
   const pollTimerRef = useRef<any>(null);
 
@@ -425,12 +484,22 @@ useEffect(() => {
       fetchMeetingHistory();
       // 获取讨论模式
       fetch(`${BACKEND_URL}/modes`).then(r => r.json()).then(d => setMeetingModes(d.modes || [])).catch(console.error);
-    } else if (activeTab === 'agents') {
-      fetch(`${BACKEND_URL}/agents`).then(r => r.json()).then(d => setAgentList(d.agents || [])).catch(console.error);
     } else if (activeTab === 'tasks') {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
-    } else if (activeTab === 'health') {
-      fetch(`${BACKEND_URL}/health`).then(r => r.json()).then(d => setHealthStatus(d)).catch(console.error);
+      // 同时加载协作历史消息（REST 回退）
+      const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      fetch(`${collabProtocol}//${window.location.hostname}:8000/api/activities?limit=30`)
+        .then(r => r.json())
+        .then(activities => {
+          if (Array.isArray(activities) && activities.length > 0) {
+            setCollabMessages(activities.map((a: any) => ({
+              user: a.user || '未知',
+              content: a.content || '',
+              self: a.userId === collabUserId.current,
+            })));
+          }
+        })
+        .catch(() => {}); // WS 连接后会通过 history 消息补全，静默失败
     }
   }, [activeTab]);
 
@@ -823,6 +892,75 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     };
   }, []);
 
+  // 协作聊天 WebSocket 连接
+  useEffect(() => {
+    // 始终连接（不只是 tasks tab）
+    const userId = collabUserId.current;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname + ':8000';
+    const url = `${protocol}//${host}/api/ws/collaboration/${userId}`;
+    
+    console.log('[Collab] 连接 WebSocket:', url);
+    setCollabStatus('connecting');
+    
+    const ws = new WebSocket(url);
+    collabWsRef.current = ws;
+    
+    ws.onopen = () => {
+      console.log('[Collab] WebSocket 已连接');
+      setCollabStatus('connected');
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'new_activity' && msg.activity) {
+          const isSelf = msg.activity.userId === userId;
+          setCollabMessages(prev => [...prev, {
+            user: msg.activity.user || '未知',
+            content: msg.activity.content || '',
+            self: isSelf
+          }]);
+          // 如果有会议进行中，也显示到实时讨论区
+          if (isLoading && msg.activity.action === '插嘴') {
+            setLiveDiscussions(prev => [...prev, {
+              type: 'speech',
+              agent: { name: msg.activity.user, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
+              message: msg.activity.content,
+              timestamp: new Date().toISOString()
+            }]);
+          }
+        } else if (msg.type === 'history' && msg.activities) {
+          // 连接后推送的历史数据（刷新后恢复记录）
+          console.log(`[Collab] 收到历史数据: ${msg.activities.length} 条活动`);
+          if (msg.activities.length > 0) {
+            setCollabMessages(msg.activities.map((a: any) => ({
+              user: a.user || '未知',
+              content: a.content || '',
+              self: a.userId === userId,
+            })));
+          }
+        }
+      } catch (e) {
+        console.error('[Collab] 解析消息失败:', e);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('[Collab] WebSocket 断开');
+      setCollabStatus('disconnected');
+    };
+    
+    ws.onerror = (e) => {
+      console.error('[Collab] WebSocket 错误:', e);
+    };
+    
+    return () => {
+      ws.close();
+      collabWsRef.current = null;
+    };
+  }, []);
+
   return (
     <div className="min-h-screen" style={{ background: '#121826' }}>
       {/* ==================== 页面标题区 ==================== */}
@@ -982,6 +1120,23 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                 </select>
               </div>
 
+              {/* 参与者模式 */}
+              <div className="flex items-center justify-between p-3 rounded-lg" style={{ background: '#0f1729' }}>
+                <div>
+                  <div className="text-white text-sm font-medium">混合会议模式</div>
+                  <div className="text-gray-500 text-xs">开启后人类可实时参与讨论</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hybridMode}
+                    onChange={(e) => setHybridMode(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+
               {/* 操作按钮 */}
               <div className="flex gap-2 pt-1">
                 {!isLoading ? (
@@ -1081,15 +1236,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
               历史会议
             </button>
             <button
-              onClick={() => setActiveTab('agents')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'agents' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Agent列表
-            </button>
-            <button
               onClick={() => setActiveTab('tasks')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
                 activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
@@ -1097,15 +1243,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             >
               <MessageSquare className="w-4 h-4" />
               协作任务
-            </button>
-            <button
-              onClick={() => setActiveTab('health')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'health' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <Monitor className="w-4 h-4" />
-              系统状态
             </button>
           </div>
 
@@ -1188,38 +1325,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             </div>
           )}
 
-          {activeTab === 'agents' && (
-            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-                <Users className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">Agent 列表</span>
-                <span className="text-gray-500 text-xs ml-auto">{agentList.length} 个</span>
-              </div>
-              <div className="p-4 space-y-3">
-                {agentList.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-8">暂无 Agent 数据</div>
-                ) : (
-                  agentList.map((agent: any) => (
-                    <div key={agent.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: `linear-gradient(135deg, ${agent.color?.split(' ')?.[0] || '#3b82f6'}, ${agent.color?.split(' ')?.[2] || '#2563eb'})` }}>
-                          {agent.avatar || '🤖'}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-white font-medium">{agent.name}</div>
-                          <div className="text-gray-500 text-xs">{agent.title}</div>
-                        </div>
-                      </div>
-                      {agent.description && (
-                        <div className="mt-2 text-gray-400 text-sm">{agent.description}</div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
           {activeTab === 'tasks' && (
             <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
               <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
@@ -1227,9 +1332,9 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                 <span className="text-white font-medium text-sm">协作任务</span>
                 <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个</span>
               </div>
-              <div className="p-4 space-y-3">
+              <div className="p-4 space-y-3 max-h-60 overflow-y-auto">
                 {taskList.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-8">暂无协作任务</div>
+                  <div className="text-gray-500 text-sm text-center py-4">暂无协作任务</div>
                 ) : (
                   taskList.map((task: any) => (
                     <div key={task.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
@@ -1244,64 +1349,96 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                         </span>
                       </div>
                       <div className="mt-2 text-gray-400 text-sm">{task.description}</div>
-                      <div className="mt-2 flex items-center gap-4 text-gray-500 text-xs">
-                        <span>指派给: {task.assignee}</span>
-                        <span>优先级: {task.priority}</span>
-                      </div>
                     </div>
                   ))
                 )}
               </div>
-            </div>
-          )}
-
-          {activeTab === 'health' && (
-            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-                <Monitor className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">系统状态</span>
-              </div>
-              <div className="p-4">
-                {!healthStatus ? (
-                  <div className="text-gray-500 text-sm text-center py-8">加载中...</div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                      <span className="text-gray-400">服务状态</span>
-                      <span className={healthStatus.status === 'ok' ? 'text-green-400' : 'text-yellow-400'}>
-                        {healthStatus.status === 'ok' ? '正常运行' : '部分异常'}
-                      </span>
+              {/* 实时消息区域 */}
+              <div className="border-t border-gray-700/50 px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Users className="w-4 h-4 text-blue-400" />
+                  <span className="text-gray-300 text-sm font-medium">实时讨论</span>
+                  <input
+                    id="collab-username"
+                    type="text"
+                    placeholder="你的名字"
+                    value={collabUserName}
+                    onChange={(e) => {
+                      setCollabUserName(e.target.value);
+                      localStorage.setItem('collabUserName', e.target.value);
+                    }}
+                    className="ml-2 w-24 bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className={`ml-auto text-xs ${
+                    collabStatus === 'connected' ? 'text-green-400' :
+                    collabStatus === 'connecting' ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {collabStatus === 'connected' ? '✓ 已连接' :
+                     collabStatus === 'connecting' ? '连接中...' : '✗ 断开'}
+                  </span>
+                </div>
+                <div className="h-48 overflow-y-auto mb-2 space-y-2 text-sm">
+                  {collabMessages.length === 0 ? (
+                    <div className="text-gray-400 text-xs text-center py-4">
+                      {collabStatus === 'connected' ? '开始聊天吧' : '连接中...'}
                     </div>
-                    {healthStatus.models && (
-                      <div className="p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                        <div className="text-gray-400 text-xs mb-2">模型状态</div>
-                        {Object.entries(healthStatus.models).map(([name, status]: [string, any]) => (
-                          <div key={name} className="flex items-center justify-between py-1">
-                            <span className="text-gray-300 text-sm">{name}</span>
-                            <span className={status.loaded ? 'text-green-400 text-xs' : 'text-gray-500 text-xs'}>
-                              {status.loaded ? '已加载' : '未加载'}
-                            </span>
-                          </div>
-                        ))}
+                  ) : (
+                    collabMessages.map((msg, idx) => (
+                      <div key={idx} className={`p-2 rounded ${msg.self ? 'bg-blue-900/30' : 'bg-gray-800/50'}`}>
+                        <span className={msg.self ? 'text-blue-300 font-bold' : 'text-blue-400'}>
+                          {msg.user}:
+                        </span>
+                        <span className="text-white ml-1">{msg.content}</span>
                       </div>
-                    )}
-                    {healthStatus.resources && (
-                      <div className="p-3 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                        <div className="text-gray-400 text-xs mb-2">资源使用</div>
-                        <div className="flex gap-4">
-                          <div>
-                            <span className="text-gray-500 text-xs">GPU</span>
-                            <div className="text-white text-sm">{healthStatus.resources.gpu_usage?.toFixed(1) || 0}%</div>
-                          </div>
-                          <div>
-                            <span className="text-gray-500 text-xs">内存</span>
-                            <div className="text-white text-sm">{healthStatus.resources.memory_usage?.toFixed(1) || 0}%</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    id="collab-input"
+                    type="text"
+                    placeholder="输入消息... (回车发送)"
+                    className="flex-1 bg-gray-800 text-white text-sm px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && collabWsRef.current) {
+                        const msg = (e.target as HTMLInputElement).value.trim();
+                        if (msg) {
+                          collabWsRef.current.send(JSON.stringify({
+                            type: 'send_activity',
+                            user: collabUserName,
+                            userId: collabUserId.current,
+                            avatar: '👤',
+                            action: '发言',
+                            content: msg
+                          }));
+                          setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const input = document.getElementById('collab-input') as HTMLInputElement;
+                      const msg = input?.value.trim();
+                      if (msg && collabWsRef.current) {
+                        collabWsRef.current.send(JSON.stringify({
+                          type: 'send_activity',
+                          user: collabUserName,
+                          userId: collabUserId.current,
+                          avatar: '👤',
+                          action: '发言',
+                          content: msg
+                        }));
+                        setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
+                        input.value = '';
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                  >
+                    发送
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1348,10 +1485,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             </div>
           </div>
 
-          {/* 实时讨论流面板 —— 会议进行中实时显示各Agent发言 */}
+{/* 实时讨论流面板 —— 会议进行中实时显示各Agent发言 */}
           {(isLoading || liveDiscussions.length > 0) && !showResults && (
-            <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
+            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', maxHeight: '580px' }}>
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
                 <MessageSquare className="w-4 h-4 text-blue-400" />
                 <span className="text-white font-medium text-sm">实时讨论</span>
                 <span className="text-gray-500 text-xs ml-auto">
@@ -1364,7 +1501,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </span>
                 )}
               </div>
-              <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+              <div className="p-4 space-y-3 overflow-y-auto flex-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                 {liveDiscussions.length === 0 && isLoading && (
                   <div className="text-gray-500 text-sm text-center py-4">等待 Agent 发言...</div>
                 )}
@@ -1381,7 +1518,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       </div>
                     );
                   }
-                   return (
+                  const isHuman = item.agent?.avatar === '👤';
+                  return (
                     <motion.div
                       key={idx}
                       initial={{ opacity: 0, x: -10 }}
@@ -1389,7 +1527,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       transition={{ duration: 0.3 }}
                       className="flex gap-3"
                     >
-                      <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${item.agent?.color || 'from-gray-500 to-gray-600'} flex items-center justify-center text-sm flex-shrink-0`}>
+                      <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${isHuman ? 'from-green-500 to-green-600' : (item.agent?.color || 'from-gray-500 to-gray-600')} flex items-center justify-center text-sm flex-shrink-0`}>
                         {item.agent?.avatar || '💬'}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -1398,16 +1536,50 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                           <span className="text-gray-500 text-[10px]">{item.agent?.title}</span>
                         </div>
                         {item.agent?.systemPrompt && (
-                          <div className="text-gray-500 text-[10px] mb-0.5 truncate">
+                          <div className="text-gray-400 text-xs mb-0.5 truncate">
                             {item.agent.systemPrompt}
                           </div>
                         )}
-                        <p className="text-gray-300 text-xs leading-relaxed">{item.message}</p>
+                        <p className="text-gray-100 text-sm leading-relaxed">{item.message}</p>
                       </div>
                     </motion.div>
                   );
                 })}
                 <div ref={liveDiscussionsEndRef} />
+              </div>
+{/* 人类发言入口 */}
+              <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
+                <span className="text-green-400 text-xs font-medium whitespace-nowrap">
+                  {collabUserName}:
+                </span>
+                <input
+                  id="meeting-human-input"
+                  type="text"
+                  placeholder="输入你的发言，回车发送（会被智能体感知）"
+                  className="flex-1 bg-gray-800 text-white text-sm px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const msg = (e.target as HTMLInputElement).value.trim();
+                      if (msg) {
+                        sendHumanMessage(msg);
+                        (e.target as HTMLInputElement).value = '';
+                      }
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    const input = document.getElementById('meeting-human-input') as HTMLInputElement;
+                    const msg = input?.value.trim();
+                    if (msg) {
+                      sendHumanMessage(msg);
+                      input.value = '';
+                    }
+                  }}
+                  className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                >
+                  插嘴
+                </button>
               </div>
             </div>
           )}

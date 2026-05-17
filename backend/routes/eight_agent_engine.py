@@ -195,17 +195,37 @@ class EightAgentEngine:
             results["four_color_cards"] = four_color_cards
             logs.append(f"【四色卡片生成器】生成完成: 共{four_color_cards.total_count}张卡片")
             
-            # ========== 步骤5: 太史阁 - 存储知识 ==========
+# ========== 步骤5: 太史阁 - 存储知识 ==========
             logs.append("【太史阁】开始存储新知识...")
-            await self._store_knowledge(query, four_color_cards, user_id)
-            logs.append("【太史阁】知识存储完成")
-            
-            # ========== 步骤6: 驿传司 - 合成报告 ==========
+
+            # ========== 步骤6: 驿传司 - 合成报告（需要先有report才能存对话）==========
             logs.append("【驿传司】开始合成报告...")
             report = await self._synthesize_report(query, four_color_cards, memory_result)
             results["report"] = report
             logs.append("【驿传司】报告合成完成")
-            
+
+            # 存储对话记录（query + response），放在合成报告之后确保有内容可存
+            try:
+                memory_agent = self._agents.get("memory")
+                if memory_agent and report.get("content"):
+                    await memory_agent.store_knowledge("conversation", {
+                        "title": query[:200] if query else "untitled",
+                        "content": f"Q: {query}\nA: {report.get('content', '')}",
+                        "description": f"用户: {user_id}",
+                        "keywords": query
+                    })
+                    logger.info(f"[太史阁] 对话记录已存储: user={user_id}, query={query[:50]}")
+                # 存储知识卡片
+                for card in four_color_cards.to_list():
+                    await memory_agent.store_knowledge("card", {
+                        "query": query,
+                        "card_data": card,
+                        "user_id": user_id
+                    })
+                logs.append("【太史阁】知识存储完成")
+            except Exception as e:
+                logger.warning(f"[太史阁] 存储失败: {e}")
+
             return {
                 "status": "success",
                 "query": query,
@@ -232,25 +252,6 @@ class EightAgentEngine:
         except Exception as e:
             logger.warning(f"[太史阁] 记忆检索失败: {e}")
         return {"results": [], "recent": [], "preferences": {}, "history": []}
-    
-    async def _store_knowledge(
-        self,
-        query: str,
-        cards: FourColorCards,
-        user_id: str
-    ):
-        """太史阁 - 知识存储"""
-        try:
-            memory_agent = self._agents.get("memory")
-            if memory_agent:
-                for card in cards.to_list():
-                    await memory_agent.store_knowledge("card", {
-                        "query": query,
-                        "card_data": card,
-                        "user_id": user_id
-                    })
-        except Exception as e:
-            logger.warning(f"[太史阁] 知识存储失败: {e}")
     
     async def _preprocess_data(
         self, 
@@ -556,7 +557,30 @@ class EightAgentEngine:
         # 防御性检查：确保cards是FourColorCards对象
         if not isinstance(cards, FourColorCards):
             logger.warning(f"[_build_report_text] cards不是FourColorCards对象，而是{type(cards)}")
-            return f"## 分析报告: {query}\n\n[数据不可用]"
+            return f"## 分析报告: {query}\n\n[数据处理中，请稍后...]"
+        
+        # 检查是否有任何卡片
+        has_any_card = (
+            (cards.blue_cards and len(cards.blue_cards) > 0) or
+            (cards.green_cards and len(cards.green_cards) > 0) or
+            (cards.yellow_cards and len(cards.yellow_cards) > 0) or
+            (cards.red_cards and len(cards.red_cards) > 0)
+        )
+        
+        if not has_any_card:
+            # 没有卡片时，返回友好的消息
+            return f"""## 分析报告: {query}
+
+🤖 正在分析中...
+
+您的查询 "{query}" 已收到，系统正在处理：
+
+- 🔍 正在检索相关知识
+- 📊 正在分析数据模式
+- 🎨 正在生成知识卡片
+
+请稍候片刻，再次提问或尝试更具体的问题。
+"""
         
         lines = [f"## 分析报告: {query}\n"]
         

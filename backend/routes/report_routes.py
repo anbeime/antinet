@@ -58,17 +58,33 @@ async def get_report_status():
     if not SERVICE_AVAILABLE:
         return {
             "available": False,
-            "message": "报表服务不可用，请安装必要依赖"
+            "message": "报表服务不可用，请安装必要依赖",
+            "excel_available": False,
+            "pdf_available": False,
+            "ppt_available": False,
+            "features": {
+                "excel": False,
+                "pdf": False,
+                "ppt": False,
+                "chart_generation": False,
+                "full_report": False
+            }
         }
+    
+    from services.report_automation_service import PANDAS_AVAILABLE, OPENPYXL_AVAILABLE, REPORTLAB_AVAILABLE, PYTHON_PPTX_AVAILABLE
     
     return {
         "available": True,
         "message": "报表服务正常运行",
+        "excel_available": OPENPYXL_AVAILABLE and PANDAS_AVAILABLE,
+        "pdf_available": REPORTLAB_AVAILABLE,
+        "ppt_available": PYTHON_PPTX_AVAILABLE,
         "features": {
-            "excel": True,
-            "pdf": True,
-            "ppt": True,
-            "full_report": True
+            "excel": OPENPYXL_AVAILABLE and PANDAS_AVAILABLE,
+            "pdf": REPORTLAB_AVAILABLE,
+            "ppt": PYTHON_PPTX_AVAILABLE,
+            "chart_generation": PANDAS_AVAILABLE and OPENPYXL_AVAILABLE,
+            "full_report": OPENPYXL_AVAILABLE and REPORTLAB_AVAILABLE and PYTHON_PPTX_AVAILABLE
         }
     }
 

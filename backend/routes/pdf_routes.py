@@ -495,6 +495,77 @@ async def export_cards_to_docx(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/export/cards-pdf")
+async def export_cards_to_pdf(
+    cards: Optional[List[UploadFile]] = File(None),
+    cards_data: Optional[str] = Form(None),
+    title: str = Form("四色知识卡片报告"),
+    author: str = Form("Antinet 智能知识管家")
+):
+    """导出知识卡片到 PDF（支持文件上传或JSON数据）"""
+    if not FOUR_COLOR_AVAILABLE:
+        raise HTTPException(status_code=503, detail="四色卡片功能未启用")
+
+    all_cards = []
+
+    # 方式1：从文件提取
+    if cards:
+        try:
+            from pypdf import PdfReader
+            import io
+            for f in cards:
+                content = await f.read()
+                reader = PdfReader(io.BytesIO(content))
+                text = "\n".join([p.extract_text() for p in reader.pages])
+
+                from tools.pdf_four_color_processor import PDFourColorProcessor
+                processor = PDFourColorProcessor()
+                result = processor._analyze_content(text, 50)
+                all_cards.extend(result.get('cards', []))
+        except Exception as e:
+            logger.error(f"从PDF提取失败: {e}")
+
+    # 方式2：从JSON数据
+    if cards_data:
+        try:
+            import json
+            cards_list = json.loads(cards_data)
+            all_cards.extend(cards_list)
+        except Exception as e:
+            logger.error(f"解析JSON失败: {e}")
+
+    if not all_cards:
+        raise HTTPException(status_code=400, detail="没有可导出的卡片数据")
+
+    try:
+        from tools.pdf_four_color_processor import PDFourColorProcessor
+        processor = PDFourColorProcessor()
+
+        output_path = os.path.join(tempfile.gettempdir(), "cards_export.pdf")
+        result = processor.export_to_pdf({'cards': all_cards}, output_path, title=title, author=author)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "PDF生成失败"))
+
+        from urllib.parse import quote
+        filename = f"{title}.pdf"
+        encoded_name = quote(filename)
+
+        with open(output_path, 'rb') as f:
+            pdf_content = f.read()
+
+        from fastapi.responses import Response
+        return Response(
+            content=pdf_content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/export/four-color-excel")
 async def export_four_color_excel(
     files: Optional[List[UploadFile]] = File(None),

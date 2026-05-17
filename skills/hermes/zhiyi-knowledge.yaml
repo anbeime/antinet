@@ -1,0 +1,105 @@
+name: zhiyi-knowledge
+description: 查询 zhiyi 知识库和锦衣卫 Agent 系统
+category: integration
+
+tools:
+  - name: search_zhiyi_knowledge
+    description: 搜索 zhiyi 知识库中的卡片和文档
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: 搜索关键词
+        limit:
+          type: integer
+          default: 10
+          description: 返回结果数量限制
+      required: [query]
+
+  - name: ask_jinYiwu
+    description: 向锦衣卫 Agent 系统提问，获取综合分析
+    parameters:
+      type: object
+      properties:
+        question:
+          type: string
+          description: 用户问题
+        context:
+          type: string
+          description: 额外上下文信息
+      required: [question]
+
+  - name: get_knowledge_graph
+    description: 获取知识图谱数据
+    parameters:
+      type: object
+      properties:
+        layer:
+          type: string
+          enum: [fact, analysis, creative, risk, all]
+          default: all
+          description: 图谱层级
+
+  - name: dispatch_agent_task
+    description: 向指定 Agent 下发任务
+    parameters:
+      type: object
+      properties:
+        agent:
+          type: string
+          enum: [orchestrator, taishige, tongzhengsi, jianchayuan, xingyusi, mijuanfang, canmousi]
+          description: Agent 名称
+        task:
+          type: string
+          description: 任务描述
+      required: [agent, task]
+
+integration:
+  api_base: http://localhost:8000
+  endpoints:
+    search: /api/knowledge/search
+    chat: /api/chat/enhanced/message
+    graph: /api/knowledge/graph
+    agent: /yichuansi/send_task
+
+agent_system:
+  name: 锦衣卫
+  description: 明朝锦衣卫 agent 系统
+  agents:
+    - id: orchestrator
+      name: 总指挥使
+      role: 任务分解与调度
+    - id: taishige
+      name: 太史阁
+      role: 知识库管理
+    - id: tongzhengsi
+      name: 通政司
+      role: 文档处理
+    - id: jianchayuan
+      name: 锦衣院
+      role: 情报分析
+    - id: xingyusi
+      name: 行狱司
+      role: 风险检测
+    - id: mijuanfang
+      name: 锦衣方
+      role: 创意生成
+    - id: canmousi
+      name: 蚕业务
+      role: 内容创作
+
+usage:
+  prompt: |
+    当用户询问关于 zhiyi 知识库、卡片、知识图谱时使用此技能。
+    
+    示例问题：
+    - "查询知识库中关于 xxx 的内容"
+    - "锦衣卫系统能做什么"
+    - "获取知识图谱"
+    - "向太史阁查询 xxx"
+
+notes:
+  - 需要 zhiyi 后端运行在 http://localhost:8000
+  - 锦衣卫系统有 7 个专业 Agent，各司其职
+  - 知识库存储在 SQLite 数据库中

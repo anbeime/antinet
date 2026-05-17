@@ -317,9 +317,36 @@ const QuickAction: React.FC<{
   </button>
 );
 
+const CHAT_STORAGE_KEY = 'enhanced_chat_messages';
+
+// 加载本地存储的聊天记录
+const loadSavedMessages = (): ChatMessage[] => {
+  try {
+    const saved = localStorage.getItem(CHAT_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('加载聊天记录失败:', e);
+  }
+  return [];
+};
+
+// 保存聊天记录到本地存储
+const saveMessages = (messages: ChatMessage[]) => {
+  try {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+  } catch (e) {
+    console.warn('保存聊天记录失败:', e);
+  }
+};
+
 export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
   const navigate = useNavigate();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(loadSavedMessages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
@@ -348,7 +375,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 初始化欢迎消息
+// 初始化欢迎消息
   useEffect(() => {
     if (isOpen && messages.length === 0) {
       setMessages([{
@@ -366,6 +393,13 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       }]);
     }
   }, [isOpen]);
+
+  // 聊天记录持久化到 localStorage
+  useEffect(() => {
+    if (messages.length > 0) {
+      saveMessages(messages);
+    }
+  }, [messages]);
 
   // 自动滚动到底部
   useEffect(() => {

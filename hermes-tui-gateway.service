@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes TUI Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=topgo
+WorkingDirectory=/home/topgo/hermes-agent-main
+ExecStart=/home/topgo/.local/bin/hermes tui-gateway
+Restart=always
+RestartSec=5
+Environment=PATH=/home/topgo/.local/bin:/usr/local/bin:/bin:/usr/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

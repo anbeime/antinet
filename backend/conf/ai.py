@@ -65,7 +65,7 @@ class AIConfig(BaseConfig):
     
     # 本地模型配置
     use_local_model: bool = Field(default=True, description="优先使用本地NPU模型")
-    local_model_name: str = Field(default="llama3.2-3b", description="默认本地模型")
+    local_model_name: str = Field(default="qwen2.0-7b", description="默认本地模型")
     
     class Config:
         env_prefix = "ZHIYI_AI_"

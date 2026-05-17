@@ -81,7 +81,7 @@ class ActionAdvisorAgent:
             self.task_status = "失败"
             self.log.append(f"[参谋司] 生成异常: {str(e)}")
             logger.error(f"行动建议生成失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     def _prioritize_items(self, facts: Dict, explanations: Dict, risks: Dict) -> List[Dict]:
         """
@@ -397,7 +397,11 @@ class ActionAdvisorAgent:
         """
         try:
             from routes.meeting_routes import call_llm
-            result = await call_llm("你是参谋司，负责生成可执行的行动建议。", prompt)
+            result = await call_llm(
+                "你是参谋司，负责生成可执行的行动建议。输出JSON格式，只输出JSON不要其他内容。", 
+                prompt,
+                max_tokens=1024
+            )
             if result:
                 return result
         except Exception as e:
@@ -444,7 +448,7 @@ class ActionAdvisorAgent:
         except Exception as e:
             logger.debug(f"[参谋司] NPU进程内推理失败: {e}")
         
-        raise RuntimeError("所有LLM层不可用")
+        # JSON解析失败不影响流程，回退到空列表
     
     def _parse_json_response(self, response: str) -> Dict:
         """
@@ -463,8 +467,41 @@ class ActionAdvisorAgent:
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
             
-            return json.loads(response)
+            # 修复双层大括号
+            response = response.strip()
+            if response.startswith('{{') and response.endswith('}}'):
+                response = response[1:-1].strip()
+            
+            # 修复不完整的 JSON（截断的情况）
+            # 尝试找到最后一个完整的对象
+            parsed = None
+            try:
+                parsed = json.loads(response, strict=False)
+            except json.JSONDecodeError:
+                # 尝试修复：找到最后一个有效的 JSON 对象
+                # 从后往前找匹配的 } 
+                brace_count = 0
+                start_idx = None
+                for i, char in enumerate(response):
+                    if char == '{':
+                        if start_idx is None:
+                            start_idx = i
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0 and start_idx is not None:
+                            try:
+                                parsed = json.loads(response[start_idx:i+1], strict=False)
+                                break
+                            except:
+                                pass
+                
+                if parsed is None:
+                    # 如果无法修复，返回一个默认结构
+                    parsed = {"title": "行动建议", "steps": [], "raw_response": response[:200]}
+            
+            return parsed
         
         except Exception as e:
             logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表

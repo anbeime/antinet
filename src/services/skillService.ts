@@ -213,6 +213,164 @@ class SkillService {
       throw error;
     }
   }
+
+  /**
+   * ===========================================
+   * Book Skill Generator API - 四色集成
+   * ===========================================
+   */
+
+  /**
+   * 从文本提取书籍方法论（自动同步到四色黄色卡片）
+   */
+  async extractBookSkill(
+    bookContent: string,
+    bookName?: string,
+    bookAuthor?: string
+  ): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/skill/book-skill/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_content: bookContent,
+          book_name: bookName || '',
+          book_author: bookAuthor || '',
+        }),
+      });
+      if (!response.ok) throw new Error('提取书籍方法论失败');
+      return await response.json();
+    } catch (error) {
+      console.error('提取书籍方法论失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 从笔记提取方法论
+   */
+  async extractBookSkillFromNotes(
+    notes: string,
+    bookName?: string,
+    bookAuthor?: string
+  ): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (bookName) params.append('book_name', bookName);
+      if (bookAuthor) params.append('book_author', bookAuthor);
+      const response = await fetch(
+        `${API_BASE}/skill/book-skill/extract-from-notes?${params}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(notes),
+        }
+      );
+      if (!response.ok) throw new Error('从笔记提取方法论失败');
+      return await response.json();
+    } catch (error) {
+      console.error('从笔记提取方法论失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 根据问题匹配方法论
+   */
+  async queryBookMethodology(
+    problem: string,
+    bookName?: string
+  ): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/skill/book-skill/query`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          problem,
+          book_name: bookName || null,
+        }),
+      });
+      if (!response.ok) throw new Error('查询方法论失败');
+      return await response.json();
+    } catch (error) {
+      console.error('查询方法论失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 保存案例研究（回填四色蓝色卡片）
+   */
+  async saveBookCaseStudy(
+    bookName: string,
+    methodologyName: string,
+    problem: string,
+    solution: string,
+    outcome?: string
+  ): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/skill/book-skill/case`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          book_name: bookName,
+          methodology_name: methodologyName,
+          problem,
+          solution,
+          outcome: outcome || '',
+        }),
+      });
+      if (!response.ok) throw new Error('保存案例失败');
+      return await response.json();
+    } catch (error) {
+      console.error('保存案例失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 列出所有已提取的书籍技能
+   */
+  async listBookSkills(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/skill/book-skill/list`);
+      if (!response.ok) throw new Error('获取书籍技能列表失败');
+      return await response.json();
+    } catch (error) {
+      console.error('获取书籍技能列表失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取指定书籍的技能详情
+   */
+  async getBookSkill(bookName: string): Promise<any> {
+    try {
+      const response = await fetch(
+        `${API_BASE}/skill/book-skill/${encodeURIComponent(bookName)}`
+      );
+      if (!response.ok) throw new Error('获取书籍技能详情失败');
+      return await response.json();
+    } catch (error) {
+      console.error('获取书籍技能详情失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取 Book Skill 统计
+   */
+  async getBookSkillStats(): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE}/skill/book-skill/stats`);
+      if (!response.ok) throw new Error('获取BookSkill统计失败');
+      return await response.json();
+    } catch (error) {
+      console.error('获取BookSkill统计失败:', error);
+      throw error;
+    }
+  }
 }
 
 // 导出单例

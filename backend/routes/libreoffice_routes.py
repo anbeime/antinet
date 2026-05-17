@@ -8,7 +8,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, Response
 from typing import Optional
 
@@ -61,7 +61,7 @@ async def get_libreoffice_status():
 @router.post("/convert")
 async def convert_document(
     file: UploadFile = File(...),
-    output_format: str = Query("pdf", description="输出格式: pdf, docx, xlsx, pptx, odt, ods, odp")
+    output_format: str = Form("pdf")
 ):
     """使用 LibreOffice 转换文档格式"""
     lo_path = find_libreoffice()

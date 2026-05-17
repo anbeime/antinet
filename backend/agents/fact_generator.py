@@ -266,7 +266,11 @@ class FactGeneratorAgent:
         try:
             # 优先使用 call_llm 降级链（8910→Ollama→NPU）
             from routes.meeting_routes import call_llm
-            result = await call_llm("你是通政司，负责从数据中挖掘关键事实。", prompt)
+            result = await call_llm(
+                "你是通政司，负责从数据中挖掘关键事实。输出JSON格式，只输出JSON不要其他内容。", 
+                prompt,
+                max_tokens=1024  # 大幅增加 token 数量以支持完整 JSON 输出
+            )
             if result:
                 return result
         except Exception as e:
@@ -320,12 +324,12 @@ class FactGeneratorAgent:
     def _parse_json_response(self, response: str) -> Dict:
         """
         解析JSON响应
-        
+
         参数：
             response: 响应文本
-        
+
         返回：
-            解析后的JSON
+            解析后的JSON，解析失败时返回 {"text": response}
         """
         try:
             # 提取JSON部分（可能包含markdown代码块）
@@ -334,8 +338,13 @@ class FactGeneratorAgent:
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
             
-            return json.loads(response)
-        
+            # 修复双层大括号
+            response = response.strip()
+            if response.startswith('{{') and response.endswith('}}'):
+                response = response[1:-1].strip()
+            
+            return json.loads(response, strict=False)
         except Exception as e:
-            logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            logger.warning(f"解析JSON响应失败，返回原始文本: {e}")
+            # JSON解析失败时返回原始文本作为后备，避免整个流程崩溃
+            return {"text": response, "_parse_error": str(e)}

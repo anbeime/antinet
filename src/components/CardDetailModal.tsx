@@ -1,9 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText } from 'lucide-react';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import { cn } from '@/lib/utils';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
+// 注册中文字体（本地文件，不依赖外部CDN）
+const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
+Font.register({
+  family: 'Noto Sans SC',
+  fonts: [
+    { src: FONT_URL_REGULAR, fontWeight: 'normal' },
+    { src: FONT_URL_REGULAR, fontWeight: 'bold' },
+  ],
+});
 
 // 定义卡片类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
@@ -17,6 +29,17 @@ interface KnowledgeCard {
   createdAt: string;
   relatedCards: string[];
   projectId?: number | null;
+  images?: ImageInfo[];  // 图片列表
+}
+
+// 图片信息类型
+interface ImageInfo {
+  id: string;
+  filename: string;
+  original_name: string;
+  path: string;
+  url: string;
+  size: number;
 }
 
 interface CardDetailModalProps {
@@ -78,6 +101,131 @@ const formatDate = (dateString: string) => {
   }).format(date);
 };
 
+// 单卡PDF样式
+const pdfStyles = StyleSheet.create({
+  page: { padding: 50, backgroundColor: '#ffffff', fontFamily: 'Noto Sans SC' },
+  header: { marginBottom: 30, borderBottom: '2pt solid #3b82f6', paddingBottom: 15 },
+  title: { fontSize: 22, fontWeight: 'bold', color: '#1e40af', marginBottom: 6, fontFamily: 'Noto Sans SC' },
+  subtitle: { fontSize: 11, color: '#6b7280', fontFamily: 'Noto Sans SC' },
+  cardContainer: { marginBottom: 25, padding: 18, borderRadius: 8, borderWidth: 2 },
+  cardTitle: { fontSize: 15, fontWeight: 'bold', marginBottom: 8, fontFamily: 'Noto Sans SC' },
+  cardContent: { fontSize: 12, lineHeight: 1.7, fontFamily: 'Noto Sans SC' },
+  cardFooter: { marginTop: 10, paddingTop: 8, borderTop: '1pt solid #e5e7eb' },
+  cardMeta: { fontSize: 9, color: '#9ca3af', fontFamily: 'Noto Sans SC' },
+  footer: { position: 'absolute', bottom: 30, left: 50, right: 50, textAlign: 'center', fontSize: 9, color: '#9ca3af', fontFamily: 'Noto Sans SC' },
+  badge: { padding: '3 8', borderRadius: 4, fontSize: 9, fontFamily: 'Noto Sans SC', alignSelf: 'flex-start', marginBottom: 8 },
+  badgeText: { color: '#ffffff', fontFamily: 'Noto Sans SC' },
+});
+
+const cardColorsPDF = {
+  blue:   { border: '#3b82f6', background: '#eff6ff', badge: '#1e40af', name: '核心概念' },
+  green:  { border: '#10b981', background: '#ecfdf5', badge: '#047857', name: '关联链接' },
+  yellow: { border: '#f59e0b', background: '#fffbeb', badge: '#d97706', name: '参考来源' },
+  red:    { border: '#ef4444', background: '#fef2f2', badge: '#dc2626', name: '索引关键词' },
+};
+
+interface SingleCardPDFProps { card: KnowledgeCard; }
+
+const SingleCardPDFDocument: React.FC<SingleCardPDFProps> = ({ card }) => {
+  const color = card.color as 'blue' | 'green' | 'yellow' | 'red';
+  const cfg = cardColorsPDF[color];
+  const date = new Date(card.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  return (
+    <Document>
+      <Page size="A4" style={pdfStyles.page}>
+        <View style={pdfStyles.header}>
+          <Text style={pdfStyles.title}>{card.title}</Text>
+          <Text style={pdfStyles.subtitle}>
+            Antinet 知识卡片 | {cfg.name} | {date}
+          </Text>
+        </View>
+        <View style={[pdfStyles.cardContainer, { borderColor: cfg.border, backgroundColor: cfg.background }]}>
+          <View style={[pdfStyles.badge, { backgroundColor: cfg.badge }]}>
+            <Text style={pdfStyles.badgeText}>{cfg.name}</Text>
+          </View>
+          <Text style={[pdfStyles.cardTitle, { color: cfg.badge }]}>{card.title}</Text>
+          <Text style={pdfStyles.cardContent}>{card.content}</Text>
+          <View style={pdfStyles.cardFooter}>
+            <Text style={pdfStyles.cardMeta}>地址: {card.address}</Text>
+          </View>
+        </View>
+        <Text style={pdfStyles.footer}>由 Antinet 智能知识管家生成</Text>
+      </Page>
+    </Document>
+  );
+};
+
+// ============================================================
+// 导出的卡片数据类型（用于单卡导出）
+// ============================================================
+interface ExportableCard {
+  id: string;
+  color: CardColor;
+  title: string;
+  content: string;
+  address: string;
+  createdAt: string;
+}
+
+// 单卡导出函数
+const exportSingleCardToXLSX = (card: ExportableCard) => {
+  import('xlsx').then(XLSX => {
+    const row = {
+      '类型': card.color === 'blue' ? '核心概念' : card.color === 'green' ? '关联链接' : card.color === 'yellow' ? '参考来源' : '索引关键词',
+      '标题': card.title,
+      '内容': card.content,
+      '地址': card.address,
+      '创建时间': card.createdAt,
+    };
+    const ws = XLSX.utils.json_to_sheet([row]);
+    ws['!cols'] = [{ wch: 12 }, { wch: 40 }, { wch: 60 }, { wch: 30 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '知识卡片');
+    XLSX.writeFile(wb, `${card.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.xlsx`);
+    toast.success('Excel 导出成功');
+  }).catch(() => toast.error('Excel 导出失败'));
+};
+
+const exportSingleCardToDOCX = (card: ExportableCard) => {
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"/>
+<style>
+body { font-family: "Microsoft YaHei", "SimHei", sans-serif; padding: 40px; }
+h1 { color: #1e40af; border-bottom: 2px solid #3b82f6; padding-bottom: 10px; }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 4px; color: white; font-size: 12px; margin-bottom: 12px; }
+.blue   { background: #3b82f6; }
+.green  { background: #10b981; }
+.yellow { background: #f59e0b; }
+.red    { background: #ef4444; }
+.content { font-size: 14px; line-height: 1.8; white-space: pre-wrap; margin-top: 20px; }
+.meta { color: #6b7280; font-size: 12px; margin-top: 20px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+</style></head><body>
+<h1>${card.title}</h1>
+<span class="badge ${card.color}">${
+  card.color === 'blue' ? '核心概念' : card.color === 'green' ? '关联链接' :
+  card.color === 'yellow' ? '参考来源' : '索引关键词'
+}</span>
+<div class="content">${card.content}</div>
+<div class="meta">地址: ${card.address} | 创建: ${card.createdAt}</div>
+</body></html>`;
+  const blob = new Blob([html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${card.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast.success('Word 文档导出成功');
+};
+
+// ============================================================
+// CardDetailModal 组件
+// ============================================================
 const CardDetailModal: React.FC<CardDetailModalProps> = ({
   isOpen,
   onClose,
@@ -136,8 +284,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // Tab 切换
   const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks'>('relations');
 
-  // 复制和放大功能
+// 复制和放大功能
   const [isZoomed, setIsZoomed] = useState(false);
+
+  // 单卡导出菜单
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // 源文件溯源状态
   const [sourceFileInfo, setSourceFileInfo] = useState<SourceFileInfo | null>(null);
@@ -589,13 +740,119 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 >
                   <Edit2 size={18} />
                 </button>
-                <button
+
+<button
                   className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                   aria-label="删除"
                   onClick={handleDelete}
                 >
                   <Trash2 size={18} />
                 </button>
+
+                {/* 链接图谱快捷入口 */}
+                <button
+                  className="p-2 text-purple-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                  aria-label="链接图谱"
+                  title="查看链接图谱"
+                  onClick={() => {
+                    window.open(`/knowledge-graph?card=${card.id}`, '_blank');
+                  }}
+                >
+                  <Network size={18} />
+                </button>
+
+                {/* 双向链接快捷入口 */}
+                <button
+                  className="p-2 text-orange-500 hover:text-orange-600 dark:hover:text-orange-400 rounded-full hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors"
+                  aria-label="双向链接"
+                  title="查看双向链接"
+                  onClick={() => {
+                    setActiveTab('backlinks');
+                  }}
+                >
+                  <Link size={18} />
+                </button>
+
+                {/* 单卡导出下拉菜单 */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowExportMenu(!showExportMenu)}
+                    className="p-2 text-gray-500 hover:text-green-600 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                    aria-label="导出"
+                    title="导出"
+                  >
+                    <Download size={18} />
+                  </button>
+
+                  {showExportMenu && (
+                    <>
+                      {/* 点击外部关闭 */}
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowExportMenu(false)}
+                      />
+                      {/* 下拉菜单 */}
+                      <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                        {/* PDF下载链接（始终渲染，点击按钮时触发） */}
+                        <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', height: 0, overflow: 'hidden' }}>
+                          {card && (
+                            <PDFDownloadLink
+                              id="single-card-pdf-link"
+                              document={<SingleCardPDFDocument card={card as KnowledgeCard} />}
+                              fileName={`${card.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`}
+                            />
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            if (card) {
+                              // 触发隐藏的 PDFDownloadLink
+                              const linkEl = document.getElementById('single-card-pdf-link') as HTMLAnchorElement;
+                              if (linkEl) {
+                                setTimeout(() => linkEl.click(), 80);
+                              }
+                            }
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
+                        >
+                          <FilePen className="w-5 h-5 text-red-600" />
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">PDF 文档</div>
+                            <div className="text-xs text-gray-500">精确保留格式，适合打印</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            if (card) exportSingleCardToDOCX(card as unknown as ExportableCard);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
+                        >
+                          <FileType className="w-5 h-5 text-blue-600" />
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">Word 文档</div>
+                            <div className="text-xs text-gray-500">完美支持中文编辑</div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            if (card) exportSingleCardToXLSX(card as unknown as ExportableCard);
+                          }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">Excel 表格</div>
+                            <div className="text-xs text-gray-500">结构化数据格式</div>
+                          </div>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <button
                   onClick={() => setIsZoomed(!isZoomed)}
                   className="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
@@ -680,9 +937,63 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 className="text-lg select-text"
                 style={{ whiteSpace: 'pre-wrap' }}
                >
-                {card.content}
+{card.content}
               </div>
             )}
+            
+{/* 图片附件展示 - 包括images数组和content中的markdown图片 */}
+            {(() => {
+              // 从content中提取markdown图片
+              const markdownImages: Array<{url: string; alt: string}> = [];
+              if (card.content) {
+                const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+                let match;
+                while ((match = imgRegex.exec(card.content)) !== null) {
+                  markdownImages.push({ alt: match[1], url: match[2] });
+                }
+              }
+              
+              // 合并images数组中的图片和markdown图片
+              const allImages = [
+                ...(card.images || []).map(img => ({ url: img.url, alt: img.original_name || img.filename || '图片' })),
+                ...markdownImages
+              ];
+              
+              if (allImages.length === 0) return null;
+              
+              return (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText size={14} className="text-gray-500" />
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      图片附件 ({allImages.length})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3">
+                    {allImages.map((img, idx) => (
+                      <div 
+                        key={idx}
+                        className="relative group cursor-pointer"
+                        onClick={() => window.open(`${getApiBaseUrl()}${img.url}`, '_blank')}
+                      >
+                        <img
+                          src={img.url.startsWith('http') ? img.url : `${getApiBaseUrl()}${img.url}`}
+                          alt={img.alt}
+                          className="w-full h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-600 group-hover:border-blue-400 transition-colors"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="%23f3f4f6" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%239ca3af" font-size="12">图片加载失败</text></svg>';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 rounded-lg transition-colors flex items-center justify-center">
+                          <ZoomIn size={20} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            
             {/* P0: 选中文本提示条 */}
             {!isEditing && selectedText && (
               <motion.div

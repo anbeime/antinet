@@ -190,8 +190,8 @@ const PPTAnalysis: React.FC = () => {
           
           toast.success('PPT生成成功！');
           
-          // 跳转到预览页面
-          window.location.href = '/ppt-viewer';
+// 跳转到预览页面
+          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
         } else {
           toast.error(`生成失败: ${data.detail || '未知错误'}`);
         }
@@ -242,8 +242,8 @@ const PPTAnalysis: React.FC = () => {
           console.log('[PPTAnalysis] 生成成功，文件名:', data.filename);
           sessionStorage.setItem('lastPPTFileName', data.filename);
           
-          // 自动跳转到预览页面
-          window.location.href = '/ppt-viewer';
+// 跳转到预览页面
+          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
         } else {
           const error = await response.json();
           toast.error(`生成失败: ${error.detail || '未知错误'}`);
@@ -306,8 +306,8 @@ const PPTAnalysis: React.FC = () => {
             }
           });
           
-          // 自动跳转到预览页面
-          window.location.href = '/ppt-viewer';
+// 跳转到预览页面
+          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
         } else {
           const error = await response.json();
           toast.error(`导出失败: ${error.detail || '未知错误'}`);

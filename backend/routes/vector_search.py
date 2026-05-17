@@ -379,63 +379,86 @@ def fallback_keyword_search(query: str, limit: int = 5) -> List[VectorSearchResu
         return []
 
 
+def _is_keyword_query(query: str) -> bool:
+    """判断是否为关键词查询（应优先关键词搜索）"""
+    import re
+    # 技术命令模式
+    cmd_patterns = [
+        r'^git\s+', r'^docker\s+', r'^npm\s+', r'^pnpm\s+', r'^python\s+',
+        r'^ls\s+', r'^cd\s+', r'^rm\s+', r'^cp\s+', r'^mv\s+',
+        r'^pip\s+', r'^make\s+', r'^cmake\s+', r'^gcc\s+',
+    ]
+    for p in cmd_patterns:
+        if re.search(p, query):
+            return True
+    
+    # 文件路径模式
+    if '/' in query and ('.' in query or '\\' in query):
+        return True
+    
+    # 文件扩展名
+    if re.search(r'\.(py|js|ts|md|json|yaml|yml|txt|csv|sql)$', query):
+        return True
+    
+    # 技术术语/精确匹配（多个连续大写字母、数字、大括号等）
+    if re.search(r'[A-Z]{2,}', query) or re.search(r'v\d+\.\d+', query):
+        return True
+    
+    # 很短的无空格查询
+    if len(query) <= 5 and ' ' not in query:
+        return True
+    
+    return False
+
+
 def search_hybrid(
     query: str, 
     limit: int = 5,
     vector_weight: float = 0.3,
     keyword_weight: float = 0.7
 ) -> List[VectorSearchResult]:
-    """混合搜索：关键词优先，向量作为补充"""
-    # 简单查询直接用关键词搜索（更快）
-    if len(query) < 15:
+    """混合搜索：智能判断查询类型，优先使用合适的搜索方式"""
+    # 短查询直接用关键词（效率高）
+    if len(query) < 10:
         return fallback_keyword_search(query, limit)
     
-    # 复杂查询先用关键词
-    keyword_results = fallback_keyword_search(query, limit=limit * 2)
+    # 关键词查询优先用关键词搜索
+    if _is_keyword_query(query):
+        return fallback_keyword_search(query, limit)
     
-    # 如果关键词结果足够好，就不用向量
-    if keyword_results and keyword_results[0].score >= 0.5:
-        return keyword_results[:limit]
-    
-    # 否则尝试向量搜索作为补充
+    # 语义查询（问问题、解释性查询）优先用向量搜索
     vector_results = search_by_vector(query, limit=limit * 2)
     
-    # 合并结果
-    result_map = {}
-    
-    for r in keyword_results:
-        result_map[r.id] = VectorSearchResult(
-            id=r.id,
-            title=r.title,
-            content=r.content,
-            card_type=r.card_type,
-            score=r.score * keyword_weight
-        )
-    
-    for r in vector_results:
-        if r.id in result_map:
-            existing = result_map[r.id]
-            result_map[r.id] = VectorSearchResult(
-                id=r.id,
-                title=r.title,
-                content=r.content,
-                card_type=r.card_type,
-                score=existing.score + r.score * vector_weight
-            )
-        else:
-            result_map[r.id] = VectorSearchResult(
-                id=r.id,
-                title=r.title,
-                content=r.content,
-                card_type=r.card_type,
-                score=r.score * vector_weight
-            )
-    
-    # 排序并返回
-    results = list(result_map.values())
-    results.sort(key=lambda x: x.score, reverse=True)
-    
-    return results[:limit]
+    if vector_results:
+        # 有向量结果，尝试合并关键词结果作为补充
+        keyword_results = fallback_keyword_search(query, limit=limit * 2)
+        
+        result_map = {}
+        for r in vector_results:
+            result_map[r.id] = r
+        
+        # 关键词补充
+        for r in keyword_results:
+            if r.id in result_map:
+                existing = result_map[r.id]
+                result_map[r.id] = VectorSearchResult(
+                    id=r.id, title=r.title, content=r.content,
+                    card_type=r.card_type,
+                    score=existing.score * 0.7 + r.score * keyword_weight * 0.3
+                )
+            else:
+                result_map[r.id] = VectorSearchResult(
+                    id=r.id, title=r.title, content=r.content,
+                    card_type=r.card_type,
+                    score=r.score * keyword_weight * 0.5
+                )
+        
+        results = list(result_map.values())
+        results.sort(key=lambda x: x.score, reverse=True)
+        return results[:limit]
+    else:
+        # 无向量结果，回退到关键词
+        return fallback_keyword_search(query, limit)
 
 
 def init_on_startup():

@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
+import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
+import { GlobalWorkerOptions } from 'pdfjs-dist/build/pdf.mjs';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { motion } from 'framer-motion';
-import { 
+import {
   FileText, Upload, Download, ZoomIn, ZoomOut, RotateCw,
   ChevronLeft, ChevronRight, Search, ThumbsUp, ThumbsDown,
   Maximize2, Hash, Layers
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+
+// 设置 worker（本地离线必须）
+GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 interface PDFViewerProps {
   fileUrl?: string;
@@ -20,11 +26,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    loadPDFJS();
-  }, []);
 
   // Load PDF from URL if provided
   useEffect(() => {
@@ -36,11 +37,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
   const loadPDFFromURL = async (url: string) => {
     setIsLoading(true);
     try {
-      const pdfjsLib = await loadPDFJS();
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data });
+      const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
@@ -57,23 +57,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
     }
   }, [pdfDoc, currentPage, scale]);
 
-  const loadPDFJS = async (): Promise<any> => {
-    const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib) return pdfjsLib;
-
-    return new Promise<any>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.js';
-      script.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
-        resolve(pdfjs);
-      };
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  };
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !file.type.includes('pdf')) {
@@ -87,11 +70,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      
+
       try {
-        const pdfjsLib = await loadPDFJS();
-        const pdf = await pdfjsLib.getDocument({ data });
-        
+        const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
         setCurrentPage(1);
@@ -161,7 +143,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
               className="hidden"
             />
           </label>
-          
+
           {fileName && (
             <span className="text-sm text-gray-600 dark:text-gray-400">
               {fileName} - {totalPages}页
@@ -178,11 +160,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          
+
           <span className="text-sm w-16 text-center">
             {Math.round(scale * 100)}%
           </span>
-          
+
           <button
             onClick={handleZoomIn}
             disabled={scale >= 3}
@@ -202,7 +184,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          
+
           <div className="flex items-center space-x-1">
             <Hash className="w-4 h-4 text-gray-500" />
             <input

@@ -20,6 +20,47 @@ import time
 from datetime import datetime
 
 from config import settings
+
+
+def clean_model_output(text: str) -> str:
+    """清理模型输出中的特殊token和格式标记"""
+    if not text:
+        return ""
+    
+    # 移除 Llama 特殊token (多种变体)
+    llama_tokens = [
+        '<|eot_id|>', '<|start_header_id|>', '<|end_header_id|>',
+        '<|im_start|>', '<|im_end|>', '<|end|>', '<|bos|>', '<|eos|>',
+        '<|assistant|>', '<|user|>', '<|system|>', '<|function_call|>',
+        '<|function|>', '<|python|>', '<|context|>', '<|done|>',
+        '<|message|>', '<|ipc|>', '<|interleave|>', '<|interleave_end|>',
+        '```', '`\\`',
+    ]
+    for token in llama_tokens:
+        text = text.replace(token, '')
+    
+    # 移除 header 块格式: <|start_header_id|>assistant<|end_header_id|>
+    text = re.sub(r'<\|start_header_id\|>[^<]*<\|end_header_id\|>', '', text)
+    
+    # 移除 role 标记行 (assistant, user, system 在行首)
+    text = re.sub(r'^assistant\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^user\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^system\s*', '', text, flags=re.MULTILINE)
+    
+    # 移除空白的 role 行
+    text = re.sub(r'^\s*<(assistant|user|system)>\s*$', '', text, flags=re.MULTILINE)
+    
+    # 清理多余的空行
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # 去除首尾空白
+    text = text.strip()
+    
+    # 如果清理后只剩特殊字符或为空，返回提示
+    if not text or len(text) < 2:
+        return "抱歉，模型返回了无效响应"
+    
+    return text
 from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -169,6 +210,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """聊天响应"""
     response: str
+    reply: Optional[str] = None  # 前端兼容字段
     scene_type: SceneType = SceneType.GENERAL
     cards: List[CardReference] = Field(default_factory=list)
     kg_entities: List[Dict[str, Any]] = Field(default_factory=list)
@@ -178,6 +220,12 @@ class ChatResponse(BaseModel):
     image_analysis: Optional[ImageAnalysisResult] = None
     suggested_questions: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    def __init__(self, **data):
+        # 确保 reply 字段也被填充以便前端兼容
+        if 'response' in data and data['response']:
+            data['reply'] = data['response']
+        super().__init__(**data)
 
 
 class SkillInfo(BaseModel):
@@ -447,7 +495,7 @@ def detect_scene(query: str) -> SceneType:
 # ============ 太史阁同步调用辅助函数 ============
 import asyncio
 
-def _get_memory_agent_sync():
+def _get_memory_agent_sync(query: str = ""):
     """同步获取太史阁检索结果"""
     try:
         from agents.memory import MemoryAgent
@@ -460,7 +508,7 @@ def _get_memory_agent_sync():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(memory_agent.retrieve_knowledge("fact", "", 10))
+                return loop.run_until_complete(memory_agent.retrieve_knowledge("all", query, 10))
             finally:
                 loop.close()
         
@@ -485,7 +533,7 @@ def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
     # 1. 优先使用太史阁记忆系统（memory.db）
     try:
         # 获取所有记忆，然后本地过滤（解决空query问题）
-        memory_result = _get_memory_agent_sync()
+        memory_result = _get_memory_agent_sync(query)
         
         if memory_result and memory_result.get("results"):
             results = memory_result["results"]
@@ -519,12 +567,11 @@ def search_cards_semantic(query: str, limit: int = 10) -> List[CardReference]:
         from routes import vector_search
         vector_search.set_db_manager(db_manager)
         
-        # 使用快速的关键词回退搜索
-        results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
+# 改用混合搜索（自动判断用向量还是关键词）
+        results = vector_search.search_hybrid(query, limit=min(limit, 20))
         
-        if not results:
-            # 回退到关键词搜索
-            results = vector_search.fallback_keyword_search(query, limit=min(limit, 20))
+# search_hybrid 内部已有 fallback 逻辑
+        pass
         
         # 转换为CardReference格式
         cards = []
@@ -706,51 +753,6 @@ def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str
         return None
     except Exception as e:
         logger.error(f"NPU生成失败: {e}")
-        return None
-
-
-def _try_ollama_generate(query: str, user_id: str = "default_user", model: str = "gemma4:latest") -> Optional[str]:
-    """尝试使用 Ollama (Gemma 4) 生成回答（带人设和记忆）- 适合复杂任务"""
-    try:
-        import httpx
-        
-        # 构建带人设的提示词
-        memory_context = memory_manager.get_memory_context(user_id)
-        system_prompt = PERSONA_SYSTEM_PROMPT.format(
-            current_time=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
-            memory_context=memory_context
-        )
-        
-        # 使用 Ollama Chat API（更好的指令遵循）
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ],
-            "stream": False,
-            "options": {
-                "temperature": 0.7,
-                "num_predict": 1024
-            }
-        }
-        
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post("http://localhost:11434/api/chat", json=payload)
-            resp.raise_for_status()
-            result = resp.json()
-        
-        response = result.get("message", {}).get("content", "").strip()
-        
-        if response and len(response) > 5:
-            logger.info(f"[Ollama] 生成成功: {len(response)}字, model={model}")
-            return response
-        return None
-    except ImportError:
-        logger.warning("[Ollama] httpx 未安装")
-        return None
-    except Exception as e:
-        logger.error(f"Ollama生成失败: {e}")
         return None
 
 
@@ -1136,14 +1138,17 @@ async def enhanced_chat(request: ChatRequest):
                         json={
                             "model": "llama3.2-3b-8380-qnn2.37",
                             "messages": [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
-                            "max_tokens": 512,
+                            "max_tokens": 256,
                             "temperature": 0.3
                         },
-                        timeout=15.0
+                        timeout=httpx.Timeout(60.0, connect=15.0)
                     )
                     if resp.status_code == 200:
                         result_data = resp.json()
-                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        raw_response = clean_model_output(raw_response)
+                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + raw_response
+                        response_data["reply"] = response_data["response"]  # 前端兼容
                         response_data["metadata"]["model"] = "genie-npu"
                     else:
                         raise Exception("Genie不可用")
@@ -1169,11 +1174,14 @@ async def enhanced_chat(request: ChatRequest):
                         "max_tokens": 100,
                         "temperature": 0.3
                     },
-                    timeout=10.0
+                    timeout=httpx.Timeout(30.0, connect=10.0)
                 )
                 if resp.status_code == 200:
                     result_data = resp.json()
-                    response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    raw_response = clean_model_output(raw_response)
+                    response_data["response"] = raw_response
+                    response_data["reply"] = raw_response  # 前端兼容
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
                     raise Exception("Genie不可用")
@@ -1189,14 +1197,17 @@ async def enhanced_chat(request: ChatRequest):
                     json={
                         "model": "llama3.2-3b-8380-qnn2.37",
                         "messages": [{"role": "user", "content": query}],
-                        "max_tokens": 512,
+                        "max_tokens": 256,
                         "temperature": 0.5
                     },
-                    timeout=20.0
+                    timeout=httpx.Timeout(60.0, connect=15.0)
                 )
                 if resp.status_code == 200:
                     result_data = resp.json()
-                    response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    raw_response = clean_model_output(raw_response)
+                    response_data["response"] = raw_response
+                    response_data["reply"] = raw_response  # 前端兼容
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
                     raise Exception("Genie不可用")
@@ -1230,14 +1241,19 @@ async def enhanced_chat(request: ChatRequest):
                         json={
                             "model": "llama3.2-3b-8380-qnn2.37",
                             "messages": [{"role": "user", "content": quick_prompt}],
-                            "max_tokens": 512,
+                            "max_tokens": 256,
                             "temperature": 0.3
                         },
-                        timeout=15.0
+                        timeout=httpx.Timeout(60.0, connect=15.0)
                     )
                     if resp.status_code == 200:
                         result_data = resp.json()
-                        response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")[:500]
+                        genie_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        # 清理模型输出的特殊token
+                        genie_response = clean_model_output(genie_response)
+                        logger.info(f"[Chat] Genie响应长度: {len(genie_response) if genie_response else 0}")
+                        response_data["response"] = genie_response[:500] if genie_response else "无回复"
+                        response_data["reply"] = response_data["response"]  # 前端兼容
                         response_data["metadata"]["model"] = "genie-npu"
                     else:
                         raise Exception(f"Genie不可用: {resp.status_code}")
@@ -1256,11 +1272,15 @@ async def enhanced_chat(request: ChatRequest):
                             "max_tokens": 256,
                             "temperature": 0.3
                         },
-                        timeout=15.0
+                        timeout=httpx.Timeout(60.0, connect=15.0)
                     )
                     if resp.status_code == 200:
                         result_data = resp.json()
-                        response_data["response"] = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        # 清理模型输出的特殊token
+                        raw_response = clean_model_output(raw_response)
+                        response_data["response"] = raw_response
+                        response_data["reply"] = raw_response  # 前端兼容
                         response_data["metadata"]["model"] = "genie-npu"
                     else:
                         raise Exception(f"Genie不可用: {resp.status_code}")
@@ -1734,3 +1754,52 @@ async def delete_draft(draft_id: str):
 
 # 初始化
 init_skills()
+
+
+# ============ 太史阁学习 API ============
+# 用户确认答案后，调用此 API 教太史阁记住
+
+@router.post("/memory/learn")
+async def memory_learn(query: str, answer: str, knowledge_type: str = "fact"):
+    """存储确认的 Q&A 到太史阁记忆"""
+    try:
+        from agents.memory import MemoryAgent
+        import asyncio
+
+        memory_agent = MemoryAgent()
+
+        data = {
+            "title": query[:100],
+            "description": answer[:200],
+            "content": answer,
+            "keywords": query.split()[:10]
+        }
+
+        async def store():
+            result = await memory_agent.store_knowledge(knowledge_type, data)
+            return result
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(store())
+        finally:
+            loop.close()
+
+        return {"status": "stored", "id": result.get("id") if result else None}
+    except Exception as e:
+        logger.error(f"太史阁学习失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/memory/stats")
+async def memory_stats():
+    """获取太史阁统计信息"""
+    try:
+        from agents.memory import MemoryAgent
+        memory_agent = MemoryAgent()
+        stats = memory_agent.get_stats()
+        return stats
+    except Exception as e:
+        logger.error(f"获取太史阁统计失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

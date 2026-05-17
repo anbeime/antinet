@@ -63,6 +63,16 @@ export interface KnowledgeCard {
   related_cards?: number[];  // JSON数组: 关联卡片ID列表
   project_id?: number;       // 所属专题ID
 
+  // 图片
+  images?: Array<{
+    id: string;
+    filename: string;
+    original_name: string;
+    path: string;
+    url: string;
+    size: number;
+  }>;
+
   // 地址编号 (Antinet风格)
   address?: string;  // 如 "21/3a"
 

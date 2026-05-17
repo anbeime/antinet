@@ -896,7 +896,7 @@ async def ppt_to_pdf(file: UploadFile = File(...)):
                     for font_path in font_paths:
                         if os.path.exists(font_path):
                             try:
-                                pdfmetrics.registerFont(TTFont(font_name, font_path))
+                                pdfmetrics.registerFont(TTFont(font_name, font_path, 'Identity-H'))
                                 selected_font = font_name
                                 font_registered = True
                                 logger.info(f"[PPT2PDF] Successfully registered font: {font_name}")

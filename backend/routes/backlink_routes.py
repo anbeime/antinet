@@ -71,21 +71,28 @@ async def add_backlink(req: BacklinkCreate):
             conn.close()
             raise HTTPException(status_code=404, detail="目标卡片不存在")
         
-        # 添加链接
+        # 添加正向链接 A→B
         cursor.execute("""
             INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
             VALUES (?, ?, ?)
-        """, (req.source_card_id, req.target_card_id, req.link_text))
-        
+        """, (req.source_card_id, req.target_card_id, req.link_text or 'manual'))
+
+        # 添加反向链接 B→A（双向关联）
+        cursor.execute("""
+            INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+            VALUES (?, ?, ?)
+        """, (req.target_card_id, req.source_card_id, req.link_text or 'backlink'))
+
         conn.commit()
         inserted = cursor.rowcount > 0
         conn.close()
-        
+
         return {
             "success": True,
             "inserted": inserted,
             "source_card_id": req.source_card_id,
-            "target_card_id": req.target_card_id
+            "target_card_id": req.target_card_id,
+            "bidirectional": True
         }
     
     except HTTPException:
@@ -96,21 +103,28 @@ async def add_backlink(req: BacklinkCreate):
 
 @router.delete("/remove", summary="移除双向链接")
 async def remove_backlink(source_card_id: int, target_card_id: int):
-    """移除双向链接"""
+    """移除双向链接（A→B 和 B→A 同时删除）"""
     try:
         conn = get_db()
         cursor = conn.cursor()
+        # 删除 A→B
         cursor.execute("""
-            DELETE FROM card_backlinks 
+            DELETE FROM card_backlinks
             WHERE source_card_id = ? AND target_card_id = ?
         """, (source_card_id, target_card_id))
-        deleted = cursor.rowcount > 0
+        deleted_forward = cursor.rowcount > 0
+        # 删除 B→A（反向）
+        cursor.execute("""
+            DELETE FROM card_backlinks
+            WHERE source_card_id = ? AND target_card_id = ?
+        """, (target_card_id, source_card_id))
+        deleted_backward = cursor.rowcount > 0
         conn.commit()
         conn.close()
-        
+
         return {
             "success": True,
-            "deleted": deleted
+            "deleted": deleted_forward or deleted_backward
         }
     
     except Exception as e:

@@ -25,9 +25,13 @@ from wiki.compiler import CompilerAgent, AutoCompiler
 
 router = APIRouter(prefix="/api/wiki", tags=["wiki"])
 
-DATA_DIR = Path("data")
+DATA_DIR = PROJECT_ROOT / "data"
 WIKI_ROOT = DATA_DIR / "wiki"
 GRAPH_DATA_DIR = DATA_DIR / "wiki"
+
+import logging
+logger = logging.getLogger("routes.wiki")
+logger.info(f"routes/wiki.py: PROJECT_ROOT=%s, WIKI_ROOT=%s", PROJECT_ROOT, WIKI_ROOT)
 
 file_manager = WikiFileManager(str(WIKI_ROOT))
 graph = KnowledgeGraph(str(GRAPH_DATA_DIR))
@@ -64,11 +68,15 @@ async def list_pages(folder: Optional[str] = None):
     return {"pages": pages, "total": len(pages)}
 
 
-@router.get("/pages/{page_id}")
-async def get_page(page_id: str):
+@router.get("/pages")
+async def get_page(page_id: str = Query(..., description="页面ID，支持路径格式如 articles/页面名")):
+    logger.info(f"[WIKI] get_page called with page_id={page_id!r}")
+    file_path = file_manager.get_page_path(page_id)
+    logger.info(f"[WIKI] resolved path={file_path}, exists={file_path.exists()}")
     page = file_manager.read_page(page_id)
     if not page:
-        raise HTTPException(status_code=404, detail="Page not found")
+        logger.warning(f"[WIKI] page not found: {page_id!r}, path={file_path}")
+        raise HTTPException(status_code=404, detail=f"Page not found: {page_id}")
     
     links = file_manager.parser.parse(page.content, page_id)
     backlinks = graph.get_backlinks(page_id)
@@ -111,8 +119,8 @@ async def create_page(page: PageCreate):
     return {"success": True, "page_id": page.page_id}
 
 
-@router.put("/pages/{page_id}")
-async def update_page(page_id: str, update: PageUpdate):
+@router.put("/pages")
+async def update_page(page_id: str = Query(...), update: PageUpdate = None):
     page = file_manager.read_page(page_id)
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -143,8 +151,8 @@ async def update_page(page_id: str, update: PageUpdate):
     return {"success": True}
 
 
-@router.delete("/pages/{page_id}")
-async def delete_page(page_id: str):
+@router.delete("/pages")
+async def delete_page(page_id: str = Query(...)):
     success = file_manager.delete_page(page_id)
     if not success:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -198,8 +206,8 @@ async def semantic_search_endpoint(
     return {"query": q, "results": results, "total": len(results)}
 
 
-@router.get("/semantic/similar/{page_id}")
-async def find_similar_pages(page_id: str, limit: int = Query(5)):
+@router.get("/semantic/similar")
+async def find_similar_pages(page_id: str = Query(...), limit: int = Query(5)):
     results = semantic_search.find_similar(page_id, limit)
     return {"page_id": page_id, "similar": results}
 
@@ -299,8 +307,8 @@ async def create_edge(link: LinkCreate):
     return {"success": True}
 
 
-@router.get("/backlinks/{page_id}")
-async def get_backlinks(page_id: str):
+@router.get("/backlinks")
+async def get_backlinks(page_id: str = Query(...)):
     backlinks = graph.get_backlinks(page_id)
     result = []
     

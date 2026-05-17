@@ -255,26 +255,29 @@ class MarkdownPreprocessor:
         return result
 
 
-class PandocConverter:
-    """Pandoc 风格文档转换器"""
-    
+class MarkdownConverter:
+    """Markdown 文档转换器 - 直接使用 LibreOffice，不依赖 pandoc"""
+
     def __init__(self):
-        self.pandoc_path = self._find_pandoc()
-        self.pypandoc_available = self._check_pypandoc()
         self.preprocessor = MarkdownPreprocessor()
-    
-    def _find_pandoc(self) -> Optional[str]:
-        """查找系统中的 pandoc"""
+        self.lo_path = self._find_libreoffice_path()
+        logger.info(f"[MarkdownConverter] LibreOffice path: {self.lo_path}")
+
+    def _find_libreoffice_path(self) -> Optional[str]:
+        """查找 LibreOffice 可执行文件"""
         import shutil
-        return shutil.which('pandoc')
-    
-    def _check_pypandoc(self) -> bool:
-        try:
-            import pypandoc
-            return True
-        except ImportError:
-            return False
-    
+        paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+        ]
+        for p in paths:
+            if Path(p).exists():
+                return p
+        soffice = shutil.which("soffice")
+        if soffice:
+            return soffice
+        return None
+
     async def convert(
         self,
         input_content: str,
@@ -284,81 +287,75 @@ class PandocConverter:
         extract_csv: bool = False
     ) -> ConversionResult:
         """
-        转换文档
-        
-        Args:
-            input_content: 输入内容
-            input_format: 输入格式 (markdown, html, latex 等)
-            output_format: 输出格式
-            render_mermaid: 是否渲染 Mermaid 图表
-            extract_csv: 是否提取 CSV 表格
-            
-        Returns:
-            ConversionResult
+        转换文档: Markdown → PDF/DOCX/HTML/Excel
+
+        链路: LibreOffice → (ReportLab 仅 PDF 兜底)
         """
         try:
-            # 1. 预处理 Markdown
+            # 1. 预处理 Markdown (Mermaid 图表)
             if input_format == 'markdown':
                 processed_content = await self.preprocessor.preprocess(
-                    input_content, 
+                    input_content,
                     render_mermaid=render_mermaid
                 )
             else:
                 processed_content = input_content
-            
-            # 2. 根据输出格式转换
+
+            # 2. Excel/CSV 特殊处理
             if output_format == OutputFormat.EXCEL and extract_csv:
                 return await self._convert_to_excel_with_csv(processed_content)
-            else:
-                return await self._convert_with_pandoc(processed_content, input_format, output_format)
-        
+
+            # 3. LibreOffice 转换
+            return await self._convert_with_libreoffice(processed_content, output_format)
+
         except Exception as e:
             logger.error(f"Conversion failed: {e}")
             return ConversionResult(success=False, error=str(e))
-    
-    async def _convert_with_pandoc(
+
+    async def _convert_with_libreoffice(
         self,
         content: str,
-        input_format: str,
         output_format: OutputFormat
     ) -> ConversionResult:
-        """使用 Pandoc 转换"""
+        """使用 LibreOffice 转换"""
+        if not self.lo_path:
+            # 直接用 reportlab fallback
+            return await self._fallback_reportlab(content, output_format)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
-            
+
             # 写入临时文件
-            input_file = tmppath / f"input.{input_format}"
+            input_file = tmppath / "input.md"
             input_file.write_text(content, encoding='utf-8')
-            
+
             output_ext = output_format.value
             output_file = tmppath / f"output.{output_ext}"
-            
-            # 构建命令
+
+            # Markdown → HTML (简单转换，再由 LibreOffice 转目标格式)
+            html_content = self._markdown_to_html(content)
+            html_file = tmppath / "input.html"
+            html_file.write_text(html_content, encoding='utf-8')
+
+            # LibreOffice 能直接读 HTML
             cmd = [
-                self.pandoc_path or 'pandoc',
-                str(input_file),
-                '-o', str(output_file),
-                '--standalone'
+                self.lo_path,
+                "--headless",
+                "--convert-to", output_ext,
+                "--outdir", str(tmppath),
+                str(html_file)
             ]
-            
-            # 格式特定参数
-            if output_format == OutputFormat.PDF:
-                cmd.extend(['--pdf-engine', 'weasyprint'])
-            elif output_format == OutputFormat.DOCX:
-                cmd.extend(['--reference-doc', 'default'])
-            elif output_format == OutputFormat.HTML:
-                cmd.extend(['--self-contained', '--mathjax'])
-            
-            logger.info(f"[Pandoc] Executing: {' '.join(cmd)}")
-            
+
+            logger.info(f"[LibreOffice] Executing: {' '.join(cmd)}")
+
             try:
                 result = subprocess.run(
-                    cmd, 
-                    capture_output=True, 
-                    text=True, 
-                    timeout=60
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=120
                 )
-                
+
                 if result.returncode == 0 and output_file.exists():
                     return ConversionResult(
                         success=True,
@@ -366,57 +363,175 @@ class PandocConverter:
                         content=output_file.read_bytes()
                     )
                 else:
-                    # 回退到 LibreOffice
-                    return await self._fallback_libreoffice(input_file, output_format)
-            
+                    logger.warning(f"[LibreOffice] failed: {result.stderr}, trying reportlab")
+                    return await self._fallback_reportlab(content, output_format)
+
             except subprocess.TimeoutExpired:
-                return ConversionResult(success=False, error="Conversion timeout")
-    
-    async def _fallback_libreoffice(
-        self,
-        input_file: Path,
-        output_format: OutputFormat
+                return ConversionResult(success=False, error="LibreOffice conversion timeout")
+
+    def _markdown_to_html(self, md_content: str) -> str:
+        """简单的 Markdown 转 HTML（不依赖外部库）"""
+        import html as html_lib
+        lines_text = md_content.split('\n')
+        html_parts = []
+        in_code = False
+        in_list = False
+
+        for line_text in lines_text:
+            if line_text.strip().startswith('```'):
+                if not in_code:
+                    html_parts.append('<pre><code>')
+                    in_code = True
+                else:
+                    html_parts.append('</code></pre>')
+                    in_code = False
+                continue
+
+            if in_code:
+                html_parts.append(html_lib.escape(line_text))
+                continue
+
+            if line_text.startswith('# '):
+                html_parts.append(f'<h1>{html_lib.escape(line_text[2:])}</h1>')
+            elif line_text.startswith('## '):
+                html_parts.append(f'<h2>{html_lib.escape(line_text[3:])}</h2>')
+            elif line_text.startswith('### '):
+                html_parts.append(f'<h3>{html_lib.escape(line_text[4:])}</h3>')
+            elif line_text.strip().startswith('- ') or line_text.strip().startswith('* '):
+                if not in_list:
+                    html_parts.append('<ul>')
+                    in_list = True
+                html_parts.append(f'<li>{html_lib.escape(line_text.strip()[2:])}</li>')
+            else:
+                if in_list:
+                    html_parts.append('</ul>')
+                    in_list = False
+                if line_text.strip():
+                    html_parts.append(f'<p>{html_lib.escape(line_text)}</p>')
+
+        if in_list:
+            html_parts.append('</ul>')
+
+        return '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n'                '<style>body{font-family:"Noto Sans SC",sans-serif;padding:20px;} '                'h1,h2,h3{color:#333;}code{background:#f5f5f5;padding:2px 6px;} '                'pre{background:#f5f5f5;padding:15px;overflow-x:auto;}</style>\n'                '</head>\n<body>\n' + '\n'.join(html_parts) + '\n</body>\n</html>'
+
+    async def _fallback_reportlab(
+            self,
+            content: str,
+            output_format: OutputFormat
     ) -> ConversionResult:
-        """回退到 LibreOffice 转换"""
+        """最后 fallback：使用 reportlab 直接生成 PDF"""
         try:
-            # 这里应该调用 libreoffice_routes
-            # 简化实现
-            return ConversionResult(
-                success=False,
-                error="Pandoc and LibreOffice conversion failed"
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle
+            from reportlab.lib.units import mm
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            from io import BytesIO
+
+            # 查找中文字体
+            font_paths = [
+                Path(os.environ.get('WINDIR', 'C:\\Windows')) / 'Fonts' / 'msyh.ttc',
+                Path.home() / 'AppData/Local/Microsoft/Windows/Fonts' / 'NotoSansSC-Regular.ttf',
+                Path(__file__).parent.parent.parent / 'public' / 'fonts' / 'NotoSansSC-Regular.ttf',
+            ]
+            font_registered = False
+            for fp in font_paths:
+                if fp.exists():
+                    try:
+                        pdfmetrics.registerFont(TTFont('ChineseFont', str(fp), 'Identity-H'))
+                        font_registered = True
+                        break
+                    except Exception:
+                        continue
+
+            if not font_registered:
+                return ConversionResult(success=False, error="No Chinese font available")
+
+            paragraphs = self._extract_text_paragraphs(content)
+
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                leftMargin=20*mm, rightMargin=20*mm,
+                topMargin=20*mm, bottomMargin=20*mm
             )
+
+            style = ParagraphStyle('Chinese', fontName='ChineseFont', fontSize=11, leading=16)
+            title_style = ParagraphStyle('Title', fontName='ChineseFont', fontSize=18, leading=24, spaceAfter=12)
+
+            story = []
+            for para in paragraphs:
+                if para.get('type') == 'h1':
+                    story.append(Paragraph(para['text'], title_style))
+                    story.append(Spacer(1, 6*mm))
+                elif para.get('type') == 'h2':
+                    story.append(Paragraph(para['text'], ParagraphStyle('H2', fontName='ChineseFont', fontSize=14, leading=20, spaceAfter=6)))
+                    story.append(Spacer(1, 3*mm))
+                elif para.get('type') == 'text':
+                    story.append(Paragraph(para['text'], style))
+                    story.append(Spacer(1, 3*mm))
+
+            doc.build(story)
+            return ConversionResult(success=True, content=buffer.getvalue())
+
+        except ImportError as e:
+            return ConversionResult(success=False, error=f"reportlab not available: {e}")
         except Exception as e:
+            logger.error(f"Reportlab fallback failed: {e}")
             return ConversionResult(success=False, error=str(e))
-    
+
+    def _extract_text_paragraphs(self, content: str) -> list:
+        """从 markdown 提取纯文本段落"""
+        import html as html_lib
+        lines_text = content.split('\n')
+        paragraphs = []
+        in_code = False
+
+        for line_text in lines_text:
+            if line_text.strip().startswith('```'):
+                in_code = not in_code
+                continue
+            if in_code:
+                continue
+
+            if line_text.startswith('# '):
+                paragraphs.append({'type': 'h1', 'text': html_lib.escape(line_text[2:])})
+            elif line_text.startswith('## '):
+                paragraphs.append({'type': 'h2', 'text': html_lib.escape(line_text[3:])})
+            elif line_text.startswith('### '):
+                paragraphs.append({'type': 'h3', 'text': html_lib.escape(line_text[4:])})
+            elif line_text.strip().startswith('- ') or line_text.strip().startswith('* '):
+                paragraphs.append({'type': 'text', 'text': f"• {html_lib.escape(line_text.strip()[2:])}"})
+            elif line_text.strip():
+                paragraphs.append({'type': 'text', 'text': html_lib.escape(line_text)})
+
+        return paragraphs
+
     async def _convert_to_excel_with_csv(self, content: str) -> ConversionResult:
         """将 CSV 数据转换为 Excel"""
         try:
             from openpyxl import Workbook
-            
-            # 提取 CSV 代码块
             csv_pattern = r'```csv\s*\n(.*?)```'
             matches = re.findall(csv_pattern, content, re.DOTALL)
-            
+
             if not matches:
-                return ConversionResult(
-                    success=False,
-                    error="No CSV data found in content"
-                )
-            
+                return ConversionResult(success=False, error="No CSV data found in content")
+
             wb = Workbook()
             ws = wb.active
             ws.title = "Data"
-            
+
+            import csv
+            from io import StringIO
             for i, csv_data in enumerate(matches):
                 if i > 0:
-                    ws.append([])  # 空行分隔
-                
-                import csv
-                from io import StringIO
+                    ws.append([])
                 reader = csv.reader(StringIO(csv_data))
                 for row in reader:
                     ws.append(row)
-            
+
             with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as f:
                 wb.save(f.name)
                 return ConversionResult(
@@ -424,11 +539,10 @@ class PandocConverter:
                     file_path=f.name,
                     content=Path(f.name).read_bytes()
                 )
-        
+
         except Exception as e:
             logger.error(f"Excel conversion failed: {e}")
             return ConversionResult(success=False, error=str(e))
-
 
 # 便捷函数
 async def markdown_to_pdf(
@@ -436,7 +550,7 @@ async def markdown_to_pdf(
     render_mermaid: bool = True
 ) -> ConversionResult:
     """Markdown 转 PDF"""
-    converter = PandocConverter()
+    converter = MarkdownConverter()
     return await converter.convert(
         content, 'markdown', OutputFormat.PDF, render_mermaid
     )
@@ -447,7 +561,7 @@ async def markdown_to_docx(
     render_mermaid: bool = True
 ) -> ConversionResult:
     """Markdown 转 Word"""
-    converter = PandocConverter()
+    converter = MarkdownConverter()
     return await converter.convert(
         content, 'markdown', OutputFormat.DOCX, render_mermaid
     )
@@ -458,7 +572,7 @@ async def markdown_to_html(
     render_mermaid: bool = True
 ) -> ConversionResult:
     """Markdown 转 HTML"""
-    converter = PandocConverter()
+    converter = MarkdownConverter()
     return await converter.convert(
         content, 'markdown', OutputFormat.HTML, render_mermaid
     )
@@ -469,7 +583,7 @@ async def markdown_to_excel(
     extract_csv: bool = True
 ) -> ConversionResult:
     """Markdown 转 Excel (提取 CSV 表格)"""
-    converter = PandocConverter()
+    converter = MarkdownConverter()
     return await converter.convert(
         content, 'markdown', OutputFormat.EXCEL, 
         render_mermaid=False, extract_csv=extract_csv

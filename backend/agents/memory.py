@@ -651,49 +651,116 @@ class MemoryAgent:
                 idf = 1.0  # 简化处理
                 query_embedding[i] = tf * idf
 
-            # 归一化查询向量
-            query_norm = math.sqrt(sum(x**2 for x in query_embedding))
-            if query_norm > 0:
-                query_embedding = [x / query_norm for x in query_embedding]
+            # 两级检索：1) 先查 memory.db 的 knowledge 表  2) 再查 knowledge_cards 表
+            import os
 
-            # 从数据库检索
-            conn = self._get_connection()
+            # ---- 第一级：查 memory.db (已确认的记忆) ----
+            memory_conn = self._get_connection()
+            memory_cursor = memory_conn.cursor()
+
+            memory_conditions = []
+            memory_params = []
+            for kw in query_keywords:
+                if len(kw) >= 2:
+                    memory_conditions.append("(title LIKE ? OR description LIKE ? OR content LIKE ?)")
+                    memory_params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+
+            memory_results = []
+            if memory_conditions:
+                memory_where = " OR ".join(memory_conditions)
+                memory_cursor.execute(f"""
+                    SELECT id, knowledge_type, title, description, content
+                    FROM knowledge
+                    WHERE {memory_where}
+                    LIMIT ?
+                """, memory_params + [limit])
+
+                for row in memory_cursor.fetchall():
+                    memory_results.append({
+                        "id": str(row[0]),
+                        "knowledge_type": row[1],
+                        "title": row[2],
+                        "description": row[3] or "",
+                        "content": row[4] if isinstance(row[4], str) else "",
+                        "keywords": query_keywords,
+                        "score": 0.9,  # 已确认的记忆给予较高分数
+                        "created_at": "",
+                        "updated_at": "",
+                        "source": "memory"
+                    })
+
+            memory_conn.close()
+
+            # 如果 memory 有结果，直接返回（优先使用已确认的记忆）
+            if memory_results:
+                memory_results.sort(key=lambda x: x["score"], reverse=True)
+                return memory_results[:limit]
+
+            # ---- 第二级：查 knowledge_cards 表（知识卡片）----
+            agent_dir = os.path.dirname(os.path.abspath(__file__))
+            backend_dir = os.path.dirname(agent_dir)
+            antinet_db = os.path.join(backend_dir, "data", "antinet.db")
+            conn = sqlite3.connect(antinet_db)
             cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT id, knowledge_type, title, description, content, keywords, embedding, created_at, updated_at
-                FROM knowledge
-                WHERE knowledge_type = ?
-            """, (knowledge_type,))
+            # 构建关键词查询条件
+            conditions = []
+            params = []
+            for kw in query_keywords:
+                if len(kw) >= 2:
+                    conditions.append("(title LIKE ? OR content LIKE ?)")
+                    params.extend([f"%{kw}%", f"%{kw}%"])
+
+            if not conditions:
+                conn.close()
+                return []
+
+            where = " OR ".join(conditions)
+            # 如果指定了类型过滤
+            if knowledge_type and knowledge_type != "all":
+                where = f"({where}) AND type = ?"
+                params.append(knowledge_type)
+
+            cursor.execute(f"""
+                SELECT id, title, content, COALESCE(type, 'blue') as card_type
+                FROM knowledge_cards
+                WHERE {where}
+                LIMIT ?
+            """, params + [limit * 2])
 
             rows = cursor.fetchall()
             conn.close()
 
-            # 计算相似度
+            # 计算匹配分数
             results = []
             for row in rows:
-                try:
-                    # 解码存储的向量
-                    stored_embedding = json.loads(row["embedding"])
+                title = row[1] or ""
+                content = row[2] or ""
+                card_type = row[3]
 
-                    # 计算余弦相似度
-                    similarity = self._cosine_similarity(query_embedding, stored_embedding)
+                # 计算匹配分数
+                match_count = 0
+                for kw in query_keywords:
+                    if kw.lower() in title.lower():
+                        match_count += 2
+                    if kw.lower() in content.lower():
+                        match_count += 1
 
-                    if similarity > 0.1:  # 只保留相似度大于0.1的结果
-                        results.append({
-                            "id": row["id"],
-                            "knowledge_type": row["knowledge_type"],
-                            "title": row["title"],
-                            "description": row["description"],
-                            "content": json.loads(row["content"]),
-                            "keywords": json.loads(row["keywords"]),
-                            "score": similarity,
-                            "created_at": row["created_at"],
-                            "updated_at": row["updated_at"]
-                        })
-                except Exception as e:
-                    logger.warning(f"处理检索结果失败: {e}")
-                    continue
+                score = min(match_count / max(len(query_keywords) * 2, 1), 1.0)
+
+                if score > 0:
+                    results.append({
+                        "id": str(row[0]),
+                        "knowledge_type": card_type,
+                        "title": title,
+                        "description": content[:150] if content else "",
+                        "content": content,
+                        "keywords": query_keywords,
+                        "score": score,
+                        "created_at": "",
+                        "updated_at": "",
+                        "source": "cards"
+                    })
 
             # 按相似度排序
             results.sort(key=lambda x: x["score"], reverse=True)

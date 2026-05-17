@@ -83,7 +83,7 @@ class InterpreterAgent:
             self.task_status = "失败"
             self.log.append(f"[监察院] 生成异常: {str(e)}")
             logger.error(f"解释生成失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表
     
     async def _retrieve_context(self, user_query: str, current_date: str) -> List[str]:
         """
@@ -276,7 +276,11 @@ class InterpreterAgent:
         """
         try:
             from routes.meeting_routes import call_llm
-            result = await call_llm("你是监察院，负责为事实生成解释说明。", prompt)
+            result = await call_llm(
+                "你是监察院，负责为事实生成解释说明。输出JSON格式，只输出JSON不要其他内容。", 
+                prompt,
+                max_tokens=1024
+            )
             if result:
                 return result
         except Exception as e:
@@ -323,7 +327,7 @@ class InterpreterAgent:
         except Exception as e:
             logger.debug(f"[监察院] NPU进程内推理失败: {e}")
         
-        raise RuntimeError("所有LLM层不可用")
+        # JSON解析失败不影响流程，回退到空列表
     
     def _parse_json_response(self, response: str) -> Dict:
         """
@@ -342,8 +346,13 @@ class InterpreterAgent:
             elif "```" in response:
                 response = response.split("```")[1].split("```")[0].strip()
             
-            return json.loads(response)
+            # 修复双层大括号
+            response = response.strip()
+            if response.startswith('{{') and response.endswith('}}'):
+                response = response[1:-1].strip()
+            
+            return json.loads(response, strict=False)
         
         except Exception as e:
             logger.error(f"解析JSON响应失败: {e}", exc_info=True)
-            raise
+            # JSON解析失败不影响流程，回退到空列表

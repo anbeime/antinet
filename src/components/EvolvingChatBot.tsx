@@ -6,14 +6,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Bot, Send, Settings, RefreshCw, Network, Database,
   Brain, AlertTriangle, CheckCircle, Clock, Loader,
-  ChevronDown, ChevronUp, Trash2, Play, Pause
+  ChevronDown, ChevronUp, Trash2, Play, Pause, Sparkles
 } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 import evolvingChatService, { 
   EvolvingChatResponse, 
   EvolutionStats, 
   HealthCheckResult 
 } from '../services/evolvingChatService';
+import { hermesChatService } from '../services/hermesChatService';
 
 interface Message {
   id: string;
@@ -23,6 +25,7 @@ interface Message {
   cards?: any[];
   evolution_info?: any;
   sources?: any[];
+  suggested_questions?: string[];
 }
 
 const EvolvingChatBot: React.FC = () => {
@@ -34,11 +37,20 @@ const EvolvingChatBot: React.FC = () => {
   const [stats, setStats] = useState<EvolutionStats | null>(null);
   const [healthStatus, setHealthStatus] = useState<HealthCheckResult | null>(null);
   
-  // 设置
+// 设置
   const [enableEvolution, setEnableEvolution] = useState(true);
   const [enableMemory, setEnableMemory] = useState(true);
   const [enableSkill, setEnableSkill] = useState(true);
-  const [enable8Agent, setEnable8Agent] = useState(false);
+  const [enable8Agent, setEnable8Agent] = useState(true);
+  
+  // Hermes AI 设置
+  const [useHermesAI, setUseHermesAI] = useState(() => {
+    return localStorage.getItem('ai_provider') !== 'evolving';
+  });
+  const [hermesHealth, setHermesHealth] = useState<{
+    hermes_ready: boolean;
+    agent_8_ready: boolean;
+  }>({ hermes_ready: false, agent_8_ready: false });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -79,6 +91,26 @@ const EvolvingChatBot: React.FC = () => {
     }
   };
 
+// Hermes 健康检查
+  const checkHermesHealth = async () => {
+    try {
+      const health = await hermesChatService.health();
+      setHermesHealth(health);
+      return health;
+    } catch (error) {
+      setHermesHealth({ hermes_ready: false, agent_8_ready: false });
+      return null;
+    }
+  };
+
+  // 切换 Hermes AI
+  const toggleHermesAI = () => {
+    const newValue = !useHermesAI;
+    setUseHermesAI(newValue);
+    localStorage.setItem('ai_provider', newValue ? 'hermes' : 'evolving');
+    toast.success(newValue ? '🤖 已切换到 Hermes AI 模式' : '🧠 已切换到 8-Agent 模式');
+  };
+
   // 发送消息
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -95,13 +127,48 @@ const EvolvingChatBot: React.FC = () => {
     setLoading(true);
     
     try {
-      const response = await evolvingChatService.chat({
-        query: userMessage.content,
-        enable_evolution: enableEvolution,
-        enable_memory: enableMemory,
-        enable_skill: enableSkill,
-        enable_8agent: enable8Agent
-      });
+      let response;
+      
+      if (useHermesAI) {
+        // Hermes AI 模式
+        try {
+          const hermesResponse = await hermesChatService.chat({
+            query: userMessage.content,
+            enable_8agent: enable8Agent,
+            user_id: 'default_user'
+          });
+          
+          response = {
+            response: hermesResponse.response,
+            cards: hermesResponse.cards || [],
+            sources: [],
+            evolution_info: {
+              cards_extracted: hermesResponse.cards?.length ? { total: hermesResponse.cards.length } : undefined,
+              skill_executed: hermesResponse.mode === '8agent' ? '8-Agent系统' : undefined
+            }
+          };
+        } catch (hermesError) {
+          console.error('Hermes 调用失败，回退到 8-Agent:', hermesError);
+          toast.warning('Hermes AI 暂时不可用，回退到 8-Agent 模式');
+          // 回退到 8-Agent
+          response = await evolvingChatService.chat({
+            query: userMessage.content,
+            enable_evolution: enableEvolution,
+            enable_memory: enableMemory,
+            enable_skill: enableSkill,
+            enable_8agent: enable8Agent
+          });
+        }
+      } else {
+        // 原有 8-Agent 模式
+        response = await evolvingChatService.chat({
+          query: userMessage.content,
+          enable_evolution: enableEvolution,
+          enable_memory: enableMemory,
+          enable_skill: enableSkill,
+          enable_8agent: enable8Agent
+        });
+      }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -110,7 +177,8 @@ const EvolvingChatBot: React.FC = () => {
         timestamp: new Date(),
         cards: response.cards,
         evolution_info: response.evolution_info,
-        sources: response.sources
+        sources: response.sources,
+        suggested_questions: response.suggested_questions || []
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -121,8 +189,10 @@ const EvolvingChatBot: React.FC = () => {
         toast.success(`本次对话提取了 ${extracted.total} 张知识卡片`);
       }
       
-      // 刷新统计
-      loadStats();
+      // 刷新统计（非 Hermes 模式）
+      if (!useHermesAI) {
+        loadStats();
+      }
       
     } catch (error) {
       console.error('发送消息失败:', error);
@@ -179,9 +249,15 @@ const EvolvingChatBot: React.FC = () => {
               : 'bg-gray-100 dark:bg-gray-800'
           }`}
         >
-          {/* 消息内容 */}
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-            {message.content}
+          {/* 消息内容 - 支持 Markdown 渲染 */}
+          <div className="text-sm leading-relaxed">
+            {!isUser ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <ReactMarkdown>{message.content}</ReactMarkdown>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            )}
           </div>
           
           {/* 进化信息 */}
@@ -203,6 +279,26 @@ const EvolvingChatBot: React.FC = () => {
                     ⚡ 执行技能: {message.evolution_info.skill_executed}
                   </span>
                 )}
+              </div>
+            </div>
+          )}
+          
+{/* 推荐问题 */}
+          {message.suggested_questions && message.suggested_questions.length > 0 && !isUser && (
+            <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-500 mb-2">💡 推荐问题：</div>
+              <div className="flex flex-col gap-1">
+                {message.suggested_questions.map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(q);
+                    }}
+                    className="text-xs text-left px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -330,7 +426,7 @@ const EvolvingChatBot: React.FC = () => {
             className="bg-white dark:bg-gray-800 border-b overflow-hidden"
           >
             <div className="p-4 space-y-3">
-              <h3 className="font-medium text-sm">功能开关</h3>
+<h3 className="font-medium text-sm">功能开关</h3>
               <div className="flex flex-wrap gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -368,6 +464,42 @@ const EvolvingChatBot: React.FC = () => {
                   />
                   <span className="text-sm">🎯 8-Agent</span>
                 </label>
+              </div>
+              
+              {/* Hermes AI 开关 */}
+              <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="font-medium text-sm mb-2 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-500" />
+                  AI 引擎切换
+                </h3>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm ${useHermesAI ? 'text-purple-600 font-medium' : 'text-gray-500'}`}>
+                      🤖 Hermes AI
+                    </span>
+                    <span className="text-gray-300">/</span>
+                    <span className={`text-sm ${!useHermesAI ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
+                      🧠 8-Agent
+                    </span>
+                  </div>
+                  <button
+                    onClick={toggleHermesAI}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${
+                      useHermesAI ? 'bg-purple-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                        useHermesAI ? 'translate-x-7' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {useHermesAI 
+                    ? '🤖 使用 Hermes AI（自进化+记忆+自动技能执行）'
+                    : '🧠 使用原生 8-Agent 系统'}
+                </p>
               </div>
             </div>
           </motion.div>
@@ -433,8 +565,12 @@ const EvolvingChatBot: React.FC = () => {
           </button>
         </div>
         
-        {/* 功能提示 */}
+{/* 功能提示 */}
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+          {/* Hermes AI 模式指示 */}
+          <span className={`px-2 py-0.5 rounded-full ${useHermesAI ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
+            {useHermesAI ? '🤖 Hermes' : '🧠 8-Agent'}
+          </span>
           <span className={enableEvolution ? 'text-green-600' : 'text-gray-400'}>
             {enableEvolution ? '●' : '○'} 自进化
           </span>

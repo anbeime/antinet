@@ -29,10 +29,14 @@ import ResearchProjectManager from './ResearchProjectManager';
 import CalendarView from './CalendarView';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
 
-// 注册中文字体
+// 注册中文字体（本地文件，不依赖外部CDN）
+const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
 Font.register({
   family: 'Noto Sans SC',
-  src: 'https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.woff2',
+  fonts: [
+    { src: FONT_URL_REGULAR, fontWeight: 'normal' },
+    { src: FONT_URL_REGULAR, fontWeight: 'bold' },
+  ],
 });
 
 // GTD任务PDF样式
@@ -440,10 +444,10 @@ const GTDSystem: React.FC = () => {
     }
   };
 
-  // 移动任务到其他分类
-  const handleMoveTask = async (taskId: number, targetCategory: Category) => {
+ // 移动任务到其他分类
+  const handleMoveTask = async (taskId: number, targetCategory: Category, projectId?: number) => {
     try {
-      await gtdTaskService.update(taskId, { category: targetCategory });
+      await gtdTaskService.update(taskId, { category: targetCategory, project_id: projectId ?? null });
       
       // 重新加载数据
       const allTasks = await gtdTaskService.getAll();
@@ -1317,7 +1321,7 @@ const GTDSystem: React.FC = () => {
                     <select
                       onChange={(e) => {
                         if (e.target.value) {
-                          handleMoveTask(editingTask.id!, 'projects');
+                          handleMoveTask(editingTask.id!, 'projects', Number(e.target.value));
                           toast('任务已加入专题', { className: 'bg-purple-50 text-purple-800' });
                           setShowEditModal(false);
                         }

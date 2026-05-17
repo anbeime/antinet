@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -738,7 +739,7 @@ const ProjectDetailPanel: React.FC<{
   onConvertCardToTask: (cardId: number) => void;
   allProjects?: ResearchProject[];
 }> = ({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
-  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow'>('cards');
+  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'network'>('cards');
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
   const [tasks, setTasks] = useState<GtdTask[]>([]);
   const [cards, setCards] = useState<ProjectCard[]>([]);
@@ -755,7 +756,7 @@ const ProjectDetailPanel: React.FC<{
   } | null>(null);
   const [unconvertedCards, setUnconvertedCards] = useState<ProjectCard[]>([]);
   const [exportingPPT, setExportingPPT] = useState(false);
-  const [showPPTDialog, setShowPPTDialog] = useState(false);
+  const [pptResult, setPptResult] = useState<{ filename: string; success: boolean; message: string } | null>(null);
 
   const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
 
@@ -822,6 +823,7 @@ const ProjectDetailPanel: React.FC<{
       return;
     }
     setExportingPPT(true);
+    setPptResult(null);
     try {
       const response = await fetch(getApiBaseUrl() + '/api/ppt/export/collection', {
         method: 'POST',
@@ -843,24 +845,57 @@ const ProjectDetailPanel: React.FC<{
       });
 
       if (!response.ok) {
-        const err = await response.json();
-throw new Error(err.detail || '导出失败');
+        const err = await response.json().catch(() => ({ detail: '导出失败' }));
+        throw new Error(err.detail || '导出失败');
       }
 
       const data = await response.json();
       if (data.success && data.filename) {
-        // 存储文件名并跳转到预览
-        sessionStorage.setItem('lastPPTFileName', data.filename);
-        toast.success('PPT导出成功');
-        window.location.href = '/ppt-viewer';
+        const filename = data.filename as string;
+        // 存储文件名
+        sessionStorage.setItem('lastPPTFileName', filename);
+        setPptResult({
+          filename,
+          success: true,
+          message: data.message || 'PPT 导出成功！',
+        });
       } else {
         throw new Error(data.detail || '导出失败');
       }
     } catch (err: any) {
-      toast.error(err.message || 'PPT导出失败');
+      setPptResult({
+        filename: '',
+        success: false,
+        message: err.message || 'PPT导出失败，请检查后端服务',
+      });
     } finally {
       setExportingPPT(false);
     }
+  };
+
+  // 下载 PPT 文件
+  const handleDownloadPPT = async (filename: string) => {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/api/ppt/file?filename=${encodeURIComponent(filename)}`);
+      if (!response.ok) throw new Error('下载失败');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename.replace(/^.*[\\/]/, '') || 'export.pptx';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PPT 文件下载完成');
+    } catch (err) {
+      toast.error('下载失败，请检查后端连接');
+    }
+  };
+
+  // 预览 PPT 文件
+  const handlePreviewPPT = (filename: string) => {
+    navigate(`/ppt-viewer?file=${encodeURIComponent(filename)}`);
   };
 
   // 复用首页的创建卡片流程，创建后自动关联专题
@@ -996,6 +1031,68 @@ throw new Error(err.detail || '导出失败');
             </div>
           </div>
 
+          {/* PPT 导出结果弹窗 */}
+          {pptResult && (
+            <Portal>
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setPptResult(null)}>
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4"
+                >
+                  <div className="text-center">
+                    {pptResult.success ? (
+                      <>
+                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/40 mb-4">
+                          <ExternalLink className="w-7 h-7 text-green-600 dark:text-green-400" />
+                        </div>
+                        <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">PPT 导出成功</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{pptResult.message}</p>
+                        <div className="flex justify-center space-x-3">
+                          <button
+                            onClick={() => handleDownloadPPT(pptResult.filename)}
+                            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm"
+                          >
+                            下载 PPT
+                          </button>
+                          <button
+                            onClick={() => handlePreviewPPT(pptResult.filename)}
+                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                          >
+                            预览
+                          </button>
+                          <button
+                            onClick={() => setPptResult(null)}
+                            className="px-5 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
+                          >
+                            关闭
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/40 mb-4">
+                          <AlertTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
+                        </div>
+                        <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">导出失败</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{pptResult.message}</p>
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => setPptResult(null)}
+                            className="px-5 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
+                          >
+                            关闭
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            </Portal>
+          )}
+
           {/* Tab 切换 */}
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex space-x-1">
@@ -1026,11 +1123,22 @@ throw new Error(err.detail || '导出失败');
                 className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'workflow'
                     ? 'border-green-500 text-green-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+: 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 工作流概览
+              </button>
+              <button
+                onClick={() => setActiveTab('network')}
+                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'network'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Network className="w-4 h-4 mr-2" />
+                知识网络
               </button>
             </div>
           </div>
@@ -1290,7 +1398,7 @@ throw new Error(err.detail || '导出失败');
                       </div>
                     )}
 
-                    {/* 工作流提示 */}
+{/* 工作流提示 */}
                     <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800 p-5">
                       <h3 className="font-semibold text-indigo-800 dark:text-indigo-200 mb-3 flex items-center">
                         <Layers className="w-5 h-5 mr-2" />
@@ -1310,6 +1418,16 @@ throw new Error(err.detail || '导出失败');
                       <p className="mt-3 text-xs text-indigo-600/70 dark:text-indigo-400/70">
                         完整闭环：事实 → 解释 → 风险 → 行动 → 任务执行，通过双向链接和日历事件串联所有环节
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===== 知识网络 Tab ===== */}
+                {activeTab === 'network' && (
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">专题知识网络</h2>
+                    <div className="h-[600px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
+                      <KnowledgeGraph filterProjectId={project.id} />
                     </div>
                   </div>
                 )}
@@ -1357,6 +1475,16 @@ throw new Error(err.detail || '导出失败');
   );
 };
 
+// 注册中文字体（本地文件，不依赖外部CDN）
+const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
+Font.register({
+  family: 'Noto Sans SC',
+  fonts: [
+    { src: FONT_URL_REGULAR, fontWeight: 'normal' },
+    { src: FONT_URL_REGULAR, fontWeight: 'bold' },
+  ],
+});
+
 // ========== 专题卡片PDF导出组件 ==========
 interface ProjectPDFProps {
   cards: ProjectCard[];
@@ -1364,19 +1492,19 @@ interface ProjectPDFProps {
 }
 
 const projectStyles = StyleSheet.create({
-  page: { padding: 30, fontFamily: 'Helvetica' },
+  page: { padding: 30, fontFamily: 'Noto Sans SC' },
   header: { marginBottom: 20, borderBottom: '2px solid #6366f1', paddingBottom: 10 },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#1f2937' },
-  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 5 },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#1f2937', fontFamily: 'Noto Sans SC' },
+  subtitle: { fontSize: 12, color: '#6b7280', marginTop: 5, fontFamily: 'Noto Sans SC' },
   cardContainer: { marginBottom: 15, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, overflow: 'hidden' },
   cardHeader: { padding: 10, backgroundColor: '#f3f4f6' },
-  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1f2937' },
-  cardBadge: { fontSize: 10, color: '#6b7280', marginTop: 2 },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#1f2937', fontFamily: 'Noto Sans SC' },
+  cardBadge: { fontSize: 10, color: '#6b7280', marginTop: 2, fontFamily: 'Noto Sans SC' },
   cardBody: { padding: 12 },
-  cardContent: { fontSize: 11, color: '#374151', lineHeight: 1.5 },
+  cardContent: { fontSize: 11, color: '#374151', lineHeight: 1.5, fontFamily: 'Noto Sans SC' },
   cardFooter: { padding: 8, backgroundColor: '#f9fafb', borderTopWidth: 1, borderColor: '#e5e7eb' },
-  cardMeta: { fontSize: 9, color: '#9ca3af' },
-  footer: { marginTop: 30, paddingTop: 10, borderTopWidth: 1, borderColor: '#e5e7eb', fontSize: 10, color: '#9ca3af', textAlign: 'center' },
+  cardMeta: { fontSize: 9, color: '#9ca3af', fontFamily: 'Noto Sans SC' },
+  footer: { marginTop: 30, paddingTop: 10, borderTopWidth: 1, borderColor: '#e5e7eb', fontSize: 10, color: '#9ca3af', textAlign: 'center', fontFamily: 'Noto Sans SC' },
 });
 
 const cardTypeLabels: Record<string, string> = {
@@ -1415,6 +1543,7 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   onSelectProject,
   selectedProjectId
 }) => {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<ResearchProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);

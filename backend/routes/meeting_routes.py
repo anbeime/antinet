@@ -611,37 +611,15 @@ async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[
                         return content.strip()
         except Exception as e:
             logger.debug(f"[Meeting] 外部视觉服务(8910)不可用: {e}")
-        
-        # 方式2: Ollama 视觉模型降级（依次尝试已安装的多模态模型）
-        ollama_vision_models = ["llava:13b", "gemma4:latest"]  # 按优先级尝试
-        for vision_model in ollama_vision_models:
+
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
-                        "http://localhost:11434/api/chat",
-                        json={
-                            "model": vision_model,
-                            "messages": [
-                                {"role": "user", "content": f"请详细描述这张图片的内容，重点关注与「{topic}」相关的信息。"}
-                            ],
-                            "stream": False
-                        }
-                    )
-                    if response.status_code == 200:
-                        result = response.json()
-                        content = result.get("message", {}).get("content", "").strip()
-                        if content:
-                            logger.info(f"[Meeting] Ollama {vision_model} 分析成功: {len(content)}字")
-                            return content
-            except Exception as e:
-                logger.debug(f"[Meeting] Ollama {vision_model} 不可用: {e}")
-                
-    finally:
-        try:
-            os.unlink(tmp_file_path)
-        except Exception:
-            pass
-    
+                os.unlink(tmp_file_path)
+            except Exception:
+                pass
+
+    except Exception:
+        logger.debug("[Meeting] 视觉服务(8910)响应异常")
+
     logger.info("[Meeting] 视觉分析全部不可用")
     return None
 
@@ -849,7 +827,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             _degrade_state["ollama_last_fail"] = now
             _degrade_state["skip_ollama_until"] = now + _DEGRADE_COOLDOWN
 
-    # ============ 层4: 视觉模型（兜底） ============
+# ============ 层4: Genie HTTP（兜底，先查当前加载的模型） ============
     if now > _degrade_state["skip_vision_until"]:
         try:
             # 截断过长的输入：3B模型有效上下文约2000中文字
@@ -860,17 +838,28 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             if len(user_prompt) > _remaining_chars:
                 logger.debug(f"[Meeting] 8910输入过长({len(user_prompt)}字)，截断至{_remaining_chars}字")
 
+            # 先查当前加载的模型名
+            _genie_model = "llama3.2-3b-8380-qnn2.37"  # 默认
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as ac:
+                    models_resp = await ac.get("http://127.0.0.1:8910/v1/models")
+                    if models_resp.status_code == 200:
+                        _genie_model = models_resp.json().get("data", [{}])[0].get("id", _genie_model)
+                        logger.info(f"[Meeting] Genie 当前模型: {_genie_model}")
+            except Exception as me:
+                logger.debug(f"[Meeting] 获取 Genie 模型失败，使用默认: {me}")
+
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
                     "http://127.0.0.1:8910/v1/chat/completions",
                     json={
-                        "model": "qwen2.5vl3b-8380-2.42",
+                        "model": _genie_model,
                         "messages": [
                             {"role": "system", "content": _truncated_system},
                             {"role": "user", "content": _truncated_user}
                         ],
-                        "size": _max_tokens,
-                        "temp": 0.7,
+                        "max_tokens": _max_tokens,
+                        "temperature": 0.7,
                         "top_k": 40,
                         "top_p": 0.9
                     }
@@ -879,17 +868,17 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 result = response.json()
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                 if content:
-                    logger.info(f"[Meeting] 视觉模型(8910)生成成功: {len(content)}字")
+                    logger.info(f"[Meeting] Genie({_genie_model}) 生成成功: {len(content)}字")
                     return content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400:
-                logger.debug(f"[Meeting] 视觉模型(8910)拒绝请求(输入过长或格式问题)")
+                logger.debug(f"[Meeting] Genie 拒绝请求(输入过长或格式问题)")
             else:
-                logger.debug(f"[Meeting] 视觉模型(8910)服务错误({e.response.status_code})，冻结{_DEGRADE_COOLDOWN}秒")
+                logger.debug(f"[Meeting] Genie 服务错误({e.response.status_code})，冻结{_DEGRADE_COOLDOWN}秒")
                 _degrade_state["vision_last_fail"] = now
                 _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
         except Exception as e:
-            logger.debug(f"[Meeting] 视觉模型(8910)不可用: {e}")
+            logger.debug(f"[Meeting] Genie 不可用: {e}")
             _degrade_state["vision_last_fail"] = now
             _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
 
@@ -1112,18 +1101,30 @@ async def get_discussion_modes():
 
 @router.get("/health")
 async def meeting_health():
-    """会议服务健康检查，同时检测LLM是否可用"""
-    llm_available = False
+    """会议服务健康检查 - 使用 Genie LLM 真实响应"""
+    llm_reply = None
     try:
-        test_result = await call_llm("你是助手", "请回复OK", timeout=10.0)
-        if test_result:
-            llm_available = True
-    except Exception:
-        pass
+        import httpx
+        async with httpx.AsyncClient(timeout=10.0, proxy=None) as client:
+            resp = await client.post(
+                "http://127.0.0.1:8910/v1/chat/completions",
+                json={
+                    "model": "qwen2.5vl3b-8380-2.42",
+                    "messages": [{"role": "user", "content": "请回复OK"}],
+                    "max_tokens": 5,
+                    "temp": 0.1
+                }
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                llm_reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    except Exception as e:
+        logger.warning(f"[Meeting] health LLM check failed: {e}")
 
     return {
         "status": "healthy",
-        "llm_available": llm_available,
+        "llm_available": bool(llm_reply),
+        "llm_reply": llm_reply,
         "agent_count": len(AGENT_MAPPING),
         "timestamp": datetime.now().isoformat()
     }
@@ -1809,6 +1810,30 @@ async def create_meeting(request: MeetingRequest):
             extracted_cards = []
             try:
                 extracted_cards = await _extract_color_cards(agent_id, agent_info["name"], speech_content, request.topic)
+                # 保存提取的卡片到数据库
+                if extracted_cards:
+                    for card in extracted_cards:
+                        try:
+                            db = get_db_manager()
+                            cursor = db.get_connection().cursor()
+                            cursor.execute("""
+                                INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                card.get('title', '无标题')[:100],
+                                card.get('content', ''),
+                                card.get('type', 'blue'),
+                                '会议提取',
+                                None,
+                                json.dumps(['会议自动提取', request.topic[:20]]),
+                                json.dumps([]),
+                                'pending',
+                                datetime.now().isoformat()
+                            ))
+                            db.get_connection().commit()
+                            logger.info(f"[Meeting] 四色卡片已存储: {card.get('title', '')[:30]}...")
+                        except Exception as card_err:
+                            logger.error(f"存储卡片失败: {card_err}")
             except Exception as e:
                 logger.error(f"提取四色卡片失败: {e}")
 

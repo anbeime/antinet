@@ -77,6 +77,55 @@ const LINK_TYPE_COLORS: Record<string, string> = {
   forwardlink: '#6366F1',
 };
 
+// ============ 样本数据（后端不可用时的回退） ============
+const SAMPLE_GRAPH_DATA: GraphData = {
+  nodes: [
+    { id: '1', name: '人工智能', title: '人工智能', type: 'blue', size: 60, importance: 5 },
+    { id: '2', name: '机器学习', title: '机器学习', type: 'blue', size: 45, importance: 4 },
+    { id: '3', name: '深度学习', title: '深度学习', type: 'blue', size: 40, importance: 4 },
+    { id: '4', name: '神经网络', title: '神经网络', type: 'green', size: 35, importance: 3 },
+    { id: '5', name: '自然语言处理', title: '自然语言处理', type: 'blue', size: 35, importance: 4 },
+    { id: '6', name: '计算机视觉', title: '计算机视觉', type: 'blue', size: 35, importance: 3 },
+    { id: '7', name: 'Transformer', title: 'Transformer', type: 'green', size: 28, importance: 4 },
+    { id: '8', name: 'CNN', title: 'CNN', type: 'green', size: 22, importance: 2 },
+    { id: '9', name: 'RNN', title: 'RNN', type: 'green', size: 22, importance: 2 },
+    { id: '10', name: 'GPT', title: 'GPT', type: 'yellow', size: 25, importance: 4 },
+    { id: '11', name: '数据质量检查', title: '数据质量检查', type: 'red', size: 30, importance: 3 },
+    { id: '12', name: '模型评估', title: '模型评估', type: 'red', size: 28, importance: 3 },
+  ],
+  edges: [
+    { id: 'e1', source: '1', target: '2', label: '包含', type: 'supports', weight: 1 },
+    { id: 'e2', source: '1', target: '3', label: '包含', type: 'supports', weight: 1 },
+    { id: 'e3', source: '1', target: '5', label: '包含', type: 'supports', weight: 1 },
+    { id: 'e4', source: '1', target: '6', label: '包含', type: 'supports', weight: 1 },
+    { id: 'e5', source: '2', target: '4', label: '使用', type: 'background', weight: 1 },
+    { id: 'e6', source: '3', target: '4', label: '基于', type: 'background', weight: 1 },
+    { id: 'e7', source: '5', target: '7', label: '使用', type: 'examples', weight: 1 },
+    { id: 'e8', source: '6', target: '8', label: '使用', type: 'examples', weight: 1 },
+    { id: 'e9', source: '4', target: '9', label: '类型', type: 'background', weight: 1 },
+    { id: 'e10', source: '7', target: '10', label: '应用', type: 'examples', weight: 1 },
+    { id: 'e11', source: '10', target: '11', label: '关注', type: 'contradicts', weight: 1 },
+    { id: 'e12', source: '2', target: '12', label: '需要', type: 'same_project', weight: 1 },
+  ],
+  statistics: {
+    total_nodes: 12,
+    total_edges: 12,
+    node_types: { blue: 5, green: 4, yellow: 1, red: 2 },
+    edge_types: { supports: 4, background: 3, examples: 3, contradicts: 1, same_project: 1 },
+  },
+};
+
+const SAMPLE_CARDS: KnowledgeCard[] = [
+  { id: 1, title: '人工智能', content: '人工智能是计算机科学的一个分支，旨在创建能够模拟人类智能的系统。', card_type: 'blue', tags: ['AI', '基础概念'], created_at: '2025-01-01T00:00:00Z', updated_at: '2025-01-01T00:00:00Z' },
+  { id: 2, title: '机器学习', content: '机器学习是AI的子领域，使系统能够从数据中自动学习和改进。', card_type: 'blue', tags: ['ML', '算法'], created_at: '2025-01-02T00:00:00Z', updated_at: '2025-01-02T00:00:00Z' },
+  { id: 3, title: '深度学习', content: '深度学习使用多层神经网络来学习数据的分层表示。', card_type: 'blue', tags: ['DL', '神经网络'], created_at: '2025-01-03T00:00:00Z', updated_at: '2025-01-03T00:00:00Z' },
+  { id: 4, title: '神经网络', content: '神经网络由相互连接的节点（神经元）组成，模仿人脑结构。', card_type: 'green', tags: ['架构'], created_at: '2025-01-04T00:00:00Z', updated_at: '2025-01-04T00:00:00Z' },
+  { id: 5, title: '自然语言处理', content: 'NLP让计算机理解、解释和生成人类语言。', card_type: 'blue', tags: ['NLP', '文本'], created_at: '2025-01-05T00:00:00Z', updated_at: '2025-01-05T00:00:00Z' },
+  { id: 6, title: 'GPT-4o安全风险', content: 'GPT-4o模型在特定场景下可能生成不当内容，需要人工审核。', card_type: 'yellow', tags: ['风险', '安全'], created_at: '2025-01-06T00:00:00Z', updated_at: '2025-01-06T00:00:00Z' },
+  { id: 7, title: '数据质量检查', content: '定期检查训练数据的质量和偏差，确保模型输出可靠性。', card_type: 'red', tags: ['行动', '质量'], created_at: '2025-01-07T00:00:00Z', updated_at: '2025-01-07T00:00:00Z' },
+  { id: 8, title: 'Transformer架构', content: 'Transformer基于自注意力机制，是当前NLP任务的主流架构。', card_type: 'green', tags: ['架构', '创新'], created_at: '2025-01-08T00:00:00Z', updated_at: '2025-01-08T00:00:00Z' },
+];
+
 type ViewMode = 'graph' | 'list';
 type EditorSide = 'edit' | 'preview' | 'split';
 type SortField = 'created_at' | 'updated_at' | 'title' | 'card_type';
@@ -84,9 +133,10 @@ type SortOrder = 'asc' | 'desc';
 
 interface KnowledgeGraphWorkbenchProps {
   initialColorFilter?: string;
+  projectId?: number;
 }
 
-const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initialColorFilter }) => {
+const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initialColorFilter, projectId }) => {
   // ============ 状态定义 ============
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -101,12 +151,15 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
   const [filteredCards, setFilteredCards] = useState<KnowledgeCard[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // 选中状态
+// 选中状态
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // 卡片知识网络状态
+  const [cardNetwork, setCardNetwork] = useState<{nodes: any[], links: any[]}>({nodes: [], links: []});
   
   // 编辑器状态
   const [markdownContent, setMarkdownContent] = useState('');
@@ -134,6 +187,9 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
   const [showRelatedModal, setShowRelatedModal] = useState(false);
   const [relatedCardId, setRelatedCardId] = useState<string>('');
   
+  // 是否使用样本数据（后端不可用时的降级）
+  const [isSampleData, setIsSampleData] = useState(false);
+  
   // ============ 数据加载 ============
   const loadGraphData = useCallback(async () => {
     setLoading(true);
@@ -142,10 +198,13 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setGraphData(data);
+      setIsSampleData(false);
       toast.success('知识图谱加载成功');
     } catch (error) {
-      console.error('加载知识图谱失败:', error);
-      toast.error('加载知识图谱失败');
+      console.error('加载知识图谱失败，使用样本数据:', error);
+      setGraphData(SAMPLE_GRAPH_DATA);
+      setIsSampleData(true);
+      toast.info('后端暂不可用，显示样本数据');
     } finally {
       setLoading(false);
     }
@@ -154,20 +213,28 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
   const loadCards = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards?limit=1000`);
+      let url = `${API_BASE_URL}/api/knowledge/cards?limit=1000`;
+      if (projectId) {
+        url += `&project_id=${projectId}`;
+      }
+      const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setCards(data.cards || []);
       setFilteredCards(data.cards || []);
+      setIsSampleData(false);
     } catch (error) {
-      console.error('加载卡片列表失败:', error);
-      toast.error('加载卡片列表失败');
+      console.error('加载卡片列表失败，使用样本数据:', error);
+      setCards(SAMPLE_CARDS);
+      setFilteredCards(SAMPLE_CARDS);
+      setIsSampleData(true);
+      toast.info('后端暂不可用，显示样本数据');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // 加载单个卡片详情
+// 加载单个卡片详情
   const loadCardDetail = useCallback(async (cardId: number) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/knowledge/cards/${cardId}`);
@@ -176,6 +243,21 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       setSelectedCard(card);
       // 转换为Markdown格式
       setMarkdownContent(`# ${card.title || '无标题'}\n\n${card.content || ''}`);
+
+      // 同时加载卡片关联的知识网络
+      try {
+        const networkResponse = await fetch(`${API_BASE_URL}/api/backlinks/card/${cardId}/graph?max_depth=1`);
+        if (networkResponse.ok) {
+          const networkData = await networkResponse.json();
+          setCardNetwork({
+            nodes: networkData.nodes || [],
+            links: networkData.links || []
+          });
+        }
+      } catch (networkError) {
+        console.error('加载卡片知识网络失败:', networkError);
+        setCardNetwork({nodes: [], links: []});
+      }
     } catch (error) {
       console.error('加载卡片详情失败:', error);
       toast.error('加载卡片详情失败');
@@ -194,11 +276,12 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
     // 搜索筛选
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      result = result.filter(card => 
-        card.title?.toLowerCase().includes(query) ||
-        card.content?.toLowerCase().includes(query) ||
-        card.tags?.some(tag => tag.toLowerCase().includes(query))
-      );
+result = result.filter(card => {
+        const tagArr = Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' && card.tags ? JSON.parse(card.tags) : []);
+        return card.title?.toLowerCase().includes(query) ||
+          card.content?.toLowerCase().includes(query) ||
+          tagArr.some((tag: string) => tag.toLowerCase().includes(query));
+      });
     }
     
     // 排序
@@ -257,14 +340,14 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       }
     };
     
-    // 双击事件 - 直接打开编辑
+// 双击事件 - 打开详情预览（显示知识网络）
     const handleDoubleClick = (params: any) => {
       if (params.dataType === 'node') {
         const cardId = parseInt(params.data.id);
         if (!isNaN(cardId)) {
           loadCardDetail(cardId);
-          setIsEditing(true);
-          setEditorSide('edit');
+          setIsEditing(false);
+          setEditorSide('preview'); // 默认显示预览模式，可以看到知识网络
         }
       }
     };
@@ -727,7 +810,8 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
     
     try {
       // 将卡片内容转换为 Markdown
-      const markdownContent = `# ${selectedCard.title || '知识卡片'}\n\n**类型**: ${selectedCard.card_type}\n\n---\n\n${selectedCard.content || ''}\n\n---\n\n**标签**: ${selectedCard.tags?.join(', ') || '无'}\n`;
+      const selTags = Array.isArray(selectedCard.tags) ? selectedCard.tags : (typeof selectedCard.tags === 'string' && selectedCard.tags ? JSON.parse(selectedCard.tags) : []);
+      const markdownContent = `# ${selectedCard.title || '知识卡片'}\n\n**类型**: ${selectedCard.card_type}\n\n---\n\n${selectedCard.content || ''}\n\n---\n\n**标签**: ${selTags.join(', ') || '无'}\n`;
       
       // 创建 FormData
       const formData = new FormData();
@@ -776,6 +860,11 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
           <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
             <Network className="w-5 h-5" />
             知识图谱工作台
+            {isSampleData && (
+              <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 px-1.5 py-0.5 rounded font-normal ml-auto">
+                样本
+              </span>
+            )}
           </h2>
           
           {/* 视图切换 */}
@@ -898,15 +987,18 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
                   <p className="text-xs text-gray-500 line-clamp-2">
                     {card.content?.substring(0, 80) || '无内容'}...
                   </p>
-                  {card.tags && card.tags.length > 0 && (
-                    <div className="flex gap-1 mt-2 flex-wrap">
-                      {card.tags.slice(0, 3).map((tag, i) => (
-                        <span key={i} className="text-xs px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+{(() => {
+                    const cardTagArr = Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' && card.tags ? JSON.parse(card.tags) : []);
+                    return cardTagArr.length > 0 ? (
+                      <div className="flex gap-1 mt-2 flex-wrap">
+                        {cardTagArr.slice(0, 3).map((tag: string, i: number) => (
+                          <span key={i} className="text-xs px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
                 
 {/* 展开详情 */}
@@ -933,7 +1025,212 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
             );
           })}
         </div>
-      </div>
+</div>
+
+      {/* 右侧详情面板 */}
+      {selectedCard && (
+        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+          {/* 面板头部 */}
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span
+                className="text-xs px-2 py-1 rounded text-white font-medium"
+                style={{ backgroundColor: CARD_COLOR_CSS[selectedCard.card_type as CardColor] }}
+              >
+                {CARD_COLOR_MAP[selectedCard.card_type as CardColor] || '事实'}
+              </span>
+              <h2 className="font-semibold text-lg truncate max-w-md">
+                {selectedCard.title || '无标题'}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* 编辑模式切换 */}
+              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                {(['edit', 'preview', 'split'] as EditorSide[]).map(side => (
+                  <button
+                    key={side}
+                    onClick={() => setEditorSide(side)}
+                    className={`px-3 py-1 text-xs rounded-md flex items-center gap-1 transition-colors ${
+                      editorSide === side
+                        ? 'bg-white dark:bg-gray-600 shadow-sm font-medium'
+                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    }`}
+                  >
+                    {side === 'edit' && <Edit3 className="w-3 h-3" />}
+                    {side === 'preview' && <Eye className="w-3 h-3" />}
+                    {side === 'split' && <span className="text-[10px]">双</span>}
+                    {side === 'edit' ? '编辑' : side === 'preview' ? '预览' : '分屏'}
+                  </button>
+                ))}
+              </div>
+              {/* 跳转到知识网络 */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // 跳转到知识图谱页面，以当前卡片ID为焦点
+                  window.open(`/knowledge-graph?card=${selectedCard.id}`, '_blank');
+                }}
+                title="在知识网络中查看"
+              >
+                <Network className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setSelectedCard(null)}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* 编辑区 */}
+          <div className="flex-shrink-0 h-[calc(100%-180px)] overflow-hidden flex border-t border-gray-200 dark:border-gray-700">
+            {(editorSide === 'edit' || editorSide === 'split') && (
+              <div className={`flex flex-col ${editorSide === 'split' ? 'w-1/2 border-r border-gray-200 dark:border-gray-700' : 'flex-1'}`}>
+                <textarea
+                  value={markdownContent}
+                  onChange={(e) => setMarkdownContent(e.target.value)}
+                  className="flex-1 p-4 resize-none bg-white dark:bg-gray-900 text-sm font-mono outline-none"
+                  placeholder="输入内容，支持 Markdown 格式..."
+                />
+                <div className="p-3 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setEditorSide('preview');
+                      setIsEditing(false);
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={async () => {
+                      await handleSaveCard();
+                      setEditorSide('preview');
+                      setIsEditing(false);
+                      toast.success('保存成功');
+                    }}
+                  >
+                    保存
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {(editorSide === 'preview' || editorSide === 'split') && (
+              <div className={`flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-900 ${editorSide === 'split' ? 'w-1/2' : ''}`}>
+                {markdownContent ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown>{markdownContent}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-sm">无内容</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 知识网络区域 */}
+          {selectedCard && cardNetwork.nodes && cardNetwork.nodes.length > 1 && (
+            <div className="flex-shrink-0 h-[180px] border-t border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col bg-gray-50 dark:bg-gray-900">
+              <div className="flex items-center justify-between px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2">
+                  <Network className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm font-medium">知识网络</span>
+                  <span className="text-xs text-gray-500">({cardNetwork.nodes.length} 个节点, {cardNetwork.links.length} 条连接)</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditorSide('preview')}
+                    className="text-xs px-2 py-1 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
+                  >
+                    返回预览
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* 反向链接（链接到当前卡片） */}
+                  {cardNetwork.links.filter(l => String(l.target) === String(selectedCard.id) || l.target === selectedCard.id).length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                        <ChevronDown className="w-3 h-3" />
+                        被引用 ({cardNetwork.links.filter(l => String(l.target) === String(selectedCard.id) || l.target === selectedCard.id).length})
+                      </div>
+                      <div className="space-y-1">
+                        {cardNetwork.links
+                          .filter(l => String(l.target) === String(selectedCard.id) || l.target === selectedCard.id)
+                          .slice(0, 5)
+                          .map((link, idx) => {
+                            const sourceNode = cardNetwork.nodes.find(n => String(n.id) === String(link.source) || n.id === link.source);
+                            if (!sourceNode) return null;
+                            return (
+                              <div
+                                key={idx}
+                                className="text-xs p-1.5 bg-gray-50 dark:bg-gray-700 rounded cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-1"
+                                onClick={() => {
+                                  const nid = parseInt(String(link.source));
+                                  if (!isNaN(nid)) {
+                                    loadCardDetail(nid);
+                                  }
+                                }}
+                              >
+                                <span className={`w-2 h-2 rounded-full ${sourceNode.type === 'blue' ? 'bg-blue-500' : sourceNode.type === 'green' ? 'bg-green-500' : sourceNode.type === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                <span className="truncate flex-1">{sourceNode.title || '未命名'}</span>
+                                <span className="text-gray-400 text-[10px]">{link.type === 'backlink' ? '↩' : '↪'}</span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                  {/* 正向链接（当前卡片引用） */}
+                  {cardNetwork.links.filter(l => String(l.source) === String(selectedCard.id) || l.source === selectedCard.id).length > 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
+                        <ChevronRight className="w-3 h-3" />
+                        引用了 ({cardNetwork.links.filter(l => String(l.source) === String(selectedCard.id) || l.source === selectedCard.id).length})
+                      </div>
+                      <div className="space-y-1">
+                        {cardNetwork.links
+                          .filter(l => String(l.source) === String(selectedCard.id) || l.source === selectedCard.id)
+                          .slice(0, 5)
+                          .map((link, idx) => {
+                            const targetNode = cardNetwork.nodes.find(n => String(n.id) === String(link.target) || n.id === link.target);
+                            if (!targetNode) return null;
+                            return (
+                              <div
+                                key={idx}
+                                className="text-xs p-1.5 bg-gray-50 dark:bg-gray-700 rounded cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-1"
+                                onClick={() => {
+                                  const nid = parseInt(String(link.target));
+                                  if (!isNaN(nid)) {
+                                    loadCardDetail(nid);
+                                  }
+                                }}
+                              >
+                                <span className={`w-2 h-2 rounded-full ${targetNode.type === 'blue' ? 'bg-blue-500' : targetNode.type === 'green' ? 'bg-green-500' : targetNode.type === 'yellow' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+                                <span className="truncate flex-1">{targetNode.title || '未命名'}</span>
+                                <span className="text-gray-400 text-[10px]">↪</span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* 如果没有关联 */}
+                {cardNetwork.nodes.length <= 1 && (
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                    <span>该卡片暂无关联</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 

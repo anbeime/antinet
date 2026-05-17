@@ -227,8 +227,9 @@ export interface GtdTask {
   is_completed?: boolean;
   reminder_enabled?: boolean;
   remind_at?: string;
-  source_type?: string;  // 'card' | 'project' | 'meeting' | null
+ source_type?: string;  // 'card' | 'project' | 'meeting' | null
   source_id?: number;    // 来源对象ID
+  project_id?: number;   // 关联的专题ID
 }
 
 export const gtdTaskService = {

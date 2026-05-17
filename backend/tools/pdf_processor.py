@@ -146,7 +146,7 @@ class SimplePDFProcessor:
                     "cards": []
                 }
             
-            # 简单分段生成卡片
+# 简单分段生成卡片
             cards = []
             full_text = result["full_text"]
             
@@ -157,22 +157,34 @@ class SimplePDFProcessor:
                     "cards": []
                 }
             
-            # 按段落分割
-            paragraphs = [p.strip() for p in full_text.split('\n\n') if p.strip()]
+            # 按段落分割（中英文兼容）
+            # 中文：按 。！？ 分割；英文：按 \n\n 或双换行分割
+            import re
+            # 先尝试按中文句号分割，再按英文双换行
+            segments = re.split(r'(?<=[。！？])\s*(?=[A-Za-z\u4e00-\u9fff])|(?<=\n)\n', full_text)
+            # 合并太短的段落
+            merged = []
+            for seg in segments:
+                seg = seg.strip()
+                if not seg:
+                    continue
+                if merged and len(merged[-1]) < 50:
+                    merged[-1] += ' ' + seg
+                else:
+                    merged.append(seg)
+            paragraphs = [p.strip() for p in merged if len(p.strip()) >= 20]
             
             for idx, para in enumerate(paragraphs[:10], 1):  # 最多生成10张卡片
-                if len(para) < 20:  # 跳过太短的段落
-                    continue
-                
-                # 生成标题（取前50个字符）
-                title = para[:50] + "..." if len(para) > 50 else para
+                # 生成标题（取前30个字符，去除换行）
+                clean_para = ' '.join(para.split())  # 合并多空白字符
+                title_text = clean_para[:30].strip()
+                if len(clean_para) > 30:
+                    title_text += '...'
                 
                 cards.append({
                     "card_id": f"pdf_card_{idx}",
-                    "title": title,
-                    "content": {
-                        "description": para
-                    },
+                    "title": title_text,
+                    "content": clean_para,  # 直接返回字符串，不再嵌套对象
                     "card_type": card_type,
                     "category": "PDF导入",
                     "source": Path(pdf_path).name
