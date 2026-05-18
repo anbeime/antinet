@@ -978,8 +978,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       key={color}
                       className={`${type.bgColor} border ${type.borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow`}
                       onClick={() => {
-                        setActiveTab('cards');
+                        setActiveTab('cards-management');
                         setSelectedCardColor(color as CardColor);
+                        setTimeout(() => {
+                          document.getElementById(`card-stat-${color}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
                       }}
                     >
                       <div className="flex justify-between items-start mb-2">
@@ -1275,6 +1278,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               {Object.entries(cardTypeMap).map(([color, type]) => (
                 <div 
                   key={color} 
+                  id={`card-stat-${color}`}
                   onClick={() => setSelectedCardColor(color as CardColor)}
                   className={`${type.bgColor} p-4 rounded-xl border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
                 >
