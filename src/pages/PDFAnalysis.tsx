@@ -1944,9 +1944,9 @@ const loadPDFJS = async () => {
       try {
         const pdfjs = (window as any).pdfjsLib;
         if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data });
-          setPdfDoc(pdf);
-          setTotalPages(pdf.numPages);
+          const doc = await pdfjs.getDocument({ data });
+          setPdfDoc(doc);
+          setTotalPages(doc.numPages);
           setCurrentPage(1);
         }
       } catch (error) {

@@ -414,7 +414,7 @@ if PDF_TOOLKIT_AVAILABLE:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
     
-@router.post("/toolkit/split")
+    @router.post("/toolkit/split")
     async def toolkit_split(file: UploadFile = File(...)):
         """工具包：拆分 PDF"""
         if not PDF_TOOLKIT_AVAILABLE:

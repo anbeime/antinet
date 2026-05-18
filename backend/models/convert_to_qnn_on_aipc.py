@@ -134,16 +134,16 @@ def main():
     # 2. 定义模型路径
     models = {
         "qwen2-7b-ssd": {
-            "zip": "C:/D/zhiyi/models/Qwen2.0-7B-SSD-8380-2.34.zip",
-            "dir": "C:/D/zhiyi/models/Qwen2.0-7B-SSD-8380-2.34"
+            "zip": "C:/models/Qwen2.0-7B-SSD-8380-2.34.zip",
+            "dir": "C:/models/Qwen2.0-7B-SSD-8380-2.34"
         },
         "llama3.1-8b": {
-            "zip": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38.zip",
-            "dir": "C:/D/zhiyi/models/llama3.1-8b-8380-qnn2.38"
+            "zip": "C:/models/llama3.1-8b-8380-qnn2.38.zip",
+            "dir": "C:/models/llama3.1-8b-8380-qnn2.38"
         },
         "llama3.2-3b": {
-            "zip": "C:/D/zhiyi/models/llama3.2-3b-8380-qnn2.37.zip",
-            "dir": "C:/D/zhiyi/models/llama3.2-3b-8380-qnn2.37"
+            "zip": "C:/models/llama3.2-3b-8380-qnn2.37.zip",
+            "dir": "C:/models/llama3.2-3b-8380-qnn2.37"
         }
     }
     
