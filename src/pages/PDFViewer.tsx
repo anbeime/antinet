@@ -1,17 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
-import { GlobalWorkerOptions } from 'pdfjs-dist/build/pdf.mjs';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { motion } from 'framer-motion';
 import {
-  FileText, Upload, Download, ZoomIn, ZoomOut, RotateCw,
-  ChevronLeft, ChevronRight, Search, ThumbsUp, ThumbsDown,
-  Maximize2, Hash, Layers
+  FileText, Upload, Download, ZoomIn, ZoomOut,
+  ChevronLeft, ChevronRight, Hash
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
-// 设置 worker（本地离线必须）
-GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// CDN 动态加载 PDF.js（避免 pdfjs-dist 依赖缺失问题）
+const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 interface PDFViewerProps {
   fileUrl?: string;
@@ -25,7 +21,33 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
   const [scale, setScale] = useState(1.0);
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState('');
+  const [loadError, setLoadError] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfjsRef = useRef<any>(null);
+
+  // 动态加载 PDF.js 库
+  const loadPDFJS = async (): Promise<any> => {
+    if (pdfjsRef.current) return pdfjsRef.current;
+
+    // 检查是否已全局加载
+    if ((window as any).pdfjsLib) {
+      pdfjsRef.current = (window as any).pdfjsLib;
+      return pdfjsRef.current;
+    }
+
+    return new Promise<any>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = PDFJS_CDN_URL;
+      script.onload = () => {
+        const pdfjs = (window as any).pdfjsLib;
+        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN_URL;
+        pdfjsRef.current = pdfjs;
+        resolve(pdfjs);
+      };
+      script.onerror = () => reject(new Error('PDF.js 库加载失败，请检查网络连接'));
+      document.head.appendChild(script);
+    });
+  };
 
   // Load PDF from URL if provided
   useEffect(() => {
@@ -36,16 +58,30 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
 
   const loadPDFFromURL = async (url: string) => {
     setIsLoading(true);
+    setLoadError('');
     try {
+      const pdfjsLib = await loadPDFJS();
       const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}: 无法获取文件`);
       const arrayBuffer = await response.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+      
+      // 兼容不同 PDF.js 版本的 getDocument API
+      const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+      // PDF.js 3.x: loadingTask.promise 返回 PDFDocumentProxy
+      // 某些 CDN 版本可能直接返回 PDFDocumentProxy（已解析）
+      const pdf = loadingTask.then ? (await loadingTask.promise) : (await loadingTask);
+      
+      if (!pdf || typeof pdf.getPage !== 'function') {
+        throw new Error('PDF 文档解析失败：返回了无效的文档对象');
+      }
+      
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
-    } catch (error) {
+    } catch (error: any) {
       console.error('加载PDF失败:', error);
+      setLoadError(error.message || '加载PDF失败');
     } finally {
       setIsLoading(false);
     }
@@ -60,38 +96,59 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !file.type.includes('pdf')) {
-      alert('请选择PDF文件');
+      setLoadError('请选择有效的PDF文件');
       return;
     }
 
     setIsLoading(true);
     setFileName(file.name);
+    setLoadError('');
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
 
       try {
-        const pdf = await pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+        const pdfjsLib = await loadPDFJS();
+        
+        // 兼容不同 PDF.js 版本的 getDocument API
+        const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
+        // PDF.js 3.x: loadingTask.promise 返回 PDFDocumentProxy
+        // 某些 CDN 版本可能直接返回 PDFDocumentProxy（已解析）
+        const pdf = loadingTask.then ? (await loadingTask.promise) : (await loadingTask);
+        
+        if (!pdf || typeof pdf.getPage !== 'function') {
+          throw new Error('PDF 文档解析失败：返回了无效的文档对象');
+        }
 
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
         setCurrentPage(1);
-      } catch (error) {
+      } catch (error: any) {
         console.error('加载PDF失败:', error);
-        alert('加载PDF失败');
+        setLoadError(error.message || '加载PDF失败，文件可能已损坏');
       } finally {
         setIsLoading(false);
       }
     };
     reader.readAsArrayBuffer(file);
+
+    // 重置 input 以允许重复选择同一文件
+    event.target.value = '';
   };
 
   const renderPage = async (pageNum: number) => {
     if (!pdfDoc || !canvasRef.current) return;
 
     try {
-      const page = await pdfDoc.getPage(pageNum);
+      // 防御性检查：确保 pdfDoc 是有效的 PDFDocumentProxy 对象
+      const doc = pdfDoc;
+      if (!doc || typeof doc.getPage !== 'function') {
+        console.error('pdfDoc 不是有效的 PDFDocumentProxy:', typeof doc, doc);
+        setLoadError('PDF 文档加载异常，请重试');
+        return;
+      }
+      const page = await doc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
@@ -241,6 +298,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
               <FileText className="w-24 h-24 mx-auto mb-4" />
               <p className="text-lg mb-2">PDF 查看器</p>
               <p className="text-sm mb-4">请上传PDF文件或拖放到此处</p>
+              {loadError && (
+                <div className="mb-4 px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-300 text-sm max-w-md">
+                  {loadError}
+                </div>
+              )}
               <label className="cursor-pointer inline-flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
                 <Upload className="w-4 h-4" />
                 <span>选择文件</span>
