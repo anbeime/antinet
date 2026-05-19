@@ -489,7 +489,7 @@ useEffect(() => {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
       // 同时加载协作历史消息（REST 回退）
       const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?/, '')}/api/activities?limit=30`)
+      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?:\/\//, '')}/api/activities?limit=30`)
         .then(r => r.json())
         .then(activities => {
           if (Array.isArray(activities) && activities.length > 0) {
@@ -898,7 +898,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiBase = getApiBaseUrl().replace(/^https?/, ''); // 去掉协议前缀
+    const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
     const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
     
     console.log('[Collab] 连接 WebSocket:', url);
