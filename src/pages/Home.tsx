@@ -795,13 +795,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <span>Agent系统</span>
                 </button>
                 <button
-                  onClick={() => setActiveTab('agent-system')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <Bot size={16} />
-                  <span>Agent系统</span>
-                </button>
-                <button
                   onClick={() => setActiveTab('skill-center')}
                   className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
@@ -1155,21 +1148,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                         <ChevronRight size={16} />
                       </motion.button>
                     ))}
-                    {/* 自进化聊天入口 */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors mt-2"
-                      onClick={() => navigate('/evolving-chat')}
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-white/20 p-1.5 rounded-lg mr-3">
-                          <Brain className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">自进化聊天</span>
-                      </div>
-                      <ChevronRight size={16} />
-                    </motion.button>
                   </div>
                </motion.div>
 
