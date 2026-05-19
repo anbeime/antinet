@@ -11,7 +11,6 @@ import {
   Plus,
   PlusCircle,
   X,
-  TrendingUp,
   AlertCircle,
   Presentation,
   Table,
@@ -51,7 +50,6 @@ import { useTheme } from '@/hooks/useTheme';
 import CreateCardModal from '@/components/CreateCardModal';
 import CardDetailModal from '@/components/CardDetailModal';
 import ImportModal from '@/components/ImportModal';
-import DataAnalysisPanel from '@/components/DataAnalysisPanel';
 import PPTAnalysis from '@/pages/PPTAnalysis';
 import ExcelAnalysis from '@/pages/ExcelAnalysis';
 import DataManagement from '@/pages/DataManagement';
@@ -67,7 +65,6 @@ import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import ChatButton from '@/components/ChatButton';
 import WikiEditor from '@/components/WikiEditor';
 import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
-import KnowledgeGraphWorkbenchPage from '@/pages/KnowledgeGraphWorkbenchPage';
 import MindMap from '@/pages/MindMap';
 import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 import PDFViewer from '@/pages/PDFViewer';
@@ -723,7 +720,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 文档处理下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'document-center', 'format-converter', 'report-automation', 'wiki-editor'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'document-center', 'format-converter', 'report-automation'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <FolderOpen size={18} />
                 <span>文档处理</span>
@@ -773,13 +770,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <FileType size={16} />
                   <span>格式转换</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab('wiki-editor')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'wiki-editor' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <BookOpen size={16} />
-                  <span>Wiki编辑器</span>
-                </button>
               </div>
             </div>
 
@@ -790,7 +780,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['agent-system', 'skill-center'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -798,15 +788,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                 <button
-                  onClick={() => setActiveTab('data-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'data-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <TrendingUp size={16} />
-                  <span>智能分析</span>
-                </button>
-                <button
                   onClick={() => setActiveTab('agent-system')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Bot size={16} />
                   <span>Agent系统</span>
@@ -818,15 +801,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Sparkles size={16} />
                   <span>技能中心</span>
                 </button>
-                <a
-                  href="/book-skill"
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2`}
-                  onClick={(e) => { e.preventDefault(); window.location.href = '/book-skill'; }}
-                >
-                  <BookOpen size={16} />
-                  <span>Book Skill</span>
-                  <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded">📚</span>
-                </a>
               </div>
             </div>
           </div>
@@ -919,17 +893,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'format-converter' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <FileType size={16} /><span>格式转换</span>
               </button>
-              <button onClick={() => { setActiveTab('wiki-editor'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'wiki-editor' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <BookOpen size={16} /><span>Wiki编辑器</span>
-              </button>
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
                 AI工具
               </div>
-              <button onClick={() => { setActiveTab('data-analysis'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'data-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <TrendingUp size={16} /><span>智能分析</span>
-              </button>
               <button onClick={() => { setActiveTab('agent-system'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Bot size={16} /><span>Agent系统</span>
@@ -937,10 +903,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               <button onClick={() => { setActiveTab('skill-center'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Sparkles size={16} /><span>技能中心</span>
-              </button>
-              <button onClick={() => { setMobileMenuOpen(false); window.location.href = '/book-skill'; }}
-                className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <BookOpen size={16} /><span>Book Skill</span>
               </button>
             </div>
           </div>
@@ -1189,21 +1151,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                         <ChevronRight size={16} />
                       </motion.button>
                     ))}
-                    {/* 自进化聊天入口 */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors mt-2"
-                      onClick={() => navigate('/evolving-chat')}
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-white/20 p-1.5 rounded-lg mr-3">
-                          <Brain className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">自进化聊天</span>
-                      </div>
-                      <ChevronRight size={16} />
-                    </motion.button>
                   </div>
                </motion.div>
 
@@ -1500,11 +1447,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           <SkillCenter />
         )}
 
-        {/* 数据分析视图 */}
-        {activeTab === 'data-analysis' && (
-          <DataAnalysisPanel />
-        )}
-
         {/* 批量处理视图 */}
         {activeTab === 'batch-process' && (
           <BatchProcess />
@@ -1555,10 +1497,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           <VirtualOfficeMeeting />
         )}
 
-        {/* 知识网络视图 */}
-        {activeTab === 'knowledge-network' && (
-          <KnowledgeGraphWorkbenchPage />
-        )}
+{/* 知识网络视图 —— 使用 WikiEditor（含编辑/图谱/搜索/智能） */}
+{activeTab === 'knowledge-network' && (
+<WikiEditor />
+)}
 
         {/* 预留：以后可以整合到PPT生成中 */}
 
@@ -1595,11 +1537,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Table className="w-10 h-10 text-green-500 mb-3" />
                   <h3 className="font-semibold">Excel/在线表格</h3>
                   <p className="text-sm text-gray-500">数据分析与可视化</p>
-                </button>
-                <button onClick={() => { localStorage.setItem('openExcelEditor', 'true'); setActiveTab('excel-analysis'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Table className="w-10 h-10 text-green-400 mb-3" />
-                  <h3 className="font-semibold">在线编辑</h3>
-                  <p className="text-sm text-gray-500">在线编辑表格</p>
                 </button>
                 <button onClick={() => setActiveTab('report-automation')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <BarChart3 className="w-10 h-10 text-purple-500 mb-3" />
@@ -1654,11 +1591,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 思维导图 */}
         {activeTab === 'mindmap' && (
           <MindMap />
-        )}
-
-        {/* Wiki编辑器 */}
-        {activeTab === 'wiki-editor' && (
-          <WikiEditor />
         )}
 
         {/* 知识图谱 */}

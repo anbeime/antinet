@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
@@ -125,7 +126,7 @@ const generateMockDiscussion = (topic: string, rounds: number) => {
 };
 
 // ==================== 后端 API 配置 ====================
-const BACKEND_URL = 'http://127.0.0.1:8000/api/meeting';
+const BACKEND_URL = getApiBaseUrl() + '/api/meeting';
 
 // ==================== 像素办公室 Canvas 组件 ====================
 const PixelOfficeCanvas: React.FC<{
@@ -378,7 +379,7 @@ const VirtualOfficeMeeting: React.FC = () => {
     // 如果开启混合模式，调用后端获取智能体响应
     if (hybridMode && isLoading) {
       try {
-        const res = await fetch('http://localhost:8000/api/hybrid/question', {
+        const res = await fetch(getApiBaseUrl() + '/api/hybrid/question', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: msg, topic })
@@ -488,7 +489,7 @@ useEffect(() => {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
       // 同时加载协作历史消息（REST 回退）
       const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${collabProtocol}//${window.location.hostname}:8000/api/activities?limit=30`)
+      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?:\/\//, '')}/api/activities?limit=30`)
         .then(r => r.json())
         .then(activities => {
           if (Array.isArray(activities) && activities.length > 0) {
@@ -897,8 +898,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname + ':8000';
-    const url = `${protocol}//${host}/api/ws/collaboration/${userId}`;
+    const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
+    const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
     
     console.log('[Collab] 连接 WebSocket:', url);
     setCollabStatus('connecting');
@@ -1242,7 +1243,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
               }`}
             >
               <MessageSquare className="w-4 h-4" />
-              协作任务
+              团队协作
             </button>
           </div>
 
@@ -1326,13 +1327,16 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           )}
 
           {activeTab === 'tasks' && (
-            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-                <MessageSquare className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">协作任务</span>
-                <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个</span>
+            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', minHeight: '0', flex: '1 1 0' }}>
+              {/* 任务列表区 */}
+              <div className="px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-gray-400" />
+                  <span className="text-white font-medium text-sm">团队协作</span>
+                  <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个任务</span>
+                </div>
               </div>
-              <div className="p-4 space-y-3 max-h-60 overflow-y-auto">
+              <div className="p-4 space-y-3 overflow-y-auto flex-shrink-0" style={{ maxHeight: '220px', scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                 {taskList.length === 0 ? (
                   <div className="text-gray-500 text-sm text-center py-4">暂无协作任务</div>
                 ) : (
@@ -1353,9 +1357,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   ))
                 )}
               </div>
-              {/* 实时消息区域 */}
-              <div className="border-t border-gray-700/50 px-4 py-3">
-                <div className="flex items-center gap-2 mb-2">
+              {/* 实时讨论区 —— 沉底，占满剩余空间 */}
+              <div className="border-t border-gray-700/50 flex flex-col flex-1 min-h-0" style={{ marginTop: 'auto' }}>
+                {/* 讨论头部 */}
+                <div className="px-4 py-2.5 flex items-center gap-2 flex-shrink-0">
                   <Users className="w-4 h-4 text-blue-400" />
                   <span className="text-gray-300 text-sm font-medium">实时讨论</span>
                   <input
@@ -1377,9 +1382,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                      collabStatus === 'connecting' ? '连接中...' : '✗ 断开'}
                   </span>
                 </div>
-                <div className="h-48 overflow-y-auto mb-2 space-y-2 text-sm">
+                {/* 消息列表 —— 自动填充剩余高度 */}
+                <div className="flex-1 overflow-y-auto px-4 space-y-2 text-sm min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                   {collabMessages.length === 0 ? (
-                    <div className="text-gray-400 text-xs text-center py-4">
+                    <div className="text-gray-400 text-xs text-center py-6">
                       {collabStatus === 'connected' ? '开始聊天吧' : '连接中...'}
                     </div>
                   ) : (
@@ -1393,7 +1399,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                     ))
                   )}
                 </div>
-                <div className="flex gap-2">
+                {/* 输入框 —— 始终在底部 */}
+                <div className="px-4 py-3 flex gap-2 flex-shrink-0 border-t border-gray-700/30">
                   <input
                     id="collab-input"
                     type="text"
@@ -1434,7 +1441,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                         input.value = '';
                       }
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex-shrink-0"
                   >
                     发送
                   </button>

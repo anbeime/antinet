@@ -161,7 +161,6 @@ register_router("routes.vision_routes")
 
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
-register_router("routes.evolving_chat_routes")
 register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
