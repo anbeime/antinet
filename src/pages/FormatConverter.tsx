@@ -1421,7 +1421,7 @@ const loadPdfJs = async (): Promise<any> => {
                 ) : (
                   <>
                     <Download size={20} />
-                    转换为 ({'pdf':'PDF','docx':'Word','html':'HTML','pptx':'PPT'}[mdOutputFormat] || mdOutputFormat.toUpperCase())
+                    转换为 {(() => { const map = {'pdf':'PDF','docx':'Word','html':'HTML','pptx':'PPT'}; return map[mdOutputFormat] || mdOutputFormat.toUpperCase(); })()}
                   </>
                 )}
               </button>
