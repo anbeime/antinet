@@ -28,12 +28,17 @@ HERMES_DIR = ZHIYI_DIR.parent / "hermes-agent-main"
 if str(HERMES_DIR) not in sys.path:
     sys.path.insert(0, str(HERMES_DIR))
 
-# 加载环境变量
-from hermes_cli.env_loader import load_hermes_dotenv
-from hermes_constants import get_hermes_home
-
-hermes_home = get_hermes_home()
-load_hermes_dotenv(hermes_home=hermes_home)
+# 尝试加载 Hermes 模块
+HERMES_AVAILABLE = False
+try:
+    from hermes_cli.env_loader import load_hermes_dotenv
+    from hermes_constants import get_hermes_home
+    hermes_home = get_hermes_home()
+    load_hermes_dotenv(hermes_home=hermes_home)
+    HERMES_AVAILABLE = True
+except ImportError:
+    print("Hermes modules not found, running in standalone mode", file=sys.stderr)
+    hermes_home = None
 
 # 设置日志
 logging.basicConfig(
@@ -54,9 +59,24 @@ except ImportError:
 import uvicorn
 
 # TUI Gateway 服务器
-from tui_gateway import server
-from tui_gateway.server import dispatch, _sessions, resolve_skin
-from tui_gateway.transport import StdioTransport
+try:
+    from tui_gateway import server
+    from tui_gateway.server import dispatch, _sessions, resolve_skin
+    from tui_gateway.transport import StdioTransport
+    TUI_AVAILABLE = True
+except ImportError:
+    print("TUI Gateway modules not found", file=sys.stderr)
+    TUI_AVAILABLE = False
+    # 创建空对象作为占位
+    class PlaceholderServer:
+        _sessions = {}
+        @staticmethod
+        def dispatch(*args, **kwargs):
+            raise RuntimeError("TUI Gateway not available")
+        @staticmethod
+        def resolve_skin():
+            return {}
+    server = PlaceholderServer()
 
 app = FastAPI(title="Hermes Gateway WebSocket")
 
