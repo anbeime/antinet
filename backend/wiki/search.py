@@ -20,7 +20,7 @@ class SearchResult:
 
 
 class AdvancedSearch:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.inverted_index: Dict[str, Dict[str, List[int]]] = defaultdict(dict)
         self.documents: Dict[str, dict] = {}

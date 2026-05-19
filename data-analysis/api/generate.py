@@ -9,8 +9,8 @@ import sys
 import os
 import time
 
-# 添加backend目录到Python路径
-backend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'backend')
+# 添加backend目录到Python路径（C:/D/zhiyi/backend）
+backend_dir = str(Path(__file__).parent.parent.parent.parent / "backend")
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 

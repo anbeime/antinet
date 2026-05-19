@@ -34,7 +34,7 @@ class Edge:
 
 
 class KnowledgeGraph:
-    def __init__(self, data_dir: str = "data/wiki"):
+    def __init__(self, data_dir: str = "backend/data/wiki"):
         self.data_dir = Path(data_dir)
         self.nodes: Dict[str, Node] = {}
         self.edges: Dict[str, Dict[str, Edge]] = defaultdict(dict)

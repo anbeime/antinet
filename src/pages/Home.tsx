@@ -714,7 +714,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
               <Users size={18} />
-              <span>团队会议</span>
+              <span>智能协作会议</span>
             </button>
 
             {/* 文档处理下拉菜单 */}

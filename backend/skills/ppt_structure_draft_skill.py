@@ -151,7 +151,7 @@ class PPTStructureGenerator:
         # 移除多余空白
         text = re.sub(r'\s+', ' ', text)
         # 移除特殊字符但保留中文和基本标点
-        text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9，。！？、；：""''（）【】\s]', '', text)
+        text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9，。！？、；：""''（）【】\\s]', '', text)
         return text.strip()
     
     def _extract_key_points(self, content: str, max_points: int = 3, max_length: int = 20) -> List[str]:

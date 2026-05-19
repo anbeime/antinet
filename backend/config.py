@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # 服务配置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8001
 
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "llama3.2-3b"

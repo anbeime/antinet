@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class WikiFileWatcher:
-    def __init__(self, wiki_root: str = "data/wiki", on_change: Optional[Callable] = None):
+    def __init__(self, wiki_root: str = "backend/data/wiki", on_change: Optional[Callable] = None):
         self.wiki_root = Path(wiki_root)
         self.on_change = on_change
         self.running = False
@@ -113,7 +113,7 @@ class WikiFileWatcher:
 
 
 class AutoMaintenance:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.graph: Optional[KnowledgeGraph] = None
     
@@ -157,7 +157,7 @@ class AutoMaintenance:
 
 
 if __name__ == "__main__":
-    watcher = WikiFileWatcher("data/wiki")
+    watcher = WikiFileWatcher("backend/data/wiki")
     watcher.start()
     
     try:

@@ -35,7 +35,7 @@ class WikiLinkParser:
     WIKILINK_PATTERN = r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]'
     TAG_PATTERN = r'(?<!\[)#(\w+)'
     
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.pages_index: Dict[str, str] = {}
         self._build_index()
@@ -115,7 +115,7 @@ class WikiLinkParser:
 
 
 class WikiFileManager:
-    def __init__(self, wiki_root: str = "data/wiki"):
+    def __init__(self, wiki_root: str = "backend/data/wiki"):
         self.wiki_root = Path(wiki_root)
         self.parser = WikiLinkParser(str(self.wiki_root))
         self._ensure_root()

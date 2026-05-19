@@ -349,7 +349,7 @@ class ModelConfig:
         # },
         "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
-            "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+            "path": "C:/models/Qwen2.0-7B-SSD-8380-2.34",
             "params": "7B",
             "quantization": "QNN 2.34",
             "description": "对话/分析，速度快，中文支持好（需要KV缓存）",
@@ -358,7 +358,7 @@ class ModelConfig:
         },
         "llama3.2-3b": {
             "name": "Llama3.2-3B",
-            "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
+            "path": "C:/models/llama3.2-3b-8380-qnn2.37",
             "params": "3B",
             "quantization": "QNN 2.37",
             "description": "推荐首选，基础模式，3个分片，轻量快速",

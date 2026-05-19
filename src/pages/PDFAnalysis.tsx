@@ -1911,24 +1911,35 @@ const PDFViewerInternal: React.FC = () => {
 
 const loadPDFJS = async () => {
     const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib) return;
+    if (pdfjsLib?.getDocument) return; // 已加载且可用
     const script = document.createElement('script');
     script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
     script.onload = () => {
       const pdfjs = (window as any).pdfjsLib;
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
+      if (pdfjs) pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
     };
     script.onerror = () => {
       const script2 = document.createElement('script');
       script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       script2.onload = () => {
         const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        if (pdfjs) pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       };
       document.head.appendChild(script2);
     };
     document.head.appendChild(script);
   };
+
+  const waitForPdfJs = (timeout = 5000) => new Promise((resolve, reject) => {
+    const start = Date.now();
+    const check = () => {
+      const pdfjs = (window as any).pdfjsLib;
+      if (pdfjs?.getDocument) { resolve(pdfjs); return; }
+      if (Date.now() - start > timeout) { reject(new Error('PDF.js 加载超时')); return; }
+      setTimeout(check, 100);
+    };
+    check();
+  });
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1942,13 +1953,11 @@ const loadPDFJS = async () => {
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       try {
-        const pdfjs = (window as any).pdfjsLib;
-        if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data });
-          setPdfDoc(pdf);
-          setTotalPages(pdf.numPages);
-          setCurrentPage(1);
-        }
+        const pdfjs = await waitForPdfJs();
+        const doc = await pdfjs.getDocument({ data });
+        setPdfDoc(doc);
+        setTotalPages(doc.numPages);
+        setCurrentPage(1);
       } catch (error) {
         console.error('加载PDF失败:', error);
         toast.error('加载PDF失败');
@@ -1961,6 +1970,7 @@ const loadPDFJS = async () => {
 
   const renderPage = async (pageNum: number) => {
     if (!pdfDoc || !canvasRef.current) return;
+    if (typeof pdfDoc.getPage !== 'function') return;
     try {
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
