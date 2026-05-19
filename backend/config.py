@@ -11,11 +11,29 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import Dict, Any
+import sys
+
+
+def _get_backend_dir() -> Path:
+    """获取后端目录（兼容 PyInstaller 打包）"""
+    if getattr(sys, 'frozen', False):
+        # exe 已在 backend/ 目录下，直接用 exe 所在目录
+        return Path(sys.executable).parent
+    return Path(__file__).parent.absolute()
+
+
+def _get_project_root() -> Path:
+    """获取项目根目录（兼容 PyInstaller 打包）"""
+    if getattr(sys, 'frozen', False):
+        # exe 在 backend/ 下，项目根目录是上一级
+        return Path(sys.executable).parent.parent
+    return Path(__file__).parent.parent.absolute()
+
 
 # 获取后端目录的绝对路径
-BACKEND_DIR = Path(__file__).parent.absolute()
+BACKEND_DIR = _get_backend_dir()
 # 获取项目根目录
-PROJECT_ROOT = BACKEND_DIR.parent.absolute()
+PROJECT_ROOT = _get_project_root()
 
 # 模型基础目录 - 支持多位置查找
 # 1. 优先查找 services/models（打包后的相对路径）

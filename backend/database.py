@@ -165,7 +165,8 @@ class DatabaseManager:
                     recurrence TEXT DEFAULT 'none',
                     recurrence_end_date TEXT,
                     is_completed BOOLEAN DEFAULT 0,
-                    completed_at TEXT
+                    completed_at TEXT,
+                    project_id INTEGER
                 )
             """)
             
@@ -204,6 +205,10 @@ class DatabaseManager:
                 pass
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN completed_at TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN project_id INTEGER")
             except:
                 pass
 

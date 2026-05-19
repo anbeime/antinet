@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from paths import DB_PATH
 
-DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"
+logger = logging.getLogger(__name__)
 
 
 def send_windows_notification(title: str, message: str):

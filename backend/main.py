@@ -12,8 +12,13 @@ from pathlib import Path
 # ============================================================
 # 1. 路径设置（必须在导入之前）
 # ============================================================
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(backend_dir)
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包后，exe 已在 backend/ 目录下
+    backend_dir = os.path.dirname(sys.executable)
+    project_root = os.path.dirname(backend_dir)
+else:
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(backend_dir)
 
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)

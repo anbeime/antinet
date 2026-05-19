@@ -7,17 +7,13 @@
  * 生产环境：使用相对路径
  */
 export const getApiBaseUrl = (): string => {
-  // 生产环境使用相对路径（由 nginx 或代理转发）
-  if (import.meta.env.PROD) {
-    return '';
-  }
-  
   // 优先使用环境变量
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
   
-  // 开发环境自动使用当前主机地址和端口
+  // 无论开发/生产环境，都自动使用当前主机地址 + 8000 端口
+  // 生产环境使用 serve --single 无法代理 API，需直连后端
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
   return `${protocol}//${hostname}:8000`;

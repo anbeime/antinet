@@ -10,10 +10,9 @@ from typing import List, Optional, Dict
 import sqlite3
 from pathlib import Path
 
-router = APIRouter(prefix="/api/backlinks", tags=["双向链接 - 网状知识组织"])
+from paths import DB_PATH
 
-# 数据库路径
-DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"
+router = APIRouter(prefix="/api/backlinks", tags=["双向链接 - 网状知识组织"])
 
 
 class BacklinkCreate(BaseModel):
