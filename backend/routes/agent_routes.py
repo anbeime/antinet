@@ -3,7 +3,7 @@
 提供完整的 Agent 协作 API
 
 核心优化：
-- 复用 meeting_routes.call_llm 降级链（8910→Ollama→NPU），所有LLM调用统一走降级保护
+- 复用 meeting_routes.call_llm 降级链（8910→NPU），所有LLM调用统一走降级保护
 - 4个Agent并行推理生成四色卡片，而非单次NPU调用硬充8-Agent
 - 新增 SSE 流式分析端点 /analyze/stream
 - /chat 端点也走 call_llm 降级链

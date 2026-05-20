@@ -899,7 +899,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     const userId = collabUserId.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
-    const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
+    const url = `${protocol}//${apiBase}/ws/collaboration/${userId}`;
     
     console.log('[Collab] 连接 WebSocket:', url);
     setCollabStatus('connecting');

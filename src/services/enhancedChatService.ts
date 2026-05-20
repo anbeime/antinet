@@ -44,8 +44,7 @@ export type SceneType =
   | 'skill_excel' 
   | 'skill_word' 
   | 'greeting' 
-  | 'help'
-  | 'ollama_chat';
+  | 'help';
 
 // 聊天消息接口
 export interface ChatMessage {
@@ -284,8 +283,7 @@ class EnhancedChatService {
       'skill_excel': '📈',
       'skill_word': '📝',
       'greeting': '👋',
-      'help': '❓',
-      'ollama_chat': '🧠'
+      'help': '❓'
     };
     return icons[sceneType] || '💬';
   }
@@ -302,8 +300,7 @@ class EnhancedChatService {
       'skill_excel': 'Excel分析',
       'skill_word': 'Word生成',
       'greeting': '欢迎消息',
-      'help': '帮助信息',
-      'ollama_chat': '深度思考'
+      'help': '帮助信息'
     };
     return names[sceneType] || '未知场景';
   }

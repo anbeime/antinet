@@ -37,7 +37,6 @@ const GeniePlayground: React.FC = () => {
   const [models, setModels] = useState<GenieModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('qwen2.5vl3b');
   const [serviceAvailable, setServiceAvailable] = useState(false);
-  const [ollamaAvailable, setOllamaAvailable] = useState(false);
   const [loadedModels, setLoadedModels] = useState<string[]>([]);
   const [currentModelName, setCurrentModelName] = useState<string>('');
   const [currentModelType, setCurrentModelType] = useState<string>('chat');
@@ -86,14 +85,12 @@ const GeniePlayground: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         setServiceAvailable(data.available);
-        setOllamaAvailable(data.ollama_available || false);
         setLoadedModels(data.loaded_models || []);
         setCurrentModelName(data.current_model || '');
         setCurrentModelType(data.current_model_type || 'chat');
       }
     } catch (e) {
       setServiceAvailable(false);
-      setOllamaAvailable(false);
     }
   };
 
@@ -141,19 +138,15 @@ const GeniePlayground: React.FC = () => {
       return;
     }
 
-    // Ollama 模型不需要 GenieAPIService，直接可用
-    const isOllamaModel = currentModel?.type === 'ollama';
     const isVisionModel = currentModelType === 'vision';
-    
-    if (isOllamaModel) {
-      // Ollama 模型直接调用，不需要检查 GenieAPIService
-    } else if (!serviceAvailable) {
-      toast.error('GenieAPIService 未启动，请用 Ollama 模型（如 gemma4）测试');
+
+    if (!serviceAvailable) {
+      toast.error('GenieAPIService 未启动，请用「启动视觉模型服务.bat」');
       return;
     }
 
     // NPU 模型需要匹配当前加载的模型，显示提示但不阻止
-    if (!isOllamaModel && currentModel?.type !== 'embedding') {
+    if (currentModel?.type !== 'embedding') {
       const selectedIsVision = currentModel?.type === 'vision';
       if ((selectedIsVision && !isVisionModel) || (!selectedIsVision && isVisionModel)) {
         toast.info(`当前加载 ${currentModelName}，选择 ${selectedModel} 需要重启 GenieAPIService`);
@@ -178,8 +171,8 @@ const GeniePlayground: React.FC = () => {
     clearImage();
 
     try {
-      // 只有非Ollama的视觉模型才能处理图片
-      if (!isOllamaModel && isVisionModel && hasImage) {
+      // 视觉模型 + 图片 -> 用 vision-chat 接口
+      if (isVisionModel && hasImage) {
         // 视觉模型 + 图片 -> 用 vision-chat 接口
         const res = await fetch(`${API_BASE}/vision-chat`, {
           method: 'POST',
@@ -343,12 +336,12 @@ const GeniePlayground: React.FC = () => {
           </div>
         )}
 
-        {!serviceAvailable && !ollamaAvailable && (
+        {!serviceAvailable && (
           <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300 flex items-start space-x-2">
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium">GenieAPIService 和 Ollama 都未启动</p>
-              <p className="mt-1">请启动「启动视觉模型服务.bat」或运行「ollama serve」</p>
+<p className="font-medium">GenieAPIService 未启动</p>
+              <p className="mt-1">请启动「启动视觉模型服务.bat」</p>
             </div>
           </div>
         )}
@@ -362,7 +355,7 @@ const GeniePlayground: React.FC = () => {
                 模型列表
               </h2>
               <div className="mb-2 px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-600 dark:text-amber-400">
-                NPU模型需重启切换 / Ollama模型需要服务运行
+                NPU模型需重启切换
               </div>
               <div className="space-y-2">
                 {models.filter(m => m.available).map(model => (
@@ -388,11 +381,6 @@ const GeniePlayground: React.FC = () => {
                         {model.type === 'embedding' && (
                           <span className="flex items-center px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">
                             EMB
-                          </span>
-                        )}
-                        {model.type === 'ollama' && (
-                          <span className="flex items-center px-1.5 py-0.5 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 rounded">
-                            Ollama
                           </span>
                         )}
                         <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 rounded">有权重</span>
@@ -681,19 +669,15 @@ const GeniePlayground: React.FC = () => {
             <div className={`rounded-xl p-4 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white shadow-lg'}`}>
               <h2 className="text-sm font-semibold mb-2">GenieAPIService 信息</h2>
               <div className="space-y-1 text-xs text-gray-500 dark:text-gray-400">
-                <p>服务地址: 127.0.0.1:8910 (NPU) / 11434 (Ollama)</p>
+                <p>服务地址: 127.0.0.1:8910 (NPU)</p>
                 <p>API格式: OpenAI 兼容</p>
                 <p>接口: /v1/chat/completions</p>
-                <p>限制: NPU/Ollama 各同时只能跑一个模型</p>
+                <p>限制: NPU 同时只能跑一个模型</p>
                 <p className="pt-1 border-t border-gray-200 dark:border-gray-700">NPU 模型:</p>
                 <p>· qwen2.5vl3b (视觉)</p>
                 <p>· Qwen2.0-7B-SSD (聊天)</p>
                 <p>· llama3.2-3b (聊天)</p>
                 <p>· bge-base-zh (嵌入)</p>
-                <p className="pt-1 border-t border-gray-200 dark:border-gray-700">Ollama 模型:</p>
-                <p>· glm-5.1-cloud (智谱云)</p>
-                <p>· gemma4</p>
-                <p>· gpt-oss-20b</p>
               </div>
             </div>
           </div>

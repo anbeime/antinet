@@ -424,7 +424,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
       
       // 切换到卡片视图
-      setActiveTab('cards');
+      setActiveTab('cards-management');
       
     } catch (error) {
       console.error('导入卡片失败:', error);
@@ -432,13 +432,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     }
   };
 
-  // 打开创建卡片模态框
+// 打开创建卡片模态框
   const openCreateModal = (color?: CardColor) => {
     if (color) {
       setCreateModalColor(color);
     }
     setShowCreateModal(true);
-    setActiveTab('cards');
+    setActiveTab('cards-management');
   };
 
   // 打开卡片详情模态框
@@ -1661,7 +1661,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             // 短暂延迟后打开创建卡片模态框，确保动画流畅
             setTimeout(() => {
               setCreateModalColor('blue'); // 默认使用蓝色卡片（核心概念）
-              setActiveTab('cards');
+              setActiveTab('cards-management');
               // 在实际应用中，这里可以预填充创建卡片的表单
               toast(`准备创建新卡片：${title}`, {
                 className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'
