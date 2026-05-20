@@ -11,6 +11,10 @@ import { useTheme } from '@/hooks/useTheme';
 
 const API_BASE = getApiBaseUrl()
 
+interface Props {
+  onNavigate?: (tab: string) => void;
+}
+
 interface GraphNode {
   id: string;
   name: string;
@@ -64,7 +68,7 @@ const sampleData = {
 
 const categoryColors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc9052', '#e06c8b'];
 
-const KnowledgeGraphView: React.FC = () => {
+const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
   useTheme();
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -158,8 +162,11 @@ const KnowledgeGraphView: React.FC = () => {
       if (!response.ok) throw new Error('API error: ' + response.status);
       const data = await response.json();
       console.log('[Search] API返回:', data);
+      // 先设置数据，再切换模式，避免竞态
       setApiData(data);
       setViewMode('api');
+      // 等待状态更新后再初始化图表
+      setTimeout(() => initChart(), 50);
     } catch (e) {
       console.error('Load KG failed:', e);
       alert('搜索失败: ' + e.message);
@@ -448,6 +455,12 @@ useEffect(() => {
       chartInstance.current.on('click', async (params) => {
         if (params.dataType === 'node') {
           const nodeId = params.data.id;
+          const nodeName = params.data.name;
+          
+          // 点击节点时选中显示在左侧面板
+          setSelectedNode(nodeName);
+          
+          // api模式从服务端获取卡片详情，sample模式显示提示
           if (nodeId && viewMode === 'api') {
             try {
               const res = await fetch(`${API_BASE}/api/knowledge/cards/${nodeId}`);
@@ -456,14 +469,22 @@ useEffect(() => {
                 setModalCard(card);
                 setModalOpen(true);
               } else {
-                setModalCard({ title: params.data.name || `卡片 ${nodeId}`, content: '卡片不存在或已删除', color: 'blue' });
+                setModalCard({ title: nodeName || `卡片 ${nodeId}`, content: '卡片不存在或已删除', color: 'blue' });
                 setModalOpen(true);
               }
             } catch (e) {
               console.error('加载卡片失败:', e);
-              setModalCard({ title: params.data.name || `卡片 ${nodeId}`, content: '加载失败: ' + String(e), color: 'red' });
+              setModalCard({ title: nodeName || `卡片 ${nodeId}`, content: '加载失败: ' + String(e), color: 'red' });
               setModalOpen(true);
             }
+          } else if (viewMode === 'sample') {
+            // sample模式显示示例节点信息
+            setModalCard({ 
+              title: nodeName || '示例节点', 
+              content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。', 
+              color: 'blue' 
+            });
+            setModalOpen(true);
           }
         }
       });
@@ -659,6 +680,14 @@ return (
           >
             <Trash2 className="w-4 h-4" />
             <span>删除节点</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate?.('knowledge-network')}
+            className="w-full flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600"
+          >
+            <Network className="w-4 h-4" />
+            <span>知识网络</span>
           </button>
 
           <div className="grid grid-cols-2 gap-2">

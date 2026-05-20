@@ -59,7 +59,7 @@ class Settings(BaseSettings):
 
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "llama3.2-3b"
-    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37")
+    MODEL_PATH: str = "C:/models/llama3.2-3b-8380-qnn2.37"
     AUTO_LOAD_MODEL: bool = False
 
     # QNN配置
@@ -86,10 +86,10 @@ class Settings(BaseSettings):
 
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "llama3.2-3b": {
-        "path": str(PROJECT_ROOT / "services" / "models" / "llama3.2-3b-8380-qnn2.37"),  # 打包后路径
+        "path": "C:/models/llama3.2-3b-8380-qnn2.37",  # 安装版路径
         "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "llama3.2-3b-8380-qnn2.37"),  # 打包后路径
             str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),  # 开发环境
-            "C:/models/llama3.2-3b-8380-qnn2.37",  # 安装版
         ],
         "qnn_version": "2.37",
         "type": "chat",
@@ -99,10 +99,10 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "recommended": True,
     },
     "qwen2.0-7b": {
-        "path": str(PROJECT_ROOT / "services" / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+        "path": "C:/models/Qwen2.0-7B-SSD-8380-2.34",
         "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
             str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
-            "C:/models/Qwen2.0-7B-SSD-8380-2.34",
         ],
         "qnn_version": "2.34",
         "type": "chat",
@@ -111,10 +111,10 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "performance": "medium",
     },
     "qwen2.5-vl-3b": {
-        "path": str(PROJECT_ROOT / "services" / "models" / "qwen2.5vl3b-8380-2.42"),
+        "path": "C:/models/qwen2.5vl3b-8380-2.42",
         "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "qwen2.5vl3b-8380-2.42"),
             str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
-            "C:/models/qwen2.5vl3b-8380-2.42",
         ],
         "qnn_version": "2.42",
         "type": "vision",

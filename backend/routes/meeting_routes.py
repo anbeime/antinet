@@ -566,7 +566,7 @@ def search_related_cards(query: str, limit: int = 10) -> tuple:
 async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[str]:
     """
     使用视觉模型分析图片，降级策略：
-    外部视觉模型(8910) → Ollama视觉模型 → 返回None
+    外部视觉模型(8910) → 返回None
     
     注意：不调用自身的 HTTP 接口（会死锁），不在 async 中直接调用 NPU 推理。
     """
@@ -629,10 +629,8 @@ async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[
 # 全局降级状态：如果某层失败，标记时间戳，短时间内不再尝试
 _degrade_state = {
     "npu_last_fail": 0,        # NPU 上次失败时间
-    "ollama_last_fail": 0,     # Ollama 上次失败时间
     "vision_last_fail": 0,     # 视觉模型(8910)上次失败时间
     "skip_npu_until": 0,       # 跳过 NPU 直到该时间
-    "skip_ollama_until": 0,    # 跳过 Ollama 直到该时间
     "skip_vision_until": 0,    # 跳过视觉模型直到该时间
 }
 _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
@@ -644,8 +642,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     调用LLM生成回复，降级策略（按优先级排序）：
     层1: NPU qwen2.0-7b（中文最强）
     层2: NPU llama3.2-3b（快速备用）
-    层3: Ollama gemma4（智能备用）
-    层4: 视觉模型（兜底）
+    层3: 视觉模型（兜底）
     
     闭环三增强：集成智能资源调度器
     """
@@ -665,7 +662,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     inference_start = _time.time()
 
     # ============ 层1: NPU qwen2.0-7b（中文最强） ============
-    if now > _degrade_state["skip_npu_until"]:
+    if now < _degrade_state["skip_npu_until"]:
         try:
             from models.model_loader import get_model_loader
             import asyncio as _asyncio
@@ -721,7 +718,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 scheduler.record_inference("qwen2.0-7b", latency, False, agent_id=agent_id)
 
     # ============ 层2: NPU llama3.2-3b（快速备用） ============
-    if now > _degrade_state["skip_npu_until"]:
+    if now < _degrade_state["skip_npu_until"]:
         try:
             from models.model_loader import get_model_loader
             import asyncio as _asyncio
@@ -768,66 +765,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 latency = _time.time() - inference_start
                 scheduler.record_inference("llama3.2-3b", latency, False, agent_id=agent_id)
 
-    # ============ 层3: Ollama gemma4（智能备用） ============
-    if now > _degrade_state["skip_ollama_until"]:
-        # 3a: 尝试 gemma4:latest
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "gemma4:latest",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": _max_tokens
-                        }
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("message", {}).get("content", "").strip()
-                if content:
-                    logger.info(f"[Meeting] Ollama gemma4:latest 生成成功: {len(content)}字")
-                    return content
-        except Exception as e:
-            logger.debug(f"[Meeting] Ollama gemma4:latest 不可用: {e}")
-
-        # 3b: 尝试 gpt-oss:20b（备选模型）
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "gpt-oss:20b",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "stream": False,
-"options": {
-                            "temperature": 0.7,
-                            "num_predict": _max_tokens
-                        }
-                    }
-                )
-
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("message", {}).get("content", "").strip()
-                if content:
-                    logger.info(f"[Meeting] Ollama gpt-oss:20b 生成成功: {len(content)}字")
-                    return content
-        except Exception as e:
-            logger.debug(f"[Meeting] Ollama gpt-oss:20b 也不可用: {e}")
-            _degrade_state["ollama_last_fail"] = now
-            _degrade_state["skip_ollama_until"] = now + _DEGRADE_COOLDOWN
-
-# ============ 层4: Genie HTTP（兜底，先查当前加载的模型） ============
+    # ============ 层3: Genie HTTP（兜底，先查当前加载的模型） ============
     if now > _degrade_state["skip_vision_until"]:
         try:
             # 截断过长的输入：3B模型有效上下文约2000中文字
@@ -840,14 +778,14 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
 
             # 先查当前加载的模型名
             _genie_model = "llama3.2-3b-8380-qnn2.37"  # 默认
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as ac:
-                    models_resp = await ac.get("http://127.0.0.1:8910/v1/models")
-                    if models_resp.status_code == 200:
-                        _genie_model = models_resp.json().get("data", [{}])[0].get("id", _genie_model)
-                        logger.info(f"[Meeting] Genie 当前模型: {_genie_model}")
-            except Exception as me:
-                logger.debug(f"[Meeting] 获取 Genie 模型失败，使用默认: {me}")
+            # try:
+            #     async with httpx.AsyncClient(timeout=5.0) as ac:
+            #         models_resp = await ac.get("http://127.0.0.1:8910/v1/models")
+            #         if models_resp.status_code == 200:
+            #             _genie_model = models_resp.json().get("data", [{}])[0].get("id", _genie_model)
+            #             logger.info(f"[Meeting] Genie 当前模型: {_genie_model}")
+            # except Exception as me:
+            #     logger.debug(f"[Meeting] 获取 Genie 模型失败，使用默认: {me}")
 
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(

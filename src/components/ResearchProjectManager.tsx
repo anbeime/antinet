@@ -757,6 +757,7 @@ const ProjectDetailPanel: React.FC<{
   const [unconvertedCards, setUnconvertedCards] = useState<ProjectCard[]>([]);
   const [exportingPPT, setExportingPPT] = useState(false);
   const [pptResult, setPptResult] = useState<{ filename: string; success: boolean; message: string } | null>(null);
+  
 
   const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
 
@@ -816,6 +817,8 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
+  
+
   // 导出专题为PPT
   const handleExportPPT = async () => {
     if (!project.id || cards.length === 0) {
@@ -852,7 +855,6 @@ const ProjectDetailPanel: React.FC<{
       const data = await response.json();
       if (data.success && data.filename) {
         const filename = data.filename as string;
-        // 存储文件名
         sessionStorage.setItem('lastPPTFileName', filename);
         setPptResult({
           filename,
@@ -992,15 +994,7 @@ const ProjectDetailPanel: React.FC<{
                   </span>
                 ))}
               </div>
-              <button
-                onClick={handleExportPPT}
-                disabled={exportingPPT || cards.length === 0}
-                className="flex items-center px-3 py-1.5 text-sm text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 rounded-lg transition-colors shadow-sm"
-                title="将专题卡片导出为PPT"
-              >
-                <ExternalLink className="w-4 h-4 mr-1" />
-                {exportingPPT ? '导出中...' : '导出PPT'}
-              </button>
+              
               <PDFDownloadLink
                 document={<ProjectPDF cards={cards} projectName={project.name} />}
                 fileName={`${project.name}-专题卡片.pdf`}
@@ -1031,68 +1025,7 @@ const ProjectDetailPanel: React.FC<{
             </div>
           </div>
 
-          {/* PPT 导出结果弹窗 */}
-          {pptResult && (
-            <Portal>
-              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setPptResult(null)}>
-                <motion.div
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4"
-                >
-                  <div className="text-center">
-                    {pptResult.success ? (
-                      <>
-                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/40 mb-4">
-                          <ExternalLink className="w-7 h-7 text-green-600 dark:text-green-400" />
-                        </div>
-                        <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">PPT 导出成功</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{pptResult.message}</p>
-                        <div className="flex justify-center space-x-3">
-                          <button
-                            onClick={() => handleDownloadPPT(pptResult.filename)}
-                            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors text-sm"
-                          >
-                            下载 PPT
-                          </button>
-                          <button
-                            onClick={() => handlePreviewPPT(pptResult.filename)}
-                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
-                          >
-                            预览
-                          </button>
-                          <button
-                            onClick={() => setPptResult(null)}
-                            className="px-5 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
-                          >
-                            关闭
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-red-100 dark:bg-red-900/40 mb-4">
-                          <AlertTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
-                        </div>
-                        <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-white">导出失败</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">{pptResult.message}</p>
-                        <div className="flex justify-center">
-                          <button
-                            onClick={() => setPptResult(null)}
-                            className="px-5 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
-                          >
-                            关闭
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </motion.div>
-              </div>
-            </Portal>
-          )}
-
+          
           {/* Tab 切换 */}
           <div className="max-w-7xl mx-auto px-6">
             <div className="flex space-x-1">

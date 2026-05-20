@@ -1322,24 +1322,14 @@ const PDFAnalysis: React.FC = () => {
                   )}
 
                   {activeFeature === 'generate' && (
-                    <>
-                      <button
-                        onClick={() => handleExtractKnowledge(false)}
-                        disabled={!uploadedFile || isProcessing}
-                        className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                        生成知识卡片
-                      </button>
-                      <button
-                        onClick={() => handleExtractKnowledge(true)}
-                        disabled={!uploadedFile || isProcessing}
-                        className="w-full py-3 mt-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                        🤖 AI智能生成
-                      </button>
-                    </>
+                    <button
+                      onClick={() => handleExtractKnowledge(false)}
+                      disabled={!uploadedFile || isProcessing}
+                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
+                      生成知识卡片
+                    </button>
                   )}
 
                   {activeFeature === 'merge' && (
@@ -1499,7 +1489,7 @@ const PDFAnalysis: React.FC = () => {
                         </button>
                       </div>
                       <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden h-64 bg-gray-100 dark:bg-gray-700">
-                        <PDFViewerInternal />
+                        <PDFViewerInternal externalFile={uploadedFile} />
                       </div>
                     </div>
                   )}
@@ -1875,7 +1865,7 @@ const PDFAnalysis: React.FC = () => {
                       PDF查看器
                     </h3>
                     <div className="flex-1 min-h-[500px]">
-                      <PDFViewerInternal />
+                      <PDFViewerInternal externalFile={uploadedFile} />
                     </div>
                   </div>
                 </div>
@@ -1890,7 +1880,7 @@ const PDFAnalysis: React.FC = () => {
   );
 };
 
-const PDFViewerInternal: React.FC = () => {
+const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalFile }) => {
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -1902,6 +1892,34 @@ const PDFViewerInternal: React.FC = () => {
   React.useEffect(() => {
     loadPDFJS();
   }, []);
+
+  // 监听外部文件变化并自动加载
+  React.useEffect(() => {
+    if (!externalFile) return;
+    const loadExternalFile = async () => {
+      setIsLoading(true);
+      setFileName(externalFile.name);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        try {
+          const pdfjs = await waitForPdfJs();
+          const doc = pdfjs.getDocument({ data });
+          const realDoc = doc.promise ? await doc.promise : doc;
+          setPdfDoc(realDoc);
+          setTotalPages(realDoc.numPages);
+          setCurrentPage(1);
+        } catch (error) {
+          console.error('[PDF] 加载外部PDF失败:', error);
+          toast.error('加载PDF预览失败');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      reader.readAsArrayBuffer(externalFile);
+    };
+    loadExternalFile();
+  }, [externalFile]);
 
   React.useEffect(() => {
     if (pdfDoc && currentPage > 0) {
@@ -1947,19 +1965,26 @@ const loadPDFJS = async () => {
       toast.error('请选择PDF文件');
       return;
     }
+    console.log('[PDF] 上传文件:', file.name, file.size, 'bytes');
     setIsLoading(true);
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
+      console.log('[PDF] FileReader loaded, data length:', data.length);
       try {
         const pdfjs = await waitForPdfJs();
-        const doc = await pdfjs.getDocument({ data });
-        setPdfDoc(doc);
-        setTotalPages(doc.numPages);
+        console.log('[PDF] PDF.js loaded:', !!pdfjs, 'version:', pdfjs?.version);
+        const doc = pdfjs.getDocument({ data });
+        console.log('[PDF] getDocument returned, type:', typeof doc, 'keys:', Object.keys(doc), 'numPages:', doc.numPages);
+        // 如果是 loading task，用 .promise 获取真正文档
+        const realDoc = doc.promise ? await doc.promise : doc;
+        console.log('[PDF] Final doc, numPages:', realDoc.numPages);
+        setPdfDoc(realDoc);
+        setTotalPages(realDoc.numPages);
         setCurrentPage(1);
       } catch (error) {
-        console.error('加载PDF失败:', error);
+        console.error('[PDF] 加载PDF失败:', error);
         toast.error('加载PDF失败');
       } finally {
         setIsLoading(false);
@@ -1969,20 +1994,45 @@ const loadPDFJS = async () => {
   };
 
   const renderPage = async (pageNum: number) => {
-    if (!pdfDoc || !canvasRef.current) return;
-    if (typeof pdfDoc.getPage !== 'function') return;
+    console.log('[PDF] renderPage called, pdfDoc:', pdfDoc, 'canvas:', !!canvasRef.current);
+    if (!pdfDoc || !canvasRef.current) {
+      console.log('[PDF] Early return: pdfDoc or canvas missing');
+      return;
+    }
+    console.log('[PDF] pdfDoc keys:', Object.keys(pdfDoc), 'numPages:', pdfDoc.numPages);
+    if (typeof pdfDoc.getPage !== 'function') {
+      console.log('[PDF] getPage not a function, checking if it exists:', pdfDoc.getPage);
+      // 可能 getDocument 返回的是 loading task，需要调用 .promise
+      if (pdfDoc.promise) {
+        console.log('[PDF] getDocument returned a promise/task, waiting...');
+        try {
+          const realDoc = await pdfDoc.promise;
+          console.log('[PDF] Resolved to real doc, numPages:', realDoc.numPages);
+          setPdfDoc(realDoc);
+          return;
+        } catch (err) {
+          console.error('[PDF] Failed to resolve doc promise:', err);
+          return;
+        }
+      }
+      return;
+    }
     try {
       const page = await pdfDoc.getPage(pageNum);
+      console.log('[PDF] Got page, numPages:', pdfDoc.numPages);
       const viewport = page.getViewport({ scale });
+      console.log('[PDF] Viewport:', viewport.width, 'x', viewport.height);
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       canvas.height = viewport.height;
       canvas.width = viewport.width;
+      console.log('[PDF] Canvas dims set:', canvas.width, 'x', canvas.height, 'context:', !!context);
       if (context) {
         await page.render({ canvasContext: context, viewport }).promise;
+        console.log('[PDF] Render complete');
       }
     } catch (error) {
-      console.error('渲染页面失败:', error);
+      console.error('[PDF] 渲染页面失败:', error);
     }
   };
 

@@ -189,19 +189,6 @@ async def check_genie_service():
     except:
         pass
     
-    # 检查 Ollama 服务
-    ollama_available = False
-    ollama_models = []
-    try:
-        async with httpx.AsyncClient(timeout=5.0, proxy=None) as client:
-            response = await client.get("http://localhost:11434/api/tags")
-            if response.status_code == 200:
-                ollama_available = True
-                data = response.json()
-                ollama_models = [m.get("name", "") for m in data.get("models", [])]
-    except:
-        pass
-    
     is_vision = "vl" in genie_current.lower() or "vision" in genie_current.lower()
     
     # 获取从 GenieAPIService 真实获取的模型
@@ -215,7 +202,6 @@ async def check_genie_service():
     # 前端兼容字段（扁平化）
     return {
         "available": genie_available,
-        "ollama_available": ollama_available,
         "loaded_models": genie_loaded,
         "current_model": genie_current,
         "current_model_type": "vision" if is_vision else "chat",
