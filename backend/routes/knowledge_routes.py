@@ -1422,38 +1422,10 @@ async def import_file(file: UploadFile = File(...)):
             finally:
                 shutil.rmtree(extract_dir, ignore_errors=True)
 
-        # ========== 8智能体生成四色卡片（取代关键词规则） ==========
+        # ========== 批量导入：直接用关键词规则，秒速完成 ==========
+        # （8智能体调用LLM有超时等待，不适合批量导入）
         cards = []
         if extracted_text and len(extracted_text.strip()) > 20:
-            try:
-                # 调用8智能体引擎生成四色卡片
-                from routes.eight_agent_engine import EightAgentEngine
-                agent_engine = EightAgentEngine()
-                agent_result = await agent_engine.process(
-                    query=f"分析文件 '{filename}' 的内容并提取知识卡片",
-                    context={
-                        "raw_material": extracted_text[:8000],  # 限制输入长度
-                        "file_name": filename,
-                        "file_type": file_ext
-                    },
-                    user_id="batch_import"
-                )
-                if agent_result.get("status") == "success":
-                    agent_cards = agent_result.get("four_color_cards", [])
-                    for card in agent_cards:
-                        cards.append({
-                            'title': card.get('title', '知识卡片')[:100],
-                            'content': card.get('content', ''),
-                            'card_type': card.get('card_type', 'blue'),
-                            'confidence': card.get('confidence', 0.7),
-                            'address': f"{card.get('card_type', 'BLUE').upper()}{len(cards) + 1}"
-                        })
-                    logger.info(f"[8智能体] {filename}: 成功生成 {len(cards)} 张卡片")
-            except Exception as e:
-                logger.warning(f"[8智能体] 卡片生成失败，回退到关键词模式: {e}")
-
-        # 回退：如果8智能体未生成任何卡片，使用关键词规则
-        if not cards:
             paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
             if not paragraphs:
                 paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
