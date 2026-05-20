@@ -35,7 +35,7 @@ class InterpreterAgent:
         生成解释说明
         
         参数：
-            facts: 事实卡片
+            facts: 事实卡片（可以是字典或预处理的DataFrame数据）
             user_query: 用户查询
             current_date: 当前日期
         
@@ -46,6 +46,11 @@ class InterpreterAgent:
             self.task_status = "执行中"
             self.log.append(f"[监察院] 开始生成解释说明")
             
+            # 安全检查：确保 facts 是字典
+            if not isinstance(facts, dict):
+                self.log.append(f"[监察院] facts 不是字典类型，返回空解释")
+                return {"explanations": {}, "statistics": {"total": 0, "by_color": {}}, "log": self.log}
+            
             # 1. 上下文检索
             context = await self._retrieve_context(user_query, current_date)
             self.log.append(f"[监察院] 上下文检索完成: {len(context)}条上下文")
@@ -53,8 +58,13 @@ class InterpreterAgent:
             # 2. 解释生成
             explanations = {}
             for color, fact_list in facts.items():
+                if not isinstance(fact_list, list):
+                    continue
                 explanations[color] = []
                 for fact in fact_list:
+                    # 确保 fact 是字典类型
+                    if not isinstance(fact, dict):
+                        continue
                     explanation = await self._generate_explanation(fact, context, user_query)
                     explanations[color].append(explanation)
             
@@ -270,64 +280,46 @@ class InterpreterAgent:
     
     async def _call_genie_api(self, prompt: str) -> str:
         """
-        调用LLM推理（优先走 call_llm 降级链，回退到直接HTTP调用）
-        
-        降级链：8910 Genie API → Ollama → NPU进程内 → 失败
+        调用LLM推理（直接使用 genie 8910 HTTP API）
+        带重试逻辑：遇到429限流时等待后重试
         """
-        try:
-            from routes.meeting_routes import call_llm
-            result = await call_llm(
-                "你是监察院，负责为事实生成解释说明。输出JSON格式，只输出JSON不要其他内容。", 
-                prompt,
-                max_tokens=1024
-            )
-            if result:
-                return result
-        except Exception as e:
-            logger.debug(f"[监察院] call_llm降级链不可用，回退直接HTTP: {e}")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "qwen2.5vl3b-8380-2.42",
+                            "messages": [
+                                {"role": "system", "content": "你是监察院，负责为事实生成解释说明。输出JSON格式，只输出JSON不要其他内容。"},
+                                {"role": "user", "content": prompt}
+                            ],
+                            "size": 1024,
+                            "seed": 42,
+                            "temp": 0.7,
+                            "top_k": 1,
+                            "top_p": 1.0
+                        }
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if content:
+                        return content
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    wait_time = (attempt + 1) * 2  # 2, 4, 6 秒
+                    logger.warning(f"[监察院] 8910限流(429)，{wait_time}秒后重试 ({attempt+1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                    continue
+                logger.error(f"[监察院] 8910 Genie API HTTP错误: {e}")
+                break
+            except Exception as e:
+                logger.error(f"[监察院] 8910 Genie API不可用: {e}")
+                break
         
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": "qwen2.5vl3b-8380-2.42",
-                        "messages": [
-                            {"role": "system", "content": "你是监察院，负责为事实生成解释说明。"},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "size": 1024,
-                        "seed": 42,
-                        "temp": 0.7,
-                        "top_k": 1,
-                        "top_p": 1.0
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if content:
-                    return content
-        except Exception as e:
-            logger.debug(f"[监察院] 8910 Genie API不可用: {e}")
-        
-        try:
-            from models.model_loader import get_model_loader
-            loader = get_model_loader("qwen2.0-7b")
-            loader.load()
-            loop = asyncio.get_event_loop()
-            result = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: loader.infer(
-                    prompt=prompt[:800], max_new_tokens=512, temperature=0.7
-                )),
-                timeout=30.0
-            )
-            if result:
-                return result
-        except Exception as e:
-            logger.debug(f"[监察院] NPU进程内推理失败: {e}")
-        
-        # JSON解析失败不影响流程，回退到空列表
+        return ""
     
     def _parse_json_response(self, response: str) -> Dict:
         """

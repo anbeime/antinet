@@ -700,8 +700,21 @@ class MemoryAgent:
             agent_dir = os.path.dirname(os.path.abspath(__file__))
             backend_dir = os.path.dirname(agent_dir)
             antinet_db = os.path.join(backend_dir, "data", "antinet.db")
+            
+            # 检查数据库和表是否存在
+            if not os.path.exists(antinet_db):
+                logger.info("知识卡片数据库不存在，跳过知识卡片检索")
+                return []
+            
             conn = sqlite3.connect(antinet_db)
             cursor = conn.cursor()
+            
+            # 检查 knowledge_cards 表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_cards'")
+            if not cursor.fetchone():
+                logger.info("knowledge_cards 表不存在，跳过知识卡片检索")
+                conn.close()
+                return []
 
             # 构建关键词查询条件
             conditions = []

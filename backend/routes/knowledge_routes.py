@@ -1198,11 +1198,20 @@ async def import_file(file: UploadFile = File(...)):
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute('''
-                INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash))
-            conn.commit()
+            # 检查是否已存在相同 hash 的记录
+            cursor.execute("SELECT source_file_id FROM source_files WHERE content_hash = ?", (content_hash,))
+            existing = cursor.fetchone()
+            if existing:
+                # 文件已存在，使用已有的 source_file_id
+                source_file_id = existing[0]
+                logger.info(f"文件已存在，使用已有记录: {source_file_id}")
+            else:
+                # 插入新记录
+                cursor.execute('''
+                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash))
+                conn.commit()
         except Exception as e:
             logger.warning(f"插入源文件记录失败: {e}")
         conn.close()
