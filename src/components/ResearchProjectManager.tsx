@@ -1004,18 +1004,18 @@ const ProjectDetailPanel: React.FC<{
                   loading ? '生成中...' : '导出PDF'
                 )}
               </PDFDownloadLink>
-              <button
-                onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}
-                className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
-                  showKnowledgeGraph
-                    ? 'text-white bg-indigo-600 hover:bg-indigo-700'
-                    : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
-                }`}
-                title="查看专题知识网络"
-              >
-                <Network className="w-4 h-4 mr-1" />
-                {showKnowledgeGraph ? '关闭网络' : '知识网络'}
-              </button>
+              {/*<button*/}
+              {/*  onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}*/}
+              {/*  className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${*/}
+              {/*    showKnowledgeGraph*/}
+              {/*      ? 'text-white bg-indigo-600 hover:bg-indigo-700'*/}
+              {/*      : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'*/}
+              {/*  }`}*/}
+              {/*  title="查看专题知识网络"*/}
+              {/*>*/}
+              {/*  <Network className="w-4 h-4 mr-1" />*/}
+              {/*  {showKnowledgeGraph ? '关闭网络' : '知识网络'}*/}
+              {/*</button>*/}
               <button
                 onClick={onClose}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -1040,39 +1040,39 @@ const ProjectDetailPanel: React.FC<{
                 <Layers className="w-4 h-4 mr-2" />
                 四色卡片 ({cards.length})
               </button>
-              <button
-                onClick={() => setActiveTab('tasks')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'tasks'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <CheckSquare className="w-4 h-4 mr-2" />
-                关联任务 ({tasks.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('workflow')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'workflow'
-                    ? 'border-green-500 text-green-600'
-: 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                工作流概览
-              </button>
-              <button
-                onClick={() => setActiveTab('network')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'network'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <Network className="w-4 h-4 mr-2" />
-                知识网络
-              </button>
+              {/*<button*/}
+              {/*  onClick={() => setActiveTab('tasks')}*/}
+              {/*  className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
+              {/*    activeTab === 'tasks'*/}
+              {/*      ? 'border-blue-500 text-blue-600'*/}
+              {/*      : 'border-transparent text-gray-500 hover:text-gray-700'*/}
+              {/*  }`}*/}
+              {/*>*/}
+              {/*  <CheckSquare className="w-4 h-4 mr-2" />*/}
+              {/*  关联任务 ({tasks.length})*/}
+              {/*</button>*/}
+{/*              <button*/}
+{/*                onClick={() => setActiveTab('workflow')}*/}
+{/*                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
+{/*                  activeTab === 'workflow'*/}
+{/*                    ? 'border-green-500 text-green-600'*/}
+{/*: 'border-transparent text-gray-500 hover:text-gray-700'*/}
+{/*                }`}*/}
+{/*              >*/}
+{/*                <BarChart3 className="w-4 h-4 mr-2" />*/}
+{/*                工作流概览*/}
+{/*              </button>*/}
+{/*              <button*/}
+{/*                onClick={() => setActiveTab('network')}*/}
+{/*                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
+{/*                  activeTab === 'network'*/}
+{/*                    ? 'border-indigo-500 text-indigo-600'*/}
+{/*                    : 'border-transparent text-gray-500 hover:text-gray-700'*/}
+{/*                }`}*/}
+{/*              >*/}
+{/*                <Network className="w-4 h-4 mr-2" />*/}
+{/*                知识网络*/}
+{/*              </button>*/}
             </div>
           </div>
         </div>
