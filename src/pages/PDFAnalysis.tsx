@@ -37,6 +37,13 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import PDFExporter from '@/components/PDFExporter';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// 配置 PDF.js worker 使用本地打包的文件（无需CDN）
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface ProcessingStatus {
   stage: string;
@@ -1889,9 +1896,7 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
   const [fileName, setFileName] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  React.useEffect(() => {
-    loadPDFJS();
-  }, []);
+  // pdfjs-dist 已通过 npm 本地导入，无需异步加载
 
   // 监听外部文件变化并自动加载
   React.useEffect(() => {
@@ -1903,7 +1908,7 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
       reader.onload = async (e) => {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         try {
-          const pdfjs = await waitForPdfJs();
+          const pdfjs = getPdfJs();
           const doc = pdfjs.getDocument({ data });
           const realDoc = doc.promise ? await doc.promise : doc;
           setPdfDoc(realDoc);
@@ -1927,37 +1932,8 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
     }
   }, [pdfDoc, currentPage, scale]);
 
-const loadPDFJS = async () => {
-    const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib?.getDocument) return; // 已加载且可用
-    const script = document.createElement('script');
-    script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
-      const pdfjs = (window as any).pdfjsLib;
-      if (pdfjs) pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
-    };
-    script.onerror = () => {
-      const script2 = document.createElement('script');
-      script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      script2.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        if (pdfjs) pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      };
-      document.head.appendChild(script2);
-    };
-    document.head.appendChild(script);
-  };
-
-  const waitForPdfJs = (timeout = 5000) => new Promise((resolve, reject) => {
-    const start = Date.now();
-    const check = () => {
-      const pdfjs = (window as any).pdfjsLib;
-      if (pdfjs?.getDocument) { resolve(pdfjs); return; }
-      if (Date.now() - start > timeout) { reject(new Error('PDF.js 加载超时')); return; }
-      setTimeout(check, 100);
-    };
-    check();
-  });
+// pdfjs-dist 已通过 npm 本地打包，无需 CDN 加载
+  const getPdfJs = () => pdfjsLib;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1973,7 +1949,7 @@ const loadPDFJS = async () => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       console.log('[PDF] FileReader loaded, data length:', data.length);
       try {
-        const pdfjs = await waitForPdfJs();
+        const pdfjs = getPdfJs();
         console.log('[PDF] PDF.js loaded:', !!pdfjs, 'version:', pdfjs?.version);
         const doc = pdfjs.getDocument({ data });
         console.log('[PDF] getDocument returned, type:', typeof doc, 'keys:', Object.keys(doc), 'numPages:', doc.numPages);
