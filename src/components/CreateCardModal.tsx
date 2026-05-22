@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { 
@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Image,
   Upload,
-  Trash2
+  Trash2,
+  FolderOpen
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -108,10 +109,29 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     color: initialColor,
     address: '',
     relatedCards: [],
-    images: []
+    images: [],
+    projectId: projectId
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingCount, setUploadingCount] = useState(0)
+  const [projects, setProjects] = useState<{id: number; name: string}[]>([])
+
+  // 加载专题列表
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
+        if (res.ok) {
+          const data = await res.json();
+          setProjects(data.map((p: any) => ({ id: p.id, name: p.name })));
+        }
+      } catch (e) {
+        console.error('加载专题失败', e);
+      }
+    };
+    loadProjects();
+  }, []);
+
   // 自动从内容提取标题
   const extractTitle = (content: string): string => {
     if (!content.trim()) return '';
@@ -159,7 +179,8 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         color: initialColor,
         address: '',
         relatedCards: [],
-        images: []
+        images: [],
+        projectId: projectId
       });
       setErrors({});
       setSearchQuery('');
@@ -380,7 +401,8 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     if (validateForm()) {
       onSave({
         ...formData,
-        projectId,
+        // 优先使用表单中选择的项目，否则使用传入的默认项目
+        projectId: formData.projectId ?? projectId,
         // 如果标题为空，自动从内容生成
         title: formData.title.trim() || extractTitle(formData.content),
         // 如果地址为空，自动生成
@@ -510,6 +532,27 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
               {cardTypeMap[formData.color].description}
             </p>
+          </div>
+
+          {/* 所属专题 */}
+          <div>
+            <label htmlFor="projectId" className="block text-sm font-medium mb-2">
+              <FolderOpen size={14} className="inline mr-1" />
+              所属专题
+              <span className="text-xs text-gray-400 ml-2 font-normal">（可选）</span>
+            </label>
+            <select
+              id="projectId"
+              name="projectId"
+              value={formData.projectId || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, projectId: e.target.value ? Number(e.target.value) : undefined }))}
+              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+            >
+              <option value="">不加入专题</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
           
           {/* 卡片标题 */}

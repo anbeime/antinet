@@ -290,6 +290,25 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // 单卡导出菜单
   const [showExportMenu, setShowExportMenu] = useState(false);
 
+  // 专题列表
+  const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
+
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : (data.projects || []);
+          setProjects(list.map((p: any) => ({ id: p.id, name: p.name })));
+        }
+      } catch (e) {
+        console.error('加载专题失败:', e);
+      }
+    };
+    if (isOpen) loadProjects();
+  }, [isOpen]);
+
   // 源文件溯源状态
   const [sourceFileInfo, setSourceFileInfo] = useState<SourceFileInfo | null>(null);
   const [sourceFileLoading, setSourceFileLoading] = useState(false);

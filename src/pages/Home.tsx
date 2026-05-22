@@ -52,6 +52,7 @@ import CardDetailModal from '@/components/CardDetailModal';
 import ImportModal from '@/components/ImportModal';
 import PPTAnalysis from '@/pages/PPTAnalysis';
 import ExcelAnalysis from '@/pages/ExcelAnalysis';
+import ResearchProjectManager from '@/components/ResearchProjectManager';
 import DataManagement from '@/pages/DataManagement';
 import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
@@ -73,8 +74,8 @@ import ReportAutomation from '@/pages/ReportAutomation';
 import OfficeDocs from '@/pages/OfficeDocs';
 
 
+
 // 定义卡片类型
-type CardColor = 'blue' | 'green' | 'yellow' | 'red';
 
 // 定义表单数据类型
 interface CardFormData {
@@ -154,6 +155,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   // 从URL参数获取tab
   const urlTab = searchParams.get('tab');
   
+  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research'>('cards');
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
@@ -1174,6 +1176,34 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 知识管理（卡片管理）视图 */}
         {activeTab === 'cards-management' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            {/* 子导航标签 */}
+            <div className="flex items-center border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setKnowledgeSubTab('cards')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'cards'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <Layers size={16} className="inline mr-1.5" />
+                卡片管理
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('research')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'research'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <BookOpen size={16} className="inline mr-1.5" />
+                专题研究
+              </button>
+            </div>
+
+            {knowledgeSubTab === 'cards' && (
+            <>
             {/* 页面标题 */}
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold">卡片管理</h1>
@@ -1398,6 +1428,12 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 </span>
               </div>
             )}
+            </>
+          )}
+
+          {knowledgeSubTab === 'research' && (
+            <ResearchProjectManager />
+          )}
           </motion.div>
         )}
 
