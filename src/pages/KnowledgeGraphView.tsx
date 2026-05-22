@@ -1,19 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
+import ReactMarkdown from 'react-markdown';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
-  Database, GitBranch, Network, X, ExternalLink, Edit3
+  Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 const API_BASE = getApiBaseUrl()
-
-interface Props {
-  onNavigate?: (tab: string) => void;
-}
 
 interface GraphNode {
   id: string;
@@ -68,7 +65,7 @@ const sampleData = {
 
 const categoryColors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc9052', '#e06c8b'];
 
-const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
+const KnowledgeGraphView: React.FC = () => {
   useTheme();
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -77,7 +74,15 @@ const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
   const [apiData, setApiData] = useState<{entities: any[], relations: any[]} | null>(null);
-  const [viewMode, setViewMode] = useState<'sample' | 'api'>('sample');
+  const [graphSource, setGraphSource] = useState<'sample' | 'api'>('sample');
+  const [pageMode, setPageMode] = useState<'graph' | 'list'>('graph');  // 图谱/列表 切换
+  const [listSearch, setListSearch] = useState('');
+  const [listColorFilter, setListColorFilter] = useState<string>('all');
+  const [listLoading, setListLoading] = useState(false);
+  const [listSelectedCard, setListSelectedCard] = useState<any>(null);
+  const [listMarkdown, setListMarkdown] = useState('');
+  const [listEditorSide, setListEditorSide] = useState<'edit' | 'preview' | 'split'>('preview');
+  const [listCardNetwork, setListCardNetwork] = useState<{nodes: any[], links: any[]}>({nodes: [], links: []});
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
@@ -130,18 +135,38 @@ const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
     }
   };
   
+  // ========== 带超时的 fetch（后端不可用时快速降级） ==========
+  const fetchWithTimeout = useCallback(async (url: string, timeoutMs = 8000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }, []);
+
   const loadCardBacklinks = async (cardId: number) => {
     setCurrentCardId(cardId);
     setLoadingAPI(true);
     try {
       // 从后端获取卡片的 backlinks 图谱
-      const response = await fetch(`${API_BASE}/api/backlinks/card/${cardId}/graph`, {
-        method: 'GET'
-      });
+      const response = await fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph`);
       if (response.ok) {
         const data = await response.json();
         setApiData(data);
-        setViewMode('api');
+        setGraphSource('api');
+        // 同步填充卡片列表，确保列表模式展示与图谱一致的卡片
+        if (data.nodes && Array.isArray(data.nodes)) {
+          const backlinkCards = data.nodes.map((n: any) => ({
+            id: n.id,
+            title: n.title || '',
+            content: '',
+            card_type: n.type || 'blue',
+            type: n.type || 'blue',
+          }));
+          setCards(backlinkCards);
+        }
       } else {
         console.error('加载链接图谱失败:', response.status);
       }
@@ -156,17 +181,24 @@ const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
     if (!topic.trim()) return;
     setLoadingAPI(true);
     try {
-      const response = await fetch(`${API_BASE}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`, {
-        method: 'GET',
-      });
+      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`);
       if (!response.ok) throw new Error('API error: ' + response.status);
       const data = await response.json();
       console.log('[Search] API返回:', data);
       // 先设置数据，再切换模式，避免竞态
       setApiData(data);
-      setViewMode('api');
-      // 等待状态更新后再初始化图表
-      setTimeout(() => initChart(), 50);
+      setGraphSource('api');
+      // 同步填充卡片列表，确保列表模式展示与图谱一致的卡片
+      if (data.suggestions && Array.isArray(data.suggestions)) {
+        const searchedCards = data.suggestions.map((s: any) => ({
+          id: s.card_id,
+          title: s.title || '',
+          content: s.content || '',
+          card_type: s.card_type || s.type || 'blue',
+          type: s.card_type || s.type || 'blue',
+        }));
+        setCards(searchedCards);
+      }
     } catch (e) {
       console.error('Load KG failed:', e);
       alert('搜索失败: ' + e.message);
@@ -177,14 +209,65 @@ const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
 
   // 加载所有卡片列表
   const loadCards = async () => {
+    setListLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/knowledge/cards?limit=1000`);
+      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards?limit=1000`);
       if (response.ok) {
         const data = await response.json();
         setCards(data.cards || []);
       }
     } catch (e) {
       console.error('加载卡片列表失败:', e);
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  // ========== 列表模式 - 加载卡片详情 ==========
+  const loadCardForList = async (cardId: number) => {
+    try {
+      const cardRes = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards/${cardId}`);
+      if (!cardRes.ok) throw new Error('加载卡片失败');
+      const card = await cardRes.json();
+      setListSelectedCard(card);
+      setListMarkdown(`# ${card.title || '无标题'}\n\n${card.content || ''}`);
+      setListEditorSide('preview');
+
+      // 并行加载知识网络
+      fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph?max_depth=1`)
+        .then(async (netRes) => {
+          if (netRes.ok) {
+            const netData = await netRes.json();
+            setListCardNetwork({ nodes: netData.nodes || [], links: netData.links || [] });
+          }
+        })
+        .catch(() => setListCardNetwork({ nodes: [], links: [] }));
+    } catch (e) {
+      console.error('加载卡片详情失败:', e);
+    }
+  };
+
+  const handleListSave = async () => {
+    if (!listSelectedCard?.id) return;
+    // 从 markdown 提取标题和内容
+    const lines = listMarkdown.split('\n');
+    const title = lines[0]?.startsWith('# ') ? lines[0].slice(2).trim() : (listSelectedCard.title || '无标题');
+    const content = lines[0]?.startsWith('# ') ? lines.slice(2).join('\n') : listMarkdown;
+    try {
+      const res = await fetch(`${API_BASE}/api/knowledge/cards/${listSelectedCard.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, type: listSelectedCard.card_type || listSelectedCard.type || 'blue' }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setListSelectedCard(updated);
+        setListMarkdown(`# ${updated.title || title}\n\n${updated.content || content}`);
+        setListEditorSide('preview');
+        loadCards(); // 刷新列表
+      }
+    } catch (e) {
+      console.error('保存失败:', e);
     }
   };
 
@@ -241,9 +324,12 @@ const KnowledgeGraphView: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
-  // 初始化时加载卡片列表
+  // 初始化时加载卡片列表（如果没有 ?card=xxx 参数才加载全部卡片）
   useEffect(() => {
-    loadCards();
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('card')) {
+      loadCards();
+    }
   }, []);
 
 // 计算图谱显示数据（从API响应转换）
@@ -334,12 +420,17 @@ const computeDisplayData = (data: any) => {
 };
 
 useEffect(() => {
-    initChart();
+    // 切换到图谱模式时重新初始化图表
+    if (pageMode === 'graph') {
+      // 延迟确保DOM已渲染
+      const timer = setTimeout(() => initChart(), 100);
+      return () => clearTimeout(timer);
+    }
     return () => {
       mountedRef.current = false;
       chartInstance.current?.dispose();
     };
-  }, [graphData, apiData]);
+  }, [graphData, apiData, pageMode]);
 
   const initChart = () => {
     try {
@@ -355,7 +446,7 @@ useEffect(() => {
 
       // 计算 displayData
       let displayData;
-      if (viewMode === 'api' && apiData) {
+      if (graphSource === 'api' && apiData) {
         displayData = computeDisplayData(apiData);
       } else {
         displayData = graphData;
@@ -460,9 +551,9 @@ useEffect(() => {
         setSelectedNode(nodeName);
 
         // api模式从服务端获取卡片详情，sample模式显示提示
-        if (nodeId && viewMode === 'api') {
+        if (nodeId && graphSource === 'api') {
           openCardDetail(nodeId);
-        } else if (viewMode === 'sample') {
+        } else if (graphSource === 'sample') {
           setModalCard({
             title: nodeName || '示例节点',
             content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。',
@@ -598,10 +689,39 @@ useEffect(() => {
 return (
     <div className="flex h-full">
       <aside className="w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
-        <h2 className="text-lg font-bold flex items-center space-x-2 mb-4">
-          <Network className="w-5 h-5" />
-          <span>知识图谱</span>
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold flex items-center space-x-2">
+            <Network className="w-5 h-5" />
+            <span>知识图谱</span>
+          </h2>
+        </div>
+
+        {/* 返回工作台入口 */}
+        <button
+          onClick={() => window.open('/knowledge-workbench', '_blank')}
+          className="w-full mb-3 flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 text-sm"
+        >
+          <ExternalLink className="w-4 h-4" />
+          <span>知识图谱工作台</span>
+        </button>
+
+        {/* 图谱 / 列表 切换 */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setPageMode('graph')}
+            className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'graph' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-900/30'}`}
+          >
+            <Network className="w-4 h-4" />
+            <span>图谱</span>
+          </button>
+          <button
+            onClick={() => { setPageMode('list'); if (graphSource === 'sample' || cards.length === 0) loadCards(); }}
+            className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'list' ? 'bg-purple-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-purple-100 dark:hover:bg-purple-900/30'}`}
+          >
+            <List className="w-4 h-4" />
+            <span>列表</span>
+          </button>
+        </div>
         
         {currentCardId && (
           <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
@@ -610,18 +730,14 @@ return (
             <div className="text-xs text-purple-500 dark:text-purple-400 mt-1">
               {apiData?.nodes?.length || 0} 个关联节点
             </div>
-            <button
-              onClick={() => window.open(`/?highlightCard=${currentCardId}`, '_blank')}
-              className="mt-2 w-full py-1.5 text-xs bg-purple-500 text-white rounded hover:bg-purple-600"
-            >
-              在新窗口打开
-            </button>
           </div>
         )}
 
         <div className="space-y-3 mb-4">
           <div className="flex space-x-2">
             <input
+              id="topic-search"
+              name="topic"
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
@@ -639,16 +755,16 @@ return (
           </div>
           
           <div className="flex space-x-1">
-            <button
-              onClick={() => { setViewMode('sample'); setApiData(null); initChart(); }}
-              className={`flex-1 px-2 py-1 text-xs rounded ${viewMode === 'sample' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
-            >
-              示例
-            </button>
+          <button
+            onClick={() => { setGraphSource('sample'); setApiData(null); setCards([]); loadCards(); initChart(); }}
+            className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'sample' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+          >
+            示例
+          </button>
             <button
               onClick={() => { if(topic.trim()) loadKnowledgeGraph(); }}
               disabled={!topic.trim()}
-              className={`flex-1 px-2 py-1 text-xs rounded ${viewMode === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+              className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
             >
               API数据
             </button>
@@ -672,14 +788,6 @@ return (
           >
             <Trash2 className="w-4 h-4" />
             <span>删除节点</span>
-          </button>
-
-          <button
-            onClick={() => onNavigate?.('knowledge-network')}
-            className="w-full flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600"
-          >
-            <Network className="w-4 h-4" />
-            <span>知识网络</span>
           </button>
 
           <div className="grid grid-cols-2 gap-2">
@@ -725,73 +833,165 @@ return (
           </ul>
         </div>
 
-        {/* 卡片列表 */}
-        <div className="mt-6">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">卡片列表</h3>
-            <button
-              onClick={loadCards}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
-              title="刷新卡片列表"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-gray-400" />
-            </button>
-          </div>
-          <div className="space-y-1 max-h-64 overflow-y-auto">
-            {cards.length === 0 ? (
-              <p className="text-xs text-gray-400 dark:text-gray-500 py-2">暂无卡片</p>
-            ) : (
-              cards.map((card) => {
-                const colorMap: Record<string, string> = {
-                  blue: 'bg-blue-500',
-                  green: 'bg-green-500',
-                  yellow: 'bg-yellow-500',
-                  red: 'bg-red-500',
-                };
-                const typeLabel: Record<string, string> = {
-                  blue: '事实',
-                  green: '解释',
-                  yellow: '风险',
-                  red: '行动',
-                };
-                const type = card.card_type || card.type || 'blue';
-                return (
-                  <div
-                    key={card.id}
-                    onClick={() => openCardDetail(card.id)}
-                    className="p-2 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-transparent hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className={`text-xs px-1.5 py-0.5 rounded text-white ${colorMap[type] || colorMap.blue}`}>
-                        {typeLabel[type] || '事实'}
-                      </span>
-                      <span className="text-xs text-gray-400">#{card.id}</span>
-                    </div>
-                    <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">
-                      {card.title || '无标题'}
-                    </p>
-                    {card.content && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                        {card.content.substring(0, 40)}
-                        {card.content.length > 40 ? '...' : ''}
-                      </p>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
       </aside>
 
-      <main className="flex-1 relative">
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
-            <Loader className="w-8 h-8 animate-spin text-blue-500" />
+      {pageMode === 'list' ? (
+        /* ========== 卡片列表 - 双栏布局（仿工作台） ========== */
+        <>
+          {/* 左栏：卡片列表 */}
+          <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold dark:text-white flex items-center gap-1.5">
+                  <List className="w-4 h-4" /> 卡片列表
+                </h2>
+                <button onClick={loadCards} disabled={listLoading}
+                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50">
+                  <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input id="list-search" name="listSearch" type="text" placeholder="搜索卡片..."
+                  value={listSearch} onChange={e => setListSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600" />
+              </div>
+              <div className="flex gap-1">
+                {(['all','blue','green','yellow','red'] as const).map(k => {
+                  const labels: Record<string,string> = { all:'全部', blue:'事实', green:'解释', yellow:'风险', red:'行动' };
+                  const clrs: Record<string,string> = { all:'bg-gray-500', blue:'bg-blue-500', green:'bg-green-500', yellow:'bg-yellow-500', red:'bg-red-500' };
+                  const active = listColorFilter === k;
+                  return <button key={k} onClick={() => setListColorFilter(k)}
+                    className={`flex-1 px-2 py-1 text-xs rounded ${active ? clrs[k]+' text-white' : 'bg-gray-100 dark:bg-gray-700'}`}>{labels[k]}</button>;
+                })}
+              </div>
+            </div>
+
+            {/* 卡片条目 */}
+            <div className="flex-1 overflow-y-auto">
+              {listLoading ? (
+                <div className="flex items-center justify-center h-32"><Loader className="w-6 h-6 animate-spin text-blue-500" /></div>
+              ) : (() => {
+                const clrMap: Record<string,string> = { blue:'bg-blue-500', green:'bg-green-500', yellow:'bg-yellow-500', red:'bg-red-500' };
+                const clrLight: Record<string,string> = { blue:'bg-blue-50 dark:bg-blue-900/20', green:'bg-green-50 dark:bg-green-900/20', yellow:'bg-yellow-50 dark:bg-yellow-900/20', red:'bg-red-50 dark:bg-red-900/20' };
+                const lbl: Record<string,string> = { blue:'事实', green:'解释', yellow:'风险', red:'行动' };
+                const filtered = cards.filter(card => {
+                  const t = card.card_type || card.type || 'blue';
+                  if (listColorFilter !== 'all' && t !== listColorFilter) return false;
+                  if (listSearch) { const q = listSearch.toLowerCase(); const ti = (card.title||'').toLowerCase(); const co = (card.content||'').toLowerCase(); if (!ti.includes(q) && !co.includes(q)) return false; }
+                  return true;
+                });
+                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{cards.length===0?'暂无卡片，请刷新':'无匹配卡片'}</div>;
+                return filtered.map((card: any) => {
+                  const t = card.card_type || card.type || 'blue';
+                  const isSel = listSelectedCard?.id === card.id;
+                  return (
+                    <motion.div key={card.id} initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }}
+                      onClick={() => loadCardForList(card.id)}
+                      className={`border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750 ${isSel ? clrLight[t] : ''}`}>
+                      <div className="p-3" style={isSel ? { borderLeft: `3px solid ${t==='blue'?'#3b82f6':t==='green'?'#22c55e':t==='yellow'?'#eab308':'#ef4444'}` } : undefined}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={`text-xs px-1.5 py-0.5 rounded text-white ${clrMap[t]}`}>{lbl[t]}</span>
+                          <span className="text-xs text-gray-400">#{card.id}</span>
+                        </div>
+                        <h3 className="font-medium text-sm truncate dark:text-white">{card.title||'无标题'}</h3>
+                        <p className="text-xs text-gray-500 line-clamp-2 mt-0.5">{card.content?.substring(0,80)||'无内容'}{card.content?.length>80?'...':''}</p>
+                      </div>
+                    </motion.div>
+                  );
+                });
+              })()}
+            </div>
           </div>
-        )}
-        <div ref={chartRef} className="w-full h-full" />
-      </main>
+
+          {/* 右栏：卡片详情 + 编辑/预览 */}
+          {listSelectedCard ? (
+            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+              {/* 头部 */}
+              <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
+                    {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
+                  <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* 编辑/预览/分屏切换 */}
+                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                    {(['edit','preview','split'] as const).map(s => (
+                      <button key={s} onClick={() => { setListEditorSide(s); if(s==='edit'){setListMarkdown(`# ${listSelectedCard.title||'无标题'}\n\n${listSelectedCard.content||''}`);} }}
+                        className={`px-2.5 py-1 text-xs rounded-md ${listEditorSide===s?'bg-white dark:bg-gray-600 shadow-sm font-medium':'text-gray-500'}`}>
+                        {s==='edit'?'编辑':s==='preview'?'预览':'分屏'}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setListSelectedCard(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><X className="w-4 h-4" /></button>
+                </div>
+              </div>
+
+              {/* 编辑区 */}
+              <div className="flex-1 flex overflow-hidden min-h-0">
+                {(listEditorSide==='edit'||listEditorSide==='split') && (
+                  <div className={`flex flex-col ${listEditorSide==='split'?'w-1/2 border-r border-gray-200 dark:border-gray-700':'flex-1'}`}>
+                    <textarea
+                      id="list-markdown-editor"
+                      name="listMarkdown"
+                      value={listMarkdown}
+                      onChange={e => setListMarkdown(e.target.value)}
+                      onBlur={() => { if(listSelectedCard){ const m = listMarkdown; const lines = m.split('\n'); const title = lines[0]?.startsWith('# ')?lines[0].slice(2).trim():listSelectedCard.title; const content = lines[0]?.startsWith('# ')?lines.slice(2).join('\n'):m; setListSelectedCard({...listSelectedCard, title, content}); }}}
+                      className="flex-1 p-4 resize-none bg-white dark:bg-gray-900 text-sm font-mono outline-none"
+                      placeholder="# 标题\n\n内容，支持 Markdown..." />
+                    <div className="p-2 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2">
+                      <button onClick={()=>{setListEditorSide('preview');}} className="px-3 py-1 text-xs border rounded-lg dark:border-gray-600">取消</button>
+                      <button onClick={handleListSave} className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">保存</button>
+                    </div>
+                  </div>
+                )}
+                {(listEditorSide==='preview'||listEditorSide==='split') && (
+                  <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${listEditorSide==='split'?'w-1/2':''}`}>
+                    {listMarkdown ? (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown>{listMarkdown}</ReactMarkdown>
+                      </div>
+                    ) : <p className="text-gray-400 text-sm">无内容</p>}
+                  </div>
+                )}
+              </div>
+
+              {/* 知识网络缩略（有数据时展示） */}
+              {listCardNetwork.nodes && listCardNetwork.nodes.length > 1 && (
+                <div className="shrink-0 h-[140px] border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 overflow-y-auto p-2">
+                  <div className="text-xs font-medium text-gray-500 mb-1">知识网络 ({listCardNetwork.nodes.length} 节点, {listCardNetwork.links.length} 连线)</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {listCardNetwork.nodes.filter((n:any)=>String(n.id)!==String(listSelectedCard?.id)).slice(0,10).map((n:any)=>(
+                      <span key={n.id} onClick={() => loadCardForList(parseInt(String(n.id)))}
+                        className="text-xs px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full cursor-pointer hover:border-blue-400 hover:text-blue-600 truncate max-w-[120px]">
+                        {n.title || n.name || n.id}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 text-gray-400">
+              <div className="text-center">
+                <FileText className="w-12 h-12 mb-3 mx-auto opacity-40" />
+                <p className="text-sm">从左侧选择一张卡片查看详情</p>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        /* ========== 图谱视图 ========== */
+        <main className="flex-1 relative">
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
+              <Loader className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
+          )}
+          <div ref={chartRef} className="w-full h-full" />
+        </main>
+      )}
 
       {/* 卡片详情弹窗 */}
       {modalOpen && modalCard && (
@@ -801,6 +1001,8 @@ return (
             <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
               {isModalEditing ? (
                 <input
+                  id="modal-card-title"
+                  name="modalCardTitle"
                   type="text"
                   value={modalEditTitle}
                   onChange={(e) => setModalEditTitle(e.target.value)}
@@ -839,6 +1041,8 @@ return (
               <div className="mb-3 flex items-center gap-2">
                 {isModalEditing ? (
                   <select
+                    id="modal-card-type"
+                    name="modalCardType"
                     value={modalCard.card_type || modalCard.type || 'blue'}
                     onChange={(e) => setModalCard({ ...modalCard, card_type: e.target.value })}
                     className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600"
@@ -859,6 +1063,8 @@ return (
               {/* 内容区 */}
               {isModalEditing ? (
                 <textarea
+                  id="modal-card-content"
+                  name="modalCardContent"
                   value={modalEditContent}
                   onChange={(e) => setModalEditContent(e.target.value)}
                   className="w-full h-64 p-3 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-blue-400"
@@ -924,6 +1130,8 @@ return (
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
+                  id="add-node-search"
+                  name="addNodeSearch"
                   type="text"
                   value={addNodeSearch}
                   onChange={e => setAddNodeSearch(e.target.value)}

@@ -1585,7 +1585,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
 {/* 知识图谱 */}
         {activeTab === 'knowledge-graph' && (
-          <KnowledgeGraphView onNavigate={(tab) => setActiveTab(tab)} />
+          <KnowledgeGraphView />
         )}
 
         {/* PDF查看器 */}

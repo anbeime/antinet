@@ -190,11 +190,23 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
   // 是否使用样本数据（后端不可用时的降级）
   const [isSampleData, setIsSampleData] = useState(false);
   
+  // ============ 带超时的 fetch ============
+  const fetchWithTimeout = useCallback(async (url: string, options?: RequestInit, timeoutMs = 8000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      return response;
+    } finally {
+      clearTimeout(timer);
+    }
+  }, []);
+
   // ============ 数据加载 ============
   const loadGraphData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/graph?limit=500`);
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/knowledge/graph?limit=500`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setGraphData(data);
@@ -204,11 +216,14 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       console.error('加载知识图谱失败，使用样本数据:', error);
       setGraphData(SAMPLE_GRAPH_DATA);
       setIsSampleData(true);
-      toast.info('后端暂不可用，显示样本数据');
+      // 只有 AbortError 才是超时，避免网络错误时也弹出烦人提示
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        toast.info('后端响应超时，显示样本数据');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchWithTimeout]);
 
   const loadCards = useCallback(async () => {
     setLoading(true);
@@ -217,7 +232,7 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       if (projectId) {
         url += `&project_id=${projectId}`;
       }
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setCards(data.cards || []);
@@ -228,41 +243,50 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
       setCards(SAMPLE_CARDS);
       setFilteredCards(SAMPLE_CARDS);
       setIsSampleData(true);
-      toast.info('后端暂不可用，显示样本数据');
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        toast.info('后端响应超时，显示样本数据');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchWithTimeout]);
 
-// 加载单个卡片详情
+  // 加载单个卡片详情
   const loadCardDetail = useCallback(async (cardId: number) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards/${cardId}`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const card = await response.json();
+      // 并行请求卡片详情和知识网络，不互相阻塞
+      const cardPromise = fetchWithTimeout(`${API_BASE_URL}/api/knowledge/cards/${cardId}`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          return response.json();
+        });
+      
+      const networkPromise = fetchWithTimeout(`${API_BASE_URL}/api/backlinks/card/${cardId}/graph?max_depth=1`)
+        .then(async (networkResponse) => {
+          if (networkResponse.ok) {
+            return networkResponse.json();
+          }
+          throw new Error('Network response not ok');
+        })
+        .catch((networkError) => {
+          console.error('加载卡片知识网络失败:', networkError);
+          return { nodes: [], links: [] };
+        });
+
+      const [card, networkData] = await Promise.all([cardPromise, networkPromise]);
+
       setSelectedCard(card);
       // 转换为Markdown格式
       setMarkdownContent(`# ${card.title || '无标题'}\n\n${card.content || ''}`);
-
-      // 同时加载卡片关联的知识网络
-      try {
-        const networkResponse = await fetch(`${API_BASE_URL}/api/backlinks/card/${cardId}/graph?max_depth=1`);
-        if (networkResponse.ok) {
-          const networkData = await networkResponse.json();
-          setCardNetwork({
-            nodes: networkData.nodes || [],
-            links: networkData.links || []
-          });
-        }
-      } catch (networkError) {
-        console.error('加载卡片知识网络失败:', networkError);
-        setCardNetwork({nodes: [], links: []});
-      }
+      setCardNetwork({
+        nodes: networkData.nodes || [],
+        links: networkData.links || []
+      });
     } catch (error) {
       console.error('加载卡片详情失败:', error);
       toast.error('加载卡片详情失败');
     }
-  }, []);
+  }, [fetchWithTimeout]);
 
   // ============ 搜索和筛选 ============
   useEffect(() => {
@@ -870,9 +894,14 @@ result = result.filter(card => {
           {/* 视图切换 */}
           <div className="flex gap-2 mb-4">
             <Button
-              variant={viewMode === 'graph' ? 'default' : 'outline'}
+              variant="outline"
               size="sm"
-              onClick={() => setViewMode('graph')}
+              onClick={() => {
+                const url = selectedCard
+                  ? `/knowledge-graph?card=${selectedCard.id}`
+                  : '/knowledge-graph';
+                window.open(url, '_blank');
+              }}
               className="flex-1"
             >
               <Network className="w-4 h-4 mr-1" />
