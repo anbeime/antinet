@@ -389,6 +389,7 @@ useEffect(() => {
               show: true,
               fontSize: 11,
               position: 'bottom',
+              triggerEvent: true, // 让点击标签文字也能触发事件
             },
           })),
           links: displayData.links.map((link: any) => ({
@@ -443,51 +444,42 @@ useEffect(() => {
         }
       }, 500);
 
-      // 点击选中节点
-      if (!mountedRef.current || !chartInstance.current) return;
-      chartInstance.current.on('click', (params) => {
-        if (params.dataType === 'node') {
-          setSelectedNode(params.name as string);
-        }
-      });
 
-      // 点击查看卡片详情
-      chartInstance.current.on('click', async (params) => {
-        if (params.dataType === 'node') {
-          const nodeId = params.data.id;
-          const nodeName = params.data.name;
-          
-          // 点击节点时选中显示在左侧面板
-          setSelectedNode(nodeName);
-          
-          // api模式从服务端获取卡片详情，sample模式显示提示
-          if (nodeId && viewMode === 'api') {
-            try {
-              const res = await fetch(`${API_BASE}/api/knowledge/cards/${nodeId}`);
-              if (res.ok) {
-                const card = await res.json();
-                setModalCard(card);
-                setModalOpen(true);
-              } else {
-                setModalCard({ title: nodeName || `卡片 ${nodeId}`, content: '卡片不存在或已删除', color: 'blue' });
-                setModalOpen(true);
-              }
-            } catch (e) {
-              console.error('加载卡片失败:', e);
-              setModalCard({ title: nodeName || `卡片 ${nodeId}`, content: '加载失败: ' + String(e), color: 'red' });
-              setModalOpen(true);
-            }
-          } else if (viewMode === 'sample') {
-            // sample模式显示示例节点信息
-            setModalCard({ 
-              title: nodeName || '示例节点', 
-              content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。', 
-              color: 'blue' 
-            });
-            setModalOpen(true);
-          }
+      // 节点点击/双击的通用处理逻辑（提取为函数避免重复）
+      const handleNodeClick = async (params: any) => {
+        const isNodeClick =
+          params.dataType === 'node' ||
+          (params.seriesType === 'graph' && params.data != null);
+
+        if (!isNodeClick) return;
+
+        const nodeId = params.data?.id || params.value?.id;
+        const nodeName = params.data?.name || params.name || '';
+
+        // 选中节点，左侧面板同步高亮
+        setSelectedNode(nodeName);
+
+        // api模式从服务端获取卡片详情，sample模式显示提示
+        if (nodeId && viewMode === 'api') {
+          openCardDetail(nodeId);
+        } else if (viewMode === 'sample') {
+          setModalCard({
+            title: nodeName || '示例节点',
+            content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。',
+            color: 'blue'
+          });
+          setIsModalEditing(false);
+          setModalEditTitle('');
+          setModalEditContent('');
+          setModalOpen(true);
         }
-      });
+      };
+
+      // 单击事件（部分情况下可能被拖拽行为吞掉）
+      chartInstance.current.on('click', handleNodeClick);
+
+      // 双击事件作为备用（确保一定能弹出）
+      chartInstance.current.on('dblclick', handleNodeClick);
 
     } catch (e) {
       console.error('initChart 错误:', e);
