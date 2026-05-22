@@ -230,23 +230,6 @@ const GTDSystem: React.FC = () => {
     reminder_enabled: false
   });
   const [zoomedTask, setZoomedTask] = useState<GtdTaskType | null>(null);
-  const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
-  
-  // 加载专题列表
-  useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
-        if (res.ok) {
-          const data = await res.json();
-          setProjects(data.projects || data || []);
-        }
-      } catch (e) {
-        console.error('加载专题失败:', e);
-      }
-    };
-    loadProjects();
-  }, []);
   
   // 复制任务内容
   const handleCopyTask = (task: GtdTaskType, e: React.MouseEvent) => {
@@ -337,7 +320,7 @@ const GTDSystem: React.FC = () => {
     loadGTDData();
   }, []);
 
-  // 获取优先级样式
+  // 获取优先级样式（用于圆点）
   const getPriorityStyle = (priority: string) => {
     switch(priority) {
       case 'high':
@@ -348,6 +331,16 @@ const GTDSystem: React.FC = () => {
         return 'bg-green-500';
       default:
         return 'bg-gray-500';
+    }
+  };
+
+  // 获取优先级颜色（用于 badge 背景）
+  const getPriorityColor = (priority: string) => {
+    switch(priority) {
+      case 'high': return 'bg-red-500';
+      case 'medium': return 'bg-amber-500';
+      case 'low': return 'bg-green-500';
+      default: return 'bg-gray-500';
     }
   };
 
@@ -913,7 +906,48 @@ const GTDSystem: React.FC = () => {
                     </div>
                     <div className="p-3 bg-white dark:bg-gray-800">
                       <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 mb-2">{task.description || '无描述'}</p>
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className={`px-2.5 py-0.5 text-xs rounded-full ${getPriorityColor(task.priority || 'medium')} text-white`}>
+                          {task.priority === 'high' ? '高优先级' : task.priority === 'medium' ? '中优先级' : '低优先级'}
+                        </span>
+                        <span className="px-2 py-0.5 text-xs rounded-full border" style={{ color: '#8b7355', borderColor: '#e8ddd0' }}>
+                          {task.category === 'inbox' ? '收集箱' : task.category === 'today' ? '今日' : task.category === 'later' ? '待定' : task.category === 'projects' ? '项目' : task.category === 'archive' ? '归档' : task.category}
+                        </span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const markdownContent = `# ${task.title}\n\n${task.description || ''}\n\n---\n*任务优先级: ${task.priority} | 分类: ${task.category}*`;
+                            const formData = new FormData();
+                            const blob = new Blob([markdownContent], { type: 'text/markdown' });
+                            formData.append('file', blob, 'task.md');
+                            try {
+                              const response = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
+                                method: 'POST',
+                                body: formData
+                              });
+                              if (!response.ok) throw new Error('导出PDF失败');
+                              const pdfBlob = await response.blob();
+                              const url = window.URL.createObjectURL(pdfBlob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `${task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                              toast.success('PDF导出成功');
+                            } catch (err) {
+                              toast.error('导出PDF失败');
+                            }
+                          }}
+                          className="ml-auto px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 transition-colors flex items-center gap-0.5"
+                          title="导出PDF"
+                        >
+                          <Download size={12} />
+                          导出PDF
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-500">{task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
                         <div className="flex gap-1">
                           <button
@@ -1318,54 +1352,8 @@ const GTDSystem: React.FC = () => {
                     >
                       移至将来可能
                     </button>
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          handleMoveTask(editingTask.id!, 'projects', Number(e.target.value));
-                          toast('任务已加入专题', { className: 'bg-purple-50 text-purple-800' });
-                          setShowEditModal(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg border-0 cursor-pointer"
-                      defaultValue=""
-                    >
-                      <option value="">加入专题...</option>
-                      {projects.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={async () => {
-                        // 将任务内容转换为Markdown并导出PDF
-                        const markdownContent = `# ${editingTask.title}\n\n${editingTask.description || ''}\n\n---\n*任务优先级: ${editingTask.priority} | 分类: ${editingTask.category}*`;
-                        const formData = new FormData();
-                        const blob = new Blob([markdownContent], { type: 'text/markdown' });
-                        formData.append('file', blob, 'task.md');
-                        
-                        try {
-                          const response = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
-                            method: 'POST',
-                            body: formData
-                          });
-                          if (!response.ok) throw new Error('导出PDF失败');
-                          const pdfBlob = await response.blob();
-                          const url = window.URL.createObjectURL(pdfBlob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `${editingTask.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(url);
-                          toast.success('PDF导出成功');
-                        } catch (err) {
-                          toast.error('导出PDF失败');
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
-                    >
-                      导出PDF
-                    </button>
+
+
                   </div>
                 </div>
               </div>
