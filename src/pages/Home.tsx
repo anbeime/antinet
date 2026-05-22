@@ -18,7 +18,7 @@ import {
   Cpu,
   Sparkles,
   FileText,
-  Eye,
+Eye,
   Trash2,
   Layers,
   ListTodo,
@@ -155,7 +155,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   // 从URL参数获取tab
   const urlTab = searchParams.get('tab');
   
-  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research'>('cards');
+  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>('cards');
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
@@ -596,9 +596,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         // 设置应用场景
         setApplicationScenarios([
           { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:data-management' },
-          { icon: 'Pr', title: '专题项目管理', description: '企业级专题任务协同管理', link: 'tab:data-management' },
+          { icon: 'Pr', title: '专题项目管理', description: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
           { icon: 'Tm', title: '局域网团队协作', description: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
         ]);
+
+    
         
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
       } catch (error) {
@@ -697,7 +699,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <button
               onClick={() => setActiveTab('cards-management')}
               className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'cards-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
-            >
+>
               <Briefcase size={18} />
               <span>知识管理</span>
             </button>
@@ -1155,7 +1157,16 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                          key={index}
                          whileHover={{ x: 5 }}
                          className="flex items-start cursor-pointer"
-                         onClick={() => scenario.link.startsWith('tab:') ? setActiveTab(scenario.link.slice(4) as any) : navigate(scenario.link)}
+                         onClick={() => {
+                           if (scenario.link.startsWith('tab:')) {
+                             const tabTarget = scenario.link.slice(4);
+                             const [mainTab, subTab] = tabTarget.split('|');
+                             setActiveTab(mainTab as any);
+                             if (subTab) setKnowledgeSubTab(subTab as any);
+                           } else {
+                             navigate(scenario.link);
+                           }
+                         }}
                        >
                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
                            {scenario.icon}
@@ -1199,6 +1210,28 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               >
                 <BookOpen size={16} className="inline mr-1.5" />
                 专题研究
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('knowledge-graph')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'knowledge-graph'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <Network size={16} className="inline mr-1.5" />
+                知识网络
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('mindmap')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'mindmap'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <GitBranch size={16} className="inline mr-1.5" />
+                思维导图
               </button>
             </div>
 
@@ -1431,8 +1464,21 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             </>
           )}
 
+
           {knowledgeSubTab === 'research' && (
             <ResearchProjectManager />
+          )}
+
+          {knowledgeSubTab === 'knowledge-graph' && (
+            <div className="-mx-6 -mb-6" style={{ height: 'calc(100vh - 200px)' }}>
+              <KnowledgeGraphView />
+            </div>
+          )}
+
+          {knowledgeSubTab === 'mindmap' && (
+            <div className="-mx-6 -mb-6" style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}>
+              <MindMap />
+            </div>
           )}
           </motion.div>
         )}
@@ -1543,7 +1589,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <h3 className="font-semibold">Excel/在线表格</h3>
                   <p className="text-sm text-gray-500">数据分析与可视化</p>
                 </button>
-                <button onClick={() => setActiveTab('mindmap')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                <button onClick={() => { setActiveTab('cards-management'); setKnowledgeSubTab('mindmap'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Brain className="w-10 h-10 text-pink-500 mb-3" />
                   <h3 className="font-semibold">思维导图</h3>
                   <p className="text-sm text-gray-500">结构化思维整理</p>
@@ -1576,16 +1622,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 报表生成 */}
         {activeTab === 'report-automation' && (
           <ReportAutomation />
-        )}
-
-        {/* 思维导图 */}
-        {activeTab === 'mindmap' && (
-          <MindMap />
-        )}
-
-{/* 知识图谱 */}
-        {activeTab === 'knowledge-graph' && (
-          <KnowledgeGraphView />
         )}
 
         {/* PDF查看器 */}

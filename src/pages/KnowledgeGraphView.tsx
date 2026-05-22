@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import MindMap from './MindMap';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
 import ReactMarkdown from 'react-markdown';
@@ -75,7 +76,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
   const [apiData, setApiData] = useState<{entities: any[], relations: any[]} | null>(null);
   const [graphSource, setGraphSource] = useState<'sample' | 'api'>('sample');
-  const [pageMode, setPageMode] = useState<'graph' | 'list'>('graph');  // 图谱/列表 切换
+  const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap'>('graph');  // 图谱/列表/思维导图 切换
   const [listSearch, setListSearch] = useState('');
   const [listColorFilter, setListColorFilter] = useState<string>('all');
   const [listLoading, setListLoading] = useState(false);
@@ -92,8 +93,62 @@ const KnowledgeGraphView: React.FC = () => {
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
-  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
+
+
+
+
+  // 计算图谱显示数据（从API响应转换），与图谱图表共用
+  const computeDisplayData = (data: any) => {
+    // 如果是 suggestions 格式（搜索结果），转换为节点
+    if (data.suggestions && !data.nodes) {
+      const suggestions = data.suggestions;
+      const nodes = suggestions.map((s: any, i: number) => {
+        const typeList = ['blue', 'green', 'yellow', 'red'];
+        const typeIdx = typeList.indexOf(s.card_type || 'blue');
+        const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
+        return {
+          id: String(s.card_id),
+          name: s.title || `卡片${s.card_id}`,
+          category: typeIdx >= 0 ? typeIdx : 0,
+          symbolSize: 35,
+          x: 500 + 280 * Math.cos(angle),
+          y: 300 + 280 * Math.sin(angle),
+          score: s.score,
+          content: s.content
+        };
+      });
+      return { nodes, links: [], categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
+    }
+    // 处理普通图数据（nodes + links）
+    const rawNodes = data.nodes || data.entities || [];
+    const rawLinks = data.links || data.relations || [];
+    const nodeMap = new Map();
+    let nodeIndex = 0;
+    rawNodes.forEach((e: any) => {
+      const id = String(e.id);
+      if (!nodeMap.has(id)) {
+        const typeList = ['blue', 'green', 'yellow', 'red'];
+        const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
+        const angle = (nodeIndex / Math.max(rawNodes.length, 1)) * 2 * Math.PI;
+        nodeMap.set(id, {
+          id,
+          name: e.title || e.name || `节点${e.id}`,
+          category: typeIdx >= 0 ? typeIdx : 0,
+          symbolSize: e.is_current ? 50 : 35,
+          x: 500 + 280 * Math.cos(angle),
+          y: 300 + 280 * Math.sin(angle)
+        });
+        nodeIndex++;
+      }
+    });
+    const linkSet = new Set();
+    const links = rawLinks.filter((r: any) => { const key = `${r.source}-${r.target}`; if (linkSet.has(key)) return false; linkSet.add(key); return true; })
+      .map((r: any) => ({ source: String(r.source), target: String(r.target), label: r.type }));
+    return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
+  };
+
   
   // 从URL参数加载指定卡片的链接图谱
   useEffect(() => {
@@ -332,94 +387,11 @@ const KnowledgeGraphView: React.FC = () => {
     }
   }, []);
 
-// 计算图谱显示数据（从API响应转换）
-const computeDisplayData = (data: any) => {
-  // 如果是 suggestions 格式（搜索结果），转换为节点
-  if (data.suggestions && !data.nodes) {
-    const suggestions = data.suggestions;
-    const centerX = 500;
-    const centerY = 300;
-    const radius = 280;
-    const nodes = suggestions.map((s: any, i: number) => {
-      const typeList = ['blue', 'green', 'yellow', 'red'];
-      const typeIdx = typeList.indexOf(s.card_type || 'blue');
-      const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
-      return {
-        id: String(s.card_id),
-        name: s.title || `卡片${s.card_id}`,
-        category: typeIdx >= 0 ? typeIdx : 0,
-        symbolSize: 35,
-        x: centerX + radius * Math.cos(angle),
-        y: centerY + radius * Math.sin(angle),
-        score: s.score,
-        content: s.content
-      };
-    });
-    return {
-      nodes,
-      links: [],
-      categories: [
-        { name: '事实' },
-        { name: '解释' },
-        { name: '风险' },
-        { name: '行动' }
-      ]
-    };
-  }
 
-  // 处理普通图数据（nodes + links）
-  const rawNodes = data.nodes || data.entities || [];
-  const rawLinks = data.links || data.relations || [];
-  const centerX = 500;
-  const centerY = 300;
-  const radius = 280;
-  const totalNodes = rawNodes.length || 1;
-
-  const nodeMap = new Map();
-  let nodeIndex = 0;
-  rawNodes.forEach((e: any) => {
-    const id = String(e.id);
-    if (!nodeMap.has(id)) {
-      const typeList = ['blue', 'green', 'yellow', 'red'];
-      const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
-      const angle = (nodeIndex / totalNodes) * 2 * Math.PI;
-      nodeMap.set(id, {
-        id,
-        name: e.title || e.name || `节点${e.id}`,
-        category: typeIdx >= 0 ? typeIdx : 0,
-        symbolSize: e.is_current ? 50 : 35,
-        x: centerX + radius * Math.cos(angle),
-        y: centerY + radius * Math.sin(angle)
-      });
-      nodeIndex++;
-    }
-  });
-
-  const linkSet = new Set();
-  const links = rawLinks.filter((r: any) => {
-    const key = `${r.source}-${r.target}`;
-    if (linkSet.has(key)) return false;
-    linkSet.add(key);
-    return true;
-  }).map((r: any) => ({
-    source: String(r.source),
-    target: String(r.target),
-    label: r.type
-  }));
-
-  return {
-    nodes: Array.from(nodeMap.values()),
-    links,
-    categories: [
-      { name: '事实' },
-      { name: '解释' },
-      { name: '风险' },
-      { name: '行动' }
-    ]
-  };
-};
 
 useEffect(() => {
+    // 重置挂载标志
+    mountedRef.current = true;
     // 切换到图谱模式时重新初始化图表
     if (pageMode === 'graph') {
       // 延迟确保DOM已渲染
@@ -428,7 +400,6 @@ useEffect(() => {
     }
     return () => {
       mountedRef.current = false;
-      chartInstance.current?.dispose();
     };
   }, [graphData, apiData, pageMode]);
 
@@ -692,20 +663,12 @@ return (
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold flex items-center space-x-2">
             <Network className="w-5 h-5" />
-            <span>知识图谱</span>
+            <span>知识图谱工作台</span>
           </h2>
         </div>
 
-        {/* 返回工作台入口 */}
-        <button
-          onClick={() => window.open('/knowledge-workbench', '_blank')}
-          className="w-full mb-3 flex items-center justify-center space-x-2 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600 text-sm"
-        >
-          <ExternalLink className="w-4 h-4" />
-          <span>知识图谱工作台</span>
-        </button>
 
-        {/* 图谱 / 列表 切换 */}
+{/* 图谱 / 列表 / 思维导图 切换 */}
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setPageMode('graph')}
@@ -721,6 +684,13 @@ return (
             <List className="w-4 h-4" />
             <span>列表</span>
           </button>
+          <button
+            onClick={() => setPageMode('mindmap')}
+            className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'mindmap' ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-green-100 dark:hover:bg-green-900/30'}`}
+          >
+            <GitBranch className="w-4 h-4" />
+            <span>导图</span>
+          </button>
         </div>
         
         {currentCardId && (
@@ -734,25 +704,7 @@ return (
         )}
 
         <div className="space-y-3 mb-4">
-          <div className="flex space-x-2">
-            <input
-              id="topic-search"
-              name="topic"
-              type="text"
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="输入主题搜索..."
-              className="flex-1 px-3 py-2 text-sm border rounded-lg"
-              onKeyDown={(e) => e.key === 'Enter' && loadKnowledgeGraph()}
-            />
-            <button
-              onClick={loadKnowledgeGraph}
-              disabled={loadingAPI}
-              className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
-            >
-              {loadingAPI ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            </button>
-          </div>
+
           
           <div className="flex space-x-1">
           <button
@@ -979,8 +931,13 @@ return (
                 <p className="text-sm">从左侧选择一张卡片查看详情</p>
               </div>
             </div>
-          )}
+)}
         </>
+      ) : pageMode === 'mindmap' ? (
+        /* ========== 思维导图视图（原版 MindMap 组件） ========== */
+        <div className="flex-1 overflow-hidden">
+          <MindMap />
+        </div>
       ) : (
         /* ========== 图谱视图 ========== */
         <main className="flex-1 relative">
