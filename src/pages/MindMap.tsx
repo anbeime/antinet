@@ -124,9 +124,16 @@ const typeLabels: Record<string, string> = {
   red: '行动'
 };
 
-const MindMap: React.FC = () => {
+interface MindMapProps {
+  initialRoot?: MindMapNode;
+  initialCards?: KnowledgeCard[];
+  /** 嵌入模式：隐藏顶部侧边栏（保存/加载/从知识网络生成等），只保留节点操作 */
+  embedded?: boolean;
+}
+
+const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }) => {
   useTheme();
-  const [root, setRoot] = useState<MindMapNode>(defaultMindMap);
+  const [root, setRoot] = useState<MindMapNode>(initialRoot || defaultMindMap);
   const [selectedNode, setSelectedNode] = useState<string | null>('root');
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -160,9 +167,25 @@ const MindMap: React.FC = () => {
   ];
 
   useEffect(() => {
-    loadMindmaps();
-    loadCards();
+    if (initialRoot) {
+      setRoot(initialRoot);
+    }
+    if (initialCards && initialCards.length > 0) {
+      setCards(initialCards);
+    } else if (!embedded) {
+      loadCards();
+    }
+    if (!embedded) {
+      loadMindmaps();
+    }
 }, []);
+
+  // 嵌入模式：图谱侧切换到不同主题时，同步更新导图树
+  useEffect(() => {
+    if (embedded && initialRoot) {
+      setRoot(initialRoot);
+    }
+  }, [initialRoot, embedded]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -709,7 +732,7 @@ const MindMap: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className={`flex ${embedded ? 'h-full' : 'h-screen'} bg-gray-100 dark:bg-gray-900`}>
       <aside className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col overflow-hidden">
         <h2 className="text-lg font-semibold mb-4 flex items-center">
           <Brain className="w-5 h-5 mr-2 text-purple-500" />

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import MindMap from './MindMap';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
@@ -148,6 +148,52 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
       .map((r: any) => ({ source: String(r.source), target: String(r.target), label: r.type }));
     return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
   };
+
+  // 从图谱数据构建思维导图树（与图谱/列表共享同一数据源）
+  const mindmapTree = useMemo(() => {
+    const displayData = graphSource === 'api' && apiData
+      ? computeDisplayData(apiData)
+      : graphData;
+    const nodes = displayData.nodes || [];
+    const links = displayData.links || [];
+    if (!nodes.length) return null;
+
+    const categoryColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
+    const hasIncoming = new Set(links.map((l: any) => String(l.target)));
+    let roots = nodes.filter((n: any) => !hasIncoming.has(String(n.id)));
+    if (!roots.length && nodes.length > 0) roots = [nodes[0]];
+
+    const buildTree = (node: any, visited = new Set<string>()): any => {
+      if (visited.has(String(node.id))) return {
+        id: String(node.id), text: node.name, children: [],
+        collapsed: false, color: categoryColors[node.category || 0]
+      };
+      const newVisited = new Set(visited);
+      newVisited.add(String(node.id));
+      const children = links
+        .filter((l: any) => String(l.source) === String(node.id))
+        .map((l: any) => nodes.find((n: any) => String(n.id) === String(l.target)))
+        .filter(Boolean)
+        .map((child: any) => buildTree(child, newVisited));
+      return {
+        id: String(node.id),
+        text: node.name,
+        children,
+        collapsed: false,
+        color: categoryColors[node.category || 0]
+      };
+    };
+
+    if (roots.length === 1) return buildTree(roots[0]);
+    // 多个根节点：创建虚拟根节点包裹
+    return {
+      id: 'virtual-root',
+      text: '知识图谱',
+      children: roots.map((r: any) => buildTree(r)),
+      collapsed: false,
+      color: '#8b5cf6'
+    };
+  }, [graphData, apiData, graphSource]);
 
   
   // 从URL参数加载指定卡片的链接图谱
@@ -685,7 +731,7 @@ return (
             <span>列表</span>
           </button>
           <button
-            onClick={() => setPageMode('mindmap')}
+            onClick={() => { setPageMode('mindmap'); if (cards.length === 0) loadCards(); }}
             className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'mindmap' ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-green-100 dark:hover:bg-green-900/30'}`}
           >
             <GitBranch className="w-4 h-4" />
@@ -936,7 +982,7 @@ return (
       ) : pageMode === 'mindmap' ? (
         /* ========== 思维导图视图（原版 MindMap 组件） ========== */
         <div className="flex-1 overflow-hidden">
-          <MindMap />
+          <MindMap initialRoot={mindmapTree} initialCards={cards} embedded={true} />
         </div>
       ) : (
         /* ========== 图谱视图 ========== */
