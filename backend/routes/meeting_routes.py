@@ -15,6 +15,7 @@ import time
 import httpx
 import os
 from config import settings
+from routes.enhanced_chat_routes import search_cards_semantic, CardReference
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/meeting", tags=["8-Agent会议"])
@@ -214,7 +215,7 @@ AGENT_MAPPING = {
         "description": "负责记录所有操作、决策和结果，构建组织的集体记忆与经验库",
         "color": "from-blue-500 to-blue-600",
         "pixel_id": "taishige",
-        "system_prompt": "你是「太史阁」，负责历史记录与反思。你的职责是从历史经验和过往案例中提取教训，为当前议题提供历史视角的参考。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「太史阁」，负责历史记录与反思。密卷房检索知识卡片后，你结合历史经验进行解读，为当前议题提供历史视角的参考。请基于【知识库参考卡片】提炼关键洞察。发言简洁有力，80字以内。"
     },
     "jinjiyu": {
         "backend_id": "risk_detector",
@@ -234,7 +235,7 @@ AGENT_MAPPING = {
         "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
         "color": "from-green-500 to-green-600",
         "pixel_id": "tongzhengsi",
-        "system_prompt": "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
+        "system_prompt": "你是「通政司」，负责信息与通讯中枢。密卷房和太史阁检索知识卡片后，你将卡片中的关键信息整理并传达给八府同仁，确保各部门掌握必要的知识背景。发言简洁有力，80字以内。"
     },
     "jianchayuan": {
         "backend_id": "interpreter",
@@ -254,7 +255,7 @@ AGENT_MAPPING = {
         "description": "专门负责非结构化知识的整理、归档、索引和检索",
         "color": "from-indigo-500 to-indigo-600",
         "pixel_id": "mijuanfang",
-        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑。严格限制：必须用中文，60字以内，只引用事实，不要重复背景。"
+        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从知识库中检索相关资料，将检索到的卡片内容提炼后汇报给通政司分发。严格限制：必须用中文，60字以内，直接引用卡片中的关键事实。"
     },
     "chengxiangfu": {
         "backend_id": "action_advisor",
@@ -323,11 +324,16 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
         if not result:
             return []
         
+        # 调试日志：查看LLM原始返回
+        logger.info(f"[_extract_color_cards] LLM原始返回: {result[:500]}")
+        
         import json
         # 移除 markdown 代码块
         cleaned = re.sub(r'^```json\s*', '', result.strip())
         cleaned = re.sub(r'\s*```$', '', cleaned)
         cleaned = cleaned.strip()
+        
+        logger.info(f"[_extract_color_cards] 清理后的JSON: {cleaned[:500]}")
         
         # 尝试解析 JSON
         start = cleaned.find('[')
@@ -335,12 +341,17 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
         if start >= 0 and end > start:
             try:
                 cards = json.loads(cleaned[start:end])
+                logger.info(f"[_extract_color_cards] 解析成功，卡片数量: {len(cards)}")
+                logger.info(f"[_extract_color_cards] 第一张卡片: {cards[0] if cards else 'None'}")
                 # 添加探索状态
                 for card in cards:
                     card['explore_status'] = 'pending'
                 return cards
-            except:
-                pass
+            except json.JSONDecodeError as je:
+                logger.error(f"[_extract_color_cards] JSON解析失败: {je}")
+                logger.error(f"[_extract_color_cards] 解析的文本: {cleaned[start:end]}")
+            except Exception as e:
+                logger.error(f"[_extract_color_cards] 未知错误: {e}")
     except Exception as e:
         logger.error(f"提取四色卡片失败: {e}")
     
@@ -637,7 +648,7 @@ _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这
 
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0, 
-                    agent_id: str = None, task_type: str = "analysis", max_tokens: int = 80) -> str:
+ agent_id: str = None, task_type: str = "analysis", max_tokens: int = 80, temperature: float = 0.7) -> str:
     """
     调用LLM生成回复，降级策略（按优先级排序）：
     层1: NPU qwen2.0-7b（中文最强）
@@ -686,7 +697,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
+                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
                 ),
                 timeout=timeout
             )
@@ -739,7 +750,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
+                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
                 ),
                 timeout=timeout
             )
@@ -1106,6 +1117,28 @@ class AgentInfo(BaseModel):
     color: str
 
 
+# ==================== 人工干预混合查询模型 ====================
+
+class HybridQuestionRequest(BaseModel):
+    """人工干预：用户提问请求"""
+    question: str = Field(..., description="用户问题")
+    topic: str = Field(default="", description="会议主题（用于搜索上下文）")
+
+
+class HybridQuestionResponse(BaseModel):
+    """人工干预：混合查询响应（知识卡片 + LLM回答）"""
+    answer: str
+    cards: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class SaveCardRequest(BaseModel):
+    """保存会议卡片到知识库的请求"""
+    card: Dict[str, Any] = Field(..., description="卡片数据 {card_type, title, content}")
+    meeting_id: str = Field(..., description="会议ID")
+    topic: str = Field(default="", description="会议主题")
+
+
 # ==================== 路由 ====================
 
 @router.get("/agents", response_model=List[AgentInfo])
@@ -1447,6 +1480,121 @@ async def select_optimal_model(
         }
 
 
+# ==================== 人工干预：混合查询（知识卡片 + LLM） ====================
+
+@router.post("/hybrid-question", response_model=HybridQuestionResponse)
+async def hybrid_question(request: HybridQuestionRequest):
+    """
+    人工干预时查询知识库卡片 + LLM 综合回答
+    
+    流程：
+    1. 搜索知识库中与问题相关的卡片
+    2. 将卡片内容作为知识上下文传递给 LLM
+    3. LLM 综合生成回答，同时返回引用的卡片列表
+    """
+    answer = ""
+    cards = []
+    sources = []
+    
+    # 第一步：搜索相关知识卡片
+    try:
+        card_refs = search_cards_semantic(request.question, limit=5)
+        
+        if card_refs:
+            # 构造 cards 列表（返回给前端展示）
+            for ref in card_refs:
+                cards.append({
+                    "card_id": ref.card_id,
+                    "card_type": ref.card_type,
+                    "title": ref.title,
+                    "content": ref.content,
+                    "similarity": ref.similarity,
+                    "color": ref.color
+                })
+                sources.append({
+                    "card_id": ref.card_id,
+                    "title": ref.title,
+                    "similarity": ref.similarity
+                })
+            logger.info(f"[Meeting] 混合查询搜索到 {len(card_refs)} 张相关卡片")
+    except Exception as e:
+        logger.warning(f"[Meeting] 混合查询搜索卡片失败: {e}")
+    
+    # 第二步：使用 LLM 综合生成回答（将卡片内容作为知识上下文）
+    try:
+        # 构建知识上下文
+        knowledge_context = ""
+        if cards:
+            knowledge_context = "\n\n参考知识库卡片内容：\n"
+            for i, card in enumerate(cards, 1):
+                knowledge_context += f"\n【{i}】{card['title']}\n{card['content']}\n"
+        
+        # LLM 系统提示
+        system_prompt = """你是八府巡按的知识管理官。请根据提供的知识库卡片内容和会议主题，综合回答用户的问题。
+要求：
+1. 优先引用知识库中的事实和数据
+2. 回答简洁有力，100字以内
+3. 如果没有相关知识，如实告知并给出建议"""
+        
+        user_prompt = f"会议主题：{request.topic}\n\n用户问题：{request.question}{knowledge_context}"
+        
+        answer = await call_llm(system_prompt, user_prompt, max_tokens=150, agent_id="mijuanfang")
+        
+        if not answer:
+            answer = f"关于「{request.question}」，目前知识库中暂无直接相关的卡片记录，建议补充相关知识后再讨论。"
+    except Exception as e:
+        logger.error(f"[Meeting] 混合查询LLM调用失败: {e}")
+        answer = f"抱歉，处理您的问题时遇到技术问题。请稍后重试。"
+    
+    return HybridQuestionResponse(
+        answer=answer,
+        cards=cards,
+        sources=sources
+    )
+
+
+@router.post("/cards/save")
+async def save_meeting_card(request: SaveCardRequest):
+    """将会议产出的卡片保存到知识库"""
+    card = request.card
+    card_type = card.get("card_type", "blue")
+    title = card.get("title", "会议卡片")
+    content = card.get("content", "")
+    
+    if not title.strip():
+        raise HTTPException(status_code=400, detail="卡片标题不能为空")
+    
+    try:
+        db = get_db_manager()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO knowledge_cards (title, content, card_type, category, tags, related_cards, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title[:100],
+                content,
+                card_type,
+                '会议生成',
+                json.dumps(['会议', request.topic[:20]]),
+                json.dumps([]),
+                datetime.now().isoformat()
+            ))
+            card_id = cursor.lastrowid
+            conn.commit()
+        
+        logger.info(f"[Meeting] 会议卡片已保存: {title[:30]}... (id={card_id})")
+        
+        return {
+            "success": True,
+            "card_id": card_id,
+            "message": f"卡片「{title}」已保存到知识库"
+        }
+    except Exception as e:
+        logger.error(f"[Meeting] 保存会议卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+
+
 @router.post("/discuss/stream")
 async def create_meeting_stream(request: MeetingRequest):
     """
@@ -1498,6 +1646,29 @@ async def create_meeting_stream(request: MeetingRequest):
 
             round_speeches = []
 
+            # ========== 每轮开始前：密卷房 + 太史阁 统一查询知识库卡片 ==========
+            # 查询结果作为本轮所有 Agent 的共享背景信息，由通政司负责分发传达
+            round_knowledge_context = ""
+            try:
+                db = get_db_manager()
+                if db:
+                    search_query = f"{request.topic} {request.context}" if request.context else request.topic
+                    cards = db.search_cards(search_query, limit=8)
+                    if cards:
+                        lines = []
+                        lines.append("【知识库参考卡片 — 密卷房/太史阁检索，通政司分发】")
+                        lines.append(f"以下是与「{request.topic}」相关的知识卡片：")
+                        for i, card in enumerate(cards, 1):
+                            title = card.get('title', '无标题')
+                            content = (card.get('content', '') or '')[:120]
+                            card_type = card.get('card_type', '')
+                            type_tag = {'blue': '事实', 'green': '解释', 'yellow': '风险', 'red': '行动'}.get(card_type, '')
+                            lines.append(f"{i}. [{type_tag}] {title}：{content}...")
+                        round_knowledge_context = "\n".join(lines)
+                        logger.info(f"[Round {round_num}] 密卷房/太史阁检索到 {len(cards)} 条相关卡片，通政司即将分发")
+            except Exception as e:
+                logger.warning(f"[Round {round_num}] 知识库卡片检索失败: {e}")
+
             for agent_id, agent_info in AGENT_MAPPING.items():
                  pixel_id = agent_info.get("pixel_id", agent_id)
 
@@ -1511,21 +1682,32 @@ async def create_meeting_stream(request: MeetingRequest):
                  })
                  await asyncio.sleep(0.1)
 
-                 # 构建上下文：包含前面所有Agent的发言
-                 context_parts = [f"会议主题：{request.topic}"]
-                 if request.context:
-                     context_parts.append(f"背景信息：{request.context[:300]}")  # 截断背景信息
-                 context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
+                 # 构建上下文 — 极简化 prompt，适配 3B 小模型
+                 # 小模型对"你是XX"类指令会本能复读，改用角色代号+直接提问
+                 role_question = {
+                     "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
+                     "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
+                     "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
+                     "jianchayuan": f"关于「{request.topic}」，流程中最大的漏洞是什么？",
+                     "mijuanfang": f"关于「{request.topic}」，知识库中最重要的事实依据是什么？",
+                     "chengxiangfu": f"关于「{request.topic}」，最可执行的战略建议是什么？",
+                     "junjichu": f"关于「{request.topic}」，具体执行计划和分工是什么？",
+                     "zhihuishi": f"关于「{request.topic}」，综合裁决和下一步行动是什么？",
+                 }.get(agent_id, f"关于「{request.topic}」，你的观点是什么？")
 
-                 if all_speeches:
-                     context_parts.append("\n--- 此前的讨论记录 ---")
-                     for prev in all_speeches[-4:]:  # 只看最近4条，减少模式坍缩
-                         clean_text = clean_speech_text(prev['speech'])[:60]  # 截断每条发言
-                         context_parts.append(f"【{prev['agent_name']}】：{clean_text}")
-                     context_parts.append("--- 讨论记录结束 ---\n")
+                 context_parts = [
+                     f"[{agent_info['name']}]{role_question}",
+                     f"主题：{request.topic}",
+                 ]
+                 if request.context:
+                     context_parts.append(f"背景：{request.context[:150]}")
+                 context_parts.append(f"第{round_num}轮·{theme}")
+
+                 # 注入知识库卡片背景信息
+                 if round_knowledge_context:
+                     context_parts.append(f"\n{round_knowledge_context}\n")
 
                  user_prompt = "\n".join(context_parts)
-                 system_prompt = agent_info["system_prompt"]
 
                  # 闭环二：注入用户干预
                  pending_interventions = _user_interventions.get(meeting_id, [])
@@ -1546,41 +1728,32 @@ async def create_meeting_stream(request: MeetingRequest):
                      # 清除已处理的干预
                      _user_interventions[meeting_id] = []
 
-                 # 添加强力约束：长度限制 + 禁止重复 + 多样性
-                 user_prompt += "\n\n重要：必须严格按照System Prompt中的字数限制发言。不要重复其他智能体已经说过的观点，必须从你自己的角色视角提出独到的、不同的见解。直接给结论，不要复述背景。"
+                 # 每个 Agent 的角色专属约束 — 只追加输出格式要求
+                 role_hints = {
+                     "taishige": "\n直接回答，50字以内。",
+                     "jinjiyu": "\n只说风险点，50字以内。",
+                     "tongzhengsi": "\n只说核心信息，50字以内。",
+                     "jianchayuan": "\n只说漏洞，40字以内。",
+                     "mijuanfang": "\n引用卡片事实，40字以内。",
+                     "chengxiangfu": "\n只说建议，40字以内。",
+                     "junjichu": "\n列出分工和时间，50字以内。",
+                     "zhihuishi": "\n只说决策和下一步，60字以内。",
+                 }
+                 user_prompt += role_hints.get(agent_id, "\n直接回答，40字以内。")
 
-                 # 如果是密卷房，先搜索数据库获取相关资料
-                 if agent_id == "mijuanfang":
+                 # 如果有图片数据，仅密卷房使用视觉模型分析
+                 if agent_id == "mijuanfang" and request.image_data:
                      try:
-                         db = get_db_manager()
-                         if db:
-                             search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                             cards = db.search_cards(search_query, limit=5)
-                             
-                             if cards:
-                                 relevant_info = f"\n【知识库参考】关于'{request.topic}'的相关资料："
-                                 for card in cards:
-                                     title = card.get('title', '无标题')
-                                     content = (card.get('content', '') or '')[:150]
-                                     relevant_info += f"\n- {title}：{content}..."
-                                 user_prompt += relevant_info
-                                 logger.info(f"密卷房检索到 {len(cards)} 条相关卡片")
+                         vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
+                         if vision_result:
+                             user_prompt += f"\n\n【图片分析结果】{vision_result}"
+                             logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
                      except Exception as e:
-                         logger.warning(f"密卷房知识库搜索失败: {e}")
+                         logger.warning(f"密卷房视觉分析失败: {e}")
 
-                     # 如果有图片数据，使用视觉模型分析
-                     if request.image_data:
-                         try:
-                             vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
-                             if vision_result:
-                                 user_prompt += f"\n\n【图片分析结果】{vision_result}"
-                                 logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
-                         except Exception as e:
-                             logger.warning(f"密卷房视觉分析失败: {e}")
-
-                 # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
+                 # 调用LLM — 人设已嵌入 user_prompt 头部，不再依赖 system role
                  # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                 llm_task = asyncio.create_task(call_llm(system_prompt, user_prompt))
+                 llm_task = asyncio.create_task(call_llm("你是一位古代朝廷官员，简洁回答问题，不要自我介绍。", user_prompt, max_tokens=150))
                  speech_content = None
                  try:
                      while not llm_task.done():
@@ -1623,7 +1796,32 @@ async def create_meeting_stream(request: MeetingRequest):
                  round_speeches.append(speech_data)
 
                  yield _sse_event("agent_speech", speech_data)
-                 await asyncio.sleep(0.3)  # 给前端一点时间渲染动画
+                 await asyncio.sleep(0.3)
+
+                 # 提取四色卡片并推送前端（发言 > 30 字才提取）
+                 if len(speech_content) > 30:
+                     try:
+                         extracted = await _extract_color_cards(
+                             agent_id, agent_info["name"], speech_content, request.topic
+                         )
+                         if extracted:
+                             yield _sse_event("agent_cards", {
+                                 "agent_id": agent_id,
+                                 "agent_name": agent_info["name"],
+                                 "round": round_num,
+                                 "cards": [
+                                     {
+                                         "card_type": c.get("type", "blue"),
+                                         "title": c.get("title", ""),
+                                         "content": c.get("content", ""),
+                                         "round": round_num
+                                     }
+                                     for c in extracted
+                                 ]
+                             })
+                             logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
+                     except Exception as e:
+                         logger.error(f"[Meeting] agent_cards提取失败: {e}")
 
             all_rounds.append({
                 "round": round_num,

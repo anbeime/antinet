@@ -255,19 +255,10 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
       const response = await fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph`);
       if (response.ok) {
         const data = await response.json();
-        setApiData(data);
-        setGraphSource('api');
-        // 同步填充卡片列表，确保列表模式展示与图谱一致的卡片
-        if (data.nodes && Array.isArray(data.nodes)) {
-          const backlinkCards = data.nodes.map((n: any) => ({
-            id: n.id,
-            title: n.title || '',
-            content: '',
-            card_type: n.type || 'blue',
-            type: n.type || 'blue',
-          }));
-          setCards(backlinkCards);
-        }
+ setApiData(data);
+ setGraphSource('api');
+ // 不覆盖 cards 列表 —— 保持全部卡片供搜索用
+ // 图谱数据通过 apiData + graphSource='api' 单独管理
       } else {
         console.error('加载链接图谱失败:', response.status);
       }
@@ -287,19 +278,10 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
       const data = await response.json();
       console.log('[Search] API返回:', data);
       // 先设置数据，再切换模式，避免竞态
-      setApiData(data);
-      setGraphSource('api');
-      // 同步填充卡片列表，确保列表模式展示与图谱一致的卡片
-      if (data.suggestions && Array.isArray(data.suggestions)) {
-        const searchedCards = data.suggestions.map((s: any) => ({
-          id: s.card_id,
-          title: s.title || '',
-          content: s.content || '',
-          card_type: s.card_type || s.type || 'blue',
-          type: s.card_type || s.type || 'blue',
-        }));
-        setCards(searchedCards);
-      }
+ setApiData(data);
+ setGraphSource('api');
+ // 不覆盖 cards 列表 —— 保持全部卡片供搜索用
+ // 图谱搜索结果通过 apiData + graphSource='api' 单独管理
     } catch (e) {
       console.error('Load KG failed:', e);
       alert('搜索失败: ' + e.message);
@@ -425,13 +407,10 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
     }
   };
 
-  // 初始化时加载卡片列表（如果没有 ?card=xxx 参数才加载全部卡片）
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (!params.get('card')) {
-      loadCards();
-    }
-  }, []);
+ // 初始化时加载卡片列表（始终加载全部卡片，确保搜索可用）
+ useEffect(() => {
+ loadCards();
+ }, []);
 
 
 

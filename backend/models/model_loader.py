@@ -623,26 +623,24 @@ class NPUModelLoader:
 
     def _format_prompt(self, user_input: str, system_prompt: str = None) -> str:
         """
-        格式化用户输入为模型期望的提示格式
-        
-        【参考旧版本】简化处理：忽略自定义 system_prompt，把所有内容放到 user 部分
-        这样可以避免模型混淆输入输出
+        格式化用户输入为模型期望的 ChatML 格式
         
         Args:
             user_input: 用户输入文本（已包含所有上下文）
-            system_prompt: 忽略（旧版本兼容）
+            system_prompt: 自定义系统提示词，None 时使用默认值
             
         Returns:
             格式化后的完整提示
         """
-        # 使用固定的简单 system prompt，避免模型混淆（参考旧版本）
-        prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        # 使用自定义 system_prompt（如 Agent 角色设定），否则使用通用默认值
+        effective_system = system_prompt if system_prompt else "You are a helpful assistant."
+        prompt_tags_1 = f"<|im_start|>system\n{effective_system}<|im_end|>\n<|im_start|>user\n"
         prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
         
         # 构建完整提示（user_input 已包含所有内容）
         formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
         
-        logger.debug(f"[ChatML] user_input长度={len(user_input)}, 格式化后长度={len(formatted_prompt)}")
+        logger.debug(f"[ChatML] system_prompt长度={len(effective_system)}, user_input长度={len(user_input)}, 格式化后长度={len(formatted_prompt)}")
         
         return formatted_prompt
 
@@ -675,10 +673,10 @@ class NPUModelLoader:
         执行推理
 
         Args:
-            prompt: 输入提示词
-            max_new_tokens: 最大生成token数（默认32，参考旧版本）
-            temperature: 温度参数（默认0.7，参考旧版本）
-            system_prompt: 忽略（旧版本兼容）
+            prompt: 用户输入提示词
+            max_new_tokens: 最大生成token数
+            temperature: 温度参数
+            system_prompt: 自定义系统提示词（Agent角色设定等）
 
         Returns:
             生成的文本

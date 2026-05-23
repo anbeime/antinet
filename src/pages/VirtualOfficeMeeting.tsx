@@ -21,6 +21,9 @@ import {
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import MeetingCardPanel from '@/components/MeetingCardPanel';
+import MeetingCardSaveModal from '@/components/MeetingCardSaveModal';
+import type { MeetingCard } from '@/types/card';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
@@ -95,33 +98,18 @@ const CARD_TYPE_MAP = {
   red: { color: 'bg-red-900/40 border border-red-700/50', icon: <span className="text-red-400">🎯</span> }
 };
 
-// 模拟讨论轮次数据
+// 降级模拟讨论轮次数据（SSE 不可用时使用）
+// 注意：模拟不伪造 Agent 发言和卡片。真实数据由 SSE agent_speech / agent_cards 推送。
 const generateMockDiscussion = (topic: string, rounds: number) => {
-  const mockResponses = [
-    `关于"${topic}"，我认为需要从多个维度进行分析。首先，让我们明确核心事实。`,
-    `从安全角度考虑，这个议题存在几个潜在风险点需要重点关注。`,
-    `我已经收集了相关的情报数据，可以为后续分析提供支持。`,
-    `经过监督审查，发现流程中存在一些可以优化的环节。`,
-    `相关知识文档已经整理完毕，可以随时调用参考。`,
-    `基于战略视角，我建议采取以下几种方案进行推进。`,
-    `任务执行方案已经制定，预计可以在规定时间内完成。`,
-    `作为协调官，我将确保各部门高效协作，达成最终目标。`
-  ];
-
   return Array.from({ length: rounds }, (_, i) => ({
     round: i + 1,
     title: `第${i + 1}轮讨论`,
-    discussions: AGENT_ROLES.map((agent, idx) => ({
+    discussions: AGENT_ROLES.map((agent) => ({
       agent,
-      message: mockResponses[idx % mockResponses.length],
-      timestamp: new Date(Date.now() + i * 1000 + idx * 100).toISOString()
+      message: `[模拟] 后端未连接，请启动 zhiyi 后端以获取真实 Agent 发言`,
+      timestamp: new Date(Date.now() + i * 1000).toISOString()
     })),
-    cards: [
-      { type: 'blue', title: '核心事实', content: `第${i + 1}轮讨论中确定的核心事实内容...` },
-      { type: 'green', title: '原因分析', content: `第${i + 1}轮讨论中的原因分析...` },
-      { type: 'yellow', title: '风险检测', content: `第${i + 1}轮讨论中识别的风险...` },
-      { type: 'red', title: '行动建议', content: `第${i + 1}轮讨论的行动建议...` }
-    ]
+    cards: []
   }));
 };
 
@@ -345,6 +333,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [agentList, setAgentList] = useState<any[]>([]);
   const [taskList, setTaskList] = useState<any[]>([]);
   const [hybridMode, setHybridMode] = useState(true);
+  const [meetingCards, setMeetingCards] = useState<MeetingCard[]>([]);  // 会议中积累的知识卡片
+  const [saveModalOpen, setSaveModalOpen] = useState(false);              // 卡片保存弹窗
+  const [saveTargetCard, setSaveTargetCard] = useState<MeetingCard | null>(null);  // 待保存的卡片
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
@@ -376,10 +367,10 @@ const VirtualOfficeMeeting: React.FC = () => {
       }));
     }
     
-    // 如果开启混合模式，调用后端获取智能体响应
+    // 如果开启混合模式，调用后端混合查询（知识卡片 + LLM）
     if (hybridMode && isLoading) {
       try {
-        const res = await fetch(getApiBaseUrl() + '/api/hybrid/question', {
+        const res = await fetch(getApiBaseUrl() + '/api/meeting/hybrid-question', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: msg, topic })
@@ -401,6 +392,20 @@ const VirtualOfficeMeeting: React.FC = () => {
               timestamp: new Date().toISOString()
             }]);
           }, 500);
+          
+          // 将查询返回的卡片追加到会议卡片列表
+          if (data.cards && data.cards.length > 0) {
+            const newCards: MeetingCard[] = data.cards.map((c: any) => ({
+              card_type: c.card_type || 'blue',
+              title: c.title || '',
+              content: c.content || '',
+              source: 'human_query' as const,
+              match_score: c.similarity,
+              saved: false,
+              timestamp: new Date().toISOString()
+            }));
+            setMeetingCards(prev => [...prev, ...newCards]);
+          }
         }
       } catch (err) {
         console.error('[Hybrid] 获取响应失败:', err);
@@ -646,6 +651,32 @@ useEffect(() => {
                 message: evt.data.speech,
                 timestamp: evt.data.timestamp || new Date().toISOString()
               }]);
+              break;
+            }
+
+            case 'agent_cards': {
+              // 处理 Agent 发言中提取的四色卡片
+              const { agent_name, round: cardRound, cards: extractedCards } = evt.data;
+              if (extractedCards && extractedCards.length > 0) {
+                const newCards: MeetingCard[] = extractedCards.map((c: any) => ({
+                  card_type: c.card_type || 'blue',
+                  title: c.title || '',
+                  content: c.content || '',
+                  source: 'agent_extracted' as const,
+                  agent_name: agent_name || '',
+                  round: cardRound || 1,
+                  saved: false,
+                  timestamp: new Date().toISOString()
+                }));
+                setMeetingCards(prev => [...prev, ...newCards]);
+                // 同步写入 currentRound.cards，以便会议结果中展示真实卡片
+                if (currentRound) {
+                  currentRound.cards = [
+                    ...currentRound.cards,
+                    ...extractedCards.map((c: any) => ({ type: c.card_type, title: c.title, content: c.content }))
+                  ];
+                }
+              }
               break;
             }
 
@@ -1553,6 +1584,14 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   );
                 })}
                 <div ref={liveDiscussionsEndRef} />
+                {/* 会议中积累的知识卡片 */}
+                <MeetingCardPanel
+                  cards={meetingCards}
+                  onSaveCard={(card) => {
+                    setSaveTargetCard(card);
+                    setSaveModalOpen(true);
+                  }}
+                />
               </div>
 {/* 人类发言入口 */}
               <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
@@ -1785,6 +1824,22 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           )}
         </div>
       </div>
+      {/* 卡片保存弹窗 */}
+      <MeetingCardSaveModal
+        isOpen={saveModalOpen}
+        onClose={() => { setSaveModalOpen(false); setSaveTargetCard(null); }}
+        card={saveTargetCard}
+        meetingId={meetingResult?.meeting_id || ''}
+        topic={topic}
+        onSaved={(_card, cardId) => {
+          // 标记已保存的卡片
+          setMeetingCards(prev =>
+            prev.map(c =>
+              c === saveTargetCard ? { ...c, saved: true, id: cardId } : c
+            )
+          );
+        }}
+      />
     </div>
   );
 };
