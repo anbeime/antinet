@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Users, History, Shield, MessageSquare, Eye, Database, Crown, Target, CheckCircle, Activity, Zap, TrendingUp, Clock, Cpu } from 'lucide-react';
+import { Users, History, Shield, MessageSquare, Eye, Database, Crown, Target, Activity, Zap, TrendingUp, Clock, Cpu } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface Agent {

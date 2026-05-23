@@ -226,7 +226,7 @@ const BatchProcess: React.FC = () => {
     try {
       // 使用批量上传端点 POST /api/knowledge/import/batch
       const formData = new FormData();
-      waitingFiles.forEach((bf, idx) => {
+      waitingFiles.forEach((bf) => {
         formData.append('files', bf.file);
       });
 
@@ -290,8 +290,6 @@ const BatchProcess: React.FC = () => {
 
     setIsProcessing(false);
 
-    const completedFiles = files.filter(f => f.status === 'completed');
-    const totalCards = completedFiles.reduce((sum, f) => sum + (f.extractedCards?.length || 0), 0);
     if (options.autoSaveCards && savedCardsCount > 0) {
       toast.success(`处理完成！已保存 ${savedCardsCount} 张卡片到知识库`);
     }
@@ -482,8 +480,7 @@ const BatchProcess: React.FC = () => {
                   type="file"
                   ref={folderInputRef}
                   onChange={handleFileSelect}
-                  webkitdirectory=""
-                  directory=""
+                  {...({ webkitdirectory: '', directory: '' } as any)}
                   multiple
                   className="hidden"
                 />

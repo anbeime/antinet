@@ -4,6 +4,7 @@ import 'dayjs/locale/zh-cn';
 import { ChevronLeft, ChevronRight, X, CheckCircle2, Circle, Trash2 } from 'lucide-react';
 import { useCalendar } from '@/hooks/useCalendar';
 import { toast } from 'sonner';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 dayjs.locale('zh-cn');
 

@@ -16,10 +16,8 @@ import {
   X,
   Eye,
   Trash2,
-  File,
   AlertCircle,
   FileCode,
-  Search,
   Presentation,
   ChevronLeft,
   ChevronRight,
@@ -111,7 +109,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       // 转义 HTML 标签
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       // 代码块
-      .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) =>
+      .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
         `<pre class="bg-gray-800 text-green-400 p-3 rounded-lg my-2 overflow-x-auto text-sm"><code>${code.trim()}</code></pre>`)
       // 行内代码
       .replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm text-purple-600">$1</code>')
@@ -124,10 +122,10 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
       // 表格
       .replace(/^\|(.+)\|$/gm, (_m, row) => {
-        const cells = row.split('|').map(c => c.trim());
-        const isSeparator = cells.every(c => /^[-:]+$/.test(c));
+        const cells = row.split('|').map((c: string) => c.trim());
+        const isSeparator = cells.every((c: string) => /^[-:]+$/.test(c));
         if (isSeparator) return '';
-        return `<tr>${cells.map(c => `<td class="border border-gray-300 dark:border-gray-600 px-3 py-1.5">${c}</td>`).join('')}</tr>`;
+        return `<tr>${cells.map((c: string) => `<td class="border border-gray-300 dark:border-gray-600 px-3 py-1.5">${c}</td>`).join('')}</tr>`;
       })
       // 无序列表
       .replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
@@ -703,164 +701,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     }
   };
 
-  // 生成 PDF 预览内容
-  const generatePDFContent = (analysisResult: any, fileName: string) => {
-    const cards = analysisResult.cards || [];
-    
-    const cardHTML = cards.map((card: any, index: number) => {
-      const colors: Record<string, string> = {
-        fact: '#3b82f6',
-        explanation: '#10b981',
-        risk: '#f59e0b',
-        action: '#ef4444'
-      };
-      
-      const typeNames: Record<string, string> = {
-        fact: '事实',
-        explanation: '解释',
-        risk: '风险',
-        action: '行动'
-      };
 
-      const safeTags = Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' && card.tags ? JSON.parse(card.tags) : []);
-
-      return `
-        <div style="
-          margin-bottom: 20px;
-          padding: 15px;
-          border-left: 4px solid ${colors[card.type] || '#3b82f6'};
-          background: #f9fafb;
-          page-break-inside: avoid;
-        ">
-          <div style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-          ">
-            <h3 style="margin: 0; color: ${colors[card.type] || '#3b82f6'};">
-              [${typeNames[card.type] || '其他'}] ${card.title}
-            </h3>
-            <span style="color: #9ca3af; font-size: 12px;">#${index + 1}</span>
-          </div>
-          <p style="margin: 0; line-height: 1.6; color: #374151;">${card.content}</p>
-          ${safeTags.length > 0 ? `<p style="margin-top: 10px; font-size: 12px; color: #6b7280;">标签: ${safeTags.join(', ')}</p>` : ''}
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${fileName} - 分析报告</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #1f2937;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #3b82f6;
-          }
-          .header h1 {
-            margin: 0 0 10px 0;
-            color: #1e40af;
-          }
-          .header p {
-            margin: 0;
-            color: #6b7280;
-          }
-          .stats {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 30px;
-          }
-          .stat-item {
-            text-align: center;
-            padding: 15px;
-            background: #f3f4f6;
-            border-radius: 8px;
-          }
-          .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #3b82f6;
-          }
-          .stat-label {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 5px;
-          }
-          @media print {
-            body { padding: 20px; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>PDF 分析报告</h1>
-          <p>源文件: ${fileName}</p>
-          <p>生成时间: ${new Date().toLocaleString('zh-CN')}</p>
-        </div>
-        
-        <div class="stats">
-          <div class="stat-item">
-            <div class="stat-value">${cards.length}</div>
-            <div class="stat-label">总卡片数</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'fact').length}</div>
-            <div class="stat-label">事实卡片</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'explanation').length}</div>
-            <div class="stat-label">解释卡片</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'action').length}</div>
-            <div class="stat-label">行动卡片</div>
-          </div>
-        </div>
-
-        <h2 style="color: #1f2937; margin-top: 30px;">知识卡片详情</h2>
-        ${cardHTML}
-
-        <div class="no-print" style="
-          margin-top: 40px;
-          padding: 20px;
-          background: #eff6ff;
-          border-radius: 8px;
-          text-align: center;
-        ">
-          <p style="margin: 0 0 10px 0; color: #1e40af;">
-            💡 提示：按 Ctrl+P（或 Cmd+P）可以打印或保存为 PDF
-          </p>
-          <button onclick="window.print()" style="
-            padding: 10px 20px;
-            background: #3b82f6;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-          ">
-            打印 / 保存为 PDF
-          </button>
-        </div>
-      </body>
-      </html>
-    `;
-  };
 
   // 下载文件
   const downloadFile = (task: ConversionTask) => {

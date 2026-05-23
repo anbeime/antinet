@@ -12,7 +12,6 @@ import {
   AlertCircle,
   Image,
   Upload,
-  Trash2,
   FolderOpen
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';

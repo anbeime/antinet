@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 

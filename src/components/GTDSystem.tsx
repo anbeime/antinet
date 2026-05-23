@@ -2,20 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
-  Inbox,
-  Clock,
   Calendar,
-  Archive,
-  Book,
   PlusCircle,
-  MoreHorizontal,
   Search,
   Flag,
   X,
-  Check,
   Trash2,
-  Edit,
-  ArrowRight,
   Share2,
   ExternalLink,
   FileText,
@@ -201,14 +193,13 @@ const GTDTaskPDF: React.FC<GTDTaskPDFProps> = ({ tasks, category }) => {
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
 
 const GTDSystem: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<Category>('inbox');
+  const [activeCategory, setActiveCategory] = useState<Category | 'all'>('inbox');
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
   const [calendarFullscreen, setCalendarFullscreen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTask, setEditingTask] = useState<GtdTaskType | null>(null);
-  const [showActionMenu, setShowActionMenu] = useState<number | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
@@ -344,21 +335,7 @@ const GTDSystem: React.FC = () => {
     }
   };
 
-  // 获取分类图标
-  const getCategoryIcon = (category: Category) => {
-    switch(category) {
-      case 'inbox':
-        return <Inbox size={20} />;
-      case 'today':
-        return <Clock size={20} />;
-      case 'later':
-        return <Calendar size={20} />;
-      case 'archive':
-        return <Archive size={20} />;
-      case 'projects':
-        return <Book size={20} />;
-    }
-  };
+
 
   // 创建新任务
   const handleCreateTask = async () => {
@@ -440,7 +417,7 @@ const GTDSystem: React.FC = () => {
  // 移动任务到其他分类
   const handleMoveTask = async (taskId: number, targetCategory: Category, projectId?: number) => {
     try {
-      await gtdTaskService.update(taskId, { category: targetCategory, project_id: projectId ?? null });
+      await gtdTaskService.update(taskId, { category: targetCategory, project_id: projectId });
       
       // 重新加载数据
       const allTasks = await gtdTaskService.getAll();
@@ -452,7 +429,6 @@ const GTDSystem: React.FC = () => {
         projects: allTasks.filter(task => task.category === 'projects')
       };
       setTasks(organizedTasks);
-      setShowActionMenu(null);
       
       toast('任务已移动！', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -484,7 +460,6 @@ const GTDSystem: React.FC = () => {
         projects: allTasks.filter(task => task.category === 'projects')
       };
       setTasks(organizedTasks);
-      setShowActionMenu(null);
       
       toast('任务已删除', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -508,7 +483,6 @@ const GTDSystem: React.FC = () => {
       reminder_enabled: (task as any).reminder_enabled || false
     });
     setShowEditModal(true);
-    setShowActionMenu(null);
   };
 
   // 保存编辑
@@ -657,8 +631,8 @@ const GTDSystem: React.FC = () => {
         {/* 分类标签 */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 via-green-50 to-yellow-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            {(['all', 'inbox', 'today', 'later', 'archive', 'projects'] as (Category | 'all')[]).map(category => {
-              const isActive = category === 'all' ? activeCategory === 'all' : (activeCategory === category && viewMode === 'list');
+            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => {
+              const isActive = activeCategory === category && viewMode === 'list';
               const categoryColors: Record<string, {active: string, inactive: string}> = {
                 all: { active: 'bg-purple-600 text-white shadow-purple-200 dark:shadow-purple-900', inactive: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700' },
                 inbox: { active: 'bg-blue-600 text-white shadow-blue-200 dark:shadow-blue-900', inactive: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
@@ -668,7 +642,6 @@ const GTDSystem: React.FC = () => {
                 projects: { active: 'bg-green-600 text-white shadow-green-200 dark:shadow-green-900', inactive: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
               };
               const icons: Record<string, string> = {
-                all: '📋',
                 inbox: '📥',
                 today: '⏰',
                 later: '📅',
@@ -676,7 +649,6 @@ const GTDSystem: React.FC = () => {
                 projects: '📚',
               };
               const labels: Record<string, string> = {
-                all: '全部',
                 inbox: '收集箱',
                 today: '等待处理',
                 later: '将来可能',
@@ -698,14 +670,9 @@ const GTDSystem: React.FC = () => {
                 >
                   <span className="text-base">{icons[category]}</span>
                   <span>{labels[category]}</span>
-                  {isActive && category !== 'all' && (
+                  {isActive && (
                     <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {tasks[category as Category]?.length || 0}
-                    </span>
-                  )}
-                  {isActive && category === 'all' && (
-                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {Object.values(tasks).flat().length}
+                      {tasks[category]?.length || 0}
                     </span>
                   )}
                 </button>
@@ -726,7 +693,7 @@ const GTDSystem: React.FC = () => {
             <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {activeCategory === 'all' ? '全部任务' : 
+                  {(activeCategory as string) === 'all' ? '全部任务' : 
                    activeCategory === 'inbox' ? '收集箱' : 
                    activeCategory === 'today' ? '等待处理' :
                    activeCategory === 'later' ? '将来可能' :
@@ -847,7 +814,7 @@ const GTDSystem: React.FC = () => {
                   </select>
                   {selectedTaskIds.size > 0 && (
                     <PDFDownloadLink
-                      document={<GTDTaskPDF tasks={filteredTasks.filter(t => selectedTaskIds.has(t.id!))} category={activeCategory === 'all' ? undefined : activeCategory} />}
+                      document={<GTDTaskPDF tasks={filteredTasks.filter(t => selectedTaskIds.has(t.id!))} category={(activeCategory as string) === 'all' ? undefined : activeCategory} />}
                       fileName={`gtd-tasks-selected-${new Date().toISOString().split('T')[0]}.pdf`}
                     >
                       {({ loading }) => (

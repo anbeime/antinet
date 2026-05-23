@@ -13,7 +13,7 @@ import {
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
   Upload, Mic, MicOff, Volume2, VolumeX,
-  Download, Eye, Maximize2, Minimize2,
+  Eye, Maximize2, Minimize2,
   Brain
 } from 'lucide-react';
 import { toast } from 'sonner';

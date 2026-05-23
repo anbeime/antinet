@@ -9,7 +9,7 @@ import { X, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import type { MeetingCard, CardColor } from '@/types/card';
-import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
+import { CARD_COLOR_CSS } from '@/types/card';
 
 interface MeetingCardSaveModalProps {
   isOpen: boolean;

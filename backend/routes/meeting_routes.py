@@ -303,25 +303,44 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
     
     try:
         import re
+        # 增强 system_prompt，添加明确的示例和禁止项
         system_prompt = """你是四色卡片分类专家。你的任务是将文本内容分类为四色卡片之一：
 - 蓝色(事实): 客观数据、定义、事件、统计结果
 - 绿色(解释): 背景、原理、原因、逻辑解释
 - 黄色(风险): 隐患、问题、反面案例、潜在威胁
 - 红色(动力): 行动建议、机会、推动力、解决方案
 
-严格按以下JSON数组格式输出，只输出JSON，不要其他内容：
-[{"type": "blue/green/yellow/red", "title": "简短标题", "content": "核心内容(50字以内)"}]"""
+【重要规则】
+1. 必须输出JSON数组格式，不要输出对象或其他格式
+2. 每个卡片必须有 type、title、content 三个字段
+3. type 必须是 blue/green/yellow/red 之一
+4. 只输出JSON数组，不要其他任何文字
+
+【正确示例】
+[{"type": "blue", "title": "市场规模", "content": "2023年市场规模达500亿元"}]
+
+【错误示例 - 禁止】
+{"key": "评估", "value": "多个维度"}
+{"type": "unknown", "title": "..."}"""
         
         user_prompt = f"""分析以下发言，提取最有价值的1-2条四色卡片内容：
 
-发言: {speech[:300]}
-主题: {topic}
+【发言内容】
+{speech[:300]}
 
-请提取最核心的信息，生成JSON数组："""
+【会议主题】
+{topic}
+
+请严格按照JSON数组格式输出，只输出JSON："""
+        
+        # 调试日志：记录输入
+        logger.info(f"[_extract_color_cards] 开始提取 | agent={agent_name} | speech长度={len(speech)} | topic={topic[:30]}")
+        logger.info(f"[_extract_color_cards] 用户提示词前100字: {user_prompt[:100]}")
         
         result = await call_llm(system_prompt, user_prompt, max_tokens=200, agent_id=agent_id)
         
         if not result:
+            logger.warning(f"[_extract_color_cards] LLM返回为空")
             return []
         
         # 调试日志：查看LLM原始返回
@@ -341,19 +360,59 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
         if start >= 0 and end > start:
             try:
                 cards = json.loads(cleaned[start:end])
-                logger.info(f"[_extract_color_cards] 解析成功，卡片数量: {len(cards)}")
-                logger.info(f"[_extract_color_cards] 第一张卡片: {cards[0] if cards else 'None'}")
-                # 添加探索状态
-                for card in cards:
-                    card['explore_status'] = 'pending'
-                return cards
+                
+                # 验证格式是否正确
+                if not isinstance(cards, list):
+                    logger.error(f"[_extract_color_cards] 解析结果不是数组，而是: {type(cards).__name__}")
+                    logger.error(f"[_extract_color_cards] 实际内容: {cards}")
+                    logger.error(f"[_extract_color_cards] 可能LLM返回了错误的JSON格式")
+                    return []
+                
+                # 验证每个卡片的字段
+                valid_cards = []
+                for i, card in enumerate(cards):
+                    if not isinstance(card, dict):
+                        logger.warning(f"[_extract_color_cards] 第{i+1}个元素不是对象: {type(card).__name__}")
+                        continue
+                    
+                    # 检查必需字段
+                    if 'type' not in card or 'title' not in card or 'content' not in card:
+                        logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少必需字段: {list(card.keys())}")
+                        logger.warning(f"[_extract_color_cards] 卡片内容: {card}")
+                        continue
+                    
+                    # 验证 type 值
+                    if card['type'] not in ['blue', 'green', 'yellow', 'red']:
+                        logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card['type']}")
+                        continue
+                    
+                    valid_cards.append(card)
+                
+                if valid_cards:
+                    logger.info(f"[_extract_color_cards] 解析成功，有效卡片数量: {len(valid_cards)}")
+                    logger.info(f"[_extract_color_cards] 第一张卡片: {valid_cards[0]}")
+                    # 添加探索状态
+                    for card in valid_cards:
+                        card['explore_status'] = 'pending'
+                    return valid_cards
+                else:
+                    logger.error(f"[_extract_color_cards] 所有卡片都无效，可能是LLM返回格式错误")
+                    return []
+                    
             except json.JSONDecodeError as je:
                 logger.error(f"[_extract_color_cards] JSON解析失败: {je}")
                 logger.error(f"[_extract_color_cards] 解析的文本: {cleaned[start:end]}")
             except Exception as e:
                 logger.error(f"[_extract_color_cards] 未知错误: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning(f"[_extract_color_cards] 未找到JSON数组标记 [ 或 ]")
+            logger.warning(f"[_extract_color_cards] 清理后的内容: {cleaned[:200]}")
     except Exception as e:
         logger.error(f"提取四色卡片失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     return []
 

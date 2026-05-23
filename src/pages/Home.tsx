@@ -4,11 +4,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Brain,
-  Home as HomeIcon,
   ChevronDown,
   ChevronRight,
   Search,
-  Plus,
   PlusCircle,
   X,
   AlertCircle,
@@ -18,19 +16,12 @@ import {
   Cpu,
   Sparkles,
   FileText,
-Eye,
-  Trash2,
   Layers,
   ListTodo,
   Bot,
   Users,
-  Clapperboard,
-  FileSpreadsheet,
-  FileType,
   BookOpen,
   GitBranch,
-  BarChart3,
-  LayoutDashboard,
   Database,
   CheckSquare,
   Video,
@@ -75,7 +66,8 @@ import OfficeDocs from '@/pages/OfficeDocs';
 
 
 
-// 定义卡片类型
+// 定义卡片颜色类型
+type CardColor = 'blue' | 'green' | 'yellow' | 'red';
 
 // 定义表单数据类型
 interface CardFormData {
@@ -84,6 +76,7 @@ interface CardFormData {
   color: CardColor;
   address: string;
   relatedCards: string[];
+  projectId?: number;
 }
 
 interface KnowledgeCard {
@@ -98,7 +91,16 @@ interface KnowledgeCard {
 }
 
 // 卡片类型映射
-const cardTypeMap = {
+const cardTypeMap: Record<CardColor, { 
+  name: string; 
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  hoverColor: string;
+  textColor: string;
+  bgColor: string;
+  borderColor: string;
+}> = {
   blue: { 
     name: '核心概念', 
     description: '记录重要的想法、理论和主要观点',
@@ -167,7 +169,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [managementSearchQuery, setManagementSearchQuery] = useState('');
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
@@ -186,9 +187,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   
   // 卡片管理筛选和分页
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | CardColor>('all');
-  const [projectFilter, setProjectFilter] = useState<number | 'all'>('all');
-  const [projects, setProjects] = useState<{id: number; name: string}[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   
@@ -510,17 +508,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             images: card.images || []
           }));
           setCards(formattedCards);
-          
-          // 加载专题列表
-          try {
-            const projRes = await fetch(getApiBaseUrl() + '/api/research/projects');
-            if (projRes.ok) {
-              const projData = await projRes.json();
-              setProjects(projData.value || projData || []);
-            }
-          } catch (e) {
-            console.error('加载专题失败:', e);
-          }
           
           console.log('从API加载卡片:', formattedCards.length);
         }
