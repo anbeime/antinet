@@ -85,9 +85,9 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
 // 渲染消息内容组件 - 支持 markdown 渲染和 [点击跳转:url] 格式的链接
 const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ content, onClose }) => {
   const navigate = useNavigate();
-  
+
   if (!content) return null;
-  
+
   // 匹配 [点击跳转:url] 格式
   const linkRegex = /\[点击跳转:([^\]]+)\]/g;
   const parts: React.ReactNode[] = [];

@@ -1,11 +1,11 @@
 /**
  * 会议卡片面板组件
  * 在虚拟会议中展示四色知识卡片（Agent提取 + 人类查询命中）
- * 支持保存到知识库功能
+ * 支持保存到知识库功能，支持点击标题查看详情
  */
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { MeetingCard, CardColor, CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
 
 // ==================== 卡片颜色样式映射 ====================
@@ -31,12 +31,91 @@ interface MeetingCardPanelProps {
 }
 
 /**
+ * 卡片详情弹窗
+ */
+const CardDetailPopup: React.FC<{
+  card: MeetingCard;
+  onClose: () => void;
+}> = ({ card, onClose }) => {
+  const color = card.card_type as CardColor;
+  const style = CARD_STYLE_MAP[color] || CARD_STYLE_MAP.blue;
+  const icon = CARD_ICON_MAP[color] || '📋';
+  const typeName = CARD_COLOR_MAP[color] || '未知';
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      {/* 背景遮罩 */}
+      <motion.div
+        className="absolute inset-0 bg-black/60"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      {/* 弹窗内容 */}
+      <motion.div
+        className={`relative w-full max-w-lg rounded-xl border ${style.border} bg-gray-900 shadow-2xl overflow-hidden`}
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${style.border} ${style.bg}`}>
+          <div className="flex items-center gap-2">
+            <span className={`${style.badge} text-white text-xs px-2 py-0.5 rounded font-medium`}>
+              {icon} {typeName}
+            </span>
+            <span className="text-white text-sm font-semibold truncate">{card.title}</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-gray-700/50 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 内容区 */}
+        <div className="px-4 py-4 max-h-[60vh] overflow-y-auto">
+          <p className="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">
+            {card.content || '(无内容)'}
+          </p>
+        </div>
+
+        {/* 底部信息 */}
+        <div className="px-4 py-3 border-t border-gray-700/50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {card.source === 'agent_extracted' && card.agent_name && (
+              <span className="text-gray-400 text-xs">🤖 {card.agent_name} 提取</span>
+            )}
+            {card.source === 'human_query' && (
+              <span className="text-gray-400 text-xs">🔍 知识库查询</span>
+            )}
+            {card.agent_name && card.source === 'human_query' && (
+              <span className="text-gray-400 text-xs">📁 {card.agent_name}</span>
+            )}
+            {card.match_score !== undefined && card.match_score > 0 && (
+              <span className="text-gray-500 text-xs">匹配度: {(card.match_score * 100).toFixed(0)}%</span>
+            )}
+          </div>
+          {card.round && (
+            <span className="text-gray-500 text-xs">第 {card.round} 轮</span>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+/**
  * 单张会议卡片组件
  */
 const MeetingCardItem: React.FC<{
   card: MeetingCard;
   onSave?: (card: MeetingCard) => void;
-}> = ({ card, onSave }) => {
+  onClick?: (card: MeetingCard) => void;
+}> = ({ card, onSave, onClick }) => {
   const color = card.card_type as CardColor;
   const style = CARD_STYLE_MAP[color] || CARD_STYLE_MAP.blue;
   const icon = CARD_ICON_MAP[color] || '📋';
@@ -55,7 +134,13 @@ const MeetingCardItem: React.FC<{
           <span className={`${style.badge} text-white text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap`}>
             {icon} {typeName}
           </span>
-          <span className="text-white text-xs font-medium truncate">{card.title}</span>
+          <span
+            className="text-white text-xs font-medium truncate cursor-pointer hover:text-blue-300 hover:underline transition-colors"
+            onClick={() => onClick?.(card)}
+            title="点击查看详情"
+          >
+            {card.title}
+          </span>
         </div>
         {onSave && (
           <button
@@ -119,6 +204,7 @@ const MeetingCardPanel: React.FC<MeetingCardPanelProps> = ({
   maxCollapsed = 3,
 }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [selectedCard, setSelectedCard] = useState<MeetingCard | null>(null);
 
   if (!cards || cards.length === 0) return null;
 
@@ -180,10 +266,21 @@ const MeetingCardPanel: React.FC<MeetingCardPanelProps> = ({
                   key={`${card.source}-${card.title}-${idx}`}
                   card={card}
                   onSave={onSaveCard}
+                  onClick={setSelectedCard}
                 />
               ))}
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 卡片详情弹窗 */}
+      <AnimatePresence>
+        {selectedCard && (
+          <CardDetailPopup
+            card={selectedCard}
+            onClose={() => setSelectedCard(null)}
+          />
         )}
       </AnimatePresence>
 

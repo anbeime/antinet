@@ -337,7 +337,7 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
         logger.info(f"[_extract_color_cards] 开始提取 | agent={agent_name} | speech长度={len(speech)} | topic={topic[:30]}")
         logger.info(f"[_extract_color_cards] 用户提示词前100字: {user_prompt[:100]}")
         
-        result = await call_llm(system_prompt, user_prompt, max_tokens=200, agent_id=agent_id)
+        result = await call_llm(system_prompt, user_prompt, max_tokens=400, agent_id=agent_id)
         
         if not result:
             logger.warning(f"[_extract_color_cards] LLM返回为空")
@@ -354,61 +354,136 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
         
         logger.info(f"[_extract_color_cards] 清理后的JSON: {cleaned[:500]}")
         
-        # 尝试解析 JSON
-        start = cleaned.find('[')
-        end = cleaned.rfind(']') + 1
-        if start >= 0 and end > start:
-            try:
-                cards = json.loads(cleaned[start:end])
-                
-                # 验证格式是否正确
-                if not isinstance(cards, list):
-                    logger.error(f"[_extract_color_cards] 解析结果不是数组，而是: {type(cards).__name__}")
-                    logger.error(f"[_extract_color_cards] 实际内容: {cards}")
-                    logger.error(f"[_extract_color_cards] 可能LLM返回了错误的JSON格式")
-                    return []
-                
-                # 验证每个卡片的字段
-                valid_cards = []
-                for i, card in enumerate(cards):
-                    if not isinstance(card, dict):
-                        logger.warning(f"[_extract_color_cards] 第{i+1}个元素不是对象: {type(card).__name__}")
-                        continue
-                    
-                    # 检查必需字段
-                    if 'type' not in card or 'title' not in card or 'content' not in card:
-                        logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少必需字段: {list(card.keys())}")
-                        logger.warning(f"[_extract_color_cards] 卡片内容: {card}")
-                        continue
-                    
-                    # 验证 type 值
-                    if card['type'] not in ['blue', 'green', 'yellow', 'red']:
-                        logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card['type']}")
-                        continue
-                    
-                    valid_cards.append(card)
-                
-                if valid_cards:
-                    logger.info(f"[_extract_color_cards] 解析成功，有效卡片数量: {len(valid_cards)}")
-                    logger.info(f"[_extract_color_cards] 第一张卡片: {valid_cards[0]}")
-                    # 添加探索状态
-                    for card in valid_cards:
-                        card['explore_status'] = 'pending'
-                    return valid_cards
-                else:
-                    logger.error(f"[_extract_color_cards] 所有卡片都无效，可能是LLM返回格式错误")
-                    return []
-                    
-            except json.JSONDecodeError as je:
-                logger.error(f"[_extract_color_cards] JSON解析失败: {je}")
-                logger.error(f"[_extract_color_cards] 解析的文本: {cleaned[start:end]}")
-            except Exception as e:
-                logger.error(f"[_extract_color_cards] 未知错误: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
+        # 尝试解析 JSON：支持多数组拼接 + 合并所有数组
+        cards = None
+        
+        # 方法1：用 raw_decode 提取第一个完整 JSON 对象/数组
+        try:
+            parsed, idx = json.JSONDecoder().raw_decode(cleaned)
+            if isinstance(parsed, list):
+                cards = parsed
+                # 如果 raw_decode 结束后还有剩余内容（多数组拼接），尝试提取剩余数组并合并
+                remainder = cleaned[idx:].strip()
+                while remainder.startswith('[') or remainder.startswith(','):
+                    # 跳过可能的逗号/换行，找到下一个 [
+                    next_arr_start = re.search(r'\[', remainder)
+                    if not next_arr_start:
+                        break
+                    remainder = remainder[next_arr_start.start():]
+                    try:
+                        extra, idx2 = json.JSONDecoder().raw_decode(remainder)
+                        if isinstance(extra, list):
+                            cards.extend(extra)
+                            remainder = remainder[idx2:].strip()
+                        else:
+                            break
+                    except json.JSONDecodeError:
+                        break
+        except json.JSONDecodeError:
+            cards = None
+        
+        # 方法2（备选）：正则精确提取 JSON 数组（处理多数组拼接情况）
+        if cards is None:
+            all_arrays = re.findall(r'\[\s*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\[[\s\S]*?\])\s*\]', cleaned)
+            if all_arrays:
+                merged = []
+                for arr_str in all_arrays:
+                    try:
+                        merged.extend(json.loads(arr_str))
+                    except json.JSONDecodeError:
+                        pass
+                if merged:
+                    cards = merged
+        
+        # 方法3（兜底）：find + rfind 找最大 JSON 数组
+        if cards is None:
+            first = cleaned.find('[')
+            last = cleaned.rfind(']')
+            if first != -1 and last > first:
+                try:
+                    candidate = cleaned[first:last+1]
+                    # 多数组拼接：提取所有 [...] 块分别解析再合并
+                    parts = re.findall(r'\[[\s\S]*?\]', candidate)
+                    merged = []
+                    for p in parts:
+                        try:
+                            merged.extend(json.loads(p))
+                        except json.JSONDecodeError:
+                            pass
+                    if merged:
+                        cards = merged
+                    else:
+                        cards = json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+        
+        if cards is None:
+            logger.error(f"[_extract_color_cards] 未找到有效JSON数组或解析失败")
+            logger.error(f"[_extract_color_cards] 清理后的内容: {cleaned[:200]}")
+            return []
+        
+        # 验证格式是否正确
+        if not isinstance(cards, list):
+            logger.error(f"[_extract_color_cards] 解析结果不是数组，而是: {type(cards).__name__}")
+            logger.error(f"[_extract_color_cards] 实际内容: {cards}")
+            logger.error(f"[_extract_color_cards] 可能LLM返回了错误的JSON格式")
+            return []
+        
+        # 验证每个卡片的字段
+        valid_cards = []
+        for i, card in enumerate(cards):
+            if not isinstance(card, dict):
+                logger.warning(f"[_extract_color_cards] 第{i+1}个元素不是对象: {type(card).__name__}")
+                continue
+            
+            # 类型标准化映射：中文 type → 英文 color；优先用 color 字段
+            raw_type = card.get('type', '')
+            raw_color = card.get('color', '')
+            _TYPE_MAP = {'风险': 'red', '动力': 'red', '行动': 'red', '决策': 'red',
+                         '解释': 'green', '分析': 'green', '背景': 'green',
+                         '事实': 'blue', '数据': 'blue', '关键教训': 'blue',
+                         '风险点': 'yellow', '警告': 'yellow', '隐患': 'yellow'}
+            if raw_color in ('blue', 'green', 'yellow', 'red'):
+                card_type = raw_color
+            elif raw_type in ('blue', 'green', 'yellow', 'red'):
+                card_type = raw_type
+            elif raw_type in _TYPE_MAP:
+                card_type = _TYPE_MAP[raw_type]
+            else:
+                card_type = ''
+            card_title = card.get('title', '')
+            card_content = card.get('content') or card.get('description') or card.get('text', '')
+            
+            if not card_type:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color字段: {list(card.keys())}")
+                continue
+            
+            if card_type not in ('blue', 'green', 'yellow', 'red'):
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card_type}")
+                continue
+            
+            if not card_content:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少content/description/text字段")
+                continue
+            
+            if not card_title:
+                card_title = card_content[:15] + ('...' if len(card_content) > 15 else '')
+            
+            valid_cards.append({
+                "type": card_type,
+                "title": card_title,
+                "content": card_content
+            })
+        
+        if valid_cards:
+            logger.info(f"[_extract_color_cards] 解析成功，有效卡片数量: {len(valid_cards)}")
+            logger.info(f"[_extract_color_cards] 第一张卡片: {valid_cards[0]}")
+            for card in valid_cards:
+                card['explore_status'] = 'pending'
+            return valid_cards
         else:
-            logger.warning(f"[_extract_color_cards] 未找到JSON数组标记 [ 或 ]")
-            logger.warning(f"[_extract_color_cards] 清理后的内容: {cleaned[:200]}")
+            logger.error(f"[_extract_color_cards] 所有卡片都无效，可能是LLM返回格式错误")
+            return []
     except Exception as e:
         logger.error(f"提取四色卡片失败: {e}")
         import traceback
@@ -871,7 +946,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                             {"role": "user", "content": _truncated_user}
                         ],
                         "max_tokens": _max_tokens,
-                                         "temperature": 1.0,
+                                         "temperature": 0.3,
                         "top_k": 40,
                         "top_p": 0.9
                     }
@@ -902,7 +977,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                                     {"role": "user", "content": _truncated_user}
                                 ],
                                 "max_tokens": _max_tokens,
-                                                 "temperature": 1.0,
+                                                 "temperature": 0.3,
                                 "top_k": 40,
                                 "top_p": 0.9
                             }
@@ -938,7 +1013,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                                 {"role": "user", "content": _truncated_user}
                             ],
                             "max_tokens": _max_tokens,
-                                             "temperature": 1.0,
+                                             "temperature": 0.3,
                             "top_k": 40,
                             "top_p": 0.9
                         }
@@ -965,9 +1040,9 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                                         {"role": "user", "content": _truncated_user}
                                     ],
                                     "max_tokens": _max_tokens,
-                                                     "temperature": 1.0,
+                                                     "temperature": 0.3,
                                     "top_k": 40,
-                                    "top_p": 0.9
+"top_p": 0.9
                                 }
                             )
                             response.raise_for_status()
@@ -977,7 +1052,41 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                                 logger.info(f"[Meeting] Genie 超时二次重试成功: {len(content)}字")
                                 call_llm._genie_consecutive_fails = 0
                                 return content
+                    except (httpx.ReadTimeout, httpx.TimeoutException):
+                        # 重试也超时：真正的不可用，记录并放弃
+                        call_llm._genie_consecutive_fails += 1
+                        logger.warning(f"[Meeting] Genie 重试超时(连续失败{call_llm._genie_consecutive_fails}次)，放弃")
+                    except httpx.HTTPStatusError as e2:
+                        # 429 或其他 HTTP 错误：Genie 还在忙，不算失败，等更久再试
+                        logger.warning(f"[Meeting] Genie 重试HTTP{e2.response.status_code}，等15秒最后一次尝试...")
+                        await asyncio.sleep(15)
+                        try:
+                            async with httpx.AsyncClient(timeout=_genie_timeout) as client:
+                                response = await client.post(
+                                    "http://127.0.0.1:8910/v1/chat/completions",
+                                    json={
+                                        "model": _genie_model,
+                                        "messages": [
+                                            {"role": "system", "content": _truncated_system},
+                                            {"role": "user", "content": _truncated_user}
+                                        ],
+                                        "max_tokens": _max_tokens,
+                                        "temperature": 0.3,
+                                        "top_k": 40,
+                                        "top_p": 0.9
+                                    }
+                                )
+                                result = response.json()
+                                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                                if content:
+                                    logger.info(f"[Meeting] Genie 第三次重试成功: {len(content)}字")
+                                    call_llm._genie_consecutive_fails = 0
+                                    return content
+                                logger.warning(f"[Meeting] Genie 第三次重试无内容(HTTP{response.status_code})")
+                        except Exception:
+                            pass
                     except Exception:
+                        # 其他未知异常，静默放弃
                         pass
                 else:
                     logger.warning(f"[Meeting] Genie 超时重试HTTP{retry_e.response.status_code}")
@@ -1750,7 +1859,7 @@ async def create_meeting_stream(request: MeetingRequest):
                      "jianchayuan": f"关于「{request.topic}」，流程中最大的漏洞是什么？",
                      "mijuanfang": f"关于「{request.topic}」，知识库中最重要的事实依据是什么？",
                      "chengxiangfu": f"关于「{request.topic}」，最可执行的战略建议是什么？",
-                     "junjichu": f"关于「{request.topic}」，具体执行计划和分工是什么？",
+                     "junjichu": f"基于以上知识库信息，关于「{request.topic}」的具体执行计划和分工是什么？",
                      "zhihuishi": f"关于「{request.topic}」，综合裁决和下一步行动是什么？",
                  }.get(agent_id, f"关于「{request.topic}」，你的观点是什么？")
 

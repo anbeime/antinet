@@ -413,8 +413,8 @@ class ModelConfig:
         }
     }
 
-    # 默认使用的模型（参考旧版本）
-    DEFAULT_MODEL = "llama3.2-3b"
+    # 默认使用的模型（Qwen2.0-7B 中文能力强，优先使用）
+    DEFAULT_MODEL = "qwen2.0-7b"
 
 
 

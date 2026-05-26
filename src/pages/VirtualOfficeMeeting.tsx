@@ -344,6 +344,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const collabWsRef = useRef<WebSocket | null>(null);
   const collabUserId = useRef('meeting_' + Date.now());
 
+  // 简化视图模式
+  const [simplifiedView, setSimplifiedView] = useState(false);
+
   // 发送人类消息（混合模式）
   const sendHumanMessage = async (msg: string) => {
     // 本地显示人类消息
@@ -1578,7 +1581,28 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                             {item.agent.systemPrompt}
                           </div>
                         )}
-                        <p className="text-gray-100 text-sm leading-relaxed">{item.message}</p>
+                        {(() => {
+                          const msg = item.message || '';
+                          try {
+                            const trimmed = msg.trim();
+                            if (trimmed.startsWith('[')) {
+                              const parsed = JSON.parse(trimmed);
+                              if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((item: any) => typeof item === 'object' && item !== null && 'color' in item && 'content' in item)) {
+                                const colorMap: Record<string, string> = { red: '#ef4444', green: '#22c55e', blue: '#3b82f6', yellow: '#eab308', gold: '#f59e0b', purple: '#a855f7', orange: '#f97316' };
+                                return (
+                                  <div className="space-y-1.5">
+                                    {parsed.map((c: any, i: number) => (
+                                      <div key={i} className="rounded p-2 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderLeft: `3px solid ${colorMap[c.color] || '#6b7280'}`, color: '#e5e7eb' }}>
+                                        {c.content}
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }
+                            }
+                          } catch {}
+                          return <p className="text-gray-100 text-sm leading-relaxed">{msg}</p>;
+                        })()}
                       </div>
                     </motion.div>
                   );
@@ -1657,6 +1681,18 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       保存归档
                     </button>
                     <button
+                      onClick={() => setSimplifiedView(!simplifiedView)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                        simplifiedView 
+                          ? 'bg-blue-600 text-white border-blue-500' 
+                          : 'text-gray-300 border-gray-600/50 hover:border-gray-500 hover:text-white'
+                      }`}
+                      style={{ background: simplifiedView ? undefined : '#0f1729' }}
+                    >
+                      <Monitor className="w-3.5 h-3.5" />
+                      {simplifiedView ? '完整视图' : '简化视图'}
+                    </button>
+                    <button
                       onClick={resetMeeting}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
@@ -1667,9 +1703,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </div>
                 </div>
 
-                {/* 讨论轮次 */}
-                <div className="p-4 space-y-3">
-                  {(meetingResult || []).map((round: any) => (
+                {/* 讨论轮次 - 完整视图 */}
+                {!simplifiedView && (
+                  <div className="p-4 space-y-3">
+                    {(meetingResult || []).map((round: any) => (
                     <div key={round.round} className="rounded-lg border border-gray-700/40 overflow-hidden">
                       {/* 轮次标题 */}
                       <button
@@ -1747,6 +1784,77 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                     </div>
                   ))}
                 </div>
+                )}
+
+                {/* 简化视图：关键结论 */}
+                {simplifiedView && showResults && meetingResult && meetingResult.length > 0 && (
+                  <div className="p-4 space-y-4">
+                    {/* 最终决策 */}
+                    {meetingResult[meetingResult.length - 1]?.title && (
+                      <div className="rounded-lg border border-green-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Crown className="w-4 h-4 text-green-400" />
+                          <span className="text-green-400 text-sm font-medium">最终结论</span>
+                        </div>
+                        <div className="text-white text-sm font-medium mb-1">{meetingResult[meetingResult.length - 1].title}</div>
+                        <div className="text-gray-400 text-xs">
+                          共 {meetingResult.length} 轮讨论，产生 {(meetingResult[meetingResult.length - 1].discussions || []).length} 条观点
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 行动项汇总 */}
+                    {diagnosisReport && diagnosisReport.diagnosis_report && (
+                      <div className="rounded-lg border border-blue-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText className="w-4 h-4 text-blue-400" />
+                          <span className="text-blue-400 text-sm font-medium">决策摘要</span>
+                        </div>
+                        <p className="text-gray-300 text-xs">{diagnosisReport.diagnosis_report}</p>
+                      </div>
+                    )}
+
+                    {/* 共识点 */}
+                    {diagnosisReport && diagnosisReport.consensus && diagnosisReport.consensus.length > 0 && (
+                      <div className="rounded-lg border border-green-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-green-400">✓</span>
+                          <span className="text-green-400 text-sm font-medium">共识达成</span>
+                        </div>
+                        <ul className="space-y-1">
+                          {diagnosisReport.consensus.slice(0, 3).map((item: string, idx: number) => (
+                            <li key={idx} className="text-gray-300 text-xs flex items-start gap-2">
+                              <span className="text-green-500">•</span>
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 核心卡片 */}
+                    {meetingCards.length > 0 && (
+                      <div className="rounded-lg border border-purple-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-purple-400">📋</span>
+                          <span className="text-purple-400 text-sm font-medium">核心知识卡片</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {meetingCards.slice(0, 4).map((card: MeetingCard, idx: number) => {
+                            const cardType = CARD_TYPE_MAP[card.card_type as keyof typeof CARD_TYPE_MAP];
+                            return (
+                              <div key={idx} className={`p-2 rounded ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                                <div className="text-white text-xs font-medium truncate">{card.title}</div>
+                                <div className="text-gray-400 text-[10px] truncate mt-0.5">{card.content}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </motion.div>
             )}
 

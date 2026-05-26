@@ -482,7 +482,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-2xl bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden"
+        className="w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
       >
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
@@ -502,7 +502,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           </button>
         </div>
         
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
           {/* 卡片类型选择 */}
           <div>
             <label className="block text-sm font-medium mb-2">选择卡片类型</label>
@@ -776,7 +776,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           </div>
           
           {/* 表单操作按钮 */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex-shrink-0 flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button 
               type="button"
               onClick={onClose}
