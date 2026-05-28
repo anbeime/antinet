@@ -364,7 +364,7 @@ const VirtualOfficeMeeting: React.FC = () => {
         user: collabUserName,
         userId: collabUserId.current,
         avatar: '👤',
-        action: '插嘴',
+        action: '发言',
         content: msg,
         meetingContext: { topic, currentRound: liveDiscussions.filter(d => d.round).length }
       }));
@@ -449,7 +449,60 @@ const VirtualOfficeMeeting: React.FC = () => {
     progress: 0
   });
 
+  const [meetingSessionId, setMeetingSessionId] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ===== sessionStorage 持久化：切换页面后返回时恢复状态 =====
+  const MEETING_STORAGE_KEY = 'virtual_meeting_state_v2';
+
+  // 启动新会议时：清空旧数据，生成新 sessionId
+  // （已在 startMeeting 中通过 setLiveDiscussions([]) 清空状态，sessionStorage 由 useEffect 自动更新）
+
+  // 组件挂载时：从 sessionStorage 恢复状态（如果上次会议尚未结束）
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(MEETING_STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.liveDiscussions?.length > 0) setLiveDiscussions(data.liveDiscussions);
+        if (data.meetingCards?.length > 0) setMeetingCards(data.meetingCards);
+        if (data.pixelState) setPixelState(data.pixelState);
+        if (data.messengerInfo) setMessengerInfo(data.messengerInfo);
+        if (data.isLoading !== undefined) setIsLoading(data.isLoading);
+        if (data.meetingSessionId) setMeetingSessionId(data.meetingSessionId);
+        if (data.topic) setTopic(data.topic);
+        if (data.meetingResult) setMeetingResult(data.meetingResult);
+        if (data.showResults) setShowResults(data.showResults);
+        if (data.meetingResult && data.meetingResult.length > 0) {
+          setExpandedRounds(new Set([1]));
+        }
+      }
+    } catch (e) {
+      console.warn('恢复会议状态失败:', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 仅在挂载时执行一次
+
+  // 状态变化时：自动保存到 sessionStorage（用于页面切换后恢复）
+  useEffect(() => {
+    try {
+      const data = {
+        liveDiscussions,
+        meetingCards,
+        pixelState,
+        messengerInfo,
+        isLoading,
+        meetingSessionId,
+        topic,
+        meetingResult,
+        showResults,
+        savedAt: Date.now()
+      };
+      sessionStorage.setItem(MEETING_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      // storage 可能满，忽略
+    }
+  }, [liveDiscussions, meetingCards, pixelState, messengerInfo, isLoading, meetingSessionId, topic, meetingResult, showResults]);
 
   const stopPolling = () => {
     if (pollTimerRef.current) {
@@ -759,6 +812,39 @@ useEffect(() => {
         return;
       }
       console.error('SSE stream error:', error);
+      
+      // SSE 断开时：如果有累积的数据，也要显示结果
+      if (allRounds.length > 0 || meetingCards.length > 0) {
+        console.log('[Meeting] SSE断开，但有累积数据，显示结果');
+        
+        // 将 currentRound 也加入（如果还没加入）
+        if (currentRound) {
+          allRounds.push(currentRound);
+          currentRound = null;
+        }
+        
+        // 如果 allRounds 为空但有 meetingCards，创建一个包含卡片的虚拟轮次
+        if (allRounds.length === 0 && meetingCards.length > 0) {
+          allRounds.push({
+            round: 1,
+            title: '会议结果',
+            theme: '会议结果',
+            discussions: [],
+            cards: meetingCards.map((c: MeetingCard) => ({
+              type: c.card_type,
+              title: c.title,
+              content: c.content
+            }))
+          });
+        }
+        
+        setMeetingResult([...allRounds]);
+        setIsLoading(false);
+        setShowResults(true);
+        setExpandedRounds(new Set([1]));
+        setPixelState(prev => ({ ...prev, detail: '会议已断开（数据已保存）', progress: 100 }));
+        toast.error('SSE连接已断开，但已显示累积的会议数据');
+      }
     }
 
     abortControllerRef.current = null;
@@ -957,7 +1043,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             self: isSelf
           }]);
           // 如果有会议进行中，也显示到实时讨论区
-          if (isLoading && msg.activity.action === '插嘴') {
+          if (isLoading && msg.activity.action === '发言') {
             setLiveDiscussions(prev => [...prev, {
               type: 'speech',
               agent: { name: msg.activity.user, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
@@ -1648,7 +1734,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   }}
                   className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
                 >
-                  插嘴
+                  发言
                 </button>
               </div>
             </div>

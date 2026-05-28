@@ -1801,6 +1801,7 @@ async def create_meeting_stream(request: MeetingRequest):
 
         all_speeches = []  # 累积所有发言，供后续Agent参考
         all_rounds = []
+        extracted_cards = []  # 累积所有提取的卡片，会议结束时统一保存
 
         for round_num in range(1, request.rounds + 1):
             theme = themes[min(round_num - 1, len(themes) - 1)]
@@ -1958,7 +1959,7 @@ async def create_meeting_stream(request: MeetingRequest):
                      "cards_referenced": [],
                      "pixel_id": pixel_id,
                      "round": round_num
-                 }
+}
 
                  all_speeches.append(speech_data)
                  round_speeches.append(speech_data)
@@ -1968,28 +1969,31 @@ async def create_meeting_stream(request: MeetingRequest):
 
                  # 提取四色卡片并推送前端（发言 > 30 字才提取）
                  if len(speech_content) > 30:
-                     try:
-                         extracted = await _extract_color_cards(
-                             agent_id, agent_info["name"], speech_content, request.topic
-                         )
-                         if extracted:
-                             yield _sse_event("agent_cards", {
-                                 "agent_id": agent_id,
-                                 "agent_name": agent_info["name"],
-                                 "round": round_num,
-                                 "cards": [
-                                     {
-                                         "card_type": c.get("type", "blue"),
-                                         "title": c.get("title", ""),
-                                         "content": c.get("content", ""),
-                                         "round": round_num
-                                     }
-                                     for c in extracted
-                                 ]
-                             })
-                             logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
-                     except Exception as e:
-                         logger.error(f"[Meeting] agent_cards提取失败: {e}")
+                      try:
+                          extracted = await _extract_color_cards(
+                              agent_id, agent_info["name"], speech_content, request.topic
+                          )
+                          if extracted:
+                              # 收集卡片，后续统一保存
+                              extracted_cards.extend(extracted)
+                              
+                              yield _sse_event("agent_cards", {
+                                  "agent_id": agent_id,
+                                  "agent_name": agent_info["name"],
+                                  "round": round_num,
+                                  "cards": [
+                                      {
+                                          "card_type": c.get("type", "blue"),
+                                          "title": c.get("title", ""),
+                                          "content": c.get("content", ""),
+                                          "round": round_num
+                                      }
+                                      for c in extracted
+                                  ]
+                              })
+                              logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
+                      except Exception as e:
+                          logger.error(f"[Meeting] agent_cards提取失败: {e}")
 
             all_rounds.append({
                 "round": round_num,
@@ -2090,6 +2094,53 @@ async def create_meeting_stream(request: MeetingRequest):
             logger.info(f"会议记录已保存: {meeting_id}")
         except Exception as e:
             logger.error(f"保存会议记录失败: {e}")
+
+        # 闭环零：保存会议过程中提取的卡片（agent_cards）
+        if extracted_cards:
+            try:
+                saved_agent_cards = []
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    # 去重（根据 title 和 content）
+                    seen = set()
+                    for card in extracted_cards:
+                        key = f"{card.get('title', '')}|{card.get('content', '')}"
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        
+                        try:
+                            cursor.execute("""
+                                INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                card.get('title', '无标题')[:100],
+                                card.get('content', ''),
+                                card.get('type', 'blue'),
+                                '会议提取',
+                                request.card_ids[0] if request.card_ids else None,
+                                json.dumps(['会议', '自动提取', 'Agent生成']),
+                                json.dumps([]),
+                                'pending',
+                                datetime.now().isoformat()
+                            ))
+                            saved_agent_cards.append(cursor.lastrowid)
+                        except Exception as card_err:
+                            logger.warning(f"保存Agent卡片失败: {card_err}")
+                    
+                    if saved_agent_cards:
+                        conn.commit()
+                        logger.info(f"[Meeting] 保存了 {len(saved_agent_cards)} 张Agent提取的卡片")
+                        
+                if saved_agent_cards:
+                    yield _sse_event("meeting_agent_cards_saved", {
+                        "meeting_id": meeting_id,
+                        "card_count": len(saved_agent_cards),
+                        "card_ids": saved_agent_cards,
+                        "timestamp": datetime.now().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"保存Agent提取卡片失败: {e}")
 
         # 闭环二：自动从会议行动项创建GTD任务和知识卡片
         try:

@@ -626,8 +626,13 @@ async def create_card(card: KnowledgeCard):
         logger.info(f"[CREATE_CARD] 插入成功，lastrowid={new_card_id}")
 
         # 获取新插入的卡片
-        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (cursor.lastrowid,))
-        new_card = dict(cursor.fetchone())
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (new_card_id,))
+        result = cursor.fetchone()
+        if not result:
+            logger.warning(f"[CREATE_CARD] 查询新卡片失败，id={new_card_id}")
+            conn.close()
+            return {"id": new_card_id, "error": "查询失败"}
+        new_card = dict(result)
 
         conn.close()
         logger.info(f"[CREATE_CARD] 返回新卡片: {new_card}")
