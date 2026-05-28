@@ -149,6 +149,22 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
     return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
   };
 
+  // 列表数据源：与图谱/思维导图共享同一数据（当从专题卡片查看时）
+  const listDataSource = useMemo(() => {
+    if (graphSource === 'api' && apiData) {
+      const displayData = computeDisplayData(apiData);
+      // 将图谱节点格式转换为卡片列表格式
+      return displayData.nodes.map((n: any) => ({
+        id: n.id,
+        title: n.name,
+        card_type: n.category === 0 ? 'blue' : n.category === 1 ? 'green' : n.category === 2 ? 'yellow' : n.category === 3 ? 'red' : 'blue',
+        content: n.description || '',
+        type: n.category === 0 ? 'blue' : n.category === 1 ? 'green' : n.category === 2 ? 'yellow' : n.category === 3 ? 'red' : 'blue'
+      }));
+    }
+    return cards; // 默认使用全部卡片
+  }, [graphSource, apiData, cards]);
+
   // 从图谱数据构建思维导图树（与图谱/列表共享同一数据源）
   const mindmapTree = useMemo(() => {
     const displayData = graphSource === 'api' && apiData
@@ -852,13 +868,13 @@ return (
                 const clrMap: Record<string,string> = { blue:'bg-blue-500', green:'bg-green-500', yellow:'bg-yellow-500', red:'bg-red-500' };
                 const clrLight: Record<string,string> = { blue:'bg-blue-50 dark:bg-blue-900/20', green:'bg-green-50 dark:bg-green-900/20', yellow:'bg-yellow-50 dark:bg-yellow-900/20', red:'bg-red-50 dark:bg-red-900/20' };
                 const lbl: Record<string,string> = { blue:'事实', green:'解释', yellow:'风险', red:'行动' };
-                const filtered = cards.filter(card => {
+                const filtered = listDataSource.filter((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   if (listColorFilter !== 'all' && t !== listColorFilter) return false;
                   if (listSearch) { const q = listSearch.toLowerCase(); const ti = (card.title||'').toLowerCase(); const co = (card.content||'').toLowerCase(); if (!ti.includes(q) && !co.includes(q)) return false; }
                   return true;
                 });
-                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{cards.length===0?'暂无卡片，请刷新':'无匹配卡片'}</div>;
+                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{listDataSource.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
                 return filtered.map((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   const isSel = listSelectedCard?.id === card.id;

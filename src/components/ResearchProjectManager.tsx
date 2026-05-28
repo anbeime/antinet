@@ -20,13 +20,10 @@ import {
   Copy,
   Maximize2,
   Link,
-  Search,
   ExternalLink,
-  BarChart3,
-  Calendar,
-  AlertTriangle,
   TrendingUp,
-  Network
+  Network,
+  AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -37,6 +34,41 @@ import {
 } from '@/services/dataService';
 import CreateCardModal from './CreateCardModal';
 import KnowledgeGraph from './KnowledgeGraph';
+import CardDetailModal from '@/components/CardDetailModal';
+
+// 类型转换：将ProjectCard转换为KnowledgeCard格式
+interface KnowledgeCardForDetail {
+  id: string;
+  color: 'blue' | 'green' | 'yellow' | 'red';
+  title: string;
+  content: string;
+  address: string;
+  createdAt: string;
+  relatedCards: string[];
+  projectId?: number | null;
+}
+
+const convertProjectCardToKnowledgeCard = (card: ProjectCard): KnowledgeCardForDetail => ({
+  id: String(card.id),
+  color: (card.card_type === 'blue' || card.card_type === 'green' || card.card_type === 'yellow' || card.card_type === 'red') 
+    ? card.card_type as 'blue' | 'green' | 'yellow' | 'red' 
+    : 'blue',
+  title: card.title,
+  content: card.content,
+  address: String(card.id),
+  createdAt: card.created_at || new Date().toISOString(),
+  relatedCards: (card.related_cards || []).map(String),
+  projectId: card.project_id
+});
+
+const convertKnowledgeCardToProjectCard = (card: KnowledgeCardForDetail): Partial<ProjectCard> => ({
+  id: Number(card.id),
+  card_type: card.color,
+  title: card.title,
+  content: card.content,
+  project_id: card.projectId ?? undefined,
+  related_cards: card.relatedCards.map(Number)
+});
 
 interface ProjectCard {
   id: number;
@@ -123,8 +155,8 @@ const formatDate = (dateStr?: string) => {
   } catch { return dateStr; }
 };
 
-// ========== 卡片详情弹窗组件（全屏级别） ==========
-const CardDetailModal: React.FC<{
+// ========== 专题卡片详情弹窗组件（全屏级别）- 用于ProjectDetailPanel内部 ==========
+const ResearchCardDetailModal: React.FC<{
   card: ProjectCard;
   onClose: () => void;
   onConvertToTask: (id: number) => void;
@@ -675,8 +707,9 @@ const CardDetailModal: React.FC<{
                   </button>
                 </>
               ) : (
-                <>
+<>
                   <button
+                    data-edit-btn="true"
                     onClick={() => setIsEditing(true)}
                     className="flex items-center px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"
                   >
@@ -717,7 +750,7 @@ const CardDetailModal: React.FC<{
                 {allProjects.map(p => (
                   <button
                     key={p.id}
-                    onClick={() => handleChangeProject(p.id)}
+                    onClick={() => handleChangeProject(p.id!)}
                     className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 mb-1 ${selectedProjectId === p.id ? 'bg-purple-100 dark:bg-purple-900/30' : ''}`}
                   >
                     {p.icon} {p.name}
@@ -745,6 +778,7 @@ const ProjectDetailPanel: React.FC<{
   const [cards, setCards] = useState<ProjectCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<ProjectCard | null>(null);
+  const [showCardDetail, setShowCardDetail] = useState(false);
   const [showCreateCard, setShowCreateCard] = useState(false);
   const [projectStats, setProjectStats] = useState<{
     cards: Record<string, number>;
@@ -895,12 +929,7 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
-  // 预览 PPT 文件
-  const handlePreviewPPT = (filename: string) => {
-    navigate(`/ppt-viewer?file=${encodeURIComponent(filename)}`);
-  };
-
-  // 复用首页的创建卡片流程，创建后自动关联专题
+// 复用首页的创建卡片流程，创建后自动关联专题
   const handleCreateCardSave = async (cardData: any) => {
     try {
       // 使用专题专用API，会自动建立同专题双向链接
@@ -948,9 +977,22 @@ const ProjectDetailPanel: React.FC<{
 
   const handleConvertToTask = async (cardId: number) => {
     try {
+      // 1. 先将卡片转换为任务
       const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
       if (response.ok) {
-        toast.success('已转换为任务，可在「任务管理 → 收集箱」中查看');
+        const data = await response.json();
+        const taskId = data.task_id || data.id;
+        
+        // 2. 如果任务创建成功，将任务关联到当前专题
+        if (taskId && project.id) {
+          try {
+            await researchProjectService.addTask(project.id, taskId);
+          } catch (linkErr) {
+            console.warn('关联任务到专题失败:', linkErr);
+          }
+        }
+        
+        toast.success('已转换为任务并关联到专题');
         loadData();
         onConvertCardToTask(cardId);
       }
@@ -1040,39 +1082,39 @@ const ProjectDetailPanel: React.FC<{
                 <Layers className="w-4 h-4 mr-2" />
                 四色卡片 ({cards.length})
               </button>
-              {/*<button*/}
-              {/*  onClick={() => setActiveTab('tasks')}*/}
-              {/*  className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
-              {/*    activeTab === 'tasks'*/}
-              {/*      ? 'border-blue-500 text-blue-600'*/}
-              {/*      : 'border-transparent text-gray-500 hover:text-gray-700'*/}
-              {/*  }`}*/}
-              {/*>*/}
-              {/*  <CheckSquare className="w-4 h-4 mr-2" />*/}
-              {/*  关联任务 ({tasks.length})*/}
-              {/*</button>*/}
-{/*              <button*/}
-{/*                onClick={() => setActiveTab('workflow')}*/}
-{/*                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
-{/*                  activeTab === 'workflow'*/}
-{/*                    ? 'border-green-500 text-green-600'*/}
-{/*: 'border-transparent text-gray-500 hover:text-gray-700'*/}
-{/*                }`}*/}
-{/*              >*/}
-{/*                <BarChart3 className="w-4 h-4 mr-2" />*/}
-{/*                工作流概览*/}
-{/*              </button>*/}
-{/*              <button*/}
-{/*                onClick={() => setActiveTab('network')}*/}
-{/*                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${*/}
-{/*                  activeTab === 'network'*/}
-{/*                    ? 'border-indigo-500 text-indigo-600'*/}
-{/*                    : 'border-transparent text-gray-500 hover:text-gray-700'*/}
-{/*                }`}*/}
-{/*              >*/}
-{/*                <Network className="w-4 h-4 mr-2" />*/}
-{/*                知识网络*/}
-{/*              </button>*/}
+<button
+                onClick={() => setActiveTab('tasks')}
+                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'tasks'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <CheckSquare className="w-4 h-4 mr-2" />
+                关联任务 ({tasks.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('workflow')}
+                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'workflow'
+                    ? 'border-green-500 text-green-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 mr-2" />
+                工作流概览
+              </button>
+              <button
+                onClick={() => setActiveTab('network')}
+                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'network'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Network className="w-4 h-4 mr-2" />
+                知识网络
+              </button>
             </div>
           </div>
         </div>
@@ -1123,7 +1165,7 @@ const ProjectDetailPanel: React.FC<{
                             <motion.div
                               key={card.id}
                               whileHover={{ y: -3, boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}
-                              onClick={() => setSelectedCard(card)}
+                              onClick={() => { setSelectedCard(card); setShowCardDetail(true); }}
                               className={`group relative p-5 rounded-xl border-2 cursor-pointer transition-all ${tc.bgColor} ${tc.borderColor} ${tc.darkBgColor} ${tc.darkBorderColor} hover:shadow-lg`}
                             >
                               {/* 类型标签 */}
@@ -1133,7 +1175,7 @@ const ProjectDetailPanel: React.FC<{
                                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${tc.bgColor} ${tc.color} border ${tc.borderColor}`}>
                                     {tc.name}
                                   </span>
-                                </div>
+</div>
                                 <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   {card.card_type === 'red' && (
                                     <button
@@ -1144,8 +1186,8 @@ const ProjectDetailPanel: React.FC<{
                                       转任务
                                     </button>
                                   )}
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); setSelectedCard(card); }}
+<button
+                                    onClick={(e) => { e.stopPropagation(); setSelectedCard(card); setShowCardDetail(true); }}
                                     className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
                                     title="查看详情"
                                   >
@@ -1369,29 +1411,55 @@ const ProjectDetailPanel: React.FC<{
           </div>
         </div>
 
-        {/* ===== 卡片详情弹窗 ===== */}
-        <AnimatePresence>
-          {selectedCard && (
-            <CardDetailModal
-              card={selectedCard}
-              onClose={() => setSelectedCard(null)}
-              onConvertToTask={handleConvertToTask}
-              projectId={project.id}
-              allProjects={allProjects}
-              onRelatedCardClick={(cardId) => {
-                const targetCard = cards.find(c => c.id === cardId);
-                if (targetCard) setSelectedCard(targetCard);
-              }}
-              onUpdate={(cardId, updates) => {
-                setCards(prev => prev.map(c => c.id === cardId ? { ...c, ...updates } : c));
-              }}
-              onSaveSuccess={() => {
-                // 刷新卡片数据
-                refreshCards();
-              }}
-            />
-          )}
-        </AnimatePresence>
+        {/* ===== 卡片详情弹窗 - 使用全局CardDetailModal ===== */}
+        <CardDetailModal
+          isOpen={showCardDetail && selectedCard !== null}
+          onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
+          card={selectedCard ? convertProjectCardToKnowledgeCard(selectedCard) : null}
+          allCards={cards.map(convertProjectCardToKnowledgeCard)}
+          onDelete={async (cardId: string) => {
+            try {
+              await fetch(`${RESEARCH_API_BASE}/cards/${cardId}`, { method: 'DELETE' });
+              setCards(prev => prev.filter(c => String(c.id) !== cardId));
+              setShowCardDetail(false);
+              setSelectedCard(null);
+              toast.success('卡片已删除');
+            } catch {
+              toast.error('删除失败');
+            }
+          }}
+          onRelatedCardClick={(cardId: string) => {
+            const targetCard = cards.find(c => String(c.id) === cardId);
+            if (targetCard) {
+              setSelectedCard(targetCard);
+            }
+          }}
+          onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
+            try {
+              const response = await fetch(`${RESEARCH_API_BASE}/cards/${updatedCard.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  title: updatedCard.title,
+                  content: updatedCard.content,
+                  type: updatedCard.color,
+                  related_cards: updatedCard.relatedCards.map(Number)
+                })
+              });
+              if (response.ok) {
+                const updated = convertKnowledgeCardToProjectCard(updatedCard);
+                setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
+                toast.success('卡片已更新');
+              }
+            } catch {
+              toast.error('更新失败');
+            }
+          }}
+          onCreateRecommendedCard={(title: string, reason: string) => {
+            // 可以在这里实现推荐卡片创建的逻辑
+            toast.info(`推荐创建: ${title}`);
+          }}
+        />
 
         {/* ===== 创建卡片弹窗 - 复用首页 CreateCardModal ===== */}
         <CreateCardModal

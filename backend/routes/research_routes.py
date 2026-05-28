@@ -284,7 +284,7 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
         cursor.execute("""
             SELECT id FROM knowledge_cards 
             WHERE project_id = ? AND id != ?
-            ORDER BY created_at DESC LIMIT 20
+            ORDER BY created_at DESC LIMIT 100
         """, (project_id, card_id))
         sibling_ids = [row["id"] for row in cursor.fetchall()]
         

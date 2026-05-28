@@ -596,6 +596,31 @@ async def create_card(card: KnowledgeCard):
             except Exception as e:
                 logger.warning(f"同步backlinks失败（非致命）: {e}")
 
+        # 自动建立同专题卡片的关联（same_project 类型链接）
+        if card.project_id:
+            try:
+                # 查找同专题的其他卡片（限制数量避免性能问题）
+                cursor.execute("""
+                    SELECT id FROM knowledge_cards 
+                    WHERE project_id = ? AND id != ?
+                    ORDER BY created_at DESC LIMIT 100
+                """, (card.project_id, new_card_id))
+                same_project_cards = cursor.fetchall()
+                
+                for (other_card_id,) in same_project_cards:
+                    # 建立双向关联，类型为 same_project
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (new_card_id, other_card_id, 'same_project'))
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (other_card_id, new_card_id, 'same_project'))
+                    logger.info(f"[CREATE_CARD] 自动建立同专题关联: {new_card_id} <-> {other_card_id}")
+            except Exception as e:
+                logger.warning(f"自动建立同专题关联失败（非致命）: {e}")
+
         conn.commit()
 
         logger.info(f"[CREATE_CARD] 插入成功，lastrowid={new_card_id}")
