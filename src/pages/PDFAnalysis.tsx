@@ -83,6 +83,7 @@ interface ConversionTask {
   resultBlob?: Blob;
   errorMessage?: string;
   createdAt: Date;
+  fileDataUrl?: string;
 }
 
 interface ConversionRecord {
@@ -93,6 +94,7 @@ interface ConversionRecord {
   createdAt: Date;
   fileSize?: number;
   errorMessage?: string;
+  fileDataUrl?: string;
 }
 
 const API_BASE = getApiBaseUrl() + ''
@@ -563,13 +565,22 @@ const PDFAnalysis: React.FC = () => {
       targetFormat: targetFormat as 'word' | 'excel',
       status: 'pending',
       progress: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      fileDataUrl: undefined
     }));
 
     setConversionTasks(prev => [...prev, ...newTasks]);
     toast.success(`已添加 ${newTasks.length} 个文件到转换队列`);
 
+    // 逐个读取文件为 dataUrl 并启动转换
     newTasks.forEach((task, index) => {
+      if (task.file.size < 5 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          task.fileDataUrl = e.target?.result as string;
+        };
+        reader.readAsDataURL(task.file);
+      }
       setTimeout(() => startConversion(task), index * 500);
     });
   };
@@ -717,7 +728,7 @@ const PDFAnalysis: React.FC = () => {
     toast.success(`${task.fileName} 转换为 Excel 成功！`);
   };
 
-  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number, errorMessage?: string) => {
+  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number, errorMessage?: string, fileDataUrl?: string) => {
     const record: ConversionRecord = {
       id: `record-${Date.now()}`,
       fileName,
@@ -726,6 +737,7 @@ const PDFAnalysis: React.FC = () => {
       createdAt: new Date(),
       fileSize,
       errorMessage: errorMessage || undefined,
+      fileDataUrl,
     };
     setConversionRecords(prev => {
       const next = [record, ...prev];
@@ -1477,44 +1489,6 @@ const PDFAnalysis: React.FC = () => {
               </div>
             </motion.div>
 
-            {/* 在线查看 */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <FileSpreadsheet className="w-5 h-5 mr-2 text-green-500" />
-                在线查看
-              </h3>
-              <div className="space-y-2">
-                <button
-                  onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
-                >
-                  <History className="w-4 h-4 text-green-500" />
-                  <span>文档处理记录</span>
-                </button>
-                <button
-                  onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
-                >
-                  <FileText className="w-4 h-4 text-red-500" />
-                  <span>PDF查看器</span>
-                </button>
-                <button
-                  onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
-                >
-                  <Presentation className="w-4 h-4 text-orange-500" />
-                  <span>PPT演示</span>
-                </button>
-                <button
-                  onClick={() => window.open('http://localhost:3000/?tab=excel-analysis', '_blank')}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
-                >
-                  <BarChart3 className="w-4 h-4 text-blue-500" />
-                  <span>Excel分析</span>
-                </button>
-              </div>
-            </div>
-
             {/* Right Panel - Results */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
@@ -1951,6 +1925,41 @@ const PDFAnalysis: React.FC = () => {
               {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
             </motion.div>
           </div>
+
+        {/* 其他在线查看入口 */}
+        <div className="mt-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+          <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button
+              onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
+            >
+              <History className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 dark:text-green-400">文档处理记录</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
+            >
+              <FileText className="w-4 h-4 text-red-600" />
+              <span className="text-red-700 dark:text-red-400">PDF查看器</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
+            >
+              <Presentation className="w-4 h-4 text-orange-600" />
+              <span className="text-orange-700 dark:text-orange-400">PPT演示</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
+            >
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 dark:text-blue-400">Excel分析</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

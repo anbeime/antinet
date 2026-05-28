@@ -1171,7 +1171,6 @@ className="text-lg select-text"
 
           {/* Tab 内容: 关联卡片 */}
           {activeTab === 'relations' && (
-            <>
             <div className="mb-6">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold">关联卡片</h3>
@@ -1309,33 +1308,7 @@ className="text-lg select-text"
               )}
             </div>
 
-            {/* 同批次兄弟卡片（知识图谱子网） */}
-            {siblingCards.length > 0 && (
-              <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                    <Network size={14} className="text-purple-500" />
-                    同批次导入 ({siblingSourceName || '未知来源'})
-                    <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 text-xs rounded-full">
-                      {siblingCards.length} 张
-                    </span>
-                  </h4>
-                </div>
-                {siblingsLoading ? (
-                  <div className="flex justify-center py-4">
-                    <Loader size={16} className="animate-spin text-purple-400" />
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-2">
-                    {siblingCards.map(sc => (
-                      <div
-                        key={sc.id}
-                        className={`flex items-center p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all ${
-                          sc.link_type
-                            ? 'border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-950/20'
-                            : 'border-gray-200 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 hover:border-purple-300'
-                        }`}
-                        onClick={() => onRelatedCardClick(String(sc.id))}
+            // SIBLINGS REMOVED
                       >
                         <div className={`${cardTypeMap[sc.card_type as CardColor]?.color || 'bg-gray-500'} w-2 h-2 rounded-full mr-3 flex-shrink-0`}></div>
                         <div className="flex-1 min-w-0">
@@ -1362,7 +1335,6 @@ className="text-lg select-text"
               </div>
             )}
 
-            </>          
           )}
 
           {/* P0: Tab 内容: 双向链接 */}

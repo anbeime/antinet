@@ -406,6 +406,10 @@ class PDFourColorProcessor:
                 cards_by_type: Dict[str, List[Dict]] = {}
                 card_counts = {}
                 for card in cards:
+                    # 跳过非字典项（防御性过滤）
+                    if not isinstance(card, dict):
+                        logger.warning(f"[export_to_excel] 跳过非字典卡片: {type(card).__name__}")
+                        continue
                     ct = card.get("type", "fact")
                     cards_by_type.setdefault(ct, []).append(card)
                     type_name = exporter.CARD_NAMES.get(ct, ct)
