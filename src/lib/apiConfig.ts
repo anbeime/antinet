@@ -11,9 +11,13 @@ export const getApiBaseUrl = (): string => {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  
-  // 无论开发/生产环境，都自动使用当前主机地址 + 8000 端口
-  // 生产环境使用 serve --single 无法代理 API，需直连后端
+
+  // 开发环境：返回空字符串，让请求走 Vite dev server 的 /api 代理（无 CORS 问题）
+  // 生产环境：serve --single 无代理能力，需直连后端
+  if (import.meta.env.DEV) {
+    return '';
+  }
+
   const protocol = window.location.protocol;
   const hostname = window.location.hostname;
   return `${protocol}//${hostname}:8000`;

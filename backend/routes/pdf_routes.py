@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from typing import List, Optional
 import os
 import tempfile
+import time
 from pathlib import Path
 import shutil
 import zipfile
@@ -473,9 +474,11 @@ async def generate_four_color_cards_compat(
 @router.post("/export/cards-docx")
 async def export_cards_to_docx(
     cards: Optional[List[UploadFile]] = File(None),
-    cards_data: Optional[str] = Form(None)
+    cards_data: Optional[str] = Form(None),
+    title: str = Form("四色知识卡片报告"),
+    author: str = Form("Antinet 智能知识管家")
 ):
-    """导出知识卡片到 Word（支持文件上传或JSON数据）"""
+    """导出知识卡片到 Word（支持文件上传或JSON数据，集成 minimax-docx 专业排版）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
@@ -513,12 +516,19 @@ async def export_cards_to_docx(
     try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
-        
-        output_path = os.path.join(tempfile.gettempdir(), "cards_export.docx")
-        processor.export_to_docx({'cards': all_cards}, output_path)
-        
-        return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+        output_path = os.path.join(tempfile.gettempdir(), f"cards_export_{int(time.time())}.docx")
+        result = processor.export_to_docx(all_cards, output_path, title=title, author=author)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Word 导出失败"))
+
+        return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            filename="四色卡片报告.docx")
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"导出 Word 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -568,8 +578,8 @@ async def export_cards_to_pdf(
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
 
-        output_path = os.path.join(tempfile.gettempdir(), "cards_export.pdf")
-        result = processor.export_to_pdf({'cards': all_cards}, output_path, title=title, author=author)
+        output_path = os.path.join(tempfile.gettempdir(), f"cards_export_{int(time.time())}.pdf")
+        result = processor.export_to_pdf(all_cards, output_path, title=title, author=author)
 
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "PDF生成失败"))
@@ -596,9 +606,10 @@ async def export_cards_to_pdf(
 @router.post("/export/four-color-excel")
 async def export_four_color_excel(
     files: Optional[List[UploadFile]] = File(None),
-    cards_data: Optional[str] = Form(None)
+    cards_data: Optional[str] = Form(None),
+    title: str = Form("四色知识卡片报告")
 ):
-    """导出四色卡片到 Excel（支持文件上传或JSON数据）"""
+    """导出四色卡片到 Excel（集成 skills/xlsx 专业导出器，多工作表+概览）"""
     if not FOUR_COLOR_AVAILABLE:
         raise HTTPException(status_code=503, detail="四色卡片功能未启用")
     
@@ -636,12 +647,19 @@ async def export_four_color_excel(
     try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
-        
-        output_path = os.path.join(tempfile.gettempdir(), "cards_export.xlsx")
-        processor.export_to_excel({'cards': all_cards}, output_path)
-        
-        return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        output_path = os.path.join(tempfile.gettempdir(), f"cards_export_{int(time.time())}.xlsx")
+        result = processor.export_to_excel(all_cards, output_path, title=title)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Excel 导出失败"))
+
+        return FileResponse(output_path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            filename="四色卡片报告.xlsx")
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"导出 Excel 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

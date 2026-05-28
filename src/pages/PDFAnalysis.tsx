@@ -623,12 +623,11 @@ const PDFAnalysis: React.FC = () => {
     ));
 
     // 第二步：将卡片导出为Word
+    const reportTitle = `${task.fileName.replace('.pdf', '')}_分析报告`;
     const wordFormData = new FormData();
-    wordFormData.append('cards_data', JSON.stringify({
-        cards: analysisData.cards || [],
-        title: `${task.fileName.replace('.pdf', '')}_分析报告`,
-        author: 'Antinet 智能知识管家'
-    }));
+    wordFormData.append('cards_data', JSON.stringify({ cards: analysisData.cards || [] }));
+    wordFormData.append('title', reportTitle);
+    wordFormData.append('author', 'Antinet 智能知识管家');
     
     const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
       method: 'POST',
@@ -658,12 +657,32 @@ const PDFAnalysis: React.FC = () => {
   };
 
   const convertToExcel = async (task: ConversionTask, formData: FormData) => {
+    // 第一步：上传PDF生成四色卡片
+    setConversionTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!analyzeResponse.ok) {
+      const errorData = await analyzeResponse.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'PDF 分析失败');
+    }
+
+    const analysisData = await analyzeResponse.json();
+
+    // 第二步：将卡片导出为Excel
     setConversionTasks(prev => prev.map(t =>
       t.id === task.id ? { ...t, progress: 30 } : t
     ));
 
+    const excelTitle = `${task.fileName.replace('.pdf', '')}_分析报告`;
     const excelFormData = new FormData();
-    excelFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
+    excelFormData.append('cards_data', JSON.stringify({ cards: analysisData.cards || [] }));
+    excelFormData.append('title', excelTitle);
     
     const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
       method: 'POST',

@@ -3,12 +3,13 @@
 
 // 动态获取API地址，支持局域网访问
 const getApiBaseUrl = () => {
-  // 优先使用环境变量
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  // 无论开发/生产环境，都自动使用当前主机地址 + 8000 端口
-  // 生产环境使用 serve --single 无法代理 API，需直连后端
+  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
+  if (import.meta.env.DEV) {
+    return '';
+  }
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
