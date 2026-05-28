@@ -1606,9 +1606,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           <ExcelAnalysis />
         )}
 
-        {/* 报表生成 */}
+        {/* 报表生成 → 重定向到 PPT 演示 */}
         {activeTab === 'report-automation' && (
-          <ReportAutomation />
+          <PPTViewer />
         )}
 
         {/* PDF查看器 */}

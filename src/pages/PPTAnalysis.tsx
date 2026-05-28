@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
@@ -750,11 +750,11 @@ const PPTAnalysis: React.FC = () => {
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
-              onClick={() => window.open('http://localhost:3000/office-docs', '_blank')}
+              onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
-              <FileSpreadsheet className="w-4 h-4 text-green-600" />
-              <span className="text-green-700 dark:text-green-400">在线表格</span>
+              <History className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 dark:text-green-400">文档处理记录</span>
             </button>
             <button
               onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
@@ -764,11 +764,11 @@ const PPTAnalysis: React.FC = () => {
               <span className="text-red-700 dark:text-red-400">PDF查看器</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/report-automation', '_blank')}
-              className="flex items-center space-x-2 px-3 py-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors text-sm"
+              onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
             >
-              <Sparkles className="w-4 h-4 text-purple-600" />
-              <span className="text-purple-700 dark:text-purple-400">报表生成</span>
+              <Presentation className="w-4 h-4 text-orange-600" />
+              <span className="text-orange-700 dark:text-orange-400">PPT演示</span>
             </button>
             <button
               onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}

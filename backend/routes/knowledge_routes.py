@@ -1236,15 +1236,14 @@ async def import_file(file: UploadFile = File(...)):
                 source_file_id = existing[0]
                 logger.info(f"文件已存在，使用已有记录: {source_file_id}")
             else:
-                # 插入新记录
+                # 插入新记录（markdown_content 在文本提取后回填）
                 cursor.execute('''
-                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash))
+                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash, markdown_content)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash, ''))
                 conn.commit()
         except Exception as e:
             logger.warning(f"插入源文件记录失败: {e}")
-        conn.close()
 
         extracted_text = ""
 
@@ -1452,6 +1451,18 @@ async def import_file(file: UploadFile = File(...)):
             finally:
                 shutil.rmtree(extract_dir, ignore_errors=True)
 
+        # ===== 将提取的完整文本作为 Markdown 保存到源文件记录（用于溯源查看） =====
+        try:
+            if extracted_text:
+                md_content = f"# {filename}\n\n> 导入时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 文件类型: {file_ext.lstrip('.')}\n\n---\n\n{extracted_text}"
+                conn2 = db_manager.get_connection()
+                cur2 = conn2.cursor()
+                cur2.execute("UPDATE source_files SET markdown_content = ? WHERE source_file_id = ?", (md_content, source_file_id))
+                conn2.commit()
+                conn2.close()
+        except Exception as e:
+            logger.warning(f"保存源文件 Markdown 内容失败: {e}")
+
         # ========== 批量导入：直接用关键词规则，秒速完成 ==========
         # （8智能体调用LLM有超时等待，不适合批量导入）
         cards = []
@@ -1522,7 +1533,7 @@ async def import_file(file: UploadFile = File(...)):
                     card_id = cursor.lastrowid
                     card_ids.append(card_id)
                     
-                    # 插入卡片-源文件关联记录
+                    # 插入卡片-源文件关联记录（location 包含段落索引，用于前端高亮）
                     if source_file_id:
                         location = f"第{idx + 1}段"
                         try:
@@ -1827,6 +1838,64 @@ async def get_source_file_cards(source_file_id: str):
     except Exception as e:
         logger.error(f"获取源文件卡片失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/source-files/{source_file_id}/markdown")
+async def get_source_file_markdown(source_file_id: str):
+    """
+    获取源文件的 Markdown 内容（用于溯源查看和高亮显示）
+    
+    返回完整提取文本 + 该源文件所有卡片的段落位置信息
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT source_file_id, original_name, file_type, markdown_content, created_at
+            FROM source_files WHERE source_file_id = ?
+        """, (source_file_id,))
+        sf = cursor.fetchone()
+        
+        if not sf:
+            raise HTTPException(status_code=404, detail="源文件不存在")
+        
+        # 获取该源文件关联的所有卡片及其位置信息
+        cursor.execute("""
+            SELECT c.id, c.title, c.card_type, csf.location_in_source, c.content
+            FROM card_source_files csf
+            JOIN knowledge_cards c ON c.id = csf.card_id
+            WHERE csf.source_file_id = ?
+            ORDER BY c.id
+        """, (source_file_id,))
+        cards_rows = cursor.fetchall()
+        conn.close()
+        
+        return {
+            "success": True,
+            "source_file": {
+                "id": sf[0],
+                "name": sf[1],
+                "type": sf[2],
+                "markdown_content": sf[3] or "",
+                "created_at": sf[4]
+            },
+            "cards": [
+                {
+                    "card_id": r[0],
+                    "title": r[1],
+                    "card_type": r[2],
+                    "location_in_source": r[3] or "",
+                    "content_preview": (r[4] or "")[:200]
+                }
+                for r in cards_rows
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取源文件Markdown失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/source-files/{source_file_id}/download")

@@ -33,6 +33,7 @@ import {
   ChevronRight,
   Hash,
   Copy,
+  Presentation,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -91,6 +92,7 @@ interface ConversionRecord {
   status: 'completed' | 'error';
   createdAt: Date;
   fileSize?: number;
+  errorMessage?: string;
 }
 
 const API_BASE = getApiBaseUrl() + ''
@@ -595,7 +597,7 @@ const PDFAnalysis: React.FC = () => {
           errorMessage: error instanceof Error ? error.message : '转换失败'
         } : t
       ));
-      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size);
+      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size, error instanceof Error ? error.message : '转换失败');
       toast.error(`${task.fileName} 转换失败`);
     }
   };
@@ -715,7 +717,7 @@ const PDFAnalysis: React.FC = () => {
     toast.success(`${task.fileName} 转换为 Excel 成功！`);
   };
 
-  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number) => {
+  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number, errorMessage?: string) => {
     const record: ConversionRecord = {
       id: `record-${Date.now()}`,
       fileName,
@@ -723,6 +725,7 @@ const PDFAnalysis: React.FC = () => {
       status,
       createdAt: new Date(),
       fileSize,
+      errorMessage: errorMessage || undefined,
     };
     setConversionRecords(prev => {
       const next = [record, ...prev];
@@ -1164,7 +1167,9 @@ const PDFAnalysis: React.FC = () => {
                     {record.status === 'completed' ? (
                       <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
                     ) : (
-                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 cursor-help" title={record.errorMessage || '失败'}>
+                        失败
+                      </span>
                     )}
                   </div>
                 </motion.div>
@@ -1471,6 +1476,44 @@ const PDFAnalysis: React.FC = () => {
                 )}
               </div>
             </motion.div>
+
+            {/* 在线查看 */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-4 flex items-center">
+                <FileSpreadsheet className="w-5 h-5 mr-2 text-green-500" />
+                在线查看
+              </h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <History className="w-4 h-4 text-green-500" />
+                  <span>文档处理记录</span>
+                </button>
+                <button
+                  onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <FileText className="w-4 h-4 text-red-500" />
+                  <span>PDF查看器</span>
+                </button>
+                <button
+                  onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <Presentation className="w-4 h-4 text-orange-500" />
+                  <span>PPT演示</span>
+                </button>
+                <button
+                  onClick={() => window.open('http://localhost:3000/?tab=excel-analysis', '_blank')}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
+                >
+                  <BarChart3 className="w-4 h-4 text-blue-500" />
+                  <span>Excel分析</span>
+                </button>
+              </div>
+            </div>
 
             {/* Right Panel - Results */}
             <motion.div
@@ -1863,11 +1906,18 @@ const PDFAnalysis: React.FC = () => {
                               </p>
                             </div>
                           </div>
-                          <div>
+                          <div className="text-right">
                             {record.status === 'completed' ? (
                               <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
                             ) : (
-                              <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                              <div>
+                                <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                                {record.errorMessage && (
+                                  <p className="text-xs text-red-500 dark:text-red-400 mt-1 max-w-[200px] truncate" title={record.errorMessage}>
+                                    {record.errorMessage}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </motion.div>

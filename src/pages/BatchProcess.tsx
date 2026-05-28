@@ -55,17 +55,26 @@ const BatchProcess: React.FC = () => {
     useNPU: true
   });
 
-  // 获取文件类型
-  const getFileType = (filename: string): BatchFile['type'] => {
-    const ext = filename.toLowerCase().split('.').pop();
-    if (['pdf'].includes(ext || '')) return 'pdf';
-    if (['xlsx', 'xls', 'csv'].includes(ext || '')) return 'excel';
-    if (['pptx', 'ppt'].includes(ext || '')) return 'ppt';
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return 'image';
-    if (['mp3', 'wav', 'flac'].includes(ext || '')) return 'audio';
-    if (['zip', 'rar', '7z'].includes(ext || '')) return 'archive';
-    return 'other';
-  };
+// 后端支持的文件扩展名白名单（与后端 supported_extensions 保持一致）
+const SUPPORTED_EXTENSIONS = new Set([
+  '.pdf', '.txt', '.md', '.docx', '.doc',
+  '.xlsx', '.xls', '.pptx', '.ppt',
+  '.mp3', '.wav', '.flac',
+  '.zip', '.rar', '.7z',
+  '.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'
+]);
+
+// 获取文件类型
+const getFileType = (filename: string): BatchFile['type'] => {
+  const ext = filename.toLowerCase().split('.').pop();
+  if (['pdf'].includes(ext || '')) return 'pdf';
+  if (['xlsx', 'xls', 'csv'].includes(ext || '')) return 'excel';
+  if (['pptx', 'ppt'].includes(ext || '')) return 'ppt';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return 'image';
+  if (['mp3', 'wav', 'flac'].includes(ext || '')) return 'audio';
+  if (['zip', 'rar', '7z'].includes(ext || '')) return 'archive';
+  return 'other';
+};
 
   // 获取文件图标
   const getFileIcon = (type: BatchFile['type']) => {
@@ -87,12 +96,39 @@ const BatchProcess: React.FC = () => {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // 处理文件选择
+  // 处理文件选择（含预过滤）
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
     if (!selectedFiles) return;
 
-    const newFiles: BatchFile[] = Array.from(selectedFiles).map(file => ({
+    const allFiles = Array.from(selectedFiles);
+
+    // 预过滤：只保留支持的格式，其余跳过并提示
+    const validFiles: File[] = [];
+    const skippedFiles: string[] = [];
+
+    for (const file of allFiles) {
+      const ext = '.' + (file.name.toLowerCase().split('.').pop() || '');
+      if (SUPPORTED_EXTENSIONS.has(ext)) {
+        validFiles.push(file);
+      } else {
+        skippedFiles.push(file.name);
+      }
+    }
+
+    // 如果有被过滤的文件，显示提示
+    if (skippedFiles.length > 0) {
+      toast.info(`已跳过 ${skippedFiles.length} 个不支持的文件`, {
+        description: skippedFiles.slice(0, 5).join(', ') + (skippedFiles.length > 5 ? '...' : '')
+      });
+    }
+
+    if (validFiles.length === 0 && allFiles.length > 0) {
+      toast.error('所选文件均不支持处理');
+      return;
+    }
+
+    const newFiles: BatchFile[] = validFiles.map(file => ({
       id: Math.random().toString(36).substring(7),
       file,
       name: file.name,
