@@ -298,61 +298,67 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
     从 Agent 发言中提取四色卡片
     返回: [{card_type, title, content, explore_status}]
     """
-    if not speech or len(speech) < 20:
+    if not speech or len(speech) < 50:
         return []
     
     try:
         import re
-        # 增强 system_prompt，添加明确的示例和禁止项
-        system_prompt = """你是四色卡片分类专家。你的任务是将文本内容分类为四色卡片之一：
-- 蓝色(事实): 客观数据、定义、事件、统计结果
-- 绿色(解释): 背景、原理、原因、逻辑解释
-- 黄色(风险): 隐患、问题、反面案例、潜在威胁
-- 红色(动力): 行动建议、机会、推动力、解决方案
+        # 改进的 system_prompt，强调生成有意义的卡片
+        system_prompt = """你是四色卡片分类专家。你的任务是从讨论发言中提炼出有价值的知识卡片。
 
-【重要规则】
-1. 必须输出JSON数组格式，不要输出对象或其他格式
-2. 每个卡片必须有 type、title、content 三个字段
-3. type 必须是 blue/green/yellow/red 之一
-4. 只输出JSON数组，不要其他任何文字
+【卡片类型定义】
+- 蓝色(事实/Fact): 客观数据、历史案例、具体事件、定义、统计结果
+- 绿色(解释/Explain): 原理说明、原因分析、背景知识、逻辑关系
+- 黄色(风险/Risk): 潜在问题、隐患、失败案例、威胁因素
+- 红色(行动/Action): 行动建议、解决方案、改进措施、决策结论
+
+【核心要求】
+1. 生成的卡片必须有实质内容，不能是单个词语
+2. title 要简洁但有意义，15字以内
+3. content 必须是完整的句子或段落，20字以上，表达一个完整的观点
+4. 每个卡片必须包含具体的信息，不是泛泛而谈
+
+【禁止】
+- 单个词语或短语（如 "useEffect"、"IntersectionObserver"）
+- 太宽泛的内容（如 "这是一个重要的问题"）
+- 少于20字的内容
 
 【正确示例】
-[{"type": "blue", "title": "市场规模", "content": "2023年市场规模达500亿元"}]
+[{"type": "blue", "title": "SSE断连恢复机制", "content": "通过meetingSessionId跟踪会议会话，页面返回时可从sessionStorage恢复状态"},
+ {"type": "red", "title": "状态覆盖风险", "content": "服务端历史状态可能覆盖本地已恢复的数据，导致用户看到不一致的内容"}]
 
 【错误示例 - 禁止】
-{"key": "评估", "value": "多个维度"}
-{"type": "unknown", "title": "..."}"""
+[{"type": "blue", "title": "useEffect", "content": "React Hook"},
+ {"type": "red", "title": "key", "content": "依赖数组"}]"""
         
-        user_prompt = f"""分析以下发言，提取最有价值的1-2条四色卡片内容：
-
-【发言内容】
-{speech[:300]}
+        user_prompt = f"""从以下讨论发言中提炼出2-3个最有价值的知识卡片。
 
 【会议主题】
 {topic}
 
-请严格按照JSON数组格式输出，只输出JSON："""
+【{agent_name}的发言】
+{speech[:600]}
+
+【要求】
+- 生成2-3张有实质内容的卡片
+- 每张卡片要表达一个完整的观点
+- title不超过15字，content不少于20字
+- 严格按照JSON数组格式输出，只输出JSON"""
+
+        logger.info(f"[_extract_color_cards] 开始提取 | agent={agent_name} | speech长度={len(speech)}")
         
-        # 调试日志：记录输入
-        logger.info(f"[_extract_color_cards] 开始提取 | agent={agent_name} | speech长度={len(speech)} | topic={topic[:30]}")
-        logger.info(f"[_extract_color_cards] 用户提示词前100字: {user_prompt[:100]}")
-        
-        result = await call_llm(system_prompt, user_prompt, max_tokens=400, agent_id=agent_id)
+        result = await call_llm(system_prompt, user_prompt, max_tokens=600, agent_id=agent_id)
         
         if not result:
             logger.warning(f"[_extract_color_cards] LLM返回为空")
             return []
         
-        # 调试日志：查看LLM原始返回
         logger.info(f"[_extract_color_cards] LLM原始返回: {result[:500]}")
         
         import json
-        # 移除 markdown 代码块
         cleaned = re.sub(r'^```json\s*', '', result.strip())
         cleaned = re.sub(r'\s*```$', '', cleaned)
         cleaned = cleaned.strip()
-        
-        logger.info(f"[_extract_color_cards] 清理后的JSON: {cleaned[:500]}")
         
         # 尝试解析 JSON：支持多数组拼接 + 合并所有数组
         cards = None
@@ -436,7 +442,7 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
                 logger.warning(f"[_extract_color_cards] 第{i+1}个元素不是对象: {type(card).__name__}")
                 continue
             
-            # 类型标准化映射：中文 type → 英文 color；优先用 color 字段
+# 类型标准化映射：中文 type → 英文 color；优先用 color 字段
             raw_type = card.get('type', '')
             raw_color = card.get('color', '')
             _TYPE_MAP = {'风险': 'red', '动力': 'red', '行动': 'red', '决策': 'red',
@@ -453,19 +459,30 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
                 card_type = ''
             card_title = card.get('title', '')
             card_content = card.get('content') or card.get('description') or card.get('text', '')
-            
+
             if not card_type:
                 logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color字段: {list(card.keys())}")
                 continue
-            
+
             if card_type not in ('blue', 'green', 'yellow', 'red'):
                 logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card_type}")
                 continue
-            
+
             if not card_content:
                 logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少content/description/text字段")
                 continue
-            
+
+            # 过滤无效内容：太短或只有单词的卡片没有保存价值
+            if len(card_content) < 15:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片content太短: '{card_content[:30]}...'")
+                continue
+            if len(card_title) < 3:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片title太短: '{card_title}'")
+                continue
+            # 过滤只有英文单词的标题（通常是关键词而非标题）
+            if re.match(r'^[a-zA-Z\s]+$', card_title) and len(card_title) < 8:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片title是英文单词: '{card_title}'")
+                continue
             if not card_title:
                 card_title = card_content[:15] + ('...' if len(card_content) > 15 else '')
             

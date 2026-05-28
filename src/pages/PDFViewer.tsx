@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight, Hash
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import { useSearchParams } from 'react-router-dom';
 
 // CDN 动态加载 PDF.js（避免 pdfjs-dist 依赖缺失问题）
 const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -13,8 +14,11 @@ interface PDFViewerProps {
   fileUrl?: string;
 }
 
-const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
+const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
   useTheme();
+  const [searchParams] = useSearchParams();
+  const urlParam = searchParams.get('url');
+  const fileUrl = propFileUrl || urlParam || undefined;
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -60,22 +64,28 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
     setIsLoading(true);
     setLoadError('');
     try {
+      // 从 URL 提取文件名
+      try {
+        const urlObj = new URL(url, window.location.origin);
+        const pathParts = urlObj.pathname.split('/');
+        const rawName = decodeURIComponent(pathParts[pathParts.length - 1] || '');
+        setFileName(rawName.replace(/^[\w-]+-/, '') || 'PDF文档');
+      } catch { /* ignore */ }
+
       const pdfjsLib = await loadPDFJS();
       const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP ${response.status}: 无法获取文件`);
       const arrayBuffer = await response.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
       
-      // 兼容不同 PDF.js 版本的 getDocument API
+      // PDF.js 3.x: getDocument 返回 PDFDocumentLoadingTask，需通过 .promise 获取 PDFDocumentProxy
       const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
-      // PDF.js 3.x: loadingTask.promise 返回 PDFDocumentProxy
-      // 某些 CDN 版本可能直接返回 PDFDocumentProxy（已解析）
-      const pdf = loadingTask.then ? (await loadingTask.promise) : (await loadingTask);
-      
+      const pdf = await loadingTask.promise;
+
       if (!pdf || typeof pdf.getPage !== 'function') {
         throw new Error('PDF 文档解析失败：返回了无效的文档对象');
       }
-      
+
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
@@ -111,12 +121,10 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl }) => {
       try {
         const pdfjsLib = await loadPDFJS();
         
-        // 兼容不同 PDF.js 版本的 getDocument API
+        // PDF.js 3.x: getDocument 返回 PDFDocumentLoadingTask，需通过 .promise 获取 PDFDocumentProxy
         const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
-        // PDF.js 3.x: loadingTask.promise 返回 PDFDocumentProxy
-        // 某些 CDN 版本可能直接返回 PDFDocumentProxy（已解析）
-        const pdf = loadingTask.then ? (await loadingTask.promise) : (await loadingTask);
-        
+        const pdf = await loadingTask.promise;
+
         if (!pdf || typeof pdf.getPage !== 'function') {
           throw new Error('PDF 文档解析失败：返回了无效的文档对象');
         }
