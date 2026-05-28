@@ -608,7 +608,7 @@ const PDFAnalysis: React.FC = () => {
           errorMessage: error instanceof Error ? error.message : '转换失败'
         } : t
       ));
-      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size, error instanceof Error ? error.message : '转换失败');
+      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size, error instanceof Error ? error.message : '转换失败', task.fileDataUrl);
       toast.error(`${task.fileName} 转换失败`);
     }
   };
@@ -665,7 +665,7 @@ const PDFAnalysis: React.FC = () => {
       } : t
     ));
 
-    addConversionRecord(task.fileName, 'word', 'completed', task.file.size);
+    addConversionRecord(task.fileName, 'word', 'completed', task.file.size, undefined, task.fileDataUrl);
     toast.success(`${task.fileName} 转换为 Word 成功！`);
   };
 
@@ -724,7 +724,7 @@ const PDFAnalysis: React.FC = () => {
       } : t
     ));
 
-    addConversionRecord(task.fileName, 'excel', 'completed', task.file.size);
+    addConversionRecord(task.fileName, 'excel', 'completed', task.file.size, undefined, task.fileDataUrl);
     toast.success(`${task.fileName} 转换为 Excel 成功！`);
   };
 
@@ -1169,7 +1169,19 @@ const PDFAnalysis: React.FC = () => {
                       </div>
                     )}
                     <div>
-                      <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                      {record.fileDataUrl ? (
+                        <a
+                          href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                          title="点击查看原文档"
+                        >
+                          {record.fileName}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                      )}
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         转换为 {record.targetFormat === 'word' ? 'Word' : 'Excel'} · {record.createdAt.toLocaleString()}
                       </p>

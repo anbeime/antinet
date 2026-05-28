@@ -1402,7 +1402,16 @@ const ProjectDetailPanel: React.FC<{
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">专题知识网络</h2>
                     <div className="h-[600px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
-                      <KnowledgeGraph filterProjectId={project.id} />
+                      <KnowledgeGraph
+                        filterProjectId={project.id}
+                        onNodeClick={(cardId) => {
+                          const targetCard = cards.find(c => c.id === cardId);
+                          if (targetCard) {
+                            setSelectedCard(targetCard);
+                            setShowCardDetail(true);
+                          }
+                        }}
+                      />
                     </div>
                   </div>
                 )}
