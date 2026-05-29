@@ -379,7 +379,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       // 重新从后端加载卡片列表
       const cardsResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
       if (cardsResponse.ok) {
-        const apiCards = await cardsResponse.json();
+        const responseData = await cardsResponse.json();
+        const apiCards = responseData.cards || responseData;  // 兼容 {cards:[], total:N} 和纯数组
         const formattedCards = apiCards.map((card: any) => ({
           id: String(card.id),
           title: card.title,

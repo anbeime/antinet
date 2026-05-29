@@ -104,17 +104,31 @@ print("[OK] AI 服务工厂已初始化")
 # ============================================================
 
 # ============================================================
-# 7. 提醒服务启动（后台定时任务）
+# 7. FastAPI 启动/关闭事件（需要在事件循环启动后才能执行的任务）
 # ============================================================
-try:
-    from services.reminder_service import start_reminder_service
-    start_reminder_service()
-    print("[OK] 提醒服务已启动")
-except Exception as e:
-    print(f"[WARN] 提醒服务启动失败: {e}")
+@app.on_event("startup")
+async def on_startup():
+    """FastAPI 启动时执行（此时事件循环已存在）"""
+    # 启动提醒服务（AsyncIOScheduler 需要事件循环）
+    try:
+        from services.reminder_service import start_reminder_service
+        start_reminder_service()
+        print("[OK] 提醒服务已启动")
+    except Exception as e:
+        print(f"[WARN] 提醒服务启动失败: {e}")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """FastAPI 关闭时执行"""
+    try:
+        from services.reminder_service import stop_reminder_service
+        stop_reminder_service()
+        print("[OK] 提醒服务已停止")
+    except Exception as e:
+        print(f"[WARN] 提醒服务停止失败: {e}")
 
 # ============================================================
-# 7. 路由注册（简化版）
+# 8. 路由注册（简化版）
 # ============================================================
 def register_router(module_name: str):
     """直接注册路由模块"""
@@ -178,9 +192,10 @@ register_router("routes.analysis_routes")
 register_router("routes.report_routes")
 register_router("routes.collaboration_routes")  # 实时协作 (WebSocket + REST)
 register_router("routes.mindmap_routes")  # 思维导图
+register_router("routes.remotion_routes")  # Remotion 动态演示
 
 # ============================================================
-# 8. 初始化各模块的数据库连接
+# 9. 初始化各模块的数据库连接
 # ============================================================
 print("[INFO] 开始初始化各模块数据库连接...")
 
@@ -266,7 +281,7 @@ except Exception as e:
 print("[INFO] 数据库连接初始化完成")
 
 # ============================================================
-# 9. 健康检查端点
+# 10. 健康检查端点
 # ============================================================
 @app.get("/api/health")
 async def health_check():
@@ -291,7 +306,7 @@ async def debug_routes():
     }
 
 # ============================================================
-# 9. 启动服务
+# 11. 启动服务
 # ============================================================
 if __name__ == "__main__":
     import uvicorn

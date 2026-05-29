@@ -92,6 +92,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
   const [pdfPreviewError, setPdfPreviewError] = useState('');
+  const [pdfMaximized, setPdfMaximized] = useState(false);
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
@@ -157,10 +158,18 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
     return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
   };
 
-  // 列表数据源：始终使用全部卡片（确保搜索覆盖所有卡片）
+  // 列表数据源：有 currentCardId 时与图谱/导图保持一致，否则用全部卡片
   const listDataSource = useMemo(() => {
+    if (currentCardId && apiData) {
+      const graphIds = new Set(
+        (apiData.nodes || apiData.entities || []).map((n: any) => String(n.id))
+      );
+      if (graphIds.size > 0) {
+        return cards.filter((c: any) => graphIds.has(String(c.id)));
+      }
+    }
     return cards;
-  }, [cards]);
+  }, [cards, currentCardId, apiData]);
 
   // 从图谱数据构建思维导图树（与图谱/列表共享同一数据源）
   const mindmapTree = useMemo(() => {

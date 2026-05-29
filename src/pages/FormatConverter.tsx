@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 import {
   FileText,
   Upload,
@@ -740,34 +746,8 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     }
   };
 
-  // 加载 PDF.js
-const loadPdfJs = async (): Promise<any> => {
-    const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib) return pdfjsLib;
-
-    return new Promise<any>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
-      script.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
-        resolve(pdfjs);
-      };
-      script.onerror = () => {
-        // Fallback to bootcss
-        const script2 = document.createElement('script');
-        script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-        script2.onload = () => {
-          const pdfjs = (window as any).pdfjsLib;
-          pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-          resolve(pdfjs);
-        };
-        script2.onerror = reject;
-        document.head.appendChild(script2);
-      };
-      document.head.appendChild(script);
-    });
-  };
+  // 使用本地安装的 pdfjs-dist（离线可用）
+const loadPdfJs = async (): Promise<any> => pdfjsLib;
 
   // 打开 PDF 预览弹窗
   const openPdfPreview = async (task: ConversionTask) => {

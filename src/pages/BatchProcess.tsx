@@ -188,31 +188,9 @@ const getFileType = (filename: string): BatchFile['type'] => {
       if (response.ok) {
         const extractedCards: ExtractedCard[] = result.cards || [];
         
-        // 自动保存卡片到数据库
-        if (options.autoSaveCards && extractedCards.length > 0) {
-          let savedCount = 0;
-          for (const card of extractedCards) {
-            try {
-              const saveResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  type: card.card_type,
-                  title: card.title,
-                  content: card.content,
-                  category: card.card_type === 'blue' ? '事实' : 
-                            card.card_type === 'green' ? '解释' : 
-                            card.card_type === 'yellow' ? '风险' : '行动'
-                })
-              });
-              if (saveResponse.ok) savedCount++;
-            } catch (e) {
-              console.error('保存卡片失败:', e);
-            }
-          }
-          
-          setSavedCardsCount(prev => prev + savedCount);
-        }
+        // 后端 import/file 接口已自动保存卡片到数据库（saved_count 表示实际保存数）
+        // 前端不再重复 POST，只更新保存计数
+        setSavedCardsCount(prev => prev + (result.saved || 0));
         
         setFiles(prev => prev.map(f => 
           f.id === batchFile.id 

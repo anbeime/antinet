@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, History } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, History, Eye, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
 import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import PdfSourceViewer from './PdfSourceViewer';
 
 // 注册中文字体（本地文件，不依赖外部CDN）
 const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
@@ -318,6 +319,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [showSourceMarkdown, setShowSourceMarkdown] = useState(false);
   const [sourceMarkdownData, setSourceMarkdownData] = useState<any>(null);
   const [sourceMarkdownLoading, setSourceMarkdownLoading] = useState(false);
+  const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');  // PDF/Markdown 视图切换
+
 
   // 同批次兄弟卡片（知识图谱子网）
   const [siblingCards, setSiblingCards] = useState<SiblingCard[]>([]);
@@ -479,6 +482,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       loadCardIntegrations();
       loadSourceFileInfo();
       loadSiblingCards();
+      setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
     }
   }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
 
@@ -1944,21 +1948,64 @@ className="text-lg select-text"
                     {sourceMarkdownData?.source_file?.name || '源文件'}
                   </h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {sourceFileInfo?.location_in_source || 'Markdown 溯源查看'}
+                    {sourceFileInfo?.location_in_source || '溯源查看'}
                     {sourceMarkdownData?.cards && sourceMarkdownData.cards.length > 0 && (
                       <span> · 共 {sourceMarkdownData.cards.length} 张卡片</span>
                     )}
                   </p>
                 </div>
+                {/* PDF/Markdown 视图切换 */}
+                {(sourceFileInfo?.file_type || sourceMarkdownData?.source_file?.type) === 'pdf' && (
+                  <div className="flex items-center bg-white/60 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700 ml-4">
+                    <button
+                      onClick={() => setSourceViewMode('markdown')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-l-lg transition-colors ${
+                        sourceViewMode === 'markdown'
+                          ? 'bg-purple-500 text-white'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                      }`}
+                    >
+                      <FileText size={12} className="inline mr-1" />Markdown 文本
+                    </button>
+                    <button
+                      onClick={() => setSourceViewMode('pdf')}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-r-lg transition-colors ${
+                        sourceViewMode === 'pdf'
+                          ? 'bg-red-500 text-white'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                      }`}
+                    >
+                      <Eye size={12} className="inline mr-1" />PDF 原文标注
+                    </button>
+                  </div>
+                )}
               </div>
-              <button onClick={() => setShowSourceMarkdown(false)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+              <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                 <X size={20} />
               </button>
             </div>
 
             {/* 内容区 */}
             <div className="flex-1 overflow-y-auto p-6">
-              {sourceMarkdownLoading ? (
+              {/* PDF 原文标注视图 */}
+              {(sourceFileInfo?.file_type || sourceMarkdownData?.source_file?.type) === 'pdf' && sourceViewMode === 'pdf' && sourceFileInfo?.source_file_id ? (
+                <div className="-m-6 h-full">
+                  <PdfSourceViewer
+                    pdfUrl={`${getApiBaseUrl()}/api/knowledge/source-files/${sourceFileInfo.source_file_id}/download`}
+                    fileName={sourceFileInfo.original_name || sourceMarkdownData?.source_file?.name || '源文件'}
+                    annotations={(sourceMarkdownData?.cards || []).map((c: any) => ({
+                      card_id: c.card_id,
+                      title: c.title,
+                      card_type: c.card_type,
+                      location_in_source: c.location_in_source || '',
+                      content_preview: c.content_preview || '',
+                      isCurrent: String(c.card_id) === card?.id,
+                    }))}
+                    currentCardId={card?.id}
+                    onClose={() => setSourceViewMode('markdown')}
+                  />
+                </div>
+              ) : sourceMarkdownLoading ? (
                 <div className="flex items-center justify-center py-20">
                   <Loader size={24} className="animate-spin text-purple-500 mr-3" />
                   <span className="text-gray-500">加载中...</span>

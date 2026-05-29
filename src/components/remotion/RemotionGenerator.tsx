@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { 
   Film, Sparkles, Loader, CheckCircle, AlertCircle,
-  ChevronDown, Settings, Zap
+  ChevronDown, Settings, Zap, Download, ExternalLink, Video
 } from 'lucide-react';
 import RemotionPreview from './RemotionPreview';
 
@@ -29,10 +29,16 @@ interface GeneratedSlide {
 
 const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onGenerated, showSelector = false }) => {
   const [generating, setGenerating] = useState(false);
+  const [rendering, setRendering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [slides, setSlides] = useState<GeneratedSlide[]>([]);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [sourcePath, setSourcePath] = useState<string | null>(null);
+  const [renderCommand, setRenderCommand] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [config, setConfig] = useState({
     style: 'modern',
     duration: 'medium',
@@ -40,126 +46,126 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
     autoMusic: false,
   });
 
-  const generateSlides = () => {
-    // 如果有选择器且已选择卡片，使用选中的卡片
-    const sourceCards = showSelector && selectedCards.size > 0 
-      ? cards.filter(c => selectedCards.has(c.id))
-      : cards;
-    
-    const newSlides: GeneratedSlide[] = [];
-    
-    // Cover slide
-    newSlides.push({
-      id: 'cover-1',
-      type: 'cover',
-      title: topic,
-      content: ['智能分析报告'],
-    });
-
-    // Group cards by type
-    const blueCards = sourceCards.filter(c => c.type === 'blue');
-    const greenCards = sourceCards.filter(c => c.type === 'green');
-    const yellowCards = sourceCards.filter(c => c.type === 'yellow');
-    const redCards = sourceCards.filter(c => c.type === 'red');
-
-    // Content slides by type
-    if (blueCards.length > 0) {
-      newSlides.push({
-        id: 'content-blue',
-        type: 'content',
-        title: '核心事实',
-        cards: blueCards.map(c => ({ title: c.title, content: c.content, type: c.type })),
-      });
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
     }
+  }, []);
 
-    if (greenCards.length > 0) {
-      newSlides.push({
-        id: 'content-green',
-        type: 'content',
-        title: '深度解读',
-        cards: greenCards.map(c => ({ title: c.title, content: c.content, type: c.type })),
-      });
-    }
-
-    if (yellowCards.length > 0) {
-      newSlides.push({
-        id: 'content-yellow',
-        type: 'content',
-        title: '风险警示',
-        cards: yellowCards.map(c => ({ title: c.title, content: c.content, type: c.type })),
-      });
-    }
-
-    if (redCards.length > 0) {
-      newSlides.push({
-        id: 'content-red',
-        type: 'content',
-        title: '行动方案',
-        cards: redCards.map(c => ({ title: c.title, content: c.content, type: c.type })),
-      });
-    }
-
-    // Summary slide (use sourceCards)
-    const summaryCards = showSelector && selectedCards.size > 0 
-      ? cards.filter(c => selectedCards.has(c.id))
-      : sourceCards;
-    
-    newSlides.push({
-      id: 'summary-1',
-      type: 'summary',
-      title: '总结',
-      content: summaryCards.slice(0, 4).map((c, i) => `${i + 1}. ${c.title}`),
-    });
-
-    return newSlides;
-  };
+  useEffect(() => {
+    return stopPolling;
+  }, [stopPolling]);
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setError(null);
     setSlides([]);
+    setJobId(null);
+    setSourcePath(null);
+    setRenderCommand(null);
+    setVideoUrl(null);
+
+    const sourceCards = showSelector && selectedCards.size > 0
+      ? cards.filter(c => selectedCards.has(c.id))
+      : cards;
 
     try {
-      // Simulate slide generation
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      const newSlides = generateSlides();
-      setSlides(newSlides);
+      const response = await fetch('/api/remotion/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic,
+          cards: sourceCards.map(c => ({
+            id: c.id,
+            type: c.type,
+            title: c.title,
+            content: c.content,
+          })),
+          format: 'mp4',
+          quality: 'medium',
+          config,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `生成失败 (${response.status})`);
+      }
+
+      const data = await response.json();
+      if (data.slides) setSlides(data.slides);
+      if (data.job_id) setJobId(data.job_id);
+      if (data.render_command) setRenderCommand(data.render_command);
+      if (data.source_path) setSourcePath(data.source_path);
     } catch (e) {
-      console.error('Generation failed:', e);
+      const msg = e instanceof Error ? e.message : '生成失败';
+      setError(msg);
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleExport = async (format: 'mp4' | 'webm' | 'gif') => {
-    if (slides.length === 0) return;
+  const startRender = async () => {
+    if (!jobId) return;
+    setRendering(true);
+    setError(null);
 
     try {
-      // Call backend to trigger Remotion render
-      const response = await fetch('/api/remotion/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slides,
-          topic,
-          format,
-          cards,
-          config,
-        }),
-      });
-
+      const response = await fetch(`/api/remotion/render/${jobId}`, { method: 'POST' });
       const data = await response.json();
-      if (data.videoUrl) {
-        setVideoUrl(data.videoUrl);
-        onGenerated?.(data.videoUrl);
+
+      if (data.status === 'completed' && data.video_url) {
+        setVideoUrl(data.video_url);
+        onGenerated?.(data.video_url);
+        setRendering(false);
+        return;
       }
+
+      if (data.status === 'no_chrome') {
+        setError(data.hint || '需要 Chrome 浏览器进行渲染');
+        setRendering(false);
+        return;
+      }
+
+      if (data.status === 'failed') {
+        setError(data.error || '渲染失败');
+        setRendering(false);
+        return;
+      }
+
+      pollRef.current = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/remotion/status/${jobId}`);
+          const status = await statusRes.json();
+          if (status.video_exists && status.video_url) {
+            setVideoUrl(status.video_url);
+            onGenerated?.(status.video_url);
+            stopPolling();
+            setRendering(false);
+          } else if (status.status === 'failed' || status.status === 'timeout') {
+            setError(status.error || '渲染失败');
+            stopPolling();
+            setRendering(false);
+          }
+        } catch {
+          stopPolling();
+          setRendering(false);
+        }
+      }, 3000);
     } catch (e) {
-      console.error('Export failed:', e);
+      const msg = e instanceof Error ? e.message : '渲染请求失败';
+      setError(msg);
+      setRendering(false);
     }
+  };
+
+  const handleExport = async (format: 'mp4' | 'webm' | 'gif') => {
+    startRender();
   };
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-      {/* Header */}
       <div className="px-4 py-3 border-b flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <Film className="w-5 h-5 text-purple-500" />
@@ -175,7 +181,6 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
         </button>
       </div>
 
-      {/* Card Selector - Only show when showSelector is true */}
       {showSelector && (
         <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b">
           <div className="flex items-center justify-between mb-2">
@@ -193,11 +198,8 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
                 key={card.id}
                 onClick={() => {
                   const newSet = new Set(selectedCards);
-                  if (newSet.has(card.id)) {
-                    newSet.delete(card.id);
-                  } else {
-                    newSet.add(card.id);
-                  }
+                  if (newSet.has(card.id)) newSet.delete(card.id);
+                  else newSet.add(card.id);
                   setSelectedCards(newSet);
                 }}
                 className={`px-2 py-1 text-xs rounded-full border transition-colors ${
@@ -216,7 +218,6 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
         </div>
       )}
 
-      {/* Advanced Settings */}
       {showAdvanced && (
         <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700 border-b">
           <div className="grid grid-cols-2 gap-4">
@@ -269,8 +270,14 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
         </div>
       )}
 
-      {/* Content Area */}
       <div className="p-4">
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
+            <span className="text-sm text-red-700 dark:text-red-400">{error}</span>
+          </div>
+        )}
+
         {slides.length === 0 ? (
           <div className="text-center py-12">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
@@ -278,7 +285,7 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
             </div>
             <h3 className="text-lg font-medium mb-2">生成动态演示</h3>
             <p className="text-sm text-gray-500 mb-6">
-              将 {cards.length} 张卡片转换为动画视频
+              将 {showSelector && selectedCards.size > 0 ? selectedCards.size : cards.length} 张卡片转换为动画视频
             </p>
             <button
               onClick={handleGenerate}
@@ -307,14 +314,65 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
         )}
       </div>
 
-      {/* Status Footer */}
-      {videoUrl && (
-        <div className="px-4 py-3 bg-green-50 dark:bg-green-900/20 border-t flex items-center space-x-2">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <span className="text-sm text-green-700 dark:text-green-400">视频生成成功</span>
-          <a href={videoUrl} download className="ml-auto text-sm text-purple-500 hover:underline">
-            下载视频
-          </a>
+      {jobId && slides.length > 0 && (
+        <div className="px-4 py-3 border-t bg-gray-50 dark:bg-gray-700/50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-2">
+              {rendering ? (
+                <Loader className="w-4 h-4 text-purple-500 animate-spin" />
+              ) : videoUrl ? (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              ) : (
+                <CheckCircle className="w-4 h-4 text-green-500" />
+              )}
+              <span className="text-sm font-medium">
+                {rendering ? '渲染中...' : videoUrl ? '渲染完成' : `已生成 ${slides.length} 张幻灯片`}
+              </span>
+            </div>
+            <span className="text-xs text-gray-400">任务: {jobId}</span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {!rendering && !videoUrl && (
+              <button
+                onClick={startRender}
+                className="px-3 py-1.5 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 flex items-center"
+              >
+                <Video className="w-3 h-3 mr-1" />
+                渲染视频
+              </button>
+            )}
+            {sourcePath && (
+              <a
+                href={`/api/remotion/download/source/${jobId}`}
+                download
+                className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 flex items-center"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                下载源码
+              </a>
+            )}
+            {videoUrl && (
+              <a
+                href={videoUrl}
+                download
+                className="px-3 py-1.5 text-xs bg-green-500 text-white rounded hover:bg-green-600 flex items-center"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                下载视频
+              </a>
+            )}
+            {renderCommand && (
+              <button
+                onClick={() => navigator.clipboard.writeText(renderCommand)}
+                className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 flex items-center"
+                title={renderCommand}
+              >
+                <ExternalLink className="w-3 h-3 mr-1" />
+                复制渲染命令
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

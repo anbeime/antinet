@@ -1403,16 +1403,24 @@ async def convert_card_to_task(card_id: int):
         }
         priority = priority_map.get(card["card_type"], 'medium')
         
-        # 创建任务
+        # 检查卡片是否属于某个专题
+        project_id = card.get("project_id")
+        source_type = 'project' if project_id else 'card'
+        source_id = project_id if project_id else card_id
+        category = 'projects' if project_id else 'inbox'
+        
         now = datetime.now().isoformat()
         cursor.execute("""
-            INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id, created_at, updated_at)
-            VALUES (?, ?, ?, 'inbox', 'card', ?, ?, ?)
+            INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id, project_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             card["title"],
             card["content"],
             priority,
-            card_id,
+            category,
+            source_type,
+            source_id,
+            project_id,
             now,
             now
         ))
@@ -1423,7 +1431,9 @@ async def convert_card_to_task(card_id: int):
         return {
             "message": "卡片已转换为任务",
             "task_id": task_id,
-            "priority": priority
+            "priority": priority,
+            "category": category,
+            "project_id": project_id
         }
     except HTTPException:
         raise

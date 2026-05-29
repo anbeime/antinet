@@ -6,12 +6,15 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import * as pdfjsLib from 'pdfjs-dist';
 
 const API_BASE = getApiBaseUrl();
 
-// CDN 动态加载 PDF.js（避免 pdfjs-dist 依赖缺失问题）
-const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// 使用本地安装的 pdfjs-dist（支持离线使用）
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface PDFViewerProps {
   fileUrl?: string;
@@ -40,28 +43,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
   const [previewTitle, setPreviewTitle] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
-  // 动态加载 PDF.js 库
+  // 使用本地安装的 pdfjs-dist（离线可用）
   const loadPDFJS = async (): Promise<any> => {
     if (pdfjsRef.current) return pdfjsRef.current;
-
-    // 检查是否已全局加载
-    if ((window as any).pdfjsLib) {
-      pdfjsRef.current = (window as any).pdfjsLib;
-      return pdfjsRef.current;
-    }
-
-    return new Promise<any>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = PDFJS_CDN_URL;
-      script.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN_URL;
-        pdfjsRef.current = pdfjs;
-        resolve(pdfjs);
-      };
-      script.onerror = () => reject(new Error('PDF.js 库加载失败，请检查网络连接'));
-      document.head.appendChild(script);
-    });
+    pdfjsRef.current = pdfjsLib;
+    return pdfjsLib;
   };
 
   // Load PDF from URL if provided
