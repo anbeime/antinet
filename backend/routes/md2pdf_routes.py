@@ -61,47 +61,64 @@ except ImportError:
     MD2PDF_AVAILABLE = False
 
 
+def _escape_xml(text: str) -> str:
+    """转义 XML 特殊字符，避免 reportlab Paragraph 解析错误"""
+    text = text.replace('&', '&amp;')
+    text = text.replace('<', '&lt;')
+    text = text.replace('>', '&gt;')
+    text = text.replace('"', '&quot;')
+    text = text.replace("'", '&apos;')
+    return text
+
+_THEMES = {
+    'warm-academic': {'primary':'#C17B4B', 'secondary':'#8B5E3C', 'accent':'#E8D5C4', 'page':None},
+    'classic-thesis': {'primary':'#8B4513', 'secondary':'#6B3410', 'accent':'#F5E6D3', 'page':None},
+    'tufte': {'primary':'#8B0000', 'secondary':'#4A4A4A', 'accent':'#F0F0F0', 'page':None},
+    'ieee-journal': {'primary':'#1B3A5C', 'secondary':'#2F5496', 'accent':'#E8EEF4', 'page':None},
+    'elegant-book': {'primary':'#6B4226', 'secondary':'#8B6914', 'accent':'#FAF0E6', 'page':None},
+    'chinese-red': {'primary':'#CC2936', 'secondary':'#8B1A1A', 'accent':'#FFF8F0', 'page':None},
+    'ink-wash': {'primary':'#2D2D2D', 'secondary':'#595959', 'accent':'#F8F8F8', 'page':None},
+    'github-light': {'primary':'#0366D6', 'secondary':'#586069', 'accent':'#F6F8FA', 'page':None},
+    'nord-frost': {'primary':'#5E81AC', 'secondary':'#81A1C1', 'accent':'#ECEFF4', 'page':None},
+    'ocean-breeze': {'primary':'#00897B', 'secondary':'#00695C', 'accent':'#E0F2F1', 'page':None},
+}
+
 def _md_to_pdf_bytes(md_content: str, title: str, theme: str) -> bytes:
     """将 Markdown 内容转换为 PDF 字节"""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, PageBreak
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
     from reportlab.lib import colors
     from io import BytesIO
 
     font_name = _ensure_chinese_font()
-
-    # Markdown → HTML
-    html_body = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
+    tc = _THEMES.get(theme, _THEMES['warm-academic'])
+    primary_c = colors.HexColor(tc['primary'])
+    secondary_c = colors.HexColor(tc['secondary'])
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=72, leftMargin=72,
-        topMargin=72, bottomMargin=18
+        buffer, pagesize=A4,
+        rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18
     )
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle('Title', parent=styles['Heading1'],
-        fontName=font_name, fontSize=20, spaceAfter=20, textColor=colors.HexColor('#4472C4'))
+        fontName=font_name, fontSize=20, spaceAfter=20, textColor=primary_c)
     heading_style = ParagraphStyle('Heading', parent=styles['Heading2'],
-        fontName=font_name, fontSize=14, spaceAfter=10, textColor=colors.HexColor('#2F5496'))
+        fontName=font_name, fontSize=14, spaceAfter=10, textColor=secondary_c)
     normal_style = ParagraphStyle('Normal', parent=styles['Normal'],
-        fontName=font_name, fontSize=10, spaceAfter=6, leading=14)
+        fontName=font_name, fontSize=10, spaceAfter=6, leading=16)
     code_style = ParagraphStyle('Code', parent=styles['Normal'],
         fontName='Courier', fontSize=8, spaceAfter=6, leftIndent=20,
-        backColor=colors.HexColor('#F5F5F5'))
+        backColor=colors.HexColor(tc['accent']))
 
     story = []
-
-    # 标题
-    story.append(Paragraph(title, title_style))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#4472C4')))
+    story.append(Paragraph(_escape_xml(title), title_style))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=primary_c))
     story.append(Spacer(1, 0.2*inch))
 
-    # 简单解析 HTML，转为 Paragraph
     import re
     lines = md_content.split('\n')
     in_code = False
@@ -112,26 +129,25 @@ def _md_to_pdf_bytes(md_content: str, title: str, theme: str) -> bytes:
             in_code = not in_code
             continue
         if in_code:
-            story.append(Paragraph(line or ' ', code_style))
+            story.append(Paragraph(_escape_xml(line or ' '), code_style))
             continue
         if not stripped:
             story.append(Spacer(1, 0.1*inch))
             continue
         if stripped.startswith('# '):
-            story.append(Paragraph(stripped[2:], title_style))
+            story.append(Paragraph(_escape_xml(stripped[2:]), title_style))
         elif stripped.startswith('## '):
-            story.append(Paragraph(stripped[3:], heading_style))
+            story.append(Paragraph(_escape_xml(stripped[3:]), heading_style))
         elif stripped.startswith('### '):
-            story.append(Paragraph(stripped[4:], ParagraphStyle('H3', parent=heading_style, fontSize=12)))
+            story.append(Paragraph(_escape_xml(stripped[4:]), ParagraphStyle('H3', parent=heading_style, fontSize=12)))
         elif stripped.startswith('- ') or stripped.startswith('* '):
-            story.append(Paragraph(f"• {stripped[2:]}", normal_style))
+            story.append(Paragraph(f"• {_escape_xml(stripped[2:])}", normal_style))
         elif stripped.startswith('|'):
-            continue  # 表格暂不处理
+            continue
         elif re.match(r'^\d+\. ', stripped):
-            story.append(Paragraph(stripped, normal_style))
+            story.append(Paragraph(_escape_xml(stripped), normal_style))
         else:
-            # 处理粗体斜体
-            text = stripped
+            text = _escape_xml(stripped)
             text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
             text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
             story.append(Paragraph(text, normal_style))

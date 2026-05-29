@@ -413,7 +413,7 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
         const arrayBuffer = await res.arrayBuffer();
         if (typeof (window as any).mammoth === 'undefined') {
           const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+          script.src = '/mammoth.min.js';
           await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
         }
         const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
