@@ -7,7 +7,8 @@ import { backlinkService, cardTaskService, calendarEventService, sourceFileServi
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
 import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import PdfSourceViewer from './PdfSourceViewer';
+
+
 
 // 注册中文字体（本地文件，不依赖外部CDN）
 const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
@@ -522,8 +523,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       loadSiblingCards();
       setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
       setSourceFullscreen(false);
+      if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
     }
   }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
+
+  // 切换到 PDF 标签时自动生成 PDF
+  useEffect(() => {
+    if (showSourceMarkdown && sourceViewMode === 'pdf' && card?.content) {
+      generateSourcePdf();
+    }
+  }, [sourceViewMode, showSourceMarkdown]);
 
   // P0: 选中文本创建任务 — 检测选中文本
   const handleTextSelect = () => {
@@ -1970,7 +1979,7 @@ className="text-lg select-text"
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           style={sourceFullscreen ? { padding: 0 } : { padding: '1rem' }}
-          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); }}
+          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }}
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1998,31 +2007,29 @@ className="text-lg select-text"
                     )}
                   </p>
                 </div>
-                {/* PDF/Markdown 视图切换 */}
-                {(sourceFileInfo?.file_type || sourceMarkdownData?.source_file?.type) === 'pdf' && (
-                  <div className="flex items-center bg-white/60 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700 ml-4">
-                    <button
-                      onClick={() => setSourceViewMode('markdown')}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-l-lg transition-colors ${
-                        sourceViewMode === 'markdown'
-                          ? 'bg-purple-500 text-white'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      <FileText size={12} className="inline mr-1" />Markdown 文本
-                    </button>
-                    <button
-                      onClick={() => setSourceViewMode('pdf')}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-r-lg transition-colors ${
-                        sourceViewMode === 'pdf'
-                          ? 'bg-red-500 text-white'
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      <FileText size={12} className="inline mr-1" />PDF 预览
-                    </button>
-                  </div>
-                )}
+                {/* Markdown/PDF 视图切换 */}
+                <div className="flex items-center bg-white/60 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700 ml-4">
+                  <button
+                    onClick={() => setSourceViewMode('markdown')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-l-lg transition-colors ${
+                      sourceViewMode === 'markdown'
+                        ? 'bg-purple-500 text-white'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    <FileText size={12} className="inline mr-1" />Markdown 文本
+                  </button>
+                  <button
+                    onClick={() => setSourceViewMode('pdf')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-r-lg transition-colors ${
+                      sourceViewMode === 'pdf'
+                        ? 'bg-red-500 text-white'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    <FileText size={12} className="inline mr-1" />PDF 预览
+                  </button>
+                </div>
                 {/* PDF 主题选择器 */}
                 {sourceViewMode === 'pdf' && (
                   <select
