@@ -7,7 +7,8 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
-  Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText
+  Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
