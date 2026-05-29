@@ -2139,7 +2139,7 @@ className="text-lg select-text"
                             red: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
                           };
                           // 解析段落号用于锚点跳转
-                          const paraMatch = c.location_in_source.match(/第(\d+)段/);
+                          const paraMatch = (c.location_in_source || '').match(/第(\d+)段/);
                           const paraIdx = paraMatch ? parseInt(paraMatch[1]) : null;
                           return (
                             <button
@@ -2171,7 +2171,7 @@ className="text-lg select-text"
                       return paragraphs.map((p: string, i: number) => {
                         // 找出哪些卡片对应此段落
                         const matchingCards = sourceMarkdownData.cards.filter((c: any) => {
-                          const m = c.location_in_source.match(/第(\d+)段/);
+                          const m = (c.location_in_source || '').match(/第(\d+)段/);
                           return m ? parseInt(m[1]) === i + 1 : false;
                         });
                         const isHighlighted = matchingCards.length > 0;

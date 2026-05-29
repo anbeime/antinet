@@ -2,7 +2,7 @@
 // 使用 Hermes TUI Gateway，提供完整 AI 能力
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Send, Bot, User, Loader2, Trash2, Zap, Brain, Wrench, ChevronDown, ChevronUp, Copy, CheckCircle } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, Trash2, Zap, Brain, Wrench, ChevronDown, ChevronUp, Copy, CheckCircle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import hermesGateway, { HermesStreamEvent, HermesMessage } from '@/services/hermesGateway';
@@ -131,6 +131,11 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [showCapabilities, setShowCapabilities] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
+    "帮我搜索关于项目管理的知识卡片",
+    "分析一下这张图片",
+    "生成一个工作总结的PPT"
+  ]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -286,6 +291,7 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
 
     try {
       await hermesGateway.sendMessage(text);
+      updateSuggestedQuestions(text);
     } catch (error: any) {
       console.error('Send error:', error);
       toast.error(`发送失败: ${error.message}`);
@@ -303,6 +309,40 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
       });
       setIsLoading(false);
     }
+  };
+
+  // 根据用户输入生成动态推荐问题
+  const updateSuggestedQuestions = (query: string) => {
+    const q = query.toLowerCase();
+    const s: string[] = [];
+    if (q.includes('卡片') || q.includes('知识') || q.includes('搜索') || q.includes('查找')) {
+      const topic = query.replace(/(?:搜索|查找|找|查询|关于|帮我)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息)/g, '').trim();
+      if (topic && topic.length < 20) s.push(`帮我搜索更多关于${topic}的知识卡片`);
+      s.push('这些卡片之间有什么关联');
+    }
+    if (q.includes('图片') || q.includes('图像') || q.includes('截图')) {
+      s.push('这张图片说明了什么问题');
+      s.push('基于这张图片生成知识卡片');
+    }
+    if (q.includes('ppt') || q.includes('演示') || q.includes('工作总结')) {
+      s.push('帮我完善这个PPT的结构');
+      s.push('换一种风格重新生成');
+    }
+    if (q.includes('数据') || q.includes('分析') || q.includes('表格') || q.includes('excel')) {
+      s.push('总结数据中的关键趋势');
+      s.push('生成数据分析报告');
+    }
+    if (s.length === 0) {
+      s.push('帮我搜索相关知识卡片');
+      s.push('能详细展开说明一下吗');
+      s.push('我可以使用哪些功能');
+    }
+    const unique: string[] = [];
+    for (const item of s) {
+      if (!unique.includes(item)) unique.push(item);
+      if (unique.length >= 3) break;
+    }
+    setSuggestedQuestions(unique);
   };
 
   // 清空对话
@@ -452,6 +492,25 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
             <div ref={messagesEndRef} />
           </div>
         </div>
+
+        {/* 推荐问题 */}
+        {suggestedQuestions.length > 0 && messages.length > 0 && (
+          <div className="px-4 py-2 border-t bg-gray-50 dark:bg-gray-900">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">推荐问题：</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedQuestions.map((q, index) => (
+                <button
+                  key={index}
+                  className="text-xs h-auto py-1 px-2 rounded-md transition-colors cursor-pointer bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => setInput(q)}
+                >
+                  {q}
+                  <ChevronRight className="w-3 h-3 ml-1 inline" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 输入区域 */}
         <div className="p-4 border-t bg-white dark:bg-gray-900 flex-shrink-0">

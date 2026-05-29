@@ -1547,7 +1547,7 @@ async def import_file(file: UploadFile = File(...)):
                 paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
 
             for idx, para in enumerate(paragraphs):
-                if len(para) < 10:
+                if len(para) < 4:  # 只过滤极短碎片，保留前端可能分类的有效短段落
                     continue
                 leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
                                'instruction', 'prompt', 'special token', '#### Instruction',
@@ -1749,10 +1749,9 @@ async def import_text(request: ImportAnalyzeRequest):
         if not paragraphs:
             paragraphs = [content.strip()]
 
-        # 去重：同一内容多次粘贴，直接跳过卡片创建但保留源文件记录
         cards = []
         for idx, para in enumerate(paragraphs):
-            if len(para) < 10:
+            if len(para) < 4:  # 只过滤极短碎片（4字以下），保留前端可能分类的有效短段落
                 continue
             leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
                            'instruction', 'prompt', 'special token', '#### Instruction',

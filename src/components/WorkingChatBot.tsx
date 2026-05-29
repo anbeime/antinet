@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, User, Loader2, Paperclip, Trash2, AlertCircle } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, Paperclip, Trash2, AlertCircle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,6 +27,11 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<'unknown' | 'online' | 'offline'>('unknown');
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
+    "帮我搜索关于项目管理的知识卡片",
+    "分析一下这张图片",
+    "生成一个工作总结的PPT"
+  ]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -164,6 +169,7 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
 
       setMessages(prev => [...prev, assistantMessage]);
       setBackendStatus('online');
+      updateSuggestedQuestions(query);
 
       // 清空图片
       setSelectedImage(null);
@@ -184,6 +190,46 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 根据用户输入生成动态推荐问题
+  const updateSuggestedQuestions = (query: string) => {
+    const q = query.toLowerCase();
+    const s: string[] = [];
+
+    if (q.includes('卡片') || q.includes('知识') || q.includes('搜索') || q.includes('查找') || q.includes('关于')) {
+      const topic = query.replace(/(?:搜索|查找|找|查询|关于|帮我)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息)/g, '').trim();
+      if (topic && topic.length < 20) s.push(`帮我搜索更多关于${topic}的知识卡片`);
+      s.push('这些卡片之间有什么关联');
+    }
+
+    if (q.includes('图片') || q.includes('图像') || q.includes('截图')) {
+      s.push('这张图片说明了什么问题');
+      s.push('基于这张图片生成知识卡片');
+    }
+
+    if (q.includes('ppt') || q.includes('演示') || q.includes('工作总结')) {
+      s.push('帮我完善这个PPT的结构');
+      s.push('换一种风格重新生成');
+    }
+
+    if (q.includes('数据') || q.includes('分析') || q.includes('表格')) {
+      s.push('总结数据中的关键趋势');
+      s.push('生成数据分析报告');
+    }
+
+    if (s.length === 0) {
+      s.push('帮我搜索相关知识卡片');
+      s.push('能详细展开说明一下吗');
+      s.push('我可以使用哪些功能');
+    }
+
+    const unique: string[] = [];
+    for (const item of s) {
+      if (!unique.includes(item)) unique.push(item);
+      if (unique.length >= 3) break;
+    }
+    setSuggestedQuestions(unique);
   };
 
   // 处理图片选择
@@ -347,6 +393,25 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
               >
                 <X className="w-4 h-4" />
               </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 推荐问题 */}
+        {suggestedQuestions.length > 0 && messages.length > 0 && (
+          <div className="px-4 py-2 border-t bg-gray-50 dark:bg-gray-900">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">推荐问题：</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedQuestions.map((question, index) => (
+                <button
+                  key={index}
+                  className="text-xs h-auto py-1 px-2 rounded-md transition-colors cursor-pointer bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => setInput(question)}
+                >
+                  {question}
+                  <ChevronRight className="w-3 h-3 ml-1 inline" />
+                </button>
+              ))}
             </div>
           </div>
         )}
