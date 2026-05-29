@@ -28,7 +28,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Clock,
+  History
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
@@ -44,6 +46,16 @@ interface ConversionTask {
   resultBlob?: Blob;
   errorMessage?: string;
   createdAt: Date;
+}
+
+interface ConversionRecord {
+  id: string;
+  fileName: string;
+  targetFormat: string;
+  status: 'completed' | 'error';
+  createdAt: Date;
+  fileSize?: number;
+  errorMessage?: string;
 }
 
 const API_BASE = getApiBaseUrl()
@@ -77,6 +89,41 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isMermaidLoading, setIsMermaidLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mermaidContainerRef = useRef<HTMLDivElement>(null);
+
+  // 转换历史记录（localStorage 持久化）
+  const [conversionRecords, setConversionRecords] = useState<ConversionRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('format_converter_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((r: any) => ({ ...r, createdAt: new Date(r.createdAt) }));
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  });
+
+  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number, errorMessage?: string) => {
+    const record: ConversionRecord = {
+      id: `fc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      fileName,
+      targetFormat,
+      status,
+      createdAt: new Date(),
+      fileSize,
+      errorMessage: errorMessage || undefined,
+    };
+    setConversionRecords(prev => {
+      const next = [record, ...prev].slice(0, 50); // 最多保留 50 条
+      try { localStorage.setItem('format_converter_history', JSON.stringify(next)); } catch (e) { /* ignore */ }
+      return next;
+    });
+  };
+
+  const clearConversionRecords = () => {
+    setConversionRecords([]);
+    try { localStorage.removeItem('format_converter_history'); } catch (e) { /* ignore */ }
+    toast.success('转换历史已清空');
+  };
 
   // 预览 Mermaid 图表（内联渲染到页面中）
   const handlePreviewMermaid = async () => {
@@ -184,12 +231,15 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
         window.URL.revokeObjectURL(url);
         const fmtNameMap: Record<string, string> = { pdf: 'PDF', docx: 'Word', html: 'HTML', pptx: 'PPT' };
         toast.success(`Markdown → ${fmtNameMap[mdOutputFormat] || mdOutputFormat.toUpperCase()} 转换成功！`);
+        addConversionRecord('Markdown编辑内容', mdOutputFormat, 'completed');
       } else {
         const err = await response.json().catch(() => ({}));
         toast.error(err.detail || '转换失败');
+        addConversionRecord('Markdown编辑内容', mdOutputFormat, 'error', undefined, err.detail || '转换失败');
       }
     } catch (err) {
       toast.error('转换失败，请检查后端服务');
+      addConversionRecord('Markdown编辑内容', mdOutputFormat, 'error', undefined, '请求失败');
     } finally {
       setIsConverting(false);
     }
@@ -440,6 +490,8 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
           await convertPPTToPDF(task, formData);
           break;
       }
+      // 记录成功转换历史
+      addConversionRecord(task.fileName, task.targetFormat, 'completed', task.file.size);
     } catch (error) {
       console.error('转换失败:', error);
       setTasks(prev => prev.map(t => 
@@ -450,6 +502,8 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
         } : t
       ));
       toast.error(`${task.fileName} 转换失败`);
+      // 记录失败转换历史
+      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size, error instanceof Error ? error.message : '转换失败');
     }
   };
 
@@ -1424,6 +1478,71 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
                   );
                 })}
               </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 转换历史记录 */}
+        {conversionRecords.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Clock className="w-5 h-5 text-gray-500" />
+                转换历史
+                <span className="text-sm font-normal text-gray-400">({conversionRecords.length} 条)</span>
+              </h2>
+              <button
+                onClick={clearConversionRecords}
+                className="text-xs text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors"
+              >
+                清空历史
+              </button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {conversionRecords.slice(0, 20).map((record) => (
+                <div
+                  key={record.id}
+                  className={`flex items-center justify-between p-3 rounded-lg text-sm ${
+                    record.status === 'completed'
+                      ? 'bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/30'
+                      : 'bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {record.status === 'completed' ? (
+                      <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-800 dark:text-gray-200 truncate">
+                        {record.fileName}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                        <span>→ {record.targetFormat.toUpperCase()}</span>
+                        {record.fileSize !== undefined && (
+                          <span>· {(record.fileSize / 1024).toFixed(1)} KB</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {record.errorMessage && (
+                      <span className="text-xs text-red-500 truncate max-w-[120px]" title={record.errorMessage}>
+                        {record.errorMessage}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400 whitespace-nowrap">
+                      {record.createdAt.toLocaleTimeString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           </motion.div>
         )}

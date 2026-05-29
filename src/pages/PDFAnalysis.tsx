@@ -112,7 +112,7 @@ const PDFAnalysis: React.FC = () => {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'viewer'>('extract');
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -900,17 +900,6 @@ const PDFAnalysis: React.FC = () => {
       inactiveText: 'text-slate-600 dark:text-slate-400',
       hoverBg: 'hover:bg-slate-100 dark:hover:bg-slate-800/30',
     },
-    {
-      id: 'viewer' as const,
-      name: 'PDF查看器',
-      icon: <Eye size={20} />,
-      description: '在线查看PDF文档',
-      color: 'from-red-500 to-pink-500',
-      inactiveBg: 'bg-red-50 dark:bg-red-900/20',
-      inactiveBorder: 'border-red-200 dark:border-red-700',
-      inactiveText: 'text-red-600 dark:text-red-400',
-      hoverBg: 'hover:bg-red-100 dark:hover:bg-red-900/30',
-    },
   ];
 
   // ============ 渲染格式转换面板 ============
@@ -1136,11 +1125,9 @@ const PDFAnalysis: React.FC = () => {
           {convertedPdfUrl && (
             <div className="mt-6">
               <h4 className="text-sm font-medium mb-2">PDF 预览</h4>
-              <iframe
-                src={convertedPdfUrl}
-                className="w-full h-96 border border-gray-300 dark:border-gray-600 rounded-lg"
-                title="PDF Preview"
-              />
+              <object data={convertedPdfUrl} type="application/pdf" className="w-full h-96 border border-gray-300 dark:border-gray-600 rounded-lg">
+                <embed src={convertedPdfUrl} type="application/pdf" className="w-full h-96" />
+              </object>
               <button
                 onClick={() => window.open('/pdf-viewer?url=' + encodeURIComponent(convertedPdfUrl), '_blank')}
                 className="mt-2 w-full py-2 text-sm text-purple-600 dark:text-purple-400 hover:underline"
@@ -1569,7 +1556,7 @@ const PDFAnalysis: React.FC = () => {
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">PDF 预览</h4>
                         <button
-                          onClick={() => setActiveFeature('viewer')}
+                          onClick={() => { if (uploadedFile) { const url = URL.createObjectURL(uploadedFile); window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); } else { window.open('/pdf-viewer', '_blank'); } }}
                           className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
                         >
                           全屏查看 →
@@ -1950,21 +1937,6 @@ const PDFAnalysis: React.FC = () => {
                 </div>
               )}
 
-              {/* PDF查看器面板 */}
-              {activeFeature === 'viewer' && (
-                <div className="h-full flex flex-col">
-                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4 border border-gray-200 dark:border-gray-700 flex-1">
-                    <h3 className="text-xl font-semibold mb-4 flex items-center">
-                      <Eye className="w-5 h-5 mr-2 text-red-500" />
-                      PDF查看器
-                    </h3>
-                    <div className="flex-1 min-h-[500px]">
-                      <PDFViewerInternal externalFile={uploadedFile} />
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* PPT 转 PDF 面板 */}
               {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
             </motion.div>
@@ -2157,7 +2129,7 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
   };
 
   return (
-    <div className="flex flex-col h-full min-h-[500px] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
+    <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
       <div className="bg-gray-200 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
         <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
           <Upload className="w-4 h-4" />

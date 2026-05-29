@@ -1253,6 +1253,72 @@ async def import_file(file: UploadFile = File(...)):
             processor = SimplePDFProcessor()
             result = processor.extract_text(tmp_path)
             extracted_text = result.get('full_text', '')
+            
+            # 扫描/图片型 PDF 回退：尝试 LibreOffice 转换 → 重新提取文字
+            if result.get('is_scanned') or (len(extracted_text.strip()) < 100 and result.get('page_count', 0) > 1):
+                logger.warning(f"PDF 文字提取不足 ({len(extracted_text.strip())} 字符/{result.get('page_count', 0)} 页)，尝试 LibreOffice 回退")
+                try:
+                    import subprocess
+                    lo_paths = [
+                        r'C:\Program Files\LibreOffice\program\soffice.exe',
+                        r'C:\Program Files (x86)\LibreOffice\program\soffice.exe',
+                    ]
+                    soffice = None
+                    for p in lo_paths:
+                        if os.path.exists(p):
+                            soffice = p
+                            break
+                    if soffice:
+                        # 将 PDF 转为 PPTX / DOCX 后重新提取
+                        lo_outdir = tempfile.mkdtemp()
+                        lo_result = subprocess.run(
+                            [soffice, '--headless', '--convert-to', 'pptx', '--outdir', lo_outdir, tmp_path],
+                            capture_output=True, text=True, timeout=60
+                        )
+                        # 查找生成的 PPTX
+                        pptx_files = list(Path(lo_outdir).glob('*.pptx'))
+                        if pptx_files:
+                            from pptx import Presentation
+                            lo_text = ""
+                            prs = Presentation(str(pptx_files[0]))
+                            for slide in prs.slides:
+                                for shape in slide.shapes:
+                                    if shape.has_text_frame:
+                                        for para in shape.text_frame.paragraphs:
+                                            if para.text.strip():
+                                                lo_text += para.text + '\n'
+                                    if shape.has_table:
+                                        for row in shape.table.rows:
+                                            for cell in row.cells:
+                                                lo_text += cell.text + '\t'
+                                            lo_text += '\n'
+                                lo_text += '\n---\n'
+                            if lo_text.strip():
+                                logger.info(f"LibreOffice PDF→PPTX 回退成功，提取 {len(lo_text)} 字符")
+                                extracted_text = lo_text
+                            else:
+                                # PPTX 也提取不到文字，尝试转为纯文本
+                                lo_result2 = subprocess.run(
+                                    [soffice, '--headless', '--convert-to', 'txt', '--outdir', lo_outdir, tmp_path],
+                                    capture_output=True, text=True, timeout=60
+                                )
+                                txt_files = list(Path(lo_outdir).glob('*.txt'))
+                                if txt_files:
+                                    lo_text = Path(txt_files[0]).read_text(encoding='utf-8', errors='replace')
+                                    if lo_text.strip():
+                                        extracted_text = lo_text
+                                        logger.info(f"LibreOffice PDF→TXT 回退成功，提取 {len(lo_text)} 字符")
+                        # 清理
+                        import shutil
+                        shutil.rmtree(lo_outdir, ignore_errors=True)
+                    else:
+                        logger.warning("LibreOffice 未安装，无法回退提取 PDF 文字")
+                except Exception as lo_err:
+                    logger.warning(f"LibreOffice PDF 回退失败: {lo_err}")
+            
+            # 仍然提取不到文字，给出明确提示
+            if len(extracted_text.strip()) < 50:
+                extracted_text = f"[注意] 本 PDF 疑似扫描版/图片型，文字提取失败（检测到 {result.get('page_count', 0)} 页）。建议上传原始 PPTX/Word 文件，或使用 OCR 功能。\n\n{extracted_text}"
 
         elif file_ext in ['.txt', '.md']:
             with open(tmp_path, 'r', encoding='utf-8') as f:
@@ -1616,6 +1682,184 @@ async def import_file(file: UploadFile = File(...)):
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+
+@router.post("/import/text")
+async def import_text(request: ImportAnalyzeRequest):
+    """
+    导入粘贴文本为知识卡片 — 同时保存源文件实现溯源
+
+    与文件导入 (import/file) 一样，自动保存 Markdown 源文件、建立卡片-源文件关联、
+    同批次双向链接，确保粘贴导入的卡片也能溯源。
+    """
+    content = request.content
+    if not content or not content.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+
+    source_file_id = None
+    try:
+        # 生成源文件标识符
+        content_bytes = content.encode('utf-8')
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
+        timestamp = datetime.now()
+        source_file_id = f"sf_{timestamp.strftime('%Y%m%d')}_{content_hash[:12]}"
+        filename = f"文本导入_{timestamp.strftime('%Y%m%d_%H%M%S')}.md"
+
+        # 创建源文件存储目录
+        project_root = Path(__file__).parent.parent
+        source_files_dir = project_root / "data" / "source_files"
+        source_files_dir.mkdir(parents=True, exist_ok=True)
+
+        # 准备 Markdown 内容
+        md_content = f"# 文本导入\n\n> 导入时间: {timestamp.strftime('%Y-%m-%d %H:%M:%S')} | 原始粘贴文本\n\n---\n\n{content}"
+
+        # 保存到磁盘
+        md_dir = source_files_dir / source_file_id
+        md_dir.mkdir(parents=True, exist_ok=True)
+        md_path = md_dir / f"{source_file_id}.md"
+        with open(md_path, 'w', encoding='utf-8') as mf:
+            mf.write(md_content)
+
+        stored_file_path = source_files_dir / f"{source_file_id}.md"
+        shutil_copy_needed = str(stored_file_path) != str(md_path)
+        if shutil_copy_needed:
+            import shutil
+            shutil.copy2(str(md_path), str(stored_file_path))
+
+        # 插入源文件记录到数据库
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT source_file_id FROM source_files WHERE content_hash = ?", (content_hash,))
+            existing = cursor.fetchone()
+            if existing:
+                source_file_id = existing[0]
+            else:
+                md_summary = f"[MD_FILE] path={md_path} | length={len(md_content)} | preview={md_content[:500]}"
+                cursor.execute('''
+                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash, markdown_content)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (source_file_id, filename, str(stored_file_path), 'md', len(content_bytes), content_hash, md_summary))
+                conn.commit()
+        finally:
+            conn.close()
+
+        # ========== 分类提取卡片 ==========
+        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        if not paragraphs:
+            paragraphs = [content.strip()]
+
+        # 去重：同一内容多次粘贴，直接跳过卡片创建但保留源文件记录
+        cards = []
+        for idx, para in enumerate(paragraphs):
+            if len(para) < 10:
+                continue
+            leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                           'instruction', 'prompt', 'special token', '#### Instruction',
+                           '#### Response', 'system', '<|assistant', '<|end']
+            if any(pat.lower() in para.lower() for pat in leak_patterns):
+                continue
+
+            lower_para = para.lower()
+            card_type = 'blue'
+            if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
+                card_type = 'blue'
+            elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
+                card_type = 'green'
+            elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
+                card_type = 'yellow'
+            elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
+                card_type = 'red'
+
+            title = para[:50] + '...' if len(para) > 50 else para
+            if '\n' in title:
+                title = title.split('\n')[0]
+
+            cards.append({
+                'title': title,
+                'content': para,
+                'card_type': card_type,
+                'confidence': 0.8,
+                'address': f"{card_type.upper()}{idx + 1}"
+            })
+
+        saved_count = 0
+        card_ids = []
+        if cards:
+            try:
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                for idx, card in enumerate(cards):
+                    category_map = {'blue': '事实', 'green': '解释', 'yellow': '风险', 'red': '行动'}
+                    category = category_map.get(card['card_type'], '事实')
+                    cursor.execute('''
+                        INSERT INTO knowledge_cards (card_type, title, content, category, project_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (card['card_type'], card['title'], card['content'], category, None))
+                    card_id = cursor.lastrowid
+                    card_ids.append(card_id)
+
+                    # 插入卡片-源文件关联
+                    if source_file_id:
+                        location = f"第{idx + 1}段"
+                        try:
+                            cursor.execute('''
+                                INSERT INTO card_source_files (source_file_id, card_id, location_in_source)
+                                VALUES (?, ?, ?)
+                            ''', (source_file_id, card_id, location))
+                        except Exception as e:
+                            logger.warning(f"插入卡片源文件关联失败: {e}")
+
+                    saved_count += 1
+                conn.commit()
+                conn.close()
+
+                # 同批次双向链接
+                if saved_count >= 2 and len(card_ids) >= 2:
+                    try:
+                        link_conn = db_manager.get_connection()
+                        link_cur = link_conn.cursor()
+                        link_count = 0
+                        for i in range(len(card_ids)):
+                            for j in range(i + 1, len(card_ids)):
+                                try:
+                                    link_cur.execute('''
+                                        INSERT OR IGNORE INTO card_backlinks
+                                        (source_card_id, target_card_id, link_text, link_type)
+                                        VALUES (?, ?, ?, ?)
+                                    ''', (card_ids[i], card_ids[j], f"同批导入: 文本粘贴", 'same_batch'))
+                                    link_cur.execute('''
+                                        INSERT OR IGNORE INTO card_backlinks
+                                        (source_card_id, target_card_id, link_text, link_type)
+                                        VALUES (?, ?, ?, ?)
+                                    ''', (card_ids[j], card_ids[i], f"同批导入: 文本粘贴", 'same_batch'))
+                                    link_count += 2
+                                except Exception:
+                                    pass
+                        link_conn.commit()
+                        link_conn.close()
+                        if link_count > 0:
+                            logger.info(f"文本导入同批次建链: {saved_count} 卡片, {link_count // 2} 组")
+                    except Exception as link_ex:
+                        logger.warning(f"同批次建链异常: {link_ex}")
+            except Exception as e:
+                logger.error(f"保存知识卡片失败: {e}")
+
+        return {
+            'success': True,
+            'filename': filename,
+            'file_type': 'md',
+            'extracted_length': len(content),
+            'cards': cards,
+            'total': len(cards),
+            'saved': saved_count,
+            'source_file_id': source_file_id
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文本导入失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
 
 @router.post("/import/batch")

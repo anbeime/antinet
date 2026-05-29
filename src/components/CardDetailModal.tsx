@@ -320,6 +320,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [sourceMarkdownData, setSourceMarkdownData] = useState<any>(null);
   const [sourceMarkdownLoading, setSourceMarkdownLoading] = useState(false);
   const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');  // PDF/Markdown 视图切换
+  const [sourceFullscreen, setSourceFullscreen] = useState(false);  // 源文件查看器全屏模式
 
 
   // 同批次兄弟卡片（知识图谱子网）
@@ -483,6 +484,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       loadSourceFileInfo();
       loadSiblingCards();
       setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
+      setSourceFullscreen(false);
     }
   }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
 
@@ -1929,14 +1931,19 @@ className="text-lg select-text"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setShowSourceMarkdown(false)}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          style={sourceFullscreen ? { padding: 0 } : { padding: '1rem' }}
+          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); }}
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+            className={`bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col ${
+              sourceFullscreen
+                ? 'fixed inset-2 rounded-xl'
+                : 'max-w-5xl w-full max-h-[85vh]'
+            }`}
             onClick={e => e.stopPropagation()}
           >
             {/* 头部 */}
@@ -1980,9 +1987,18 @@ className="text-lg select-text"
                   </div>
                 )}
               </div>
-              <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSourceFullscreen(!sourceFullscreen)}
+                  className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  title={sourceFullscreen ? '退出全屏' : '全屏查看'}
+                >
+                  {sourceFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
+                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* 内容区 */}

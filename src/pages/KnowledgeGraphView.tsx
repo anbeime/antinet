@@ -1035,9 +1035,9 @@ return (
                     {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
                   <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 overflow-x-auto shrink-0">
                   {/* 编辑/预览/分屏切换 */}
-                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  <div className="hidden sm:flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
                     {(['edit','preview','split'] as const).map(s => (
                       <button key={s} onClick={() => { setListEditorSide(s); if(s==='edit'){setListMarkdown(`# ${listSelectedCard.title||'无标题'}\n\n${listSelectedCard.content||''}`);} }}
                         className={`px-2.5 py-1 text-xs rounded-md ${listEditorSide===s?'bg-white dark:bg-gray-600 shadow-sm font-medium':'text-gray-500'}`}>
@@ -1049,24 +1049,24 @@ return (
                   <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 relative">
 <button onClick={() => handlePreviewCard('pdf')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />PDF
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">PDF</span>
                     </button>
                     <button onClick={() => handlePreviewCard('docx')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />DOCX
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">DOCX</span>
                     </button>
                     <button onClick={() => handlePreviewCard('html')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />HTML
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">HTML</span>
                     </button>
                     <div className="w-px h-4 bg-gray-300 dark:bg-gray-500 mx-0.5 self-center" />
                     <button onClick={() => handleDownloadCard('docx')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Download className="w-3 h-3" />DOCX
+                      <Download className="w-3 h-3" /><span className="hidden sm:inline">DOCX</span>
                     </button>
                     <button onClick={() => handleDownloadCard('html')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Download className="w-3 h-3" />HTML
+                      <Download className="w-3 h-3" /><span className="hidden sm:inline">HTML</span>
                     </button>
                   </div>
                   <button onClick={() => setListSelectedCard(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><X className="w-4 h-4" /></button>
@@ -1401,7 +1401,9 @@ return (
                   </div>
                 </div>
               ) : pdfPreviewUrl ? (
-                <iframe src={pdfPreviewUrl} className="w-full h-full border-0" title="PDF 预览" />
+                <object data={pdfPreviewUrl} type="application/pdf" className="w-full h-full">
+                  <embed src={pdfPreviewUrl} type="application/pdf" className="w-full h-full" />
+                </object>
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400"><Loader className="w-6 h-6 animate-spin" /></div>
               )}

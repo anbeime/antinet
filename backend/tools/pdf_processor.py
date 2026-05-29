@@ -44,28 +44,59 @@ class SimplePDFProcessor:
         
         Args:
             pdf_path: PDF 文件路径
-            preserve_layout: 是否保留布局（pypdf 不完全支持，参数保留兼容性）
+            preserve_layout: 是否保留布局
             
         Returns:
             提取结果字典
         """
         try:
             reader = PdfReader(pdf_path)
+            page_count = len(reader.pages)
             
             pages = []
             full_text_parts = []
+            total_chars = 0
             
             for page_num, page in enumerate(reader.pages, 1):
-                # 提取文本
                 text = page.extract_text()
+                char_count = len(text)
+                total_chars += char_count
                 
                 pages.append({
                     "page_number": page_num,
                     "text": text,
-                    "char_count": len(text)
+                    "char_count": char_count
                 })
                 
                 full_text_parts.append(f"--- Page {page_num} ---\n{text}\n")
+            
+            full_text = "\n".join(full_text_parts)
+            
+            # 检测扫描/图片型 PDF：多页但几乎无文字 → 尝试 pdfplumber 回退
+            if page_count >= 1 and total_chars < max(100, page_count * 20):
+                try:
+                    import pdfplumber
+                    logger.info(f"pypdf提取文字过少 ({total_chars}字符/{page_count}页)，尝试 pdfplumber 回退")
+                    pages = []
+                    full_text_parts = []
+                    total_chars = 0
+                    with pdfplumber.open(pdf_path) as plumb_pdf:
+                        for page_num, page in enumerate(plumb_pdf.pages, 1):
+                            text = page.extract_text() or ""
+                            char_count = len(text)
+                            total_chars += char_count
+                            pages.append({
+                                "page_number": page_num,
+                                "text": text,
+                                "char_count": char_count
+                            })
+                            full_text_parts.append(f"--- Page {page_num} ---\n{text}\n")
+                    full_text = "\n".join(full_text_parts)
+                    logger.info(f"pdfplumber 回退提取结果: {total_chars} 字符")
+                except ImportError:
+                    logger.warning("pdfplumber 未安装，无法回退提取文字")
+                except Exception as plumb_err:
+                    logger.warning(f"pdfplumber 回退提取失败: {plumb_err}")
             
             # 提取元数据
             metadata = {}
@@ -82,9 +113,11 @@ class SimplePDFProcessor:
             return {
                 "success": True,
                 "pages": pages,
-                "full_text": "\n".join(full_text_parts),
+                "full_text": full_text,
                 "metadata": metadata,
-                "page_count": len(reader.pages)
+                "page_count": page_count,
+                "total_chars": total_chars,
+                "is_scanned": (page_count >= 1 and total_chars < max(100, page_count * 20))
             }
             
         except Exception as e:
@@ -94,7 +127,8 @@ class SimplePDFProcessor:
                 "error": str(e),
                 "pages": [],
                 "full_text": "",
-                "metadata": {}
+                "metadata": {},
+                "is_scanned": False
             }
     
     def extract_tables(self, pdf_path: str) -> Dict[str, Any]:

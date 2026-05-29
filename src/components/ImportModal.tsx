@@ -54,7 +54,7 @@ interface ImportModalProps {
     content: string;
     color: CardColor;
     address: string;
-  }>, syncToGTD?: boolean) => void;
+  }>, syncToGTD?: boolean, rawText?: string) => void;
 }
 
 const ImportModal: React.FC<ImportModalProps> = ({ 
@@ -435,7 +435,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
       return;
     }
 
-    // 调用父组件的导入回调
+    // 调用父组件的导入回调（粘贴文本模式下传递原始文本，用于后端溯源保存）
+    const rawText = importType === 'paste' ? importContent : undefined;
     onImport(
       importResults.map(result => ({
         title: result.title,
@@ -443,7 +444,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
         color: result.color,
         address: result.address
       })),
-      syncToGTD
+      syncToGTD,
+      rawText
     );
     
     // 重置表单并关闭模态框
@@ -482,12 +484,13 @@ const ImportModal: React.FC<ImportModalProps> = ({
   // 保存并关闭
   const handleSaveAndClose = async () => {
     if (importResults.length > 0) {
+      const rawText = importType === 'paste' ? importContent : undefined;
       await onImport(importResults.map(result => ({
         title: result.title,
         content: result.content,
         color: result.color,
         address: result.address
-      })), syncToGTD);
+      })), syncToGTD, rawText);
     }
     resetForm();
     setShowConfirmDialog(false);
