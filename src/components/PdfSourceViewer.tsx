@@ -84,38 +84,36 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
     if (!pdfDoc || annotations.length === 0) return;
 
     const searchPdf = async () => {
-      const pageMap = new Map<number, CardAnnotation[]>();
-
-      for (let pageNum = 1; pageNum <= Math.min(pdfDoc.numPages, 50); pageNum++) {
-        // 搜索前50页，同时去重避免重复加载页面文本
+      // 先缓存所有页面的文本（避免每个 annotation 重复加载）
+      const pageTextCache = new Map<number, string>();
+      const maxPages = Math.min(pdfDoc.numPages, 80);
+      
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const textContent = await page.getTextContent();
+          pageTextCache.set(pageNum, textContent.items.map((item: any) => item.str).join(' '));
+        } catch {
+          pageTextCache.set(pageNum, '');
+        }
       }
 
-      // 对每个 annotation 的 content_preview，取前 30 个字符作为搜索词
-      // 搜索时使用段落号（location_in_source: "第N段"）来定位
+      // 对每个 annotation 搜索匹配页面
       const searchPromises = annotations.map(async (annotation) => {
-        const paraMatch = annotation.location_in_source?.match(/第(\d+)段/);
-        if (!paraMatch) return null;
-        const paraIndex = parseInt(paraMatch[1]);
-        
-        // 取 content_preview 的关键词（前几个词）
         const keywords = (annotation.content_preview || '').slice(0, 40).trim();
         if (!keywords) return null;
         
         const searchWords = keywords.split(/[\s,，。；;、]+/).filter(w => w.length >= 2).slice(0, 5);
         
-        for (let pageNum = 1; pageNum <= Math.min(pdfDoc.numPages, 80); pageNum++) {
+        for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
           try {
-            const page = await pdfDoc.getPage(pageNum);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map((item: any) => item.str).join(' ');
-
-            // 检查关键词是否在页面中出现
+            const pageText = pageTextCache.get(pageNum) || '';
             const matchCount = searchWords.filter(w => pageText.includes(w)).length;
             if (matchCount >= Math.max(1, Math.floor(searchWords.length * 0.6))) {
               return { pageNum, annotation };
             }
           } catch {
-            // skip page on error
+            // skip
           }
         }
         return null;
@@ -173,16 +171,20 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
 
     try {
       const page = await pdfDoc.getPage(currentPage);
-      const viewport = page.getViewport({ scale });
+      const dpr = window.devicePixelRatio || 1;
+      const vp = page.getViewport({ scale }); // CSS-pixel viewport
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      canvas.width = vp.width * dpr;
+      canvas.height = vp.height * dpr;
+      canvas.style.width = `${vp.width}px`;
+      canvas.style.height = `${vp.height}px`;
 
       if (!context) return;
+      context.scale(dpr, dpr);
       
-      await page.render({ canvasContext: context, viewport }).promise;
+      await page.render({ canvasContext: context, viewport: vp }).promise;
 
       // 绘制标注高亮
       const pageAnnotations = searchResults.get(currentPage);
@@ -200,7 +202,7 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
             if (itemStr.length >= 3 && searchText.includes(itemStr.slice(0, Math.min(8, itemStr.length)))) {
               const tx = item.transform;
               const x = tx[4] * scale;
-              const y = (viewport.height - tx[5] * scale);
+              const y = (vp.height - tx[5] * scale);
               const w = item.width * scale * 1.2;
               const h = Math.abs(tx[1]) * scale || 16;
 

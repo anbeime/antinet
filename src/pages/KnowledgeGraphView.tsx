@@ -158,15 +158,23 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
     return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
   };
 
-  // 列表数据源：有 currentCardId 时与图谱/导图保持一致，否则用全部卡片
+  // 列表数据源：有 currentCardId 时与图谱/导图保持一致
   const listDataSource = useMemo(() => {
     if (currentCardId && apiData) {
-      const graphIds = new Set(
-        (apiData.nodes || apiData.entities || []).map((n: any) => String(n.id))
-      );
-      if (graphIds.size > 0) {
-        return cards.filter((c: any) => graphIds.has(String(c.id)));
-      }
+      const graphNodes = apiData.nodes || apiData.entities || [];
+      if (graphNodes.length === 0) return cards;
+      const graphIds = new Set(graphNodes.map((n: any) => String(n.id)));
+      // 优先从 cards 中匹配（保持完整卡片数据）
+      const matched = cards.filter((c: any) => graphIds.has(String(c.id)));
+      if (matched.length > 0) return matched;
+      // 如果 ID 不匹配，从图谱节点直接派生卡片对象
+      return graphNodes.map((n: any) => ({
+        id: n.id,
+        title: n.title || n.name || `节点${n.id}`,
+        content: n.content || n.description || '',
+        card_type: n.type || n.card_type || 'blue',
+        type: n.type || n.card_type || 'blue',
+      }));
     }
     return cards;
   }, [cards, currentCardId, apiData]);
