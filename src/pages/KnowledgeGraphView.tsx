@@ -799,7 +799,7 @@ useEffect(() => {
   };
 
 return (
-    <div className="flex h-full relative">
+    <div className="flex h-screen relative">
       {/* Mobile toggle */}
       <button onClick={() => setSidebarOpen(!sidebarOpen)}
         className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
