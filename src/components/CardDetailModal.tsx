@@ -321,6 +321,12 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [sourceMarkdownLoading, setSourceMarkdownLoading] = useState(false);
   const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');  // PDF/Markdown 视图切换
   const [sourceFullscreen, setSourceFullscreen] = useState(false);  // 源文件查看器全屏模式
+ 
+  // PDF 预览（Markdown→PDF 转换，类似知识图谱页面）
+  const [sourcePdfUrl, setSourcePdfUrl] = useState('');
+  const [sourcePdfError, setSourcePdfError] = useState('');
+  const [sourceExportTheme, setSourceExportTheme] = useState('chinese-red');
+  const [sourcePdfGenerating, setSourcePdfGenerating] = useState(false);
 
 
   // 同批次兄弟卡片（知识图谱子网）
@@ -453,6 +459,37 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setSourceMarkdownData(null);
     } finally {
       setSourceMarkdownLoading(false);
+    }
+  };
+
+  // 生成 PDF 预览（Markdown → 样式化 PDF）
+  const generateSourcePdf = async (theme?: string) => {
+    const effectiveTheme = theme || sourceExportTheme;
+    const mdContent = `# ${card?.title || '知识卡片'}\n\n${card?.content || ''}`;
+    if (!mdContent.trim()) return;
+    setSourcePdfGenerating(true);
+    setSourcePdfError('');
+    try {
+      const formData = new FormData();
+      const blob = new Blob([mdContent], { type: 'text/markdown' });
+      formData.append('file', blob, 'card.md');
+      formData.append('title', card?.title || '知识卡片');
+      formData.append('author', 'Antinet');
+      formData.append('theme', effectiveTheme);
+      const res = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
+        method: 'POST', body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || 'PDF 生成失败');
+      }
+      const pdfBlob = await res.blob();
+      if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
+      setSourcePdfUrl(URL.createObjectURL(pdfBlob));
+    } catch (e: any) {
+      setSourcePdfError(e.message || 'PDF 生成失败');
+    } finally {
+      setSourcePdfGenerating(false);
     }
   };
 
@@ -1982,9 +2019,31 @@ className="text-lg select-text"
                           : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
                       }`}
                     >
-                      <Eye size={12} className="inline mr-1" />PDF 原文标注
+                      <FileText size={12} className="inline mr-1" />PDF 预览
                     </button>
                   </div>
+                )}
+                {/* PDF 主题选择器 */}
+                {sourceViewMode === 'pdf' && (
+                  <select
+                    value={sourceExportTheme}
+                    onChange={async e => {
+                      setSourceExportTheme(e.target.value);
+                      if (card?.content) { generateSourcePdf(e.target.value); }
+                    }}
+                    className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer ml-2"
+                  >
+                    <option value="warm-academic">暖学术</option>
+                    <option value="classic-thesis">经典论文</option>
+                    <option value="tufte">Tufte</option>
+                    <option value="ieee-journal">期刊蓝</option>
+                    <option value="elegant-book">精装书</option>
+                    <option value="chinese-red">中国红</option>
+                    <option value="ink-wash">水墨</option>
+                    <option value="github-light">GitHub</option>
+                    <option value="nord-frost">Nord冰霜</option>
+                    <option value="ocean-breeze">海洋</option>
+                  </select>
                 )}
               </div>
               <div className="flex items-center gap-1">
@@ -1995,7 +2054,7 @@ className="text-lg select-text"
                 >
                   {sourceFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                 </button>
-                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                   <X size={20} />
                 </button>
               </div>
@@ -2003,24 +2062,51 @@ className="text-lg select-text"
 
             {/* 内容区 */}
             <div className="flex-1 overflow-y-auto p-6">
-              {/* PDF 原文标注视图 */}
-              {(sourceFileInfo?.file_type || sourceMarkdownData?.source_file?.type) === 'pdf' && sourceViewMode === 'pdf' && sourceFileInfo?.source_file_id ? (
-                <div className="-m-6 h-full">
-                  <PdfSourceViewer
-                    pdfUrl={`${getApiBaseUrl()}/api/knowledge/source-files/${sourceFileInfo.source_file_id}/download`}
-                    fileName={sourceFileInfo.original_name || sourceMarkdownData?.source_file?.name || '源文件'}
-                    annotations={(sourceMarkdownData?.cards || []).map((c: any) => ({
-                      card_id: c.card_id,
-                      title: c.title,
-                      card_type: c.card_type,
-                      location_in_source: c.location_in_source || '',
-                      content_preview: c.content_preview || '',
-                      isCurrent: String(c.card_id) === card?.id,
-                    }))}
-                    currentCardId={card?.id}
-                    onClose={() => setSourceViewMode('markdown')}
-                  />
-                </div>
+              {/* PDF 预览视图（Markdown → 样式化 PDF，与知识图谱页面效果一致） */}
+              {sourceViewMode === 'pdf' ? (
+                sourcePdfGenerating ? (
+                  <div className="flex items-center justify-center py-20">
+                    <Loader size={24} className="animate-spin text-red-500 mr-3" />
+                    <span className="text-gray-500">生成 PDF 中...</span>
+                  </div>
+                ) : sourcePdfError ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-red-500">
+                    <AlertCircle size={48} strokeWidth={1} className="mb-4 opacity-30" />
+                    <p className="text-sm">{sourcePdfError}</p>
+                    <button onClick={() => generateSourcePdf()} className="mt-4 px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">
+                      重试
+                    </button>
+                  </div>
+                ) : sourcePdfUrl ? (
+                  <div className="-m-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
+                    {/* 顶部操作栏 */}
+                    {sourcePdfUrl && (
+                      <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                        <a href={sourcePdfUrl} download={`card_${card?.id || 'export'}.pdf`}
+                          className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                          <Download size={12} />下载 PDF
+                        </a>
+                        <div className="flex-1" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-h-0">
+                      <object data={sourcePdfUrl} type="application/pdf" className="w-full h-full">
+                        <embed src={sourcePdfUrl} type="application/pdf" className="w-full h-full" />
+                        <div className="flex items-center justify-center h-full text-gray-400">
+                          <p>无法预览 PDF，请<a href={sourcePdfUrl} download className="text-blue-500 underline">下载查看</a></p>
+                        </div>
+                      </object>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                    <FileText size={48} strokeWidth={1} className="mb-4 opacity-30" />
+                    <p className="text-sm mb-4">点击生成 PDF 预览</p>
+                    <button onClick={() => generateSourcePdf()} className="px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">
+                      生成 PDF
+                    </button>
+                  </div>
+                )
               ) : sourceMarkdownLoading ? (
                 <div className="flex items-center justify-center py-20">
                   <Loader size={24} className="animate-spin text-purple-500 mr-3" />
