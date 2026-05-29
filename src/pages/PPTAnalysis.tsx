@@ -750,11 +750,11 @@ const PPTAnalysis: React.FC = () => {
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
-              onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
+              onClick={() => window.open('http://localhost:3000/pdf-viewer/markdown', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
               <History className="w-4 h-4 text-green-600" />
-              <span className="text-green-700 dark:text-green-400">文档处理记录</span>
+              <span className="text-green-700 dark:text-green-400">markdown转换</span>
             </button>
             <button
               onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}

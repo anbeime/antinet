@@ -25,6 +25,7 @@ import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
 
+import MarkdownConverter from "@/pages/MarkdownConverter";
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
@@ -43,7 +44,8 @@ export default function App() {
           <Route path="/excel-analysis" element={<ExcelAnalysis />} />
           <Route path="/report-automation" element={<ReportAutomation />} />
           <Route path="/office-docs" element={<OfficeDocs />} />
-          <Route path="/pdf-viewer" element={<PDFViewer />} />
+<Route path="/pdf-viewer" element={<PDFViewer />} />
+          <Route path="/pdf-viewer/markdown" element={<MarkdownConverter />} />
           <Route path="/ppt-viewer" element={<PPTViewer />} />
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />

@@ -335,12 +335,12 @@ const ExcelAnalysis: React.FC = () => {
                 在线查看
               </h3>
               <div className="space-y-2">
-                <button 
-                  onClick={() => window.open('http://localhost:3000/?tab=pdf-analysis', '_blank')}
+<button 
+                  onClick={() => window.open('http://localhost:3000/pdf-viewer/markdown', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <History className="w-4 h-4 text-green-500" />
-                  <span>文档处理记录</span>
+                  <span>markdown转换</span>
                 </button>
                 <button 
                   onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}

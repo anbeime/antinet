@@ -185,7 +185,8 @@ async def convert_markdown(request: MarkdownConvertRequest):
 async def convert_markdown_file(
     file: UploadFile = File(...),
     output_format: str = Query("pdf", description="输出格式: pdf, docx, html, xlsx"),
-    render_mermaid: bool = Query(True, description="是否渲染 Mermaid 图表")
+    render_mermaid: bool = Query(True, description="是否渲染 Mermaid 图表"),
+    theme: str = Query("chinese-red", description="主题: warm-academic, classic-thesis, tufte, ieee-journal, elegant-book, chinese-red, ink-wash, github-light, nord-frost, ocean-breeze")
 ):
     """通过文件上传转换 Markdown"""
     try:
@@ -212,7 +213,8 @@ async def convert_markdown_file(
             input_content=text,
             input_format='markdown',
             output_format=output_fmt,
-            render_mermaid=render_mermaid
+            render_mermaid=render_mermaid,
+            theme=theme
         )
         
         if not result.success:
