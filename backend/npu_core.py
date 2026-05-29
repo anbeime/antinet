@@ -31,11 +31,27 @@ logger = logging.getLogger(__name__)
 # 获取项目根目录（自动检测，支持可移植性）
 _PROJECT_ROOT = Path(__file__).parent.parent.absolute()
 
+def _get_models_base_dir() -> str:
+    """获取模型基础目录，支持多位置查找"""
+    # 1. 打包后路径: services/models
+    # 2. 开发环境路径: models
+    # 3. 安装版路径: C:/models
+    candidates = [
+        _PROJECT_ROOT / "services" / "models",
+        _PROJECT_ROOT / "models",
+        Path("C:/models"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    # 如果都不存在，返回第一个（默认路径）
+    return str(candidates[0])
+
 class NPUInferenceCore:
     """NPU推理核心类 - 使用 GenieContext"""
 
-    # 模型根目录（所有模型统一放在这里）- 使用相对路径实现可移植性
-    MODELS_BASE_DIR = str(_PROJECT_ROOT / "models")
+    # 模型根目录（所有模型统一放在这里）
+    MODELS_BASE_DIR = _get_models_base_dir()
 
     # 默认模型配置路径（已下载的 LLaMA 3.2 3B）
     DEFAULT_MODEL_CONFIG = os.path.join(

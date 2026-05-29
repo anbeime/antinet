@@ -48,6 +48,7 @@ a = Analysis(
 
         # 数据库
         "database",
+        "paths",
         "sqlalchemy",
         "sqlalchemy.orm",
         "sqlalchemy.ext",

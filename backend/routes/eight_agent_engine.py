@@ -262,9 +262,9 @@ class EightAgentEngine:
         try:
             preprocessor = self._agents.get("preprocessor")
             if preprocessor:
-                result = await preprocessor.preprocess(
-                    raw_material=context.get("raw_material", ""),
-                    user_query=query
+                result = await preprocessor.preprocess_data(
+                    data_source=context.get("raw_material", ""),
+                    data_type="csv"
                 )
                 return result
         except Exception as e:
@@ -406,7 +406,7 @@ class EightAgentEngine:
         try:
             interpreter = self._agents.get("interpreter")
             if interpreter:
-                result = await interpreter.interpret(
+                result = await interpreter.generate_explanations(
                     preprocessed_data,
                     query,
                     current_date

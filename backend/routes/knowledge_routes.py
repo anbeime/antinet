@@ -596,13 +596,43 @@ async def create_card(card: KnowledgeCard):
             except Exception as e:
                 logger.warning(f"同步backlinks失败（非致命）: {e}")
 
+        # 自动建立同专题卡片的关联（same_project 类型链接）
+        if card.project_id:
+            try:
+                # 查找同专题的其他卡片（限制数量避免性能问题）
+                cursor.execute("""
+                    SELECT id FROM knowledge_cards 
+                    WHERE project_id = ? AND id != ?
+                    ORDER BY created_at DESC LIMIT 100
+                """, (card.project_id, new_card_id))
+                same_project_cards = cursor.fetchall()
+                
+                for (other_card_id,) in same_project_cards:
+                    # 建立双向关联，类型为 same_project
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (new_card_id, other_card_id, 'same_project'))
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO card_backlinks (source_card_id, target_card_id, link_text)
+                        VALUES (?, ?, ?)
+                    """, (other_card_id, new_card_id, 'same_project'))
+                    logger.info(f"[CREATE_CARD] 自动建立同专题关联: {new_card_id} <-> {other_card_id}")
+            except Exception as e:
+                logger.warning(f"自动建立同专题关联失败（非致命）: {e}")
+
         conn.commit()
 
         logger.info(f"[CREATE_CARD] 插入成功，lastrowid={new_card_id}")
 
         # 获取新插入的卡片
-        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (cursor.lastrowid,))
-        new_card = dict(cursor.fetchone())
+        cursor.execute("SELECT * FROM knowledge_cards WHERE id = ?", (new_card_id,))
+        result = cursor.fetchone()
+        if not result:
+            logger.warning(f"[CREATE_CARD] 查询新卡片失败，id={new_card_id}")
+            conn.close()
+            return {"id": new_card_id, "error": "查询失败"}
+        new_card = dict(result)
 
         conn.close()
         logger.info(f"[CREATE_CARD] 返回新卡片: {new_card}")
@@ -1198,14 +1228,22 @@ async def import_file(file: UploadFile = File(...)):
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         try:
-            cursor.execute('''
-                INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash))
-            conn.commit()
+            # 检查是否已存在相同 hash 的记录
+            cursor.execute("SELECT source_file_id FROM source_files WHERE content_hash = ?", (content_hash,))
+            existing = cursor.fetchone()
+            if existing:
+                # 文件已存在，使用已有的 source_file_id
+                source_file_id = existing[0]
+                logger.info(f"文件已存在，使用已有记录: {source_file_id}")
+            else:
+                # 插入新记录（markdown_content 在文本提取后回填）
+                cursor.execute('''
+                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash, markdown_content)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (source_file_id, filename, str(stored_file_path), file_ext.lstrip('.'), len(content), content_hash, ''))
+                conn.commit()
         except Exception as e:
             logger.warning(f"插入源文件记录失败: {e}")
-        conn.close()
 
         extracted_text = ""
 
@@ -1413,38 +1451,31 @@ async def import_file(file: UploadFile = File(...)):
             finally:
                 shutil.rmtree(extract_dir, ignore_errors=True)
 
-        # ========== 8智能体生成四色卡片（取代关键词规则） ==========
+        # ===== 将提取的完整文本作为 Markdown 保存到磁盘文件 + 摘要写入数据库 =====
+        try:
+            if extracted_text:
+                md_content = f"# {filename}\n\n> 导入时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 文件类型: {file_ext.lstrip('.')}\n\n---\n\n{extracted_text}"
+                # 写入磁盘文件（与原始文件同目录，避免数据库膨胀）
+                md_dir = source_files_dir / source_file_id
+                md_dir.mkdir(parents=True, exist_ok=True)
+                md_path = md_dir / f"{source_file_id}.md"
+                with open(md_path, 'w', encoding='utf-8') as mf:
+                    mf.write(md_content)
+                # 数据库只存摘要信息（前500字符 + 总长度，用于快速预览和判断是否有内容）
+                md_summary = f"[MD_FILE] path={md_path} | length={len(md_content)} | preview={md_content[:500]}"
+                conn2 = db_manager.get_connection()
+                cur2 = conn2.cursor()
+                cur2.execute("UPDATE source_files SET markdown_content = ? WHERE source_file_id = ?", (md_summary, source_file_id))
+                conn2.commit()
+                conn2.close()
+                logger.info(f"源文件 Markdown 已保存到磁盘: {md_path} ({len(md_content)} 字符)")
+        except Exception as e:
+            logger.warning(f"保存源文件 Markdown 内容失败: {e}")
+
+        # ========== 批量导入：直接用关键词规则，秒速完成 ==========
+        # （8智能体调用LLM有超时等待，不适合批量导入）
         cards = []
         if extracted_text and len(extracted_text.strip()) > 20:
-            try:
-                # 调用8智能体引擎生成四色卡片
-                from routes.eight_agent_engine import EightAgentEngine
-                agent_engine = EightAgentEngine()
-                agent_result = await agent_engine.process(
-                    query=f"分析文件 '{filename}' 的内容并提取知识卡片",
-                    context={
-                        "raw_material": extracted_text[:8000],  # 限制输入长度
-                        "file_name": filename,
-                        "file_type": file_ext
-                    },
-                    user_id="batch_import"
-                )
-                if agent_result.get("status") == "success":
-                    agent_cards = agent_result.get("four_color_cards", [])
-                    for card in agent_cards:
-                        cards.append({
-                            'title': card.get('title', '知识卡片')[:100],
-                            'content': card.get('content', ''),
-                            'card_type': card.get('card_type', 'blue'),
-                            'confidence': card.get('confidence', 0.7),
-                            'address': f"{card.get('card_type', 'BLUE').upper()}{len(cards) + 1}"
-                        })
-                    logger.info(f"[8智能体] {filename}: 成功生成 {len(cards)} 张卡片")
-            except Exception as e:
-                logger.warning(f"[8智能体] 卡片生成失败，回退到关键词模式: {e}")
-
-        # 回退：如果8智能体未生成任何卡片，使用关键词规则
-        if not cards:
             paragraphs = [p.strip() for p in extracted_text.split('\n\n') if p.strip()]
             if not paragraphs:
                 paragraphs = [p.strip() for p in extracted_text.split('\n') if p.strip()]
@@ -1511,7 +1542,7 @@ async def import_file(file: UploadFile = File(...)):
                     card_id = cursor.lastrowid
                     card_ids.append(card_id)
                     
-                    # 插入卡片-源文件关联记录
+                    # 插入卡片-源文件关联记录（location 包含段落索引，用于前端高亮）
                     if source_file_id:
                         location = f"第{idx + 1}段"
                         try:
@@ -1526,6 +1557,41 @@ async def import_file(file: UploadFile = File(...)):
                 conn.commit()
                 conn.close()
                 logger.info(f"成功保存 {saved_count} 张知识卡片")
+                
+                # ===== 同批次卡片自动建立双向链接（形成知识图谱子网） =====
+                if saved_count >= 2 and source_file_id and len(card_ids) >= 2:
+                    try:
+                        link_conn = db_manager.get_connection()
+                        link_cur = link_conn.cursor()
+                        link_count = 0
+                        for i in range(len(card_ids)):
+                            for j in range(i + 1, len(card_ids)):
+                                try:
+                                    link_cur.execute('''
+                                        INSERT OR IGNORE INTO card_backlinks 
+                                        (source_card_id, target_card_id, link_text, link_type)
+                                        VALUES (?, ?, ?, ?)
+                                    ''', (
+                                        card_ids[i], card_ids[j],
+                                        f"同批导入: {filename}", 'same_batch'
+                                    ))
+                                    link_cur.execute('''
+                                        INSERT OR IGNORE INTO card_backlinks 
+                                        (source_card_id, target_card_id, link_text, link_type)
+                                        VALUES (?, ?, ?, ?)
+                                    ''', (
+                                        card_ids[j], card_ids[i],
+                                        f"同批导入: {filename}", 'same_batch'
+                                    ))
+                                    link_count += 2
+                                except Exception as link_err:
+                                    logger.warning(f"创建同批次链接 {card_ids[i]}<->{card_ids[j]} 失败: {link_err}")
+                        link_conn.commit()
+                        link_conn.close()
+                        if link_count > 0:
+                            logger.info(f"同批次自动建链完成: {saved_count} 张卡片, 创建 {link_count // 2} 组双向链接")
+                    except Exception as link_ex:
+                        logger.warning(f"同批次自动建链过程异常: {link_ex}")
             except Exception as e:
                 logger.error(f"保存知识卡片失败: {e}")
 
@@ -1816,6 +1882,180 @@ async def get_source_file_cards(source_file_id: str):
     except Exception as e:
         logger.error(f"获取源文件卡片失败: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/source-files/{source_file_id}/markdown")
+async def get_source_file_markdown(source_file_id: str):
+    """
+    获取源文件的 Markdown 内容（用于溯源查看和高亮显示）
+    
+    优先从磁盘文件读取完整内容，回退到数据库摘要。
+    返回完整提取文本 + 该源文件所有卡片的段落位置信息
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT source_file_id, original_name, file_type, markdown_content, stored_path, created_at
+            FROM source_files WHERE source_file_id = ?
+        """, (source_file_id,))
+        sf = cursor.fetchone()
+        
+        if not sf:
+            raise HTTPException(status_code=404, detail="源文件不存在")
+        
+        # 解析 Markdown 内容：优先从磁盘读取
+        md_content = ""
+        db_record = sf[3] or ""
+        # 确保 string 类型（SQLite 可能返回 bytes）
+        if isinstance(db_record, bytes):
+            db_record = db_record.decode('utf-8', errors='replace')
+        db_record = str(db_record)
+        
+        # 检查是否是新格式（磁盘文件）：markdown_content 以 [MD_FILE] 开头
+        if db_record.startswith("[MD_FILE]"):
+            # 从磁盘读取
+            import re
+            path_match = re.search(r'path=(.+?)\s*\|', db_record)
+            if path_match:
+                md_disk_path = path_match.group(1)
+                try:
+                    with open(md_disk_path, 'r', encoding='utf-8') as f:
+                        md_content = f.read()
+                    logger.debug(f"从磁盘加载 Markdown: {md_disk_path}")
+                except FileNotFoundError:
+                    logger.warning(f"Markdown 磁盘文件不存在: {md_disk_path}，使用数据库摘要")
+                    md_content = db_record
+                except Exception as read_err:
+                    logger.warning(f"读取 Markdown 磁盘文件失败: {read_err}")
+                    md_content = db_record
+            else:
+                md_content = db_record
+        else:
+            # 旧格式或空：直接使用数据库内容
+            md_content = db_record
+        
+        # 获取该源文件关联的所有卡片及其位置信息
+        cursor.execute("""
+            SELECT c.id, c.title, c.card_type, csf.location_in_source, c.content
+            FROM card_source_files csf
+            JOIN knowledge_cards c ON c.id = csf.card_id
+            WHERE csf.source_file_id = ?
+            ORDER BY c.id
+        """, (source_file_id,))
+        cards_rows = cursor.fetchall()
+        conn.close()
+        
+        return {
+            "success": True,
+            "source_file": {
+                "id": sf[0],
+                "name": sf[1],
+                "type": sf[2],
+                "markdown_content": md_content,
+                "created_at": sf[5]
+            },
+            "cards": [
+                {
+                    "card_id": r[0],
+                    "title": r[1],
+                    "card_type": r[2],
+                    "location_in_source": r[3] or "",
+                    "content_preview": (r[4] or "")[:200]
+                }
+                for r in cards_rows
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取源文件Markdown失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cards/{card_id}/siblings")
+async def get_card_siblings(card_id: int):
+    """
+    获取与指定卡片同批导入的兄弟卡片（同一源文件的其他卡片）
+    
+    用于知识图谱展示和关联发现，返回同源文件的所有其他卡片及其链接关系
+    """
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # 1. 查找该卡片的 source_file_id
+        cursor.execute("""
+            SELECT csf.source_file_id, sf.original_name, sf.file_type
+            FROM card_source_files csf
+            JOIN source_files sf ON sf.source_file_id = csf.source_file_id
+            WHERE csf.card_id = ?
+        """, (card_id,))
+        src = cursor.fetchone()
+        
+        if not src:
+            return {
+                "success": True,
+                "source_file": None,
+                "siblings": [],
+                "total": 0,
+                "message": "该卡片没有关联源文件"
+            }
+        
+        source_file_id, original_name, file_type = src[0], src[1], src[2]
+        
+        # 2. 获取同一源文件下的所有卡片（排除当前卡片）
+        cursor.execute("""
+            SELECT c.id, c.title, c.content, c.card_type, c.category,
+                   csf.location_in_source, c.created_at
+            FROM card_source_files csf
+            JOIN knowledge_cards c ON c.id = csf.card_id
+            WHERE csf.source_file_id = ? AND c.id != ?
+            ORDER BY c.id
+        """, (source_file_id, card_id))
+        sibling_rows = cursor.fetchall()
+        
+        # 3. 检查当前卡片与兄弟卡片的已有链接状态
+        sibling_ids = [r[0] for r in sibling_rows]
+        link_status = {}
+        if sibling_ids:
+            placeholders = ','.join(['?' for _ in sibling_ids])
+            cursor.execute(f"""
+                SELECT target_card_id, link_type 
+                FROM card_backlinks 
+                WHERE source_card_id = ? AND target_card_id IN ({placeholders})
+            """, [card_id] + sibling_ids)
+            for lr in cursor.fetchall():
+                link_status[lr[0]] = lr[1]
+        
+        conn.close()
+        
+        return {
+            "success": True,
+            "source_file": {
+                "source_file_id": source_file_id,
+                "original_name": original_name,
+                "file_type": file_type
+            },
+            "total": len(sibling_rows),
+            "siblings": [
+                {
+                    "id": r[0],
+                    "title": r[1],
+                    "content": r[2],
+                    "card_type": r[3],
+                    "category": r[4],
+                    "location_in_source": r[5],
+                    "created_at": r[6],
+                    "link_type": link_status.get(r[0])  # 已有链接类型（same_batch 等）
+                }
+                for r in sibling_rows
+            ]
+        }
+    except Exception as e:
+        logger.error(f"获取同批次兄弟卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/source-files/{source_file_id}/download")

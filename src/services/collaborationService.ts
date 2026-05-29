@@ -3,7 +3,6 @@
  * 通过 WebSocket 与后端 /api/ws/collaboration/{userId} 通信
  * 所有局域网用户实时接收同一消息流
  */
-import { apiCall } from './dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
 const COLLAB_API = getApiBaseUrl() + '/api';

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, ListTodo, Plus, X, Maximize2, Minimize2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Plus, X, Maximize2, Minimize2 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
@@ -21,7 +20,6 @@ interface NewTaskForm {
 }
 
 const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' }) => {
-  const [viewMode, setViewMode] = useState<'calendar' | 'list'>(initialView);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [calendarFullscreen, setCalendarFullscreen] = useState(false);

@@ -165,7 +165,8 @@ class DatabaseManager:
                     recurrence TEXT DEFAULT 'none',
                     recurrence_end_date TEXT,
                     is_completed BOOLEAN DEFAULT 0,
-                    completed_at TEXT
+                    completed_at TEXT,
+                    project_id INTEGER
                 )
             """)
             
@@ -204,6 +205,10 @@ class DatabaseManager:
                 pass
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN completed_at TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN project_id INTEGER")
             except:
                 pass
 
@@ -403,6 +408,7 @@ class DatabaseManager:
                     file_type TEXT NOT NULL,     -- 文件类型 (pdf/docx/txt等)
                     file_size INTEGER,           -- 文件大小(字节)
                     content_hash TEXT,            -- 内容哈希，用于去重
+                    markdown_content TEXT,        -- 提取的完整文本内容（Markdown格式，用于溯源高亮）
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -459,6 +465,12 @@ class DatabaseManager:
             # 迁移：为 card_backlinks 添加 link_type 字段
             try:
                 cursor.execute("ALTER TABLE card_backlinks ADD COLUMN link_type TEXT DEFAULT 'manual'")
+            except:
+                pass
+
+            # 迁移：为 source_files 添加 markdown_content 字段（用于溯源查看）
+            try:
+                cursor.execute("ALTER TABLE source_files ADD COLUMN markdown_content TEXT")
             except:
                 pass
 

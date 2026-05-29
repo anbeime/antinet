@@ -23,10 +23,10 @@ class NPUModelLoader:
     
     # 模型路径配置（与实际 models/ 目录对应）
     MODEL_PATHS = {
-        "qwen2.0-7b-ssd": str(_PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),  # 通用推荐 ⭐️ (~450ms)
-        "llama3.2-3b": str(_PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),        # 最快响应 (~280ms)
-        "qwen2.5-vl-3b": str(_PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),        # 视觉+语言 (~350ms)
-        "bge-base-zh": str(_PROJECT_ROOT / "models" / "bge-base-zh-v1.5-qnn-8380"),       # 嵌入模型
+        "qwen2.0-7b-ssd": "C:/D/zhiyi/models/Qwen2.0-7B-SSD-8380-2.34",
+        "llama3.2-3b": "C:/D/zhiyi/models/llama3.2-3b-8380-qnn2.37",
+        "qwen2.5-vl-3b": "C:/D/zhiyi/models/qwen2.5vl3b-8380-2.42",
+        "bge-base-zh": "C:/D/zhiyi/models/bge-base-zh-v1.5-qnn-8380",
     }
     
     # 模型性能指标

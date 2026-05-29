@@ -13,7 +13,7 @@ import {
   Sparkles, ChevronRight, Loader2,
   Trash2, FileType, FileSpreadsheet,
   Upload, Mic, MicOff, Volume2, VolumeX,
-  Download, Eye, Maximize2, Minimize2,
+  Eye, Maximize2, Minimize2,
   Brain
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -85,9 +85,9 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
 // 渲染消息内容组件 - 支持 markdown 渲染和 [点击跳转:url] 格式的链接
 const MessageContent: React.FC<{ content: string; onClose: () => void }> = ({ content, onClose }) => {
   const navigate = useNavigate();
-  
+
   if (!content) return null;
-  
+
   // 匹配 [点击跳转:url] 格式
   const linkRegex = /\[点击跳转:([^\]]+)\]/g;
   const parts: React.ReactNode[] = [];
@@ -192,7 +192,9 @@ const MessageBubble: React.FC<{
           color: isUser ? '#fff9f3' : '#4a3728',
           border: isUser ? 'none' : '1px solid #e8ddd0'
         }}>
-          <div className="whitespace-pre-wrap"><MessageContent content={message.content} onClose={onClose || (() => {})} /></div>
+          <div className="whitespace-pre-wrap">
+            {isUser ? message.content : <MessageContent content={message.content} onClose={onClose || (() => {})} />}
+          </div>
           {/* 语音播放按钮 - 仅助手消息显示 */}
           {!isUser && onSpeak && message.content && (
             <button
@@ -342,6 +344,53 @@ const saveMessages = (messages: ChatMessage[]) => {
   } catch (e) {
     console.warn('保存聊天记录失败:', e);
   }
+};
+
+// 根据用户输入生成动态推荐问题
+const generateLocalSuggestions = (query: string, hasImage: boolean): string[] => {
+  const s: string[] = [];
+
+  const q = query.toLowerCase();
+
+  if (hasImage || q.includes('图片') || q.includes('图像') || q.includes('截图') || q.includes('照片')) {
+    s.push('分析一下这张图片的详细内容');
+    s.push('这张图片说明了什么问题');
+  }
+
+  if (q.includes('ppt') || q.includes('演示') || q.includes('幻灯片') || q.includes('文稿')) {
+    s.push('帮我完善这个PPT的结构');
+    s.push('生成一份更详细的大纲');
+  }
+
+  if (q.includes('卡片') || q.includes('知识库') || q.includes('搜索') || q.includes('查找') || q.includes('查询') || q.includes('找')) {
+    const topic = query.replace(/(?:搜索|查找|找|查询|关于)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息)/g, '').trim();
+    if (topic && topic.length < 20) {
+      s.push(`帮我搜索更多关于${topic}的知识卡片`);
+    }
+    s.push('这些卡片之间有什么关联');
+  }
+
+  if (q.includes('excel') || q.includes('表格') || q.includes('数据') || q.includes('分析')) {
+    s.push('对这份数据进行可视化分析');
+    s.push('总结数据中的关键趋势');
+  }
+
+  if (q.includes('总结') || q.includes('摘要') || q.includes('概括')) {
+    s.push('提炼出核心要点');
+    s.push('生成一份详细的报告');
+  }
+
+  if (q.includes('对比') || q.includes('比较') || q.includes('区别')) {
+    s.push('用表格展示对比结果');
+    s.push('哪个方案更优');
+  }
+
+  if (s.length === 0) {
+    s.push('帮我搜索相关知识卡片');
+    s.push('能详细展开说明一下吗');
+  }
+
+  return s.slice(0, 3);
 };
 
 export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
@@ -731,7 +780,12 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         }
       };
       setMessages(prev => [...prev, assistantMessage]);
-      setSuggestedQuestions(response.suggestions || []);
+      const localSuggestions = generateLocalSuggestions(query, !!imgData);
+      setSuggestedQuestions(
+        response.suggestions && response.suggestions.length > 0
+          ? response.suggestions
+          : localSuggestions
+      );
 
       // 自动朗读
       if (autoSpeak && replyContent) {
@@ -1016,7 +1070,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           )}
 
           {/* 快捷操作 */}
-          <div className="px-4 py-2" style={{ borderTop: '1px solid #e8ddd0' }}>
+          <div className="hidden md:block px-4 py-2" style={{ borderTop: '1px solid #e8ddd0' }}>
             <div className="flex flex-wrap gap-2">
               {quickActions.map((action, index) => (
                 <QuickAction

@@ -24,8 +24,8 @@ import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
-import EvolvingChatBot from "@/components/EvolvingChatBot";
 
+import MarkdownConverter from "@/pages/MarkdownConverter";
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
@@ -44,7 +44,8 @@ export default function App() {
           <Route path="/excel-analysis" element={<ExcelAnalysis />} />
           <Route path="/report-automation" element={<ReportAutomation />} />
           <Route path="/office-docs" element={<OfficeDocs />} />
-          <Route path="/pdf-viewer" element={<PDFViewer />} />
+<Route path="/pdf-viewer" element={<PDFViewer />} />
+          <Route path="/pdf-viewer/markdown" element={<MarkdownConverter />} />
           <Route path="/ppt-viewer" element={<PPTViewer />} />
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />
@@ -62,7 +63,6 @@ export default function App() {
           <Route path="/hermes-manager" element={<HermesManager />} />
           <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
-          <Route path="/evolving-chat" element={<EvolvingChatBot />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
           <Route path="/remotion" element={
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900">

@@ -33,7 +33,6 @@ const defaultSlides: SlideData[] = [
 
 const PPTViewer: React.FC<PPTViewerProps> = ({ slides }) => {
   useTheme();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -306,13 +305,6 @@ const parsePPTX = async (file: File) => {
           
           <button onClick={handleLast} className="p-2 hover:bg-gray-700 rounded text-gray-300" title="最后一页">
             <ChevronRight className="w-4 h-4" />
-          </button>
-
-          <div className="w-px h-6 bg-gray-600" />
-
-          <button onClick={() => navigate('/?tab=ppt-analysis')} className="flex items-center space-x-1 px-3 py-1.5 bg-purple-500 text-white rounded hover:bg-purple-600">
-            <Presentation className="w-4 h-4" />
-            <span className="text-sm">生成PPT</span>
           </button>
 
           <div className="w-px h-6 bg-gray-600" />

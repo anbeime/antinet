@@ -2,20 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
-  Inbox,
-  Clock,
   Calendar,
-  Archive,
-  Book,
   PlusCircle,
-  MoreHorizontal,
   Search,
   Flag,
   X,
-  Check,
   Trash2,
-  Edit,
-  ArrowRight,
   Share2,
   ExternalLink,
   FileText,
@@ -201,14 +193,13 @@ const GTDTaskPDF: React.FC<GTDTaskPDFProps> = ({ tasks, category }) => {
 type Category = 'inbox' | 'today' | 'later' | 'archive' | 'projects';
 
 const GTDSystem: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<Category>('inbox');
+  const [activeCategory, setActiveCategory] = useState<Category | 'all'>('inbox');
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
   const [calendarFullscreen, setCalendarFullscreen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTask, setEditingTask] = useState<GtdTaskType | null>(null);
-  const [showActionMenu, setShowActionMenu] = useState<number | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
@@ -230,23 +221,6 @@ const GTDSystem: React.FC = () => {
     reminder_enabled: false
   });
   const [zoomedTask, setZoomedTask] = useState<GtdTaskType | null>(null);
-  const [projects, setProjects] = useState<Array<{id: number; name: string}>>([]);
-  
-  // 加载专题列表
-  useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        const res = await fetch(getApiBaseUrl() + '/api/research/projects');
-        if (res.ok) {
-          const data = await res.json();
-          setProjects(data.projects || data || []);
-        }
-      } catch (e) {
-        console.error('加载专题失败:', e);
-      }
-    };
-    loadProjects();
-  }, []);
   
   // 复制任务内容
   const handleCopyTask = (task: GtdTaskType, e: React.MouseEvent) => {
@@ -337,7 +311,7 @@ const GTDSystem: React.FC = () => {
     loadGTDData();
   }, []);
 
-  // 获取优先级样式
+  // 获取优先级样式（用于圆点）
   const getPriorityStyle = (priority: string) => {
     switch(priority) {
       case 'high':
@@ -351,21 +325,17 @@ const GTDSystem: React.FC = () => {
     }
   };
 
-  // 获取分类图标
-  const getCategoryIcon = (category: Category) => {
-    switch(category) {
-      case 'inbox':
-        return <Inbox size={20} />;
-      case 'today':
-        return <Clock size={20} />;
-      case 'later':
-        return <Calendar size={20} />;
-      case 'archive':
-        return <Archive size={20} />;
-      case 'projects':
-        return <Book size={20} />;
+  // 获取优先级颜色（用于 badge 背景）
+  const getPriorityColor = (priority: string) => {
+    switch(priority) {
+      case 'high': return 'bg-red-500';
+      case 'medium': return 'bg-amber-500';
+      case 'low': return 'bg-green-500';
+      default: return 'bg-gray-500';
     }
   };
+
+
 
   // 创建新任务
   const handleCreateTask = async () => {
@@ -447,7 +417,7 @@ const GTDSystem: React.FC = () => {
  // 移动任务到其他分类
   const handleMoveTask = async (taskId: number, targetCategory: Category, projectId?: number) => {
     try {
-      await gtdTaskService.update(taskId, { category: targetCategory, project_id: projectId ?? null });
+      await gtdTaskService.update(taskId, { category: targetCategory, project_id: projectId });
       
       // 重新加载数据
       const allTasks = await gtdTaskService.getAll();
@@ -459,7 +429,6 @@ const GTDSystem: React.FC = () => {
         projects: allTasks.filter(task => task.category === 'projects')
       };
       setTasks(organizedTasks);
-      setShowActionMenu(null);
       
       toast('任务已移动！', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -491,7 +460,6 @@ const GTDSystem: React.FC = () => {
         projects: allTasks.filter(task => task.category === 'projects')
       };
       setTasks(organizedTasks);
-      setShowActionMenu(null);
       
       toast('任务已删除', {
         className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -515,7 +483,6 @@ const GTDSystem: React.FC = () => {
       reminder_enabled: (task as any).reminder_enabled || false
     });
     setShowEditModal(true);
-    setShowActionMenu(null);
   };
 
   // 保存编辑
@@ -664,8 +631,8 @@ const GTDSystem: React.FC = () => {
         {/* 分类标签 */}
         <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-50 via-green-50 to-yellow-50 dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 border-b border-gray-200 dark:border-gray-700">
           <div className="flex gap-2">
-            {(['all', 'inbox', 'today', 'later', 'archive', 'projects'] as (Category | 'all')[]).map(category => {
-              const isActive = category === 'all' ? activeCategory === 'all' : (activeCategory === category && viewMode === 'list');
+            {(['inbox', 'today', 'later', 'archive', 'projects'] as Category[]).map(category => {
+              const isActive = activeCategory === category && viewMode === 'list';
               const categoryColors: Record<string, {active: string, inactive: string}> = {
                 all: { active: 'bg-purple-600 text-white shadow-purple-200 dark:shadow-purple-900', inactive: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700' },
                 inbox: { active: 'bg-blue-600 text-white shadow-blue-200 dark:shadow-blue-900', inactive: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700' },
@@ -675,7 +642,6 @@ const GTDSystem: React.FC = () => {
                 projects: { active: 'bg-green-600 text-white shadow-green-200 dark:shadow-green-900', inactive: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700' },
               };
               const icons: Record<string, string> = {
-                all: '📋',
                 inbox: '📥',
                 today: '⏰',
                 later: '📅',
@@ -683,7 +649,6 @@ const GTDSystem: React.FC = () => {
                 projects: '📚',
               };
               const labels: Record<string, string> = {
-                all: '全部',
                 inbox: '收集箱',
                 today: '等待处理',
                 later: '将来可能',
@@ -705,14 +670,9 @@ const GTDSystem: React.FC = () => {
                 >
                   <span className="text-base">{icons[category]}</span>
                   <span>{labels[category]}</span>
-                  {isActive && category !== 'all' && (
+                  {isActive && (
                     <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {tasks[category as Category]?.length || 0}
-                    </span>
-                  )}
-                  {isActive && category === 'all' && (
-                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded-full">
-                      {Object.values(tasks).flat().length}
+                      {tasks[category]?.length || 0}
                     </span>
                   )}
                 </button>
@@ -733,7 +693,7 @@ const GTDSystem: React.FC = () => {
             <>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {activeCategory === 'all' ? '全部任务' : 
+                  {(activeCategory as string) === 'all' ? '全部任务' : 
                    activeCategory === 'inbox' ? '收集箱' : 
                    activeCategory === 'today' ? '等待处理' :
                    activeCategory === 'later' ? '将来可能' :
@@ -854,7 +814,7 @@ const GTDSystem: React.FC = () => {
                   </select>
                   {selectedTaskIds.size > 0 && (
                     <PDFDownloadLink
-                      document={<GTDTaskPDF tasks={filteredTasks.filter(t => selectedTaskIds.has(t.id!))} category={activeCategory === 'all' ? undefined : activeCategory} />}
+                      document={<GTDTaskPDF tasks={filteredTasks.filter(t => selectedTaskIds.has(t.id!))} category={(activeCategory as string) === 'all' ? undefined : activeCategory} />}
                       fileName={`gtd-tasks-selected-${new Date().toISOString().split('T')[0]}.pdf`}
                     >
                       {({ loading }) => (
@@ -913,7 +873,48 @@ const GTDSystem: React.FC = () => {
                     </div>
                     <div className="p-3 bg-white dark:bg-gray-800">
                       <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 mb-2">{task.description || '无描述'}</p>
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className={`px-2.5 py-0.5 text-xs rounded-full ${getPriorityColor(task.priority || 'medium')} text-white`}>
+                          {task.priority === 'high' ? '高优先级' : task.priority === 'medium' ? '中优先级' : '低优先级'}
+                        </span>
+                        <span className="px-2 py-0.5 text-xs rounded-full border" style={{ color: '#8b7355', borderColor: '#e8ddd0' }}>
+                          {task.category === 'inbox' ? '收集箱' : task.category === 'today' ? '今日' : task.category === 'later' ? '待定' : task.category === 'projects' ? '项目' : task.category === 'archive' ? '归档' : task.category}
+                        </span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const markdownContent = `# ${task.title}\n\n${task.description || ''}\n\n---\n*任务优先级: ${task.priority} | 分类: ${task.category}*`;
+                            const formData = new FormData();
+                            const blob = new Blob([markdownContent], { type: 'text/markdown' });
+                            formData.append('file', blob, 'task.md');
+                            try {
+                              const response = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
+                                method: 'POST',
+                                body: formData
+                              });
+                              if (!response.ok) throw new Error('导出PDF失败');
+                              const pdfBlob = await response.blob();
+                              const url = window.URL.createObjectURL(pdfBlob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `${task.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                              toast.success('PDF导出成功');
+                            } catch (err) {
+                              toast.error('导出PDF失败');
+                            }
+                          }}
+                          className="ml-auto px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 transition-colors flex items-center gap-0.5"
+                          title="导出PDF"
+                        >
+                          <Download size={12} />
+                          导出PDF
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
                         <span className="text-xs text-gray-500">{task.created_at ? new Date(task.created_at).toLocaleDateString('zh-CN') : '-'}</span>
                         <div className="flex gap-1">
                           <button
@@ -1318,54 +1319,8 @@ const GTDSystem: React.FC = () => {
                     >
                       移至将来可能
                     </button>
-                    <select
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          handleMoveTask(editingTask.id!, 'projects', Number(e.target.value));
-                          toast('任务已加入专题', { className: 'bg-purple-50 text-purple-800' });
-                          setShowEditModal(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg border-0 cursor-pointer"
-                      defaultValue=""
-                    >
-                      <option value="">加入专题...</option>
-                      {projects.map(p => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={async () => {
-                        // 将任务内容转换为Markdown并导出PDF
-                        const markdownContent = `# ${editingTask.title}\n\n${editingTask.description || ''}\n\n---\n*任务优先级: ${editingTask.priority} | 分类: ${editingTask.category}*`;
-                        const formData = new FormData();
-                        const blob = new Blob([markdownContent], { type: 'text/markdown' });
-                        formData.append('file', blob, 'task.md');
-                        
-                        try {
-                          const response = await fetch(`${getApiBaseUrl()}/api/md2pdf/convert`, {
-                            method: 'POST',
-                            body: formData
-                          });
-                          if (!response.ok) throw new Error('导出PDF失败');
-                          const pdfBlob = await response.blob();
-                          const url = window.URL.createObjectURL(pdfBlob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `${editingTask.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(url);
-                          toast.success('PDF导出成功');
-                        } catch (err) {
-                          toast.error('导出PDF失败');
-                        }
-                      }}
-                      className="px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 rounded-lg transition-colors"
-                    >
-                      导出PDF
-                    </button>
+
+
                   </div>
                 </div>
               </div>

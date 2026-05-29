@@ -179,7 +179,42 @@ export interface CardTaskRelation {
   extract_paragraph?: string;
 }
 
-// ============ 会议相关 ============
+// ============ 会议中的知识卡片 ============
+
+/** 会议中提取/查询到的四色卡片 */
+export interface MeetingCard {
+  id?: number;
+  card_type: CardColor;
+  title: string;
+  content: string;
+  source: 'agent_extracted' | 'human_query';
+  agent_name?: string;
+  match_score?: number;
+  meeting_id?: string;
+  round?: number;
+  timestamp?: string;
+  saved: boolean;
+}
+
+/** 人工干预查询返回 */
+export interface MeetingHybridResponse {
+  answer: string;
+  cards: MeetingCard[];
+  sources: Array<{
+    card_id: string;
+    title: string;
+    similarity: number;
+  }>;
+}
+
+/** 保存会议卡片到知识库的请求 */
+export interface SaveMeetingCardRequest {
+  card: MeetingCard;
+  meeting_id: string;
+  topic: string;
+}
+
+// ============ 会议记录 ============
 export interface MeetingRecord {
   id: number;
   meeting_id: string;

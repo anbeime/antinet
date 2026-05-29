@@ -12,8 +12,13 @@ from pathlib import Path
 # ============================================================
 # 1. 路径设置（必须在导入之前）
 # ============================================================
-backend_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(backend_dir)
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包后，exe 已在 backend/ 目录下
+    backend_dir = os.path.dirname(sys.executable)
+    project_root = os.path.dirname(backend_dir)
+else:
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(backend_dir)
 
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
@@ -156,7 +161,6 @@ register_router("routes.vision_routes")
 
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
-register_router("routes.evolving_chat_routes")
 register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
@@ -297,7 +301,7 @@ if __name__ == "__main__":
     print(f"服务地址: http://{app_config.HOST}:{app_config.PORT}")
     print(f"{'='*50}\n")
     
-uvicorn.run(
+    uvicorn.run(
         app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
         host=app_config.HOST,
         port=app_config.PORT,

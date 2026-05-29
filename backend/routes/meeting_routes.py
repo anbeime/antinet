@@ -15,6 +15,7 @@ import time
 import httpx
 import os
 from config import settings
+from routes.enhanced_chat_routes import search_cards_semantic, CardReference
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/meeting", tags=["8-Agent会议"])
@@ -214,7 +215,7 @@ AGENT_MAPPING = {
         "description": "负责记录所有操作、决策和结果，构建组织的集体记忆与经验库",
         "color": "from-blue-500 to-blue-600",
         "pixel_id": "taishige",
-        "system_prompt": "你是「太史阁」，负责历史记录与反思。你的职责是从历史经验和过往案例中提取教训，为当前议题提供历史视角的参考。发言要简洁有力，100字以内。"
+        "system_prompt": "你是「太史阁」，负责历史记录与反思。密卷房检索知识卡片后，你结合历史经验进行解读，为当前议题提供历史视角的参考。请基于【知识库参考卡片】提炼关键洞察。发言简洁有力，80字以内。"
     },
     "jinjiyu": {
         "backend_id": "risk_detector",
@@ -234,7 +235,7 @@ AGENT_MAPPING = {
         "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
         "color": "from-green-500 to-green-600",
         "pixel_id": "tongzhengsi",
-        "system_prompt": "你是「通政司」，负责信息与通讯。发言要简洁有力，80字以内。只列事实，禁止重复背景信息和角色描述。"
+        "system_prompt": "你是「通政司」，负责信息与通讯中枢。密卷房和太史阁检索知识卡片后，你将卡片中的关键信息整理并传达给八府同仁，确保各部门掌握必要的知识背景。发言简洁有力，80字以内。"
     },
     "jianchayuan": {
         "backend_id": "interpreter",
@@ -254,7 +255,7 @@ AGENT_MAPPING = {
         "description": "专门负责非结构化知识的整理、归档、索引和检索",
         "color": "from-indigo-500 to-indigo-600",
         "pixel_id": "mijuanfang",
-        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从已有知识库中检索相关资料，为讨论提供知识支撑。严格限制：必须用中文，60字以内，只引用事实，不要重复背景。"
+        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从知识库中检索相关资料，将检索到的卡片内容提炼后汇报给通政司分发。严格限制：必须用中文，60字以内，直接引用卡片中的关键事实。"
     },
     "chengxiangfu": {
         "backend_id": "action_advisor",
@@ -297,52 +298,213 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
     从 Agent 发言中提取四色卡片
     返回: [{card_type, title, content, explore_status}]
     """
-    if not speech or len(speech) < 20:
+    if not speech or len(speech) < 50:
         return []
     
     try:
         import re
-        system_prompt = """你是四色卡片分类专家。你的任务是将文本内容分类为四色卡片之一：
-- 蓝色(事实): 客观数据、定义、事件、统计结果
-- 绿色(解释): 背景、原理、原因、逻辑解释
-- 黄色(风险): 隐患、问题、反面案例、潜在威胁
-- 红色(动力): 行动建议、机会、推动力、解决方案
+        # 改进的 system_prompt，强调生成有意义的卡片
+        system_prompt = """你是四色卡片分类专家。你的任务是从讨论发言中提炼出有价值的知识卡片。
 
-严格按以下JSON数组格式输出，只输出JSON，不要其他内容：
-[{"type": "blue/green/yellow/red", "title": "简短标题", "content": "核心内容(50字以内)"}]"""
+【卡片类型定义】
+- 蓝色(事实/Fact): 客观数据、历史案例、具体事件、定义、统计结果
+- 绿色(解释/Explain): 原理说明、原因分析、背景知识、逻辑关系
+- 黄色(风险/Risk): 潜在问题、隐患、失败案例、威胁因素
+- 红色(行动/Action): 行动建议、解决方案、改进措施、决策结论
+
+【核心要求】
+1. 生成的卡片必须有实质内容，不能是单个词语
+2. title 要简洁但有意义，15字以内
+3. content 必须是完整的句子或段落，20字以上，表达一个完整的观点
+4. 每个卡片必须包含具体的信息，不是泛泛而谈
+
+【禁止】
+- 单个词语或短语（如 "useEffect"、"IntersectionObserver"）
+- 太宽泛的内容（如 "这是一个重要的问题"）
+- 少于20字的内容
+
+【正确示例】
+[{"type": "blue", "title": "SSE断连恢复机制", "content": "通过meetingSessionId跟踪会议会话，页面返回时可从sessionStorage恢复状态"},
+ {"type": "red", "title": "状态覆盖风险", "content": "服务端历史状态可能覆盖本地已恢复的数据，导致用户看到不一致的内容"}]
+
+【错误示例 - 禁止】
+[{"type": "blue", "title": "useEffect", "content": "React Hook"},
+ {"type": "red", "title": "key", "content": "依赖数组"}]"""
         
-        user_prompt = f"""分析以下发言，提取最有价值的1-2条四色卡片内容：
+        user_prompt = f"""从以下讨论发言中提炼出2-3个最有价值的知识卡片。
 
-发言: {speech[:300]}
-主题: {topic}
+【会议主题】
+{topic}
 
-请提取最核心的信息，生成JSON数组："""
+【{agent_name}的发言】
+{speech[:600]}
+
+【要求】
+- 生成2-3张有实质内容的卡片
+- 每张卡片要表达一个完整的观点
+- title不超过15字，content不少于20字
+- 严格按照JSON数组格式输出，只输出JSON"""
+
+        logger.info(f"[_extract_color_cards] 开始提取 | agent={agent_name} | speech长度={len(speech)}")
         
-        result = await call_llm(system_prompt, user_prompt, max_tokens=200, agent_id=agent_id)
+        result = await call_llm(system_prompt, user_prompt, max_tokens=600, agent_id=agent_id)
         
         if not result:
+            logger.warning(f"[_extract_color_cards] LLM返回为空")
             return []
         
+        logger.info(f"[_extract_color_cards] LLM原始返回: {result[:500]}")
+        
         import json
-        # 移除 markdown 代码块
         cleaned = re.sub(r'^```json\s*', '', result.strip())
         cleaned = re.sub(r'\s*```$', '', cleaned)
         cleaned = cleaned.strip()
         
-        # 尝试解析 JSON
-        start = cleaned.find('[')
-        end = cleaned.rfind(']') + 1
-        if start >= 0 and end > start:
-            try:
-                cards = json.loads(cleaned[start:end])
-                # 添加探索状态
-                for card in cards:
-                    card['explore_status'] = 'pending'
-                return cards
-            except:
-                pass
+        # 尝试解析 JSON：支持多数组拼接 + 合并所有数组
+        cards = None
+        
+        # 方法1：用 raw_decode 提取第一个完整 JSON 对象/数组
+        try:
+            parsed, idx = json.JSONDecoder().raw_decode(cleaned)
+            if isinstance(parsed, list):
+                cards = parsed
+                # 如果 raw_decode 结束后还有剩余内容（多数组拼接），尝试提取剩余数组并合并
+                remainder = cleaned[idx:].strip()
+                while remainder.startswith('[') or remainder.startswith(','):
+                    # 跳过可能的逗号/换行，找到下一个 [
+                    next_arr_start = re.search(r'\[', remainder)
+                    if not next_arr_start:
+                        break
+                    remainder = remainder[next_arr_start.start():]
+                    try:
+                        extra, idx2 = json.JSONDecoder().raw_decode(remainder)
+                        if isinstance(extra, list):
+                            cards.extend(extra)
+                            remainder = remainder[idx2:].strip()
+                        else:
+                            break
+                    except json.JSONDecodeError:
+                        break
+        except json.JSONDecodeError:
+            cards = None
+        
+        # 方法2（备选）：正则精确提取 JSON 数组（处理多数组拼接情况）
+        if cards is None:
+            all_arrays = re.findall(r'\[\s*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\[[\s\S]*?\])\s*\]', cleaned)
+            if all_arrays:
+                merged = []
+                for arr_str in all_arrays:
+                    try:
+                        merged.extend(json.loads(arr_str))
+                    except json.JSONDecodeError:
+                        pass
+                if merged:
+                    cards = merged
+        
+        # 方法3（兜底）：find + rfind 找最大 JSON 数组
+        if cards is None:
+            first = cleaned.find('[')
+            last = cleaned.rfind(']')
+            if first != -1 and last > first:
+                try:
+                    candidate = cleaned[first:last+1]
+                    # 多数组拼接：提取所有 [...] 块分别解析再合并
+                    parts = re.findall(r'\[[\s\S]*?\]', candidate)
+                    merged = []
+                    for p in parts:
+                        try:
+                            merged.extend(json.loads(p))
+                        except json.JSONDecodeError:
+                            pass
+                    if merged:
+                        cards = merged
+                    else:
+                        cards = json.loads(candidate)
+                except json.JSONDecodeError:
+                    pass
+        
+        if cards is None:
+            logger.error(f"[_extract_color_cards] 未找到有效JSON数组或解析失败")
+            logger.error(f"[_extract_color_cards] 清理后的内容: {cleaned[:200]}")
+            return []
+        
+        # 验证格式是否正确
+        if not isinstance(cards, list):
+            logger.error(f"[_extract_color_cards] 解析结果不是数组，而是: {type(cards).__name__}")
+            logger.error(f"[_extract_color_cards] 实际内容: {cards}")
+            logger.error(f"[_extract_color_cards] 可能LLM返回了错误的JSON格式")
+            return []
+        
+        # 验证每个卡片的字段
+        valid_cards = []
+        for i, card in enumerate(cards):
+            if not isinstance(card, dict):
+                logger.warning(f"[_extract_color_cards] 第{i+1}个元素不是对象: {type(card).__name__}")
+                continue
+            
+# 类型标准化映射：中文 type → 英文 color；优先用 color 字段
+            raw_type = card.get('type', '')
+            raw_color = card.get('color', '')
+            _TYPE_MAP = {'风险': 'red', '动力': 'red', '行动': 'red', '决策': 'red',
+                         '解释': 'green', '分析': 'green', '背景': 'green',
+                         '事实': 'blue', '数据': 'blue', '关键教训': 'blue',
+                         '风险点': 'yellow', '警告': 'yellow', '隐患': 'yellow'}
+            if raw_color in ('blue', 'green', 'yellow', 'red'):
+                card_type = raw_color
+            elif raw_type in ('blue', 'green', 'yellow', 'red'):
+                card_type = raw_type
+            elif raw_type in _TYPE_MAP:
+                card_type = _TYPE_MAP[raw_type]
+            else:
+                card_type = ''
+            card_title = card.get('title', '')
+            card_content = card.get('content') or card.get('description') or card.get('text', '')
+
+            if not card_type:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color字段: {list(card.keys())}")
+                continue
+
+            if card_type not in ('blue', 'green', 'yellow', 'red'):
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card_type}")
+                continue
+
+            if not card_content:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少content/description/text字段")
+                continue
+
+            # 过滤无效内容：太短或只有单词的卡片没有保存价值
+            if len(card_content) < 15:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片content太短: '{card_content[:30]}...'")
+                continue
+            if len(card_title) < 3:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片title太短: '{card_title}'")
+                continue
+            # 过滤只有英文单词的标题（通常是关键词而非标题）
+            if re.match(r'^[a-zA-Z\s]+$', card_title) and len(card_title) < 8:
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片title是英文单词: '{card_title}'")
+                continue
+            if not card_title:
+                card_title = card_content[:15] + ('...' if len(card_content) > 15 else '')
+            
+            valid_cards.append({
+                "type": card_type,
+                "title": card_title,
+                "content": card_content
+            })
+        
+        if valid_cards:
+            logger.info(f"[_extract_color_cards] 解析成功，有效卡片数量: {len(valid_cards)}")
+            logger.info(f"[_extract_color_cards] 第一张卡片: {valid_cards[0]}")
+            for card in valid_cards:
+                card['explore_status'] = 'pending'
+            return valid_cards
+        else:
+            logger.error(f"[_extract_color_cards] 所有卡片都无效，可能是LLM返回格式错误")
+            return []
     except Exception as e:
         logger.error(f"提取四色卡片失败: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
     
     return []
 
@@ -566,7 +728,7 @@ def search_related_cards(query: str, limit: int = 10) -> tuple:
 async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[str]:
     """
     使用视觉模型分析图片，降级策略：
-    外部视觉模型(8910) → Ollama视觉模型 → 返回None
+    外部视觉模型(8910) → 返回None
     
     注意：不调用自身的 HTTP 接口（会死锁），不在 async 中直接调用 NPU 推理。
     """
@@ -629,23 +791,20 @@ async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[
 # 全局降级状态：如果某层失败，标记时间戳，短时间内不再尝试
 _degrade_state = {
     "npu_last_fail": 0,        # NPU 上次失败时间
-    "ollama_last_fail": 0,     # Ollama 上次失败时间
     "vision_last_fail": 0,     # 视觉模型(8910)上次失败时间
     "skip_npu_until": 0,       # 跳过 NPU 直到该时间
-    "skip_ollama_until": 0,    # 跳过 Ollama 直到该时间
     "skip_vision_until": 0,    # 跳过视觉模型直到该时间
 }
 _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
 
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0, 
-                    agent_id: str = None, task_type: str = "analysis", max_tokens: int = 150) -> str:
+ agent_id: str = None, task_type: str = "analysis", max_tokens: int = 80, temperature: float = 0.7) -> str:
     """
     调用LLM生成回复，降级策略（按优先级排序）：
     层1: NPU qwen2.0-7b（中文最强）
     层2: NPU llama3.2-3b（快速备用）
-    层3: Ollama gemma4（智能备用）
-    层4: 视觉模型（兜底）
+    层3: 视觉模型（兜底）
     
     闭环三增强：集成智能资源调度器
     """
@@ -665,7 +824,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     inference_start = _time.time()
 
     # ============ 层1: NPU qwen2.0-7b（中文最强） ============
-    if now > _degrade_state["skip_npu_until"]:
+    if now < _degrade_state["skip_npu_until"]:
         try:
             from models.model_loader import get_model_loader
             import asyncio as _asyncio
@@ -689,7 +848,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
+                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
                 ),
                 timeout=timeout
             )
@@ -721,7 +880,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 scheduler.record_inference("qwen2.0-7b", latency, False, agent_id=agent_id)
 
     # ============ 层2: NPU llama3.2-3b（快速备用） ============
-    if now > _degrade_state["skip_npu_until"]:
+    if now < _degrade_state["skip_npu_until"]:
         try:
             from models.model_loader import get_model_loader
             import asyncio as _asyncio
@@ -742,7 +901,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
             raw_output = await _asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda p=combined_prompt: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=0.3)
+                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
                 ),
                 timeout=timeout
             )
@@ -768,88 +927,33 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 latency = _time.time() - inference_start
                 scheduler.record_inference("llama3.2-3b", latency, False, agent_id=agent_id)
 
-    # ============ 层3: Ollama gemma4（智能备用） ============
-    if now > _degrade_state["skip_ollama_until"]:
-        # 3a: 尝试 gemma4:latest
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "gemma4:latest",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": _max_tokens
-                        }
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("message", {}).get("content", "").strip()
-                if content:
-                    logger.info(f"[Meeting] Ollama gemma4:latest 生成成功: {len(content)}字")
-                    return content
-        except Exception as e:
-            logger.debug(f"[Meeting] Ollama gemma4:latest 不可用: {e}")
-
-        # 3b: 尝试 gpt-oss:20b（备选模型）
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    "http://localhost:11434/api/chat",
-                    json={
-                        "model": "gpt-oss:20b",
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "stream": False,
-"options": {
-                            "temperature": 0.7,
-                            "num_predict": _max_tokens
-                        }
-                    }
-                )
-
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("message", {}).get("content", "").strip()
-                if content:
-                    logger.info(f"[Meeting] Ollama gpt-oss:20b 生成成功: {len(content)}字")
-                    return content
-        except Exception as e:
-            logger.debug(f"[Meeting] Ollama gpt-oss:20b 也不可用: {e}")
-            _degrade_state["ollama_last_fail"] = now
-            _degrade_state["skip_ollama_until"] = now + _DEGRADE_COOLDOWN
-
-# ============ 层4: Genie HTTP（兜底，先查当前加载的模型） ============
+    # ============ 层3: Genie HTTP（兜底，先查当前加载的模型） ============
+    # Genie 连续失败计数器：单次失败不设冷却，累积2次才跳过
+    _genie_consecutive_fails = getattr(call_llm, '_genie_consecutive_fails', 0)
+    
     if now > _degrade_state["skip_vision_until"]:
         try:
-            # 截断过长的输入：3B模型有效上下文约2000中文字
-            _MAX_8910_CHARS = 1800
-            _truncated_system = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
+            # 简单速率控制：确保两次 Genie 调用之间至少间隔 1.2 秒，避免 429
+            _genie_last = getattr(call_llm, '_last_genie_call', 0.0)
+            _elapsed = now - _genie_last
+            if _elapsed < 1.2:
+                await asyncio.sleep(1.2 - _elapsed)
+            call_llm._last_genie_call = _time.time()
+            
+            # 截断过长的输入：3B模型有效上下文约1000中文字，超过会导致>45s超时
+            _MAX_8910_CHARS = 1000
+            _truncated_system = system_prompt[:300] if len(system_prompt) > 300 else system_prompt
             _remaining_chars = _MAX_8910_CHARS - len(_truncated_system)
             _truncated_user = user_prompt[:_remaining_chars] if len(user_prompt) > _remaining_chars else user_prompt
             if len(user_prompt) > _remaining_chars:
-                logger.debug(f"[Meeting] 8910输入过长({len(user_prompt)}字)，截断至{_remaining_chars}字")
+                logger.info(f"[Meeting] Genie输入截断({len(user_prompt)}→{_remaining_chars}字)")
 
-            # 先查当前加载的模型名
             _genie_model = "llama3.2-3b-8380-qnn2.37"  # 默认
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as ac:
-                    models_resp = await ac.get("http://127.0.0.1:8910/v1/models")
-                    if models_resp.status_code == 200:
-                        _genie_model = models_resp.json().get("data", [{}])[0].get("id", _genie_model)
-                        logger.info(f"[Meeting] Genie 当前模型: {_genie_model}")
-            except Exception as me:
-                logger.debug(f"[Meeting] 获取 Genie 模型失败，使用默认: {me}")
-
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            _genie_timeout = 90.0  # Genie 3B模型+1000字输入上限，90s充足
+            
+            async with httpx.AsyncClient(timeout=_genie_timeout, limits=httpx.Limits(max_keepalive_connections=2, max_connections=4)) as client:
+                logger.info(f"[Meeting] Genie 请求中(model={_genie_model}, timeout={_genie_timeout}s, input={len(_truncated_user)}字)...")
+                _genie_start = _time.time()
                 response = await client.post(
                     "http://127.0.0.1:8910/v1/chat/completions",
                     json={
@@ -859,28 +963,162 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                             {"role": "user", "content": _truncated_user}
                         ],
                         "max_tokens": _max_tokens,
-                        "temperature": 0.7,
+                                         "temperature": 0.3,
                         "top_k": 40,
                         "top_p": 0.9
                     }
                 )
+                _genie_elapsed = _time.time() - _genie_start
                 response.raise_for_status()
                 result = response.json()
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                 if content:
-                    logger.info(f"[Meeting] Genie({_genie_model}) 生成成功: {len(content)}字")
+                    logger.info(f"[Meeting] Genie({_genie_model}) 生成成功: {len(content)}字, 耗时{_genie_elapsed:.1f}s")
+                    call_llm._genie_consecutive_fails = 0
                     return content
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400:
-                logger.debug(f"[Meeting] Genie 拒绝请求(输入过长或格式问题)")
-            else:
-                logger.debug(f"[Meeting] Genie 服务错误({e.response.status_code})，冻结{_DEGRADE_COOLDOWN}秒")
+                logger.warning(f"[Meeting] Genie 拒绝请求(输入过长或格式问题)")
+            elif e.response.status_code == 429:
+                call_llm._genie_consecutive_fails += 1
+                logger.warning(f"[Meeting] Genie 429限流(连续失败{call_llm._genie_consecutive_fails}次)，等待3秒后重试...")
+                await asyncio.sleep(3)
+                try:
+                    async with httpx.AsyncClient(timeout=_genie_timeout) as client:
+                        response = await client.post(
+                            "http://127.0.0.1:8910/v1/chat/completions",
+                            json={
+                                "model": _genie_model,
+                                "messages": [
+                                    {"role": "system", "content": _truncated_system},
+                                    {"role": "user", "content": _truncated_user}
+                                ],
+                                "max_tokens": _max_tokens,
+                                                 "temperature": 0.3,
+                                "top_k": 40,
+                                "top_p": 0.9
+                            }
+                        )
+                        response.raise_for_status()
+                        result = response.json()
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                        if content:
+                            logger.info(f"[Meeting] Genie 重试成功: {len(content)}字")
+                            call_llm._genie_consecutive_fails = 0
+                            return content
+                except Exception:
+                    pass
                 _degrade_state["vision_last_fail"] = now
-                _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
-        except Exception as e:
-            logger.debug(f"[Meeting] Genie 不可用: {e}")
+            else:
+                call_llm._genie_consecutive_fails += 1
+                logger.warning(f"[Meeting] Genie HTTP{e.response.status_code}(连续失败{call_llm._genie_consecutive_fails}次): {e.response.text[:200]}")
+                _degrade_state["vision_last_fail"] = now
+        except httpx.ReadTimeout as e:
+            call_llm._genie_consecutive_fails += 1
+            logger.warning(f"[Meeting] Genie ReadTimeout(连续失败{call_llm._genie_consecutive_fails}次, timeout={_genie_timeout}s, input={len(_truncated_user)}字)")
+            # ReadTimeout 后必须等足够久：Genie 可能仍忙于旧请求，重试过快=429
+            logger.warning(f"[Meeting] Genie 超时，等待8秒让 Genie 释放资源后重试...")
+            await asyncio.sleep(8)
+            try:
+                async with httpx.AsyncClient(timeout=_genie_timeout) as client:
+                    response = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": _genie_model,
+                            "messages": [
+                                {"role": "system", "content": _truncated_system},
+                                {"role": "user", "content": _truncated_user}
+                            ],
+                            "max_tokens": _max_tokens,
+                                             "temperature": 0.3,
+                            "top_k": 40,
+                            "top_p": 0.9
+                        }
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if content:
+                        logger.info(f"[Meeting] Genie 超时重试成功: {len(content)}字")
+                        call_llm._genie_consecutive_fails = 0
+                        return content
+            except httpx.HTTPStatusError as retry_e:
+                if retry_e.response.status_code == 429:
+                    logger.warning(f"[Meeting] Genie 超时重试仍429(Genie尚未释放)，再等5秒最后尝试...")
+                    await asyncio.sleep(5)
+                    try:
+                        async with httpx.AsyncClient(timeout=_genie_timeout) as client:
+                            response = await client.post(
+                                "http://127.0.0.1:8910/v1/chat/completions",
+                                json={
+                                    "model": _genie_model,
+                                    "messages": [
+                                        {"role": "system", "content": _truncated_system},
+                                        {"role": "user", "content": _truncated_user}
+                                    ],
+                                    "max_tokens": _max_tokens,
+                                                     "temperature": 0.3,
+                                    "top_k": 40,
+"top_p": 0.9
+                                }
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                            if content:
+                                logger.info(f"[Meeting] Genie 超时二次重试成功: {len(content)}字")
+                                call_llm._genie_consecutive_fails = 0
+                                return content
+                    except (httpx.ReadTimeout, httpx.TimeoutException):
+                        # 重试也超时：真正的不可用，记录并放弃
+                        call_llm._genie_consecutive_fails += 1
+                        logger.warning(f"[Meeting] Genie 重试超时(连续失败{call_llm._genie_consecutive_fails}次)，放弃")
+                    except httpx.HTTPStatusError as e2:
+                        # 429 或其他 HTTP 错误：Genie 还在忙，不算失败，等更久再试
+                        logger.warning(f"[Meeting] Genie 重试HTTP{e2.response.status_code}，等15秒最后一次尝试...")
+                        await asyncio.sleep(15)
+                        try:
+                            async with httpx.AsyncClient(timeout=_genie_timeout) as client:
+                                response = await client.post(
+                                    "http://127.0.0.1:8910/v1/chat/completions",
+                                    json={
+                                        "model": _genie_model,
+                                        "messages": [
+                                            {"role": "system", "content": _truncated_system},
+                                            {"role": "user", "content": _truncated_user}
+                                        ],
+                                        "max_tokens": _max_tokens,
+                                        "temperature": 0.3,
+                                        "top_k": 40,
+                                        "top_p": 0.9
+                                    }
+                                )
+                                result = response.json()
+                                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                                if content:
+                                    logger.info(f"[Meeting] Genie 第三次重试成功: {len(content)}字")
+                                    call_llm._genie_consecutive_fails = 0
+                                    return content
+                                logger.warning(f"[Meeting] Genie 第三次重试无内容(HTTP{response.status_code})")
+                        except Exception:
+                            pass
+                    except Exception:
+                        # 其他未知异常，静默放弃
+                        pass
+                else:
+                    logger.warning(f"[Meeting] Genie 超时重试HTTP{retry_e.response.status_code}")
+            except Exception:
+                pass
             _degrade_state["vision_last_fail"] = now
-            _degrade_state["skip_vision_until"] = now + _DEGRADE_COOLDOWN
+        except Exception as e:
+            call_llm._genie_consecutive_fails += 1
+            logger.warning(f"[Meeting] Genie 不可用(连续失败{call_llm._genie_consecutive_fails}次, {type(e).__name__}): {e}")
+            _degrade_state["vision_last_fail"] = now
+        
+        # 只有连续失败 >= 2 次才开启冷却，避免单次偶发超时就阻塞全部后续 Agent
+        if call_llm._genie_consecutive_fails >= 2:
+            _degrade_state["skip_vision_until"] = _time.time() + _DEGRADE_COOLDOWN
+            logger.warning(f"[Meeting] Genie 连续失败{call_llm._genie_consecutive_fails}次，进入冷却{_DEGRADE_COOLDOWN}s")
 
     logger.info("[Meeting] 所有LLM不可用，使用角色降级回复")
     
@@ -1062,6 +1300,28 @@ class AgentInfo(BaseModel):
     avatar: str
     description: str
     color: str
+
+
+# ==================== 人工干预混合查询模型 ====================
+
+class HybridQuestionRequest(BaseModel):
+    """人工干预：用户提问请求"""
+    question: str = Field(..., description="用户问题")
+    topic: str = Field(default="", description="会议主题（用于搜索上下文）")
+
+
+class HybridQuestionResponse(BaseModel):
+    """人工干预：混合查询响应（知识卡片 + LLM回答）"""
+    answer: str
+    cards: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class SaveCardRequest(BaseModel):
+    """保存会议卡片到知识库的请求"""
+    card: Dict[str, Any] = Field(..., description="卡片数据 {card_type, title, content}")
+    meeting_id: str = Field(..., description="会议ID")
+    topic: str = Field(default="", description="会议主题")
 
 
 # ==================== 路由 ====================
@@ -1405,6 +1665,121 @@ async def select_optimal_model(
         }
 
 
+# ==================== 人工干预：混合查询（知识卡片 + LLM） ====================
+
+@router.post("/hybrid-question", response_model=HybridQuestionResponse)
+async def hybrid_question(request: HybridQuestionRequest):
+    """
+    人工干预时查询知识库卡片 + LLM 综合回答
+    
+    流程：
+    1. 搜索知识库中与问题相关的卡片
+    2. 将卡片内容作为知识上下文传递给 LLM
+    3. LLM 综合生成回答，同时返回引用的卡片列表
+    """
+    answer = ""
+    cards = []
+    sources = []
+    
+    # 第一步：搜索相关知识卡片
+    try:
+        card_refs = search_cards_semantic(request.question, limit=5)
+        
+        if card_refs:
+            # 构造 cards 列表（返回给前端展示）
+            for ref in card_refs:
+                cards.append({
+                    "card_id": ref.card_id,
+                    "card_type": ref.card_type,
+                    "title": ref.title,
+                    "content": ref.content,
+                    "similarity": ref.similarity,
+                    "color": ref.color
+                })
+                sources.append({
+                    "card_id": ref.card_id,
+                    "title": ref.title,
+                    "similarity": ref.similarity
+                })
+            logger.info(f"[Meeting] 混合查询搜索到 {len(card_refs)} 张相关卡片")
+    except Exception as e:
+        logger.warning(f"[Meeting] 混合查询搜索卡片失败: {e}")
+    
+    # 第二步：使用 LLM 综合生成回答（将卡片内容作为知识上下文）
+    try:
+        # 构建知识上下文
+        knowledge_context = ""
+        if cards:
+            knowledge_context = "\n\n参考知识库卡片内容：\n"
+            for i, card in enumerate(cards, 1):
+                knowledge_context += f"\n【{i}】{card['title']}\n{card['content']}\n"
+        
+        # LLM 系统提示
+        system_prompt = """你是八府巡按的知识管理官。请根据提供的知识库卡片内容和会议主题，综合回答用户的问题。
+要求：
+1. 优先引用知识库中的事实和数据
+2. 回答简洁有力，100字以内
+3. 如果没有相关知识，如实告知并给出建议"""
+        
+        user_prompt = f"会议主题：{request.topic}\n\n用户问题：{request.question}{knowledge_context}"
+        
+        answer = await call_llm(system_prompt, user_prompt, max_tokens=150, agent_id="mijuanfang")
+        
+        if not answer:
+            answer = f"关于「{request.question}」，目前知识库中暂无直接相关的卡片记录，建议补充相关知识后再讨论。"
+    except Exception as e:
+        logger.error(f"[Meeting] 混合查询LLM调用失败: {e}")
+        answer = f"抱歉，处理您的问题时遇到技术问题。请稍后重试。"
+    
+    return HybridQuestionResponse(
+        answer=answer,
+        cards=cards,
+        sources=sources
+    )
+
+
+@router.post("/cards/save")
+async def save_meeting_card(request: SaveCardRequest):
+    """将会议产出的卡片保存到知识库"""
+    card = request.card
+    card_type = card.get("card_type", "blue")
+    title = card.get("title", "会议卡片")
+    content = card.get("content", "")
+    
+    if not title.strip():
+        raise HTTPException(status_code=400, detail="卡片标题不能为空")
+    
+    try:
+        db = get_db_manager()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO knowledge_cards (title, content, card_type, category, tags, related_cards, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title[:100],
+                content,
+                card_type,
+                '会议生成',
+                json.dumps(['会议', request.topic[:20]]),
+                json.dumps([]),
+                datetime.now().isoformat()
+            ))
+            card_id = cursor.lastrowid
+            conn.commit()
+        
+        logger.info(f"[Meeting] 会议卡片已保存: {title[:30]}... (id={card_id})")
+        
+        return {
+            "success": True,
+            "card_id": card_id,
+            "message": f"卡片「{title}」已保存到知识库"
+        }
+    except Exception as e:
+        logger.error(f"[Meeting] 保存会议卡片失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+
+
 @router.post("/discuss/stream")
 async def create_meeting_stream(request: MeetingRequest):
     """
@@ -1443,6 +1818,7 @@ async def create_meeting_stream(request: MeetingRequest):
 
         all_speeches = []  # 累积所有发言，供后续Agent参考
         all_rounds = []
+        extracted_cards = []  # 累积所有提取的卡片，会议结束时统一保存
 
         for round_num in range(1, request.rounds + 1):
             theme = themes[min(round_num - 1, len(themes) - 1)]
@@ -1455,6 +1831,29 @@ async def create_meeting_stream(request: MeetingRequest):
             await asyncio.sleep(0.1)
 
             round_speeches = []
+
+            # ========== 每轮开始前：密卷房 + 太史阁 统一查询知识库卡片 ==========
+            # 查询结果作为本轮所有 Agent 的共享背景信息，由通政司负责分发传达
+            round_knowledge_context = ""
+            try:
+                db = get_db_manager()
+                if db:
+                    search_query = f"{request.topic} {request.context}" if request.context else request.topic
+                    cards = db.search_cards(search_query, limit=8)
+                    if cards:
+                        lines = []
+                        lines.append("【知识库参考卡片 — 密卷房/太史阁检索，通政司分发】")
+                        lines.append(f"以下是与「{request.topic}」相关的知识卡片：")
+                        for i, card in enumerate(cards, 1):
+                            title = card.get('title', '无标题')
+                            content = (card.get('content', '') or '')[:120]
+                            card_type = card.get('card_type', '')
+                            type_tag = {'blue': '事实', 'green': '解释', 'yellow': '风险', 'red': '行动'}.get(card_type, '')
+                            lines.append(f"{i}. [{type_tag}] {title}：{content}...")
+                        round_knowledge_context = "\n".join(lines)
+                        logger.info(f"[Round {round_num}] 密卷房/太史阁检索到 {len(cards)} 条相关卡片，通政司即将分发")
+            except Exception as e:
+                logger.warning(f"[Round {round_num}] 知识库卡片检索失败: {e}")
 
             for agent_id, agent_info in AGENT_MAPPING.items():
                  pixel_id = agent_info.get("pixel_id", agent_id)
@@ -1469,21 +1868,32 @@ async def create_meeting_stream(request: MeetingRequest):
                  })
                  await asyncio.sleep(0.1)
 
-                 # 构建上下文：包含前面所有Agent的发言
-                 context_parts = [f"会议主题：{request.topic}"]
-                 if request.context:
-                     context_parts.append(f"背景信息：{request.context[:300]}")  # 截断背景信息
-                 context_parts.append(f"当前是第{round_num}轮讨论，主题：{theme}")
+                 # 构建上下文 — 极简化 prompt，适配 3B 小模型
+                 # 小模型对"你是XX"类指令会本能复读，改用角色代号+直接提问
+                 role_question = {
+                     "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
+                     "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
+                     "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
+                     "jianchayuan": f"关于「{request.topic}」，流程中最大的漏洞是什么？",
+                     "mijuanfang": f"关于「{request.topic}」，知识库中最重要的事实依据是什么？",
+                     "chengxiangfu": f"关于「{request.topic}」，最可执行的战略建议是什么？",
+                     "junjichu": f"基于以上知识库信息，关于「{request.topic}」的具体执行计划和分工是什么？",
+                     "zhihuishi": f"关于「{request.topic}」，综合裁决和下一步行动是什么？",
+                 }.get(agent_id, f"关于「{request.topic}」，你的观点是什么？")
 
-                 if all_speeches:
-                     context_parts.append("\n--- 此前的讨论记录 ---")
-                     for prev in all_speeches[-8:]:  # 减少到8条历史，3B模型上下文有限
-                         clean_text = clean_speech_text(prev['speech'])[:80]  # 截断每条发言
-                         context_parts.append(f"【{prev['agent_name']}】：{clean_text}")
-                     context_parts.append("--- 讨论记录结束 ---\n")
+                 context_parts = [
+                     f"[{agent_info['name']}]{role_question}",
+                     f"主题：{request.topic}",
+                 ]
+                 if request.context:
+                     context_parts.append(f"背景：{request.context[:150]}")
+                 context_parts.append(f"第{round_num}轮·{theme}")
+
+                 # 注入知识库卡片背景信息
+                 if round_knowledge_context:
+                     context_parts.append(f"\n{round_knowledge_context}\n")
 
                  user_prompt = "\n".join(context_parts)
-                 system_prompt = agent_info["system_prompt"]
 
                  # 闭环二：注入用户干预
                  pending_interventions = _user_interventions.get(meeting_id, [])
@@ -1504,41 +1914,32 @@ async def create_meeting_stream(request: MeetingRequest):
                      # 清除已处理的干预
                      _user_interventions[meeting_id] = []
 
-                 # 添加明确的指令，防止重复输出角色描述，但允许引用观点
-                 user_prompt += "\n\n重要：只回答问题，不要重复角色描述（System Prompt中的内容），但要引用或回应前面智能体提出的观点。"
+                 # 每个 Agent 的角色专属约束 — 只追加输出格式要求
+                 role_hints = {
+                     "taishige": "\n直接回答，50字以内。",
+                     "jinjiyu": "\n只说风险点，50字以内。",
+                     "tongzhengsi": "\n只说核心信息，50字以内。",
+                     "jianchayuan": "\n只说漏洞，40字以内。",
+                     "mijuanfang": "\n引用卡片事实，40字以内。",
+                     "chengxiangfu": "\n只说建议，40字以内。",
+                     "junjichu": "\n列出分工和时间，50字以内。",
+                     "zhihuishi": "\n只说决策和下一步，60字以内。",
+                 }
+                 user_prompt += role_hints.get(agent_id, "\n直接回答，40字以内。")
 
-                 # 如果是密卷房，先搜索数据库获取相关资料
-                 if agent_id == "mijuanfang":
+                 # 如果有图片数据，仅密卷房使用视觉模型分析
+                 if agent_id == "mijuanfang" and request.image_data:
                      try:
-                         db = get_db_manager()
-                         if db:
-                             search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                             cards = db.search_cards(search_query, limit=5)
-                             
-                             if cards:
-                                 relevant_info = f"\n【知识库参考】关于'{request.topic}'的相关资料："
-                                 for card in cards:
-                                     title = card.get('title', '无标题')
-                                     content = (card.get('content', '') or '')[:150]
-                                     relevant_info += f"\n- {title}：{content}..."
-                                 user_prompt += relevant_info
-                                 logger.info(f"密卷房检索到 {len(cards)} 条相关卡片")
+                         vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
+                         if vision_result:
+                             user_prompt += f"\n\n【图片分析结果】{vision_result}"
+                             logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
                      except Exception as e:
-                         logger.warning(f"密卷房知识库搜索失败: {e}")
+                         logger.warning(f"密卷房视觉分析失败: {e}")
 
-                     # 如果有图片数据，使用视觉模型分析
-                     if request.image_data:
-                         try:
-                             vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
-                             if vision_result:
-                                 user_prompt += f"\n\n【图片分析结果】{vision_result}"
-                                 logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
-                         except Exception as e:
-                             logger.warning(f"密卷房视觉分析失败: {e}")
-
-                 # 调用LLM（system_prompt中包含角色指令，已经足够让LLM理解角色）
+                 # 调用LLM — 人设已嵌入 user_prompt 头部，不再依赖 system role
                  # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                 llm_task = asyncio.create_task(call_llm(system_prompt, user_prompt))
+                 llm_task = asyncio.create_task(call_llm("你是一位古代朝廷官员，简洁回答问题，不要自我介绍。", user_prompt, max_tokens=150))
                  speech_content = None
                  try:
                      while not llm_task.done():
@@ -1575,13 +1976,41 @@ async def create_meeting_stream(request: MeetingRequest):
                      "cards_referenced": [],
                      "pixel_id": pixel_id,
                      "round": round_num
-                 }
+}
 
                  all_speeches.append(speech_data)
                  round_speeches.append(speech_data)
 
                  yield _sse_event("agent_speech", speech_data)
-                 await asyncio.sleep(0.3)  # 给前端一点时间渲染动画
+                 await asyncio.sleep(0.3)
+
+                 # 提取四色卡片并推送前端（发言 > 30 字才提取）
+                 if len(speech_content) > 30:
+                      try:
+                          extracted = await _extract_color_cards(
+                              agent_id, agent_info["name"], speech_content, request.topic
+                          )
+                          if extracted:
+                              # 收集卡片，后续统一保存
+                              extracted_cards.extend(extracted)
+                              
+                              yield _sse_event("agent_cards", {
+                                  "agent_id": agent_id,
+                                  "agent_name": agent_info["name"],
+                                  "round": round_num,
+                                  "cards": [
+                                      {
+                                          "card_type": c.get("type", "blue"),
+                                          "title": c.get("title", ""),
+                                          "content": c.get("content", ""),
+                                          "round": round_num
+                                      }
+                                      for c in extracted
+                                  ]
+                              })
+                              logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
+                      except Exception as e:
+                          logger.error(f"[Meeting] agent_cards提取失败: {e}")
 
             all_rounds.append({
                 "round": round_num,
@@ -1682,6 +2111,53 @@ async def create_meeting_stream(request: MeetingRequest):
             logger.info(f"会议记录已保存: {meeting_id}")
         except Exception as e:
             logger.error(f"保存会议记录失败: {e}")
+
+        # 闭环零：保存会议过程中提取的卡片（agent_cards）
+        if extracted_cards:
+            try:
+                saved_agent_cards = []
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    # 去重（根据 title 和 content）
+                    seen = set()
+                    for card in extracted_cards:
+                        key = f"{card.get('title', '')}|{card.get('content', '')}"
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        
+                        try:
+                            cursor.execute("""
+                                INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                card.get('title', '无标题')[:100],
+                                card.get('content', ''),
+                                card.get('type', 'blue'),
+                                '会议提取',
+                                request.card_ids[0] if request.card_ids else None,
+                                json.dumps(['会议', '自动提取', 'Agent生成']),
+                                json.dumps([]),
+                                'pending',
+                                datetime.now().isoformat()
+                            ))
+                            saved_agent_cards.append(cursor.lastrowid)
+                        except Exception as card_err:
+                            logger.warning(f"保存Agent卡片失败: {card_err}")
+                    
+                    if saved_agent_cards:
+                        conn.commit()
+                        logger.info(f"[Meeting] 保存了 {len(saved_agent_cards)} 张Agent提取的卡片")
+                        
+                if saved_agent_cards:
+                    yield _sse_event("meeting_agent_cards_saved", {
+                        "meeting_id": meeting_id,
+                        "card_count": len(saved_agent_cards),
+                        "card_ids": saved_agent_cards,
+                        "timestamp": datetime.now().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"保存Agent提取卡片失败: {e}")
 
         # 闭环二：自动从会议行动项创建GTD任务和知识卡片
         try:

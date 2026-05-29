@@ -81,7 +81,7 @@ const ReportAutomation: React.FC = () => {
   // 加载状态
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/status`);
+      const response = await fetch(getApiBaseUrl() + `${API_BASE}/status`);
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
@@ -142,7 +142,7 @@ const ReportAutomation: React.FC = () => {
     setSuccess(false);
 
     try {
-      const response = await fetch(`${API_BASE}/generate`, {
+      const response = await fetch(getApiBaseUrl() + `${API_BASE}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

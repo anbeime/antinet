@@ -7,12 +7,14 @@ import { processResponse, ResponseCode } from './responseProcessor';
 
 // 动态获取API地址，支持局域网访问
 const getApiBaseUrl = () => {
-  // 生产环境使用相对路径
-  if (import.meta.env.PROD) {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
+  if (import.meta.env.DEV) {
     return '';
   }
-  // 开发环境优先使用环境变量，否则使用当前主机地址
-  return import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
 const API_BASE_URL = getApiBaseUrl();

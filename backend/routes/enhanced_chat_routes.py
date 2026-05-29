@@ -124,13 +124,6 @@ SCENE_PATTERNS = {
         r"帮助", r"怎么用", r"功能", r"能做什么", r"有什么功能",
         r"如何使用", r"说明"
     ],
-    "ollama_chat": [
-        r"深度.*分析", r"详细.*解释", r"复杂.*问题", r"综合.*评估",
-        r"对比.*分析", r"深入.*讨论", r"专业.*建议", r"战略.*规划",
-        r"方案.*设计", r"可行性.*分析", r"技术.*选型", r"架构.*设计",
-        r"帮.*写.*代码", r"写.*文章", r"写.*报告", r"写.*方案",
-        r"翻译.*成", r"总结.*要点", r"提炼.*核心", r"归纳.*规律"
-    ],
     "self_intro": [
         r"你叫什么", r"你叫啥", r"你的名字", r"你是谁", r"你是什么",
         r"自我介绍", r"介绍一下你", r"认识一下", r"你叫什么名字",
@@ -194,7 +187,6 @@ class SceneType(str, Enum):
     SKILL_WORD = "skill_word"
     GREETING = "greeting"
     HELP = "help"
-    OLLAMA_CHAT = "ollama_chat"
     SELF_INTRO = "self_intro"
 
 
@@ -1052,11 +1044,6 @@ def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any],
             "支持哪些技能？",
             "如何分析图片？"
         ],
-        SceneType.OLLAMA_CHAT: [
-            "帮我分析一下这个方案的可行性",
-            "写一份项目计划书",
-            "对比两种技术方案的优劣"
-        ],
         SceneType.SELF_INTRO: [
             "你能做什么？",
             "帮我搜索知识卡片",
@@ -1188,33 +1175,6 @@ async def enhanced_chat(request: ChatRequest):
             except Exception:
                 response_data["response"] = "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
             
-        elif scene_type == SceneType.OLLAMA_CHAT:
-            # 深度思考模式 - 使用Genie API
-            try:
-                import httpx
-                resp = httpx.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": "llama3.2-3b-8380-qnn2.37",
-                        "messages": [{"role": "user", "content": query}],
-                        "max_tokens": 256,
-                        "temperature": 0.5
-                    },
-                    timeout=httpx.Timeout(60.0, connect=15.0)
-                )
-                if resp.status_code == 200:
-                    result_data = resp.json()
-                    raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    raw_response = clean_model_output(raw_response)
-                    response_data["response"] = raw_response
-                    response_data["reply"] = raw_response  # 前端兼容
-                    response_data["metadata"]["model"] = "genie-npu"
-                else:
-                    raise Exception("Genie不可用")
-            except Exception as e:
-                logger.warning(f"[Chat] Genie深度思考失败: {e}")
-                response_data["response"] = "深度思考服务暂时不可用。"
-             
         else:
             # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
             result = hybrid_search_all(query, limit=5)
@@ -1228,7 +1188,7 @@ async def enhanced_chat(request: ChatRequest):
                 ]
                 
                 # 使用LLM综合检索结果生成自然语言回答（注入知识到prompt）
-                # 简化：优先使用Genie API (端口8910)，跳过Ollama
+                # 优先使用Genie API (端口8910)
                 try:
                     import httpx
                     import json

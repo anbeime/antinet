@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { gtdTaskService } from '@/services/dataService';
+import { getApiBaseUrl } from '@/lib/apiConfig';
+import MeetingCardPanel from '@/components/MeetingCardPanel';
+import MeetingCardSaveModal from '@/components/MeetingCardSaveModal';
+import type { MeetingCard } from '@/types/card';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
@@ -94,38 +98,23 @@ const CARD_TYPE_MAP = {
   red: { color: 'bg-red-900/40 border border-red-700/50', icon: <span className="text-red-400">🎯</span> }
 };
 
-// 模拟讨论轮次数据
+// 降级模拟讨论轮次数据（SSE 不可用时使用）
+// 注意：模拟不伪造 Agent 发言和卡片。真实数据由 SSE agent_speech / agent_cards 推送。
 const generateMockDiscussion = (topic: string, rounds: number) => {
-  const mockResponses = [
-    `关于"${topic}"，我认为需要从多个维度进行分析。首先，让我们明确核心事实。`,
-    `从安全角度考虑，这个议题存在几个潜在风险点需要重点关注。`,
-    `我已经收集了相关的情报数据，可以为后续分析提供支持。`,
-    `经过监督审查，发现流程中存在一些可以优化的环节。`,
-    `相关知识文档已经整理完毕，可以随时调用参考。`,
-    `基于战略视角，我建议采取以下几种方案进行推进。`,
-    `任务执行方案已经制定，预计可以在规定时间内完成。`,
-    `作为协调官，我将确保各部门高效协作，达成最终目标。`
-  ];
-
   return Array.from({ length: rounds }, (_, i) => ({
     round: i + 1,
     title: `第${i + 1}轮讨论`,
-    discussions: AGENT_ROLES.map((agent, idx) => ({
+    discussions: AGENT_ROLES.map((agent) => ({
       agent,
-      message: mockResponses[idx % mockResponses.length],
-      timestamp: new Date(Date.now() + i * 1000 + idx * 100).toISOString()
+      message: `[模拟] 后端未连接，请启动 zhiyi 后端以获取真实 Agent 发言`,
+      timestamp: new Date(Date.now() + i * 1000).toISOString()
     })),
-    cards: [
-      { type: 'blue', title: '核心事实', content: `第${i + 1}轮讨论中确定的核心事实内容...` },
-      { type: 'green', title: '原因分析', content: `第${i + 1}轮讨论中的原因分析...` },
-      { type: 'yellow', title: '风险检测', content: `第${i + 1}轮讨论中识别的风险...` },
-      { type: 'red', title: '行动建议', content: `第${i + 1}轮讨论的行动建议...` }
-    ]
+    cards: []
   }));
 };
 
 // ==================== 后端 API 配置 ====================
-const BACKEND_URL = 'http://127.0.0.1:8000/api/meeting';
+const BACKEND_URL = getApiBaseUrl() + '/api/meeting';
 
 // ==================== 像素办公室 Canvas 组件 ====================
 const PixelOfficeCanvas: React.FC<{
@@ -344,6 +333,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [agentList, setAgentList] = useState<any[]>([]);
   const [taskList, setTaskList] = useState<any[]>([]);
   const [hybridMode, setHybridMode] = useState(true);
+  const [meetingCards, setMeetingCards] = useState<MeetingCard[]>([]);  // 会议中积累的知识卡片
+  const [saveModalOpen, setSaveModalOpen] = useState(false);              // 卡片保存弹窗
+  const [saveTargetCard, setSaveTargetCard] = useState<MeetingCard | null>(null);  // 待保存的卡片
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
@@ -351,6 +343,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [collabUserName, setCollabUserName] = useState(() => localStorage.getItem('collabUserName') || '参与者');
   const collabWsRef = useRef<WebSocket | null>(null);
   const collabUserId = useRef('meeting_' + Date.now());
+
+  // 简化视图模式
+  const [simplifiedView, setSimplifiedView] = useState(false);
 
   // 发送人类消息（混合模式）
   const sendHumanMessage = async (msg: string) => {
@@ -369,16 +364,16 @@ const VirtualOfficeMeeting: React.FC = () => {
         user: collabUserName,
         userId: collabUserId.current,
         avatar: '👤',
-        action: '插嘴',
+        action: '发言',
         content: msg,
         meetingContext: { topic, currentRound: liveDiscussions.filter(d => d.round).length }
       }));
     }
     
-    // 如果开启混合模式，调用后端获取智能体响应
+    // 如果开启混合模式，调用后端混合查询（知识卡片 + LLM）
     if (hybridMode && isLoading) {
       try {
-        const res = await fetch('http://localhost:8000/api/hybrid/question', {
+        const res = await fetch(getApiBaseUrl() + '/api/meeting/hybrid-question', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question: msg, topic })
@@ -400,6 +395,20 @@ const VirtualOfficeMeeting: React.FC = () => {
               timestamp: new Date().toISOString()
             }]);
           }, 500);
+          
+          // 将查询返回的卡片追加到会议卡片列表
+          if (data.cards && data.cards.length > 0) {
+            const newCards: MeetingCard[] = data.cards.map((c: any) => ({
+              card_type: c.card_type || 'blue',
+              title: c.title || '',
+              content: c.content || '',
+              source: 'human_query' as const,
+              match_score: c.similarity,
+              saved: false,
+              timestamp: new Date().toISOString()
+            }));
+            setMeetingCards(prev => [...prev, ...newCards]);
+          }
         }
       } catch (err) {
         console.error('[Hybrid] 获取响应失败:', err);
@@ -440,7 +449,60 @@ const VirtualOfficeMeeting: React.FC = () => {
     progress: 0
   });
 
+  const [meetingSessionId, setMeetingSessionId] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ===== sessionStorage 持久化：切换页面后返回时恢复状态 =====
+  const MEETING_STORAGE_KEY = 'virtual_meeting_state_v2';
+
+  // 启动新会议时：清空旧数据，生成新 sessionId
+  // （已在 startMeeting 中通过 setLiveDiscussions([]) 清空状态，sessionStorage 由 useEffect 自动更新）
+
+  // 组件挂载时：从 sessionStorage 恢复状态（如果上次会议尚未结束）
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(MEETING_STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.liveDiscussions?.length > 0) setLiveDiscussions(data.liveDiscussions);
+        if (data.meetingCards?.length > 0) setMeetingCards(data.meetingCards);
+        if (data.pixelState) setPixelState(data.pixelState);
+        if (data.messengerInfo) setMessengerInfo(data.messengerInfo);
+        if (data.isLoading !== undefined) setIsLoading(data.isLoading);
+        if (data.meetingSessionId) setMeetingSessionId(data.meetingSessionId);
+        if (data.topic) setTopic(data.topic);
+        if (data.meetingResult) setMeetingResult(data.meetingResult);
+        if (data.showResults) setShowResults(data.showResults);
+        if (data.meetingResult && data.meetingResult.length > 0) {
+          setExpandedRounds(new Set([1]));
+        }
+      }
+    } catch (e) {
+      console.warn('恢复会议状态失败:', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 仅在挂载时执行一次
+
+  // 状态变化时：自动保存到 sessionStorage（用于页面切换后恢复）
+  useEffect(() => {
+    try {
+      const data = {
+        liveDiscussions,
+        meetingCards,
+        pixelState,
+        messengerInfo,
+        isLoading,
+        meetingSessionId,
+        topic,
+        meetingResult,
+        showResults,
+        savedAt: Date.now()
+      };
+      sessionStorage.setItem(MEETING_STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      // storage 可能满，忽略
+    }
+  }, [liveDiscussions, meetingCards, pixelState, messengerInfo, isLoading, meetingSessionId, topic, meetingResult, showResults]);
 
   const stopPolling = () => {
     if (pollTimerRef.current) {
@@ -488,7 +550,7 @@ useEffect(() => {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
       // 同时加载协作历史消息（REST 回退）
       const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${collabProtocol}//${window.location.hostname}:8000/api/activities?limit=30`)
+      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?:\/\//, '')}/api/activities?limit=30`)
         .then(r => r.json())
         .then(activities => {
           if (Array.isArray(activities) && activities.length > 0) {
@@ -648,6 +710,32 @@ useEffect(() => {
               break;
             }
 
+            case 'agent_cards': {
+              // 处理 Agent 发言中提取的四色卡片
+              const { agent_name, round: cardRound, cards: extractedCards } = evt.data;
+              if (extractedCards && extractedCards.length > 0) {
+                const newCards: MeetingCard[] = extractedCards.map((c: any) => ({
+                  card_type: c.card_type || 'blue',
+                  title: c.title || '',
+                  content: c.content || '',
+                  source: 'agent_extracted' as const,
+                  agent_name: agent_name || '',
+                  round: cardRound || 1,
+                  saved: false,
+                  timestamp: new Date().toISOString()
+                }));
+                setMeetingCards(prev => [...prev, ...newCards]);
+                // 同步写入 currentRound.cards，以便会议结果中展示真实卡片
+                if (currentRound) {
+                  currentRound.cards = [
+                    ...currentRound.cards,
+                    ...extractedCards.map((c: any) => ({ type: c.card_type, title: c.title, content: c.content }))
+                  ];
+                }
+              }
+              break;
+            }
+
             case 'round_end':
               if (currentRound) {
                 allRounds.push(currentRound);
@@ -724,6 +812,39 @@ useEffect(() => {
         return;
       }
       console.error('SSE stream error:', error);
+      
+      // SSE 断开时：如果有累积的数据，也要显示结果
+      if (allRounds.length > 0 || meetingCards.length > 0) {
+        console.log('[Meeting] SSE断开，但有累积数据，显示结果');
+        
+        // 将 currentRound 也加入（如果还没加入）
+        if (currentRound) {
+          allRounds.push(currentRound);
+          currentRound = null;
+        }
+        
+        // 如果 allRounds 为空但有 meetingCards，创建一个包含卡片的虚拟轮次
+        if (allRounds.length === 0 && meetingCards.length > 0) {
+          allRounds.push({
+            round: 1,
+            title: '会议结果',
+            theme: '会议结果',
+            discussions: [],
+            cards: meetingCards.map((c: MeetingCard) => ({
+              type: c.card_type,
+              title: c.title,
+              content: c.content
+            }))
+          });
+        }
+        
+        setMeetingResult([...allRounds]);
+        setIsLoading(false);
+        setShowResults(true);
+        setExpandedRounds(new Set([1]));
+        setPixelState(prev => ({ ...prev, detail: '会议已断开（数据已保存）', progress: 100 }));
+        toast.error('SSE连接已断开，但已显示累积的会议数据');
+      }
     }
 
     abortControllerRef.current = null;
@@ -897,8 +1018,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname + ':8000';
-    const url = `${protocol}//${host}/api/ws/collaboration/${userId}`;
+    const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
+    const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
     
     console.log('[Collab] 连接 WebSocket:', url);
     setCollabStatus('connecting');
@@ -922,7 +1043,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             self: isSelf
           }]);
           // 如果有会议进行中，也显示到实时讨论区
-          if (isLoading && msg.activity.action === '插嘴') {
+          if (isLoading && msg.activity.action === '发言') {
             setLiveDiscussions(prev => [...prev, {
               type: 'speech',
               agent: { name: msg.activity.user, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
@@ -1242,7 +1363,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
               }`}
             >
               <MessageSquare className="w-4 h-4" />
-              协作任务
+              团队协作
             </button>
           </div>
 
@@ -1326,13 +1447,16 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           )}
 
           {activeTab === 'tasks' && (
-            <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-              <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-                <MessageSquare className="w-4 h-4 text-gray-400" />
-                <span className="text-white font-medium text-sm">协作任务</span>
-                <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个</span>
+            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', minHeight: '0', flex: '1 1 0' }}>
+              {/* 任务列表区 */}
+              <div className="px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-gray-400" />
+                  <span className="text-white font-medium text-sm">团队协作</span>
+                  <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个任务</span>
+                </div>
               </div>
-              <div className="p-4 space-y-3 max-h-60 overflow-y-auto">
+              <div className="p-4 space-y-3 overflow-y-auto flex-shrink-0" style={{ maxHeight: '220px', scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                 {taskList.length === 0 ? (
                   <div className="text-gray-500 text-sm text-center py-4">暂无协作任务</div>
                 ) : (
@@ -1353,9 +1477,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   ))
                 )}
               </div>
-              {/* 实时消息区域 */}
-              <div className="border-t border-gray-700/50 px-4 py-3">
-                <div className="flex items-center gap-2 mb-2">
+              {/* 实时讨论区 —— 沉底，占满剩余空间 */}
+              <div className="border-t border-gray-700/50 flex flex-col flex-1 min-h-0" style={{ marginTop: 'auto' }}>
+                {/* 讨论头部 */}
+                <div className="px-4 py-2.5 flex items-center gap-2 flex-shrink-0">
                   <Users className="w-4 h-4 text-blue-400" />
                   <span className="text-gray-300 text-sm font-medium">实时讨论</span>
                   <input
@@ -1377,9 +1502,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                      collabStatus === 'connecting' ? '连接中...' : '✗ 断开'}
                   </span>
                 </div>
-                <div className="h-48 overflow-y-auto mb-2 space-y-2 text-sm">
+                {/* 消息列表 —— 自动填充剩余高度 */}
+                <div className="flex-1 overflow-y-auto px-4 space-y-2 text-sm min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                   {collabMessages.length === 0 ? (
-                    <div className="text-gray-400 text-xs text-center py-4">
+                    <div className="text-gray-400 text-xs text-center py-6">
                       {collabStatus === 'connected' ? '开始聊天吧' : '连接中...'}
                     </div>
                   ) : (
@@ -1393,7 +1519,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                     ))
                   )}
                 </div>
-                <div className="flex gap-2">
+                {/* 输入框 —— 始终在底部 */}
+                <div className="px-4 py-3 flex gap-2 flex-shrink-0 border-t border-gray-700/30">
                   <input
                     id="collab-input"
                     type="text"
@@ -1434,7 +1561,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                         input.value = '';
                       }
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex-shrink-0"
                   >
                     发送
                   </button>
@@ -1540,12 +1667,41 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                             {item.agent.systemPrompt}
                           </div>
                         )}
-                        <p className="text-gray-100 text-sm leading-relaxed">{item.message}</p>
+                        {(() => {
+                          const msg = item.message || '';
+                          try {
+                            const trimmed = msg.trim();
+                            if (trimmed.startsWith('[')) {
+                              const parsed = JSON.parse(trimmed);
+                              if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((item: any) => typeof item === 'object' && item !== null && 'color' in item && 'content' in item)) {
+                                const colorMap: Record<string, string> = { red: '#ef4444', green: '#22c55e', blue: '#3b82f6', yellow: '#eab308', gold: '#f59e0b', purple: '#a855f7', orange: '#f97316' };
+                                return (
+                                  <div className="space-y-1.5">
+                                    {parsed.map((c: any, i: number) => (
+                                      <div key={i} className="rounded p-2 text-xs" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderLeft: `3px solid ${colorMap[c.color] || '#6b7280'}`, color: '#e5e7eb' }}>
+                                        {c.content}
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              }
+                            }
+                          } catch {}
+                          return <p className="text-gray-100 text-sm leading-relaxed">{msg}</p>;
+                        })()}
                       </div>
                     </motion.div>
                   );
                 })}
                 <div ref={liveDiscussionsEndRef} />
+                {/* 会议中积累的知识卡片 */}
+                <MeetingCardPanel
+                  cards={meetingCards}
+                  onSaveCard={(card) => {
+                    setSaveTargetCard(card);
+                    setSaveModalOpen(true);
+                  }}
+                />
               </div>
 {/* 人类发言入口 */}
               <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
@@ -1578,7 +1734,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   }}
                   className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
                 >
-                  插嘴
+                  发言
                 </button>
               </div>
             </div>
@@ -1611,6 +1767,18 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       保存归档
                     </button>
                     <button
+                      onClick={() => setSimplifiedView(!simplifiedView)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-colors ${
+                        simplifiedView 
+                          ? 'bg-blue-600 text-white border-blue-500' 
+                          : 'text-gray-300 border-gray-600/50 hover:border-gray-500 hover:text-white'
+                      }`}
+                      style={{ background: simplifiedView ? undefined : '#0f1729' }}
+                    >
+                      <Monitor className="w-3.5 h-3.5" />
+                      {simplifiedView ? '完整视图' : '简化视图'}
+                    </button>
+                    <button
                       onClick={resetMeeting}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
@@ -1621,9 +1789,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </div>
                 </div>
 
-                {/* 讨论轮次 */}
-                <div className="p-4 space-y-3">
-                  {(meetingResult || []).map((round: any) => (
+                {/* 讨论轮次 - 完整视图 */}
+                {!simplifiedView && (
+                  <div className="p-4 space-y-3">
+                    {(meetingResult || []).map((round: any) => (
                     <div key={round.round} className="rounded-lg border border-gray-700/40 overflow-hidden">
                       {/* 轮次标题 */}
                       <button
@@ -1701,6 +1870,77 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                     </div>
                   ))}
                 </div>
+                )}
+
+                {/* 简化视图：关键结论 */}
+                {simplifiedView && showResults && meetingResult && meetingResult.length > 0 && (
+                  <div className="p-4 space-y-4">
+                    {/* 最终决策 */}
+                    {meetingResult[meetingResult.length - 1]?.title && (
+                      <div className="rounded-lg border border-green-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Crown className="w-4 h-4 text-green-400" />
+                          <span className="text-green-400 text-sm font-medium">最终结论</span>
+                        </div>
+                        <div className="text-white text-sm font-medium mb-1">{meetingResult[meetingResult.length - 1].title}</div>
+                        <div className="text-gray-400 text-xs">
+                          共 {meetingResult.length} 轮讨论，产生 {(meetingResult[meetingResult.length - 1].discussions || []).length} 条观点
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 行动项汇总 */}
+                    {diagnosisReport && diagnosisReport.diagnosis_report && (
+                      <div className="rounded-lg border border-blue-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText className="w-4 h-4 text-blue-400" />
+                          <span className="text-blue-400 text-sm font-medium">决策摘要</span>
+                        </div>
+                        <p className="text-gray-300 text-xs">{diagnosisReport.diagnosis_report}</p>
+                      </div>
+                    )}
+
+                    {/* 共识点 */}
+                    {diagnosisReport && diagnosisReport.consensus && diagnosisReport.consensus.length > 0 && (
+                      <div className="rounded-lg border border-green-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-green-400">✓</span>
+                          <span className="text-green-400 text-sm font-medium">共识达成</span>
+                        </div>
+                        <ul className="space-y-1">
+                          {diagnosisReport.consensus.slice(0, 3).map((item: string, idx: number) => (
+                            <li key={idx} className="text-gray-300 text-xs flex items-start gap-2">
+                              <span className="text-green-500">•</span>
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 核心卡片 */}
+                    {meetingCards.length > 0 && (
+                      <div className="rounded-lg border border-purple-700/50 p-4" style={{ background: '#0f1729' }}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-purple-400">📋</span>
+                          <span className="text-purple-400 text-sm font-medium">核心知识卡片</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {meetingCards.slice(0, 4).map((card: MeetingCard, idx: number) => {
+                            const cardType = CARD_TYPE_MAP[card.card_type as keyof typeof CARD_TYPE_MAP];
+                            return (
+                              <div key={idx} className={`p-2 rounded ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                                <div className="text-white text-xs font-medium truncate">{card.title}</div>
+                                <div className="text-gray-400 text-[10px] truncate mt-0.5">{card.content}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
               </motion.div>
             )}
 
@@ -1778,6 +2018,22 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           )}
         </div>
       </div>
+      {/* 卡片保存弹窗 */}
+      <MeetingCardSaveModal
+        isOpen={saveModalOpen}
+        onClose={() => { setSaveModalOpen(false); setSaveTargetCard(null); }}
+        card={saveTargetCard}
+        meetingId={meetingResult?.meeting_id || ''}
+        topic={topic}
+        onSaved={(_card, cardId) => {
+          // 标记已保存的卡片
+          setMeetingCards(prev =>
+            prev.map(c =>
+              c === saveTargetCard ? { ...c, saved: true, id: cardId } : c
+            )
+          );
+        }}
+      />
     </div>
   );
 };

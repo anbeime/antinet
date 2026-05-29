@@ -1,4 +1,3 @@
-﻿import React from 'react';
 import { Cloud, Flower2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { DecoPatternProps } from '@/types/calendar';

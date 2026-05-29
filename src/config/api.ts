@@ -3,12 +3,14 @@
 
 // 动态获取API地址，支持局域网访问
 const getApiBaseUrl = () => {
-  // 生产环境使用相对路径，由vite代理或nginx转发
-  if (import.meta.env.PROD) {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
+  if (import.meta.env.DEV) {
     return '';
   }
-  // 开发环境优先使用环境变量，否则使用当前主机地址
-  return import.meta.env.VITE_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -223,6 +225,18 @@ export const API_METHODS = {
   '_RULE_ID_TOGGLE': ['POST'],
 };
 
+// 语音服务端点
+const SPEECH_ENDPOINTS = {
+  STATUS: '/api/speech/status',
+  TTS_VOICES: '/api/speech/tts/voices',
+  TTS_SPEAK: '/api/speech/tts/speak',
+  TTS_SPEAK_CARD: '/api/speech/tts/speak-card',
+  TTS_AUDIO: '/api/speech/tts/audio/{filename}',
+  STT_TRANSCRIBE: '/api/speech/stt/transcribe',
+  STT_TRANSCRIBE_BASE64: '/api/speech/stt/transcribe-base64',
+  STT_MODELS: '/api/speech/stt/models',
+};
+
 // 辅助函数
 export const buildUrl = (endpoint: string, params?: Record<string, string>) => {
   let url = API_BASE_URL + endpoint;
@@ -260,4 +274,62 @@ export const apiRequest = async (
   }
 
   return response.json();
+};
+
+// 语音服务 API
+export const speechService = {
+  getStatus: () => apiRequest<any>(SPEECH_ENDPOINTS.STATUS),
+  
+  getVoices: () => apiRequest<any>(SPEECH_ENDPOINTS.TTS_VOICES),
+  
+  getModels: () => apiRequest<any>(SPEECH_ENDPOINTS.STT_MODELS),
+  
+  textToSpeech: (text: string, voice: string = 'zh-CN-XiaoxiaoNeural') =>
+    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK, 'POST', { text, voice }),
+  
+  speakCard: (title: string, content: string, voice?: string) =>
+    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK_CARD, 'POST', {
+      title,
+      content,
+      voice: voice || 'zh-CN-XiaoxiaoNeural'
+    }),
+  
+  getAudioUrl: (filename: string) =>
+    `${API_BASE_URL}${SPEECH_ENDPOINTS.TTS_AUDIO.replace('{filename}', filename)}`,
+  
+  transcribeAudio: async (audioBlob: Blob, language: string = 'zh', modelSize: string = 'base') => {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('language', language);
+    formData.append('model_size', modelSize);
+    
+    const response = await fetch(`${API_BASE_URL}${SPEECH_ENDPOINTS.STT_TRANSCRIBE}`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+  
+  transcribeBase64: async (base64Audio: string, language: string = 'zh', modelSize: string = 'base') => {
+    const formData = new FormData();
+    formData.append('audio_data', base64Audio);
+    formData.append('language', language);
+    formData.append('model_size', modelSize);
+    
+    const response = await fetch(`${API_BASE_URL}${SPEECH_ENDPOINTS.STT_TRANSCRIBE_BASE64}`, {
+      method: 'POST',
+      body: formData,
+    });
+    return response.json();
+  },
+  
+  playAudio: (url: string) => {
+    const audio = new Audio(url);
+    audio.play();
+    return audio;
+  },
+  
+  playFromUrl: (audioUrl: string) => {
+    return speechService.playAudio(`${API_BASE_URL}${audioUrl}`);
+  },
 };

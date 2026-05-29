@@ -33,10 +33,18 @@ import {
   ChevronRight,
   Hash,
   Copy,
+  Presentation,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import PDFExporter from '@/components/PDFExporter';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// 配置 PDF.js worker 使用本地打包的文件（无需CDN）
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface ProcessingStatus {
   stage: string;
@@ -75,6 +83,7 @@ interface ConversionTask {
   resultBlob?: Blob;
   errorMessage?: string;
   createdAt: Date;
+  fileDataUrl?: string;
 }
 
 interface ConversionRecord {
@@ -84,6 +93,8 @@ interface ConversionRecord {
   status: 'completed' | 'error';
   createdAt: Date;
   fileSize?: number;
+  errorMessage?: string;
+  fileDataUrl?: string;
 }
 
 const API_BASE = getApiBaseUrl() + ''
@@ -115,10 +126,33 @@ const PDFAnalysis: React.FC = () => {
         const parsed = JSON.parse(saved);
         return parsed.map((r: any) => ({ ...r, createdAt: new Date(r.createdAt) }));
       }
-    } catch (e) { /* ignore */ }
+} catch (e) { /* ignore */ }
     return [];
   });
   const conversionFileInputRef = useRef<HTMLInputElement>(null);
+
+  // ============ Docx 预览状态 ============
+  const [showDocxPreview, setShowDocxPreview] = useState(false);
+  const [docxPreviewHtml, setDocxPreviewHtml] = useState('');
+  const [previewFileName, setPreviewFileName] = useState('');
+
+  const handlePreviewDocx = async (task: ConversionTask) => {
+    if (!task.resultUrl) {
+      toast.error('文档未准备好，请稍后重试');
+      return;
+    }
+    try {
+      const response = await fetch(task.resultUrl);
+      const arrayBuffer = await response.arrayBuffer();
+      const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
+      setDocxPreviewHtml(result.value);
+      setPreviewFileName(task.fileName.replace('.pdf', '.docx'));
+      setShowDocxPreview(true);
+    } catch (err) {
+      console.error('mammoth 转换失败:', err);
+      toast.error('Word 文档预览失败');
+    }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -554,13 +588,22 @@ const PDFAnalysis: React.FC = () => {
       targetFormat: targetFormat as 'word' | 'excel',
       status: 'pending',
       progress: 0,
-      createdAt: new Date()
+      createdAt: new Date(),
+      fileDataUrl: undefined
     }));
 
     setConversionTasks(prev => [...prev, ...newTasks]);
     toast.success(`已添加 ${newTasks.length} 个文件到转换队列`);
 
+    // 逐个读取文件为 dataUrl 并启动转换
     newTasks.forEach((task, index) => {
+      if (task.file.size < 5 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          task.fileDataUrl = e.target?.result as string;
+        };
+        reader.readAsDataURL(task.file);
+      }
       setTimeout(() => startConversion(task), index * 500);
     });
   };
@@ -588,7 +631,7 @@ const PDFAnalysis: React.FC = () => {
           errorMessage: error instanceof Error ? error.message : '转换失败'
         } : t
       ));
-      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size);
+      addConversionRecord(task.fileName, task.targetFormat, 'error', task.file.size, error instanceof Error ? error.message : '转换失败', task.fileDataUrl);
       toast.error(`${task.fileName} 转换失败`);
     }
   };
@@ -616,12 +659,11 @@ const PDFAnalysis: React.FC = () => {
     ));
 
     // 第二步：将卡片导出为Word
+    const reportTitle = `${task.fileName.replace('.pdf', '')}_分析报告`;
     const wordFormData = new FormData();
-    wordFormData.append('cards_data', JSON.stringify({
-        cards: analysisData.cards || [],
-        title: `${task.fileName.replace('.pdf', '')}_分析报告`,
-        author: 'Antinet 智能知识管家'
-    }));
+    wordFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
+    wordFormData.append('title', reportTitle);
+    wordFormData.append('author', 'Antinet 智能知识管家');
     
     const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
       method: 'POST',
@@ -646,17 +688,37 @@ const PDFAnalysis: React.FC = () => {
       } : t
     ));
 
-    addConversionRecord(task.fileName, 'word', 'completed', task.file.size);
+    addConversionRecord(task.fileName, 'word', 'completed', task.file.size, undefined, task.fileDataUrl);
     toast.success(`${task.fileName} 转换为 Word 成功！`);
   };
 
   const convertToExcel = async (task: ConversionTask, formData: FormData) => {
+    // 第一步：上传PDF生成四色卡片
+    setConversionTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, progress: 20 } : t
+    ));
+
+    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!analyzeResponse.ok) {
+      const errorData = await analyzeResponse.json().catch(() => ({}));
+      throw new Error(errorData.detail || 'PDF 分析失败');
+    }
+
+    const analysisData = await analyzeResponse.json();
+
+    // 第二步：将卡片导出为Excel
     setConversionTasks(prev => prev.map(t =>
       t.id === task.id ? { ...t, progress: 30 } : t
     ));
 
+    const excelTitle = `${task.fileName.replace('.pdf', '')}_分析报告`;
     const excelFormData = new FormData();
     excelFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
+    excelFormData.append('title', excelTitle);
     
     const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
       method: 'POST',
@@ -685,11 +747,11 @@ const PDFAnalysis: React.FC = () => {
       } : t
     ));
 
-    addConversionRecord(task.fileName, 'excel', 'completed', task.file.size);
+    addConversionRecord(task.fileName, 'excel', 'completed', task.file.size, undefined, task.fileDataUrl);
     toast.success(`${task.fileName} 转换为 Excel 成功！`);
   };
 
-  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number) => {
+  const addConversionRecord = (fileName: string, targetFormat: string, status: 'completed' | 'error', fileSize?: number, errorMessage?: string, fileDataUrl?: string) => {
     const record: ConversionRecord = {
       id: `record-${Date.now()}`,
       fileName,
@@ -697,6 +759,8 @@ const PDFAnalysis: React.FC = () => {
       status,
       createdAt: new Date(),
       fileSize,
+      errorMessage: errorMessage || undefined,
+      fileDataUrl,
     };
     setConversionRecords(prev => {
       const next = [record, ...prev];
@@ -914,6 +978,15 @@ const PDFAnalysis: React.FC = () => {
                       {task.status === 'completed' && (
                         <>
                           <CheckCircle className="w-4 h-4 text-green-500" />
+                          {task.targetFormat === 'word' && (
+                            <button
+                              onClick={() => handlePreviewDocx(task)}
+                              className="text-purple-500 hover:text-purple-600 p-1"
+                              title="预览 Word 文档"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                          )}
                           <button
                             onClick={() => handleDownloadResult(task)}
                             className="text-blue-500 hover:text-blue-600 p-1"
@@ -1128,7 +1201,19 @@ const PDFAnalysis: React.FC = () => {
                       </div>
                     )}
                     <div>
-                      <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                      {record.fileDataUrl ? (
+                        <a
+                          href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                          title="点击查看原文档"
+                        >
+                          {record.fileName}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                      )}
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         转换为 {record.targetFormat === 'word' ? 'Word' : 'Excel'} · {record.createdAt.toLocaleString()}
                       </p>
@@ -1138,7 +1223,9 @@ const PDFAnalysis: React.FC = () => {
                     {record.status === 'completed' ? (
                       <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
                     ) : (
-                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 cursor-help" title={record.errorMessage || '失败'}>
+                        失败
+                      </span>
                     )}
                   </div>
                 </motion.div>
@@ -1322,24 +1409,14 @@ const PDFAnalysis: React.FC = () => {
                   )}
 
                   {activeFeature === 'generate' && (
-                    <>
-                      <button
-                        onClick={() => handleExtractKnowledge(false)}
-                        disabled={!uploadedFile || isProcessing}
-                        className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                        生成知识卡片
-                      </button>
-                      <button
-                        onClick={() => handleExtractKnowledge(true)}
-                        disabled={!uploadedFile || isProcessing}
-                        className="w-full py-3 mt-2 bg-gradient-to-r from-red-500 to-orange-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                      >
-                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                        🤖 AI智能生成
-                      </button>
-                    </>
+                    <button
+                      onClick={() => handleExtractKnowledge(false)}
+                      disabled={!uploadedFile || isProcessing}
+                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
+                      生成知识卡片
+                    </button>
                   )}
 
                   {activeFeature === 'merge' && (
@@ -1499,7 +1576,7 @@ const PDFAnalysis: React.FC = () => {
                         </button>
                       </div>
                       <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden h-64 bg-gray-100 dark:bg-gray-700">
-                        <PDFViewerInternal />
+                        <PDFViewerInternal externalFile={uploadedFile} />
                       </div>
                     </div>
                   )}
@@ -1847,11 +1924,18 @@ const PDFAnalysis: React.FC = () => {
                               </p>
                             </div>
                           </div>
-                          <div>
+                          <div className="text-right">
                             {record.status === 'completed' ? (
                               <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
                             ) : (
-                              <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                              <div>
+                                <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
+                                {record.errorMessage && (
+                                  <p className="text-xs text-red-500 dark:text-red-400 mt-1 max-w-[200px] truncate" title={record.errorMessage}>
+                                    {record.errorMessage}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
                         </motion.div>
@@ -1875,7 +1959,7 @@ const PDFAnalysis: React.FC = () => {
                       PDF查看器
                     </h3>
                     <div className="flex-1 min-h-[500px]">
-                      <PDFViewerInternal />
+                      <PDFViewerInternal externalFile={uploadedFile} />
                     </div>
                   </div>
                 </div>
@@ -1885,12 +1969,75 @@ const PDFAnalysis: React.FC = () => {
               {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
             </motion.div>
           </div>
+
+        {/* 其他在线查看入口 */}
+        <div className="mt-6 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+          <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button
+              onClick={() => window.open('http://localhost:3000/pdf-viewer/markdown', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
+            >
+              <History className="w-4 h-4 text-green-600" />
+              <span className="text-green-700 dark:text-green-400">markdown转换</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
+            >
+              <FileText className="w-4 h-4 text-red-600" />
+              <span className="text-red-700 dark:text-red-400">PDF查看器</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
+            >
+              <Presentation className="w-4 h-4 text-orange-600" />
+              <span className="text-orange-700 dark:text-orange-400">PPT演示</span>
+            </button>
+            <button
+              onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
+              className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
+            >
+              <BarChart3 className="w-4 h-4 text-blue-600" />
+              <span className="text-blue-700 dark:text-blue-400">Excel分析</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-const PDFViewerInternal: React.FC = () => {
+// ============ Word 文档预览弹窗 ============
+const DocxPreviewModal: React.FC<{ isOpen: boolean; onClose: () => void; html: string; fileName: string }> = ({ isOpen, onClose, html, fileName }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[90vw] h-[85vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center space-x-3">
+            <FileType className="w-5 h-5 text-blue-500" />
+            <h3 className="text-lg font-semibold">{fileName}</h3>
+            <span className="text-xs text-gray-400">（预览版，格式可能有细微差异）</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-8 bg-gray-50 dark:bg-gray-900">
+          <div
+            className="max-w-3xl mx-auto bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: html }}
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalFile }) => {
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -1898,10 +2045,34 @@ const PDFViewerInternal: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [fileName, setFileName] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const renderTaskRef = useRef<any>(null);
 
   React.useEffect(() => {
-    loadPDFJS();
-  }, []);
+    if (!externalFile) return;
+    const loadExternalFile = async () => {
+      setIsLoading(true);
+      setFileName(externalFile.name);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        try {
+          const pdfjs = getPdfJs();
+          const doc = pdfjs.getDocument({ data });
+          const realDoc = doc.promise ? await doc.promise : doc;
+          setPdfDoc(realDoc);
+          setTotalPages(realDoc.numPages);
+          setCurrentPage(1);
+        } catch (error) {
+          console.error('[PDF] 加载外部PDF失败:', error);
+          toast.error('加载PDF预览失败');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      reader.readAsArrayBuffer(externalFile);
+    };
+    loadExternalFile();
+  }, [externalFile]);
 
   React.useEffect(() => {
     if (pdfDoc && currentPage > 0) {
@@ -1909,26 +2080,7 @@ const PDFViewerInternal: React.FC = () => {
     }
   }, [pdfDoc, currentPage, scale]);
 
-const loadPDFJS = async () => {
-    const pdfjsLib = (window as any).pdfjsLib;
-    if (pdfjsLib) return;
-    const script = document.createElement('script');
-    script.src = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
-      const pdfjs = (window as any).pdfjsLib;
-      pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.staticfile.org/pdf.js/3.11.174/pdf.worker.min.js';
-    };
-    script.onerror = () => {
-      const script2 = document.createElement('script');
-      script2.src = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-      script2.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.bootcdn.net/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      };
-      document.head.appendChild(script2);
-    };
-    document.head.appendChild(script);
-  };
+  const getPdfJs = () => pdfjsLib;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1942,15 +2094,14 @@ const loadPDFJS = async () => {
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
       try {
-        const pdfjs = (window as any).pdfjsLib;
-        if (pdfjs) {
-          const pdf = await pdfjs.getDocument({ data });
-          setPdfDoc(pdf);
-          setTotalPages(pdf.numPages);
-          setCurrentPage(1);
-        }
+        const pdfjs = getPdfJs();
+        const doc = pdfjs.getDocument({ data });
+        const realDoc = doc.promise ? await doc.promise : doc;
+        setPdfDoc(realDoc);
+        setTotalPages(realDoc.numPages);
+        setCurrentPage(1);
       } catch (error) {
-        console.error('加载PDF失败:', error);
+        console.error('[PDF] 加载PDF失败:', error);
         toast.error('加载PDF失败');
       } finally {
         setIsLoading(false);
@@ -1961,6 +2112,25 @@ const loadPDFJS = async () => {
 
   const renderPage = async (pageNum: number) => {
     if (!pdfDoc || !canvasRef.current) return;
+    if (typeof pdfDoc.getPage !== 'function') {
+      if (pdfDoc.promise) {
+        try {
+          const realDoc = await pdfDoc.promise;
+          setPdfDoc(realDoc);
+          return;
+        } catch (err) {
+          console.error('[PDF] Failed to resolve doc promise:', err);
+          return;
+        }
+      }
+      return;
+    }
+
+    if (renderTaskRef.current) {
+      try { renderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
+      renderTaskRef.current = null;
+    }
+
     try {
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
@@ -1969,14 +2139,19 @@ const loadPDFJS = async () => {
       canvas.height = viewport.height;
       canvas.width = viewport.width;
       if (context) {
-        await page.render({ canvasContext: context, viewport }).promise;
+        const renderTask = page.render({ canvasContext: context, viewport });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+        renderTaskRef.current = null;
       }
-    } catch (error) {
-      console.error('渲染页面失败:', error);
+    } catch (error: any) {
+      if (error?.name === 'RenderingCancelledException') return;
+      console.error('[PDF] 渲染页面失败:', error);
     }
   };
 
   return (
+    <>
     <div className="flex flex-col h-full min-h-[500px] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
       <div className="bg-gray-200 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
         <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
@@ -2023,6 +2198,14 @@ const loadPDFJS = async () => {
         )}
       </div>
     </div>
+    {/* Word 文档预览弹窗 */}
+    <DocxPreviewModal
+      isOpen={showDocxPreview}
+      onClose={() => setShowDocxPreview(false)}
+      html={docxPreviewHtml}
+      fileName={previewFileName}
+    />
+    </>
   );
 };
 

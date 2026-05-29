@@ -99,10 +99,36 @@ class KnowledgeGraphVisualizationSkill:
         """构建边（关联关系）"""
         edges = []
         edge_id = 0
-        
+
+        # 预先构建 project_id -> cards 映射，用于同专题连接
+        project_cards: Dict[int, List] = {}
+        for card in cards:
+            pid = card.get("project_id")
+            if pid:
+                if pid not in project_cards:
+                    project_cards[pid] = []
+                project_cards[pid].append(card)
+
         for card in cards:
             card_id = card.get("id", card.get("card_id"))
-            
+            card_project = card.get("project_id")
+
+            # 0. 基于同专题关系（确保图谱不散）
+            if card_project and card_project in project_cards:
+                for other_card in project_cards[card_project]:
+                    other_id = other_card.get("id", other_card.get("card_id"))
+                    if other_id == card_id:
+                        continue
+                    edges.append({
+                        "id": f"edge_{edge_id}",
+                        "source": card_id,
+                        "target": other_id,
+                        "label": "同专题",
+                        "type": "same_project",
+                        "weight": 0.5
+                    })
+                    edge_id += 1
+
             # 1. 基于引用关系
             references = card.get("references", [])
             for ref_id in references:
@@ -115,22 +141,21 @@ class KnowledgeGraphVisualizationSkill:
                     "weight": 1.0
                 })
                 edge_id += 1
-            
-            # 2. 基于标签相似度
+
+            # 2. 基于标签相似度（降低阈值使更多卡片相连）
             card_tags = set(card.get("tags", []))
             if card_tags:
                 for other_card in cards:
                     other_id = other_card.get("id", other_card.get("card_id"))
                     if other_id == card_id:
                         continue
-                    
+
                     other_tags = set(other_card.get("tags", []))
                     if other_tags:
-                        # 计算标签交集
                         common_tags = card_tags & other_tags
                         if common_tags:
                             similarity = len(common_tags) / len(card_tags | other_tags)
-                            if similarity > 0.3:  # 相似度阈值
+                            if similarity > 0.1:  # 降低阈值: 0.3 -> 0.1
                                 edges.append({
                                     "id": f"edge_{edge_id}",
                                     "source": card_id,
@@ -141,16 +166,16 @@ class KnowledgeGraphVisualizationSkill:
                                     "common_tags": list(common_tags)
                                 })
                                 edge_id += 1
-            
+
             # 3. 基于四色卡片关系
             card_type = card.get("type", "blue")
             for other_card in cards:
                 other_id = other_card.get("id", other_card.get("card_id"))
                 other_type = other_card.get("type", "blue")
-                
+
                 if other_id == card_id:
                     continue
-                
+
                 # 蓝色（事实）-> 绿色（解释）
                 if card_type == "blue" and other_type == "green":
                     if self._is_related_by_content(card, other_card):
@@ -163,7 +188,7 @@ class KnowledgeGraphVisualizationSkill:
                             "weight": 0.8
                         })
                         edge_id += 1
-                
+
                 # 蓝色（事实）-> 黄色（风险）
                 elif card_type == "blue" and other_type == "yellow":
                     if self._is_related_by_content(card, other_card):
@@ -176,7 +201,7 @@ class KnowledgeGraphVisualizationSkill:
                             "weight": 0.7
                         })
                         edge_id += 1
-                
+
                 # 黄色（风险）-> 红色（行动）
                 elif card_type == "yellow" and other_type == "red":
                     if self._is_related_by_content(card, other_card):
@@ -189,40 +214,46 @@ class KnowledgeGraphVisualizationSkill:
                             "weight": 0.9
                         })
                         edge_id += 1
-        
-        # 去重
-        unique_edges = []
-        seen = set()
+
+        # 去重（保留权重最高的边）
+        edge_map: Dict[tuple, Dict] = {}
         for edge in edges:
             key = (edge['source'], edge['target'], edge['type'])
-            if key not in seen:
-                seen.add(key)
-                unique_edges.append(edge)
-        
-        return unique_edges
+            if key not in edge_map or edge['weight'] > edge_map[key]['weight']:
+                edge_map[key] = edge
+
+        return list(edge_map.values())
     
     def _is_related_by_content(self, card1: Dict, card2: Dict) -> bool:
         """判断两个卡片是否通过内容相关"""
-        # 简单的关键词匹配
-        content1 = str(card1.get("content", "")).lower()
-        content2 = str(card2.get("content", "")).lower()
+        # 获取卡片内容文本（处理 dict 类型的 content）
+        raw1 = card1.get("content", "")
+        raw2 = card2.get("content", "")
+        content1 = str(raw1).lower() if isinstance(raw1, str) else str(raw1).lower() if raw1 else ""
+        content2 = str(raw2).lower() if isinstance(raw2, str) else str(raw2).lower() if raw2 else ""
         title1 = card1.get("title", "").lower()
         title2 = card2.get("title", "").lower()
-        
+
         # 检查标题是否出现在对方内容中
-        if title1 in content2 or title2 in content1:
+        if title1 and title1 in content2 or title2 and title2 in content1:
             return True
-        
-        # 检查共同关键词
-        words1 = set(content1.split())
-        words2 = set(content2.split())
-        common_words = words1 & words2
-        
-        # 过滤停用词
-        stopwords = {'的', '了', '在', '是', '和', '与', '或', '等', '及', '以', '为', '对', '从', '到'}
-        common_words = common_words - stopwords
-        
-        return len(common_words) > 3
+
+        # 中文/混合文本：使用字符级 2-gram 匹配（避免分词依赖）
+        def get_ngrams(text: str, n: int = 2) -> set:
+            text = text.replace(" ", "")  # 移除空格
+            return set(text[i:i+n] for i in range(len(text) - n + 1))
+
+        grams1 = get_ngrams(content1, 2)
+        grams2 = get_ngrams(content2, 2)
+        if not grams1 or not grams2:
+            return False
+
+        common = grams1 & grams2
+        # 2-gram 相似度：共现数 / (总字符块数 / 2)
+        if len(common) >= 3:  # 至少3个公共2-gram
+            return True
+
+        return False
     
     def _calculate_statistics(self, nodes: List[Dict], edges: List[Dict]) -> Dict:
         """计算统计信息"""

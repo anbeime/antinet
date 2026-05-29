@@ -229,11 +229,24 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
     let filteredEdges = graphData.edges;
 
     if (selectedProjectFilter) {
+      // 只包含属于该专题的节点，不包含无专题的节点（会导致图谱散乱）
       filteredNodes = graphData.nodes.filter(node => 
-        node.project_id === selectedProjectFilter || !node.project_id
+        node.project_id === selectedProjectFilter
       );
-      const nodeIds = new Set(filteredNodes.map(n => n.id));
-      filteredEdges = graphData.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+      
+      // 进一步过滤：只保留有关联边的节点（避免孤立节点）
+      const nodeIdsWithEdges = new Set<string>();
+      filteredEdges = graphData.edges.filter(e => {
+        const hasValidNodes = filteredNodes.some(n => n.id === e.source) && filteredNodes.some(n => n.id === e.target);
+        if (hasValidNodes) {
+          nodeIdsWithEdges.add(e.source);
+          nodeIdsWithEdges.add(e.target);
+        }
+        return hasValidNodes;
+      });
+      
+      // 只保留有关联边的节点
+      filteredNodes = filteredNodes.filter(n => nodeIdsWithEdges.has(n.id));
     }
 
     const nodes = filteredNodes.map(node => {
@@ -322,9 +335,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         lineStyle: { color: 'source', curveness: 0.3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
         force: isFreeDragMode ? undefined : {
-          repulsion: 800,
-          gravity: 0.02,
-          edgeLength: [150, 300],
+          // 自适应力导向布局参数：节点少时降低排斥力，避免散开
+          repulsion: Math.max(200, Math.min(800, nodes.length * 50)),
+          gravity: nodes.length > 10 ? 0.02 : 0.1,  // 节点少时增加中心引力
+          edgeLength: [80, 200],
           layoutAnimation: true
         }
       }]
@@ -416,9 +430,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         scaleLimit: { min: 0.2, max: 3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
         force: isFreeDragMode ? undefined : {
-          repulsion: 600,
-          gravity: 0.03,
-          edgeLength: [120, 250],
+          // 自适应力导向布局参数
+          repulsion: Math.max(200, Math.min(600, nodes.length * 40)),
+          gravity: nodes.length > 10 ? 0.03 : 0.15,  // 节点少时增加中心引力
+          edgeLength: [60, 150],
           layoutAnimation: true
         }
       }]
@@ -629,6 +644,18 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
                 <RefreshCw className="w-4 h-4 inline mr-1" />
                 刷新
               </button>
+            </div>
+          )}
+          {/* 过滤后无数据状态 */}
+          {!loading && (graphData || backlinkGraphData) && ((dataSource === 'knowledge' && (!graphData?.nodes || graphData.nodes.length === 0)) || (dataSource === 'backlinks' && (!backlinkGraphData?.nodes || backlinkGraphData.nodes.length === 0))) && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white dark:bg-gray-800 rounded-lg">
+              <Network className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+              <p className="text-base font-medium text-gray-500 dark:text-gray-400 mb-1">
+                {selectedProjectFilter ? '该专题下暂无关联卡片' : '暂无关联数据'}
+              </p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                卡片需要相互关联才能形成知识网络
+              </p>
             </div>
           )}
           <div ref={chartRef} className="w-full h-full" />

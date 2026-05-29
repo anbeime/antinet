@@ -11,15 +11,38 @@
 from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import Dict, Any
+import sys
+
+
+def _get_backend_dir() -> Path:
+    """获取后端目录（兼容 PyInstaller 打包）"""
+    if getattr(sys, 'frozen', False):
+        # exe 已在 backend/ 目录下，直接用 exe 所在目录
+        return Path(sys.executable).parent
+    return Path(__file__).parent.absolute()
+
+
+def _get_project_root() -> Path:
+    """获取项目根目录（兼容 PyInstaller 打包）"""
+    if getattr(sys, 'frozen', False):
+        # exe 在 backend/ 下，项目根目录是上一级
+        return Path(sys.executable).parent.parent
+    return Path(__file__).parent.parent.absolute()
+
 
 # 获取后端目录的绝对路径
-BACKEND_DIR = Path(__file__).parent.absolute()
+BACKEND_DIR = _get_backend_dir()
 # 获取项目根目录
-PROJECT_ROOT = BACKEND_DIR.parent.absolute()
+PROJECT_ROOT = _get_project_root()
 
 # 模型基础目录 - 支持多位置查找
+# 1. 优先查找 services/models（打包后的相对路径）
+# 2. 其次查找项目根目录下的 models
+# 3. 最后查找 C:\models（安装版路径）
 MODEL_BASE_DIRS = [
-    PROJECT_ROOT / "models",
+    PROJECT_ROOT / "services" / "models",  # 打包后路径
+    PROJECT_ROOT / "models",                # 开发环境路径
+    Path("C:/models"),                     # 安装版路径
 ]
 
 class Settings(BaseSettings):
@@ -32,11 +55,11 @@ class Settings(BaseSettings):
 
     # 服务配置
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 8001
 
     # 模型配置（兼容旧代码）
     MODEL_NAME: str = "llama3.2-3b"
-    MODEL_PATH: str = str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37")
+    MODEL_PATH: str = "C:/models/llama3.2-3b-8380-qnn2.37"
     AUTO_LOAD_MODEL: bool = False
 
     # QNN配置
@@ -63,7 +86,11 @@ class Settings(BaseSettings):
 
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     "llama3.2-3b": {
-        "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
+        "path": "C:/models/llama3.2-3b-8380-qnn2.37",  # 安装版路径
+        "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "llama3.2-3b-8380-qnn2.37"),  # 打包后路径
+            str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),  # 开发环境
+        ],
         "qnn_version": "2.37",
         "type": "chat",
         "context_length": 8192,
@@ -72,7 +99,11 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "recommended": True,
     },
     "qwen2.0-7b": {
-        "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+        "path": "C:/models/Qwen2.0-7B-SSD-8380-2.34",
+        "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+            str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+        ],
         "qnn_version": "2.34",
         "type": "chat",
         "context_length": 8192,
@@ -80,7 +111,11 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "performance": "medium",
     },
     "qwen2.5-vl-3b": {
-        "path": str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
+        "path": "C:/models/qwen2.5vl3b-8380-2.42",
+        "alt_paths": [
+            str(PROJECT_ROOT / "services" / "models" / "qwen2.5vl3b-8380-2.42"),
+            str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
+        ],
         "qnn_version": "2.42",
         "type": "vision",
         "context_length": 8192,

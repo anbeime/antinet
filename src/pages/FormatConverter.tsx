@@ -16,10 +16,8 @@ import {
   X,
   Eye,
   Trash2,
-  File,
   AlertCircle,
   FileCode,
-  Search,
   Presentation,
   ChevronLeft,
   ChevronRight,
@@ -68,15 +66,22 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
   const [renderMermaid, setRenderMermaid] = useState(true);
   const [isConverting, setIsConverting] = useState(false);
+  const [mdOutputFormat, setMdOutputFormat] = useState<'pdf' | 'docx' | 'html' | 'pptx'>('pdf');
+  const [mermaidPreviewSvg, setMermaidPreviewSvg] = useState<string>('');
+  const [isMermaidLoading, setIsMermaidLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mermaidContainerRef = useRef<HTMLDivElement>(null);
 
-  // 预览 Mermaid 图表
+  // 预览 Mermaid 图表（内联渲染到页面中）
   const handlePreviewMermaid = async () => {
-    const mermaidCode = markdownEditor.match(/```mermaid\s*\n([\s\S]*?)```/)?.[1] || '';
+    const mermaidMatch = markdownEditor.match(/```mermaid\s*\n([\s\S]*?)```/);
+    const mermaidCode = mermaidMatch?.[1] || '';
     if (!mermaidCode) {
-      toast.error('未找到 Mermaid 代码块');
+      toast.error('未找到 Mermaid 代码块，请在 Markdown 中添加 ```mermaid ... ``` 代码块');
       return;
     }
+    setIsMermaidLoading(true);
+    setMermaidPreviewSvg('');
     try {
       const response = await fetch(`${API_BASE}/api/markdown-converter/mermaid/render`, {
         method: 'POST',
@@ -85,15 +90,61 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       });
       if (response.ok) {
         const svg = await response.text();
-        const newWindow = window.open('', '_blank');
-        if (newWindow) {
-          newWindow.document.write(svg);
-          newWindow.document.close();
-        }
+        setMermaidPreviewSvg(svg);
+        toast.success('Mermaid 图表渲染完成');
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.detail || 'Mermaid 渲染失败');
       }
     } catch (err) {
-      toast.error('Mermaid 渲染失败');
+      toast.error('Mermaid 渲染失败，请检查后端服务');
+    } finally {
+      setIsMermaidLoading(false);
     }
+  };
+
+  // 简单的 Markdown → HTML 渲染（用于预览）
+  const renderMarkdownToHtml = (md: string): string => {
+    let html = md
+      // 转义 HTML 标签
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      // 代码块
+      .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
+        `<pre class="bg-gray-800 text-green-400 p-3 rounded-lg my-2 overflow-x-auto text-sm"><code>${code.trim()}</code></pre>`)
+      // 行内代码
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm text-purple-600">$1</code>')
+      // 标题
+      .replace(/^### (.+)$/gm, '<h3 class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold mt-4 mb-2 text-gray-900 dark:text-white border-b pb-1">$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold mt-4 mb-3 text-blue-600 dark:text-blue-400">$1</h1>')
+      // 粗体和斜体
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+      // 表格
+      .replace(/^\|(.+)\|$/gm, (_m, row) => {
+        const cells = row.split('|').map((c: string) => c.trim());
+        const isSeparator = cells.every((c: string) => /^[-:]+$/.test(c));
+        if (isSeparator) return '';
+        return `<tr>${cells.map((c: string) => `<td class="border border-gray-300 dark:border-gray-600 px-3 py-1.5">${c}</td>`).join('')}</tr>`;
+      })
+      // 无序列表
+      .replace(/^[\-\*] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+      // 有序列表
+      .replace(/^\d+\. (.+)$/gm, '<li class="ml-4 list-decimal">$1</li>')
+      // 段落
+      .replace(/\n\n/g, '</p><p class="my-2">')
+      // 单换行
+      .replace(/\n/g, '<br/>');
+
+    // 包裹表格
+    html = html.replace(/(<tr>.*?<\/tr>)/gs, (_m) => {
+      if (html.indexOf('<table') === -1) {
+        return `<table class="w-full border-collapse my-2">${_m}</table>`;
+      }
+      return _m;
+    });
+
+    return html || '<span class="text-gray-400">开始输入 Markdown 内容...</span>';
   };
 
   // 直接转换 Markdown 编辑器内容
@@ -104,7 +155,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       const formData = new FormData();
       const blob = new Blob([markdownEditor], { type: 'text/markdown' });
       formData.append('file', blob, 'input.md');
-      formData.append('output_format', 'docx'); // 默认转 DOCX
+      formData.append('output_format', mdOutputFormat);
       formData.append('render_mermaid', String(renderMermaid));
       formData.append('theme', selectedTheme);
       if (pdfTitle) formData.append('title', pdfTitle);
@@ -118,13 +169,15 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       if (response.ok) {
         const resultBlob = await response.blob();
         const url = window.URL.createObjectURL(resultBlob);
+        const extMap: Record<string, string> = { pdf: '.pdf', docx: '.docx', html: '.html', pptx: '.pptx' };
         const a = document.createElement('a');
         a.href = url;
-        a.download = `converted_${Date.now()}.docx`;
+        a.download = `converted_${Date.now()}${extMap[mdOutputFormat] || '.' + mdOutputFormat}`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
-        toast.success('Markdown 转换成功！');
+        const fmtNameMap: Record<string, string> = { pdf: 'PDF', docx: 'Word', html: 'HTML', pptx: 'PPT' };
+        toast.success(`Markdown → ${fmtNameMap[mdOutputFormat] || mdOutputFormat.toUpperCase()} 转换成功！`);
       } else {
         const err = await response.json().catch(() => ({}));
         toast.error(err.detail || '转换失败');
@@ -648,164 +701,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     }
   };
 
-  // 生成 PDF 预览内容
-  const generatePDFContent = (analysisResult: any, fileName: string) => {
-    const cards = analysisResult.cards || [];
-    
-    const cardHTML = cards.map((card: any, index: number) => {
-      const colors: Record<string, string> = {
-        fact: '#3b82f6',
-        explanation: '#10b981',
-        risk: '#f59e0b',
-        action: '#ef4444'
-      };
-      
-      const typeNames: Record<string, string> = {
-        fact: '事实',
-        explanation: '解释',
-        risk: '风险',
-        action: '行动'
-      };
 
-      const safeTags = Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' && card.tags ? JSON.parse(card.tags) : []);
-
-      return `
-        <div style="
-          margin-bottom: 20px;
-          padding: 15px;
-          border-left: 4px solid ${colors[card.type] || '#3b82f6'};
-          background: #f9fafb;
-          page-break-inside: avoid;
-        ">
-          <div style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-          ">
-            <h3 style="margin: 0; color: ${colors[card.type] || '#3b82f6'};">
-              [${typeNames[card.type] || '其他'}] ${card.title}
-            </h3>
-            <span style="color: #9ca3af; font-size: 12px;">#${index + 1}</span>
-          </div>
-          <p style="margin: 0; line-height: 1.6; color: #374151;">${card.content}</p>
-          ${safeTags.length > 0 ? `<p style="margin-top: 10px; font-size: 12px; color: #6b7280;">标签: ${safeTags.join(', ')}</p>` : ''}
-        </div>
-      `;
-    }).join('');
-
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>${fileName} - 分析报告</title>
-        <style>
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            color: #1f2937;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 40px;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #3b82f6;
-          }
-          .header h1 {
-            margin: 0 0 10px 0;
-            color: #1e40af;
-          }
-          .header p {
-            margin: 0;
-            color: #6b7280;
-          }
-          .stats {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 30px;
-          }
-          .stat-item {
-            text-align: center;
-            padding: 15px;
-            background: #f3f4f6;
-            border-radius: 8px;
-          }
-          .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            color: #3b82f6;
-          }
-          .stat-label {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 5px;
-          }
-          @media print {
-            body { padding: 20px; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>PDF 分析报告</h1>
-          <p>源文件: ${fileName}</p>
-          <p>生成时间: ${new Date().toLocaleString('zh-CN')}</p>
-        </div>
-        
-        <div class="stats">
-          <div class="stat-item">
-            <div class="stat-value">${cards.length}</div>
-            <div class="stat-label">总卡片数</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'fact').length}</div>
-            <div class="stat-label">事实卡片</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'explanation').length}</div>
-            <div class="stat-label">解释卡片</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${cards.filter((c: any) => c.type === 'action').length}</div>
-            <div class="stat-label">行动卡片</div>
-          </div>
-        </div>
-
-        <h2 style="color: #1f2937; margin-top: 30px;">知识卡片详情</h2>
-        ${cardHTML}
-
-        <div class="no-print" style="
-          margin-top: 40px;
-          padding: 20px;
-          background: #eff6ff;
-          border-radius: 8px;
-          text-align: center;
-        ">
-          <p style="margin: 0 0 10px 0; color: #1e40af;">
-            💡 提示：按 Ctrl+P（或 Cmd+P）可以打印或保存为 PDF
-          </p>
-          <button onclick="window.print()" style="
-            padding: 10px 20px;
-            background: #3b82f6;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-          ">
-            打印 / 保存为 PDF
-          </button>
-        </div>
-      </body>
-      </html>
-    `;
-  };
 
   // 下载文件
   const downloadFile = (task: ConversionTask) => {
@@ -907,9 +803,16 @@ const loadPdfJs = async (): Promise<any> => {
     setPdfDoc(null);
   };
 
+  const pdfRenderTaskRef = useRef<any>(null);
+
   // 渲染 PDF 页面
   const renderPdfPage = async () => {
     if (!pdfDoc || !pdfCanvasRef.current) return;
+
+    if (pdfRenderTaskRef.current) {
+      try { pdfRenderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
+      pdfRenderTaskRef.current = null;
+    }
 
     try {
       const page = await pdfDoc.getPage(pdfCurrentPage);
@@ -921,12 +824,13 @@ const loadPdfJs = async (): Promise<any> => {
       canvas.width = viewport.width;
 
       if (context) {
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise;
+        const renderTask = page.render({ canvasContext: context, viewport });
+        pdfRenderTaskRef.current = renderTask;
+        await renderTask.promise;
+        pdfRenderTaskRef.current = null;
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'RenderingCancelledException') return;
       console.error('渲染 PDF 页面失败:', error);
     }
   };
@@ -1248,53 +1152,82 @@ const loadPdfJs = async (): Promise<any> => {
               </div>
             </div>
 
-            {/* Markdown 编辑器 */}
-            {!showMarkdownPreview ? (
-              <textarea
-                value={markdownEditor}
-                onChange={(e) => setMarkdownEditor(e.target.value)}
-                className="w-full h-80 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="# 标题
-
-## 二级标题
-
-```mermaid
-graph TD
-    A[开始] --> B{判断}
-    B -->|是| C[处理中]
-    B -->|否| D[结束]
-```
-
-| 表格 | 列1 | 列2 |
-|------|-----|-----|
-| 数据1 | 100 | 200 |
-"
-                spellCheck={false}
-              />
-            ) : (
-              <div className="w-full h-80 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-auto prose dark:prose-invert max-w-none">
-                <pre className="whitespace-pre-wrap text-sm">{markdownEditor || '预览内容...'}</pre>
+            {/* 输出格式选择 */}
+            <div className="mb-4">
+              <label className="text-sm text-gray-600 dark:text-gray-400 block mb-2">输出格式</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 'pdf', label: 'PDF 文档', desc: '专业版式' },
+                  { value: 'docx', label: 'Word 文档', desc: '可编辑' },
+                  { value: 'html', label: 'HTML 网页', desc: '浏览器打开' },
+                  { value: 'pptx', label: 'PPT 演示', desc: '幻灯片' }
+                ].map(fmt => (
+                  <button
+                    key={fmt.value}
+                    onClick={() => setMdOutputFormat(fmt.value as any)}
+                    className={`px-4 py-2 rounded-lg text-sm border transition-all ${
+                      mdOutputFormat === fmt.value
+                        ? 'bg-purple-500 text-white border-purple-500'
+                        : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:border-purple-300'
+                    }`}
+                  >
+                    <span className="font-medium">{fmt.label}</span>
+                    <span className={`text-xs ml-1 ${mdOutputFormat === fmt.value ? 'text-purple-200' : 'text-gray-400'}`}>({fmt.desc})</span>
+                  </button>
+                ))}
               </div>
-            )}
+            </div>
 
-            {/* Mermaid 选项 */}
-            <div className="mt-4 flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={renderMermaid}
-                  onChange={(e) => setRenderMermaid(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">渲染 Mermaid 图表</span>
-              </label>
-              <button
-                onClick={handlePreviewMermaid}
-                disabled={!markdownEditor}
-                className="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg hover:bg-purple-200 disabled:opacity-50"
-              >
-                预览 Mermaid
-              </button>
+            {/* Markdown 编辑器 / 预览 */}
+            <div className="flex gap-4" style={{ height: '380px' }}>
+              {!showMarkdownPreview ? (
+                <div className="flex-1 flex flex-col">
+                  <div className="text-xs text-gray-400 mb-1 px-1">编辑</div>
+                  <textarea
+                    value={markdownEditor}
+                    onChange={(e) => { setMarkdownEditor(e.target.value); setMermaidPreviewSvg(''); }}
+                    className="flex-1 w-full p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={"# 标题\n\n## 二级标题\n\n```mermaid\ngraph TD\n    A[开始] --> B{判断}\n    B -->|是| C[处理中]\n    B -->|否| D[结束]\n```\n\n| 表格 | 列1 | 列2 |\n|------|-----|-----|\n| 数据1 | 100 | 200 |\n\n```python\nprint(\"Hello World\")\n```\n"}
+                    spellCheck={false}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col">
+                  <div className="text-xs text-gray-400 mb-1 px-1">预览</div>
+                  <div ref={mermaidContainerRef} className="flex-1 w-full p-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-auto prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(markdownEditor) }} />
+                </div>
+              )}
+            </div>
+
+            {/* Mermaid 选项与内联预览 */}
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={renderMermaid}
+                    onChange={(e) => setRenderMermaid(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">转换时渲染 Mermaid 图表</span>
+                </label>
+                <button
+                  onClick={handlePreviewMermaid}
+                  disabled={!markdownEditor || isMermaidLoading}
+                  className="px-3 py-1.5 text-sm bg-purple-100 dark:bg-purple-900/30 text-purple-600 rounded-lg hover:bg-purple-200 disabled:opacity-50 flex items-center gap-1"
+                >
+                  {isMermaidLoading ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+                  渲染 Mermaid 预览
+                </button>
+              </div>
+
+              {/* Mermaid 内联预览区 */}
+              {mermaidPreviewSvg && (
+                <div className="border border-purple-200 dark:border-purple-800 rounded-xl p-4 bg-purple-50/50 dark:bg-purple-900/20 overflow-auto max-h-64">
+                  <div className="text-xs text-purple-500 mb-2 font-medium">Mermaid 图表渲染结果</div>
+                  <div className="flex justify-center" dangerouslySetInnerHTML={{ __html: mermaidPreviewSvg }} />
+                </div>
+              )}
             </div>
 
             {/* 快速模板 */}
@@ -1327,7 +1260,7 @@ graph TD
               <button
                 onClick={handleConvertMarkdown}
                 disabled={!markdownEditor || isConverting}
-                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-xl transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:bg-gray-400 text-white font-medium rounded-xl transition-colors"
               >
                 {isConverting ? (
                   <>
@@ -1337,12 +1270,12 @@ graph TD
                 ) : (
                   <>
                     <Download size={20} />
-                    转换为 PDF/DOCX/HTML
+                    转换为 {(() => { const map = {'pdf':'PDF','docx':'Word','html':'HTML','pptx':'PPT'}; return map[mdOutputFormat] || mdOutputFormat.toUpperCase(); })()}
                   </>
                 )}
               </button>
               <p className="text-xs text-gray-500 text-center mt-2">
-                使用 Pandoc + Mermaid 渲染，支持 PDF/Word/HTML 等格式
+                使用 Pandoc + Mermaid 渲染引擎 · 支持流程图/表格/代码块 · 输出 {mdOutputFormat.toUpperCase()} 格式
               </p>
             </div>
           </motion.div>

@@ -15,7 +15,6 @@ import {
   Bot,
   RefreshCw,
   CheckCircle2,
-  ChevronRight,
   Sparkles
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -141,7 +140,6 @@ const FiveStepSuccess: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [goalSession, setGoalSession] = useState<GoalSession | null>(null);
   const [showStepGuide, setShowStepGuide] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -176,7 +174,6 @@ const FiveStepSuccess: React.FC = () => {
     };
     setMessages([welcomeMessage]);
     setCurrentStep(0);
-    setGoalSession(null);
   };
 
   useEffect(() => {

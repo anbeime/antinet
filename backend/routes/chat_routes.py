@@ -165,7 +165,7 @@ def _search_cards_by_keyword(query: str, limit: int = 10) -> List[Dict[str, Any]
 
 def _semantic_search_cards(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    使用 Ollama 向量搜索数据库中的知识卡片
+    使用 Genie 向量搜索数据库中的知识卡片
     
     参数：
         query: 查询文本

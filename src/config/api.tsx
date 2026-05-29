@@ -1,7 +1,18 @@
 // 后端API配置文件
 // 自动生成 - 请勿手动修改
 
-export const API_BASE_URL = getApiBaseUrl() + ''
+const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
+  if (import.meta.env.DEV) {
+    return '';
+  }
+  return `${window.location.protocol}//${window.location.hostname}:8000`;
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 // API端点定义
 export const API_ENDPOINTS = {

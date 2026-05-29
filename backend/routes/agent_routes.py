@@ -3,7 +3,7 @@
 提供完整的 Agent 协作 API
 
 核心优化：
-- 复用 meeting_routes.call_llm 降级链（8910→Ollama→NPU），所有LLM调用统一走降级保护
+- 复用 meeting_routes.call_llm 降级链（8910→NPU），所有LLM调用统一走降级保护
 - 4个Agent并行推理生成四色卡片，而非单次NPU调用硬充8-Agent
 - 新增 SSE 流式分析端点 /analyze/stream
 - /chat 端点也走 call_llm 降级链
@@ -486,6 +486,78 @@ def _generate_agent_fallback(agent_id: str, query: str) -> str:
     return fallbacks.get(agent_id, "分析完成")
 
 
+def _format_8agent_result(data: Dict[str, Any], query: str = "") -> str:
+    """
+    将 8-Agent 响应格式化为易读的纯文本，在 CLI 中展示。
+    隐藏内部日志，只显示：查询、四色卡片、报告文本。
+    """
+    lines = []
+    lines.append("=" * 50)
+    lines.append(f"  🔍 查询：{query or data.get('query', '未知')}")
+    lines.append("=" * 50)
+
+    # 获取卡片（四色分组）
+    cards_by_color = {"blue": [], "green": [], "yellow": [], "red": []}
+    card_source = data.get("four_color_cards")
+    if card_source:
+        if hasattr(card_source, "model_dump"):
+            card_source = card_source.model_dump()
+        for color, card_list in card_source.items():
+            if color in cards_by_color and isinstance(card_list, list):
+                cards_by_color[color] = card_list
+    elif "results" in data and isinstance(data["results"], dict):
+        inner = data["results"].get("four_color_cards") or data["results"].get("four_color_cards")
+        if inner:
+            if hasattr(inner, "model_dump"):
+                inner = inner.model_dump()
+            for color in cards_by_color:
+                if color in inner:
+                    cards_by_color[color] = inner[color] or []
+
+    color_names = {"blue": "🔵 事实", "green": "🟢 解释", "yellow": "🟡 风险", "red": "🔴 行动"}
+    for color, name in color_names.items():
+        cards = cards_by_color.get(color, [])
+        if cards:
+            lines.append(f"\n{name}（{len(cards)}张）：")
+            for c in cards:
+                if isinstance(c, dict):
+                    title = c.get("title", "")
+                    content = c.get("content", "")
+                    if content:
+                        lines.append(f"  • {title}：{content[:80]}{'...' if len(str(content)) > 80 else ''}")
+                    else:
+                        lines.append(f"  • {title}")
+
+    # 报告正文
+    report_text = ""
+    if isinstance(data.get("report"), dict):
+        report_text = data["report"].get("text", "")
+    elif "results" in data and isinstance(data["results"], dict):
+        r = data["results"].get("report", {})
+        if isinstance(r, dict):
+            report_text = r.get("text", "")
+
+    if report_text:
+        lines.append("\n" + "-" * 50)
+        lines.append("📋 报告：")
+        # 去掉 markdown 格式的标题，只留内容
+        for line in report_text.split("\n"):
+            line = line.strip()
+            if line and not line.startswith("#"):
+                lines.append(f"  {line}")
+
+    # 统计信息
+    perf = data.get("performance", {})
+    if not perf and "results" in data and isinstance(data["results"], dict):
+        perf = data["results"].get("performance", {})
+    if perf:
+        cards_gen = perf.get("cards_generated", len(data.get("four_color_cards", [])))
+        lines.append(f"\n⏱  耗时：{perf.get('inference_time', '?')}s | 生成卡片：{cards_gen}张")
+
+    lines.append("=" * 50)
+    return "\n".join(lines)
+
+
 # ==================== 端点 ====================
 
 @router.get("/status")
@@ -521,10 +593,44 @@ async def analyze_with_agents(request: AgentTaskRequest):
             material=request.material
         )
         return report
-        
+
     except Exception as e:
         logger.error(f"[AgentSystem] 分析失败: {e}", exc_info=True)
         # 重置状态
+        for aid in ALL_AGENT_IDS:
+            agent_status[aid] = "idle"
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze/pretty")
+async def analyze_with_agents_pretty(request: AgentTaskRequest):
+    """
+    使用 8-Agent 系统进行数据分析，返回格式化的纯文本（易于 CLI 阅读）。
+    隐藏内部日志，只展示：查询、四色卡片、报告正文。
+    """
+    try:
+        context_str = ""
+        if request.context:
+            context_str = json.dumps(request.context, ensure_ascii=False) if isinstance(request.context, dict) else str(request.context)
+
+        report = await _run_agent_analysis(
+            query=request.query,
+            context=context_str,
+            material=request.material
+        )
+
+        # 转为 dict 用于格式化
+        if hasattr(report, "model_dump"):
+            data = report.model_dump()
+        else:
+            data = dict(report) if isinstance(report, dict) else {"query": request.query, "report": report}
+
+        formatted = _format_8agent_result(data, query=request.query)
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(content=formatted)
+
+    except Exception as e:
+        logger.error(f"[AgentSystem] 格式化分析失败: {e}", exc_info=True)
         for aid in ALL_AGENT_IDS:
             agent_status[aid] = "idle"
         raise HTTPException(status_code=500, detail=str(e))

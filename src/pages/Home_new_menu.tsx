@@ -12,7 +12,7 @@
   {/* 知识管理下拉菜单 */}
   <div className="relative group">
     <button
-      className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['cards', 'data-management'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+      className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['cards', 'data-management', 'knowledge-graph', 'mindmap'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
     >
       <Briefcase size={18} />
       <span>知识管理</span>
@@ -28,10 +28,24 @@
       </button>
       <button
         onClick={() => setActiveTab('data-management')}
-        className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'data-management' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+        className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'data-management' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
       >
         <ListTodo size={16} />
         <span>任务管理</span>
+      </button>
+      <button
+        onClick={() => setActiveTab('knowledge-graph')}
+        className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'knowledge-graph' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+      >
+        <Network size={16} />
+        <span>知识网络</span>
+      </button>
+      <button
+        onClick={() => setActiveTab('mindmap')}
+        className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2 ${activeTab === 'mindmap' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+      >
+        <GitBranch size={16} />
+        <span>思维导图</span>
       </button>
     </div>
   </div>

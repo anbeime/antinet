@@ -258,6 +258,20 @@ class MarkdownPreprocessor:
 class MarkdownConverter:
     """Markdown 文档转换器 - 直接使用 LibreOffice，不依赖 pandoc"""
 
+    # PDF 导出的 10 种主题色
+    THEMES = {
+        'warm-academic': {'primary':'#C17B4B', 'secondary':'#8B5E3C', 'accent':'#E8D5C4'},
+        'classic-thesis': {'primary':'#8B4513', 'secondary':'#6B3410', 'accent':'#F5E6D3'},
+        'tufte': {'primary':'#8B0000', 'secondary':'#4A4A4A', 'accent':'#F0F0F0'},
+        'ieee-journal': {'primary':'#1B3A5C', 'secondary':'#2F5496', 'accent':'#E8EEF4'},
+        'elegant-book': {'primary':'#6B4226', 'secondary':'#8B6914', 'accent':'#FAF0E6'},
+        'chinese-red': {'primary':'#CC2936', 'secondary':'#8B1A1A', 'accent':'#FFF8F0'},
+        'ink-wash': {'primary':'#2D2D2D', 'secondary':'#595959', 'accent':'#F8F8F8'},
+        'github-light': {'primary':'#0366D6', 'secondary':'#586069', 'accent':'#F6F8FA'},
+        'nord-frost': {'primary':'#5E81AC', 'secondary':'#81A1C1', 'accent':'#ECEFF4'},
+        'ocean-breeze': {'primary':'#00897B', 'secondary':'#00695C', 'accent':'#E0F2F1'},
+    }
+
     def __init__(self):
         self.preprocessor = MarkdownPreprocessor()
         self.lo_path = self._find_libreoffice_path()
@@ -284,12 +298,13 @@ class MarkdownConverter:
         input_format: str,
         output_format: OutputFormat,
         render_mermaid: bool = True,
-        extract_csv: bool = False
+        extract_csv: bool = False,
+        theme: str = 'chinese-red'
     ) -> ConversionResult:
         """
         转换文档: Markdown → PDF/DOCX/HTML/Excel
 
-        链路: LibreOffice → (ReportLab 仅 PDF 兜底)
+        链路: LibreOffice → (Python 原生兜底)
         """
         try:
             # 1. 预处理 Markdown (Mermaid 图表)
@@ -306,7 +321,7 @@ class MarkdownConverter:
                 return await self._convert_to_excel_with_csv(processed_content)
 
             # 3. LibreOffice 转换
-            return await self._convert_with_libreoffice(processed_content, output_format)
+            return await self._convert_with_libreoffice(processed_content, output_format, theme)
 
         except Exception as e:
             logger.error(f"Conversion failed: {e}")
@@ -315,12 +330,13 @@ class MarkdownConverter:
     async def _convert_with_libreoffice(
         self,
         content: str,
-        output_format: OutputFormat
+        output_format: OutputFormat,
+        theme: str = 'chinese-red'
     ) -> ConversionResult:
         """使用 LibreOffice 转换"""
         if not self.lo_path:
-            # 直接用 reportlab fallback
-            return await self._fallback_reportlab(content, output_format)
+            # 直接用 Python 原生 fallback
+            return await self._fallback_reportlab(content, output_format, theme)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
@@ -338,9 +354,13 @@ class MarkdownConverter:
             html_file.write_text(html_content, encoding='utf-8')
 
             # LibreOffice 能直接读 HTML
+            import uuid
+            user_install = tmppath / f".config_{uuid.uuid4().hex[:8]}"
+            os.environ['HOME'] = str(tmppath)
             cmd = [
                 self.lo_path,
-                "--headless",
+                "--headless", "--norestore", "--nofirststartwizard",
+                "-env:UserInstallation=file:///" + str(user_install).replace('\\', '/'),
                 "--convert-to", output_ext,
                 "--outdir", str(tmppath),
                 str(html_file)
@@ -364,7 +384,7 @@ class MarkdownConverter:
                     )
                 else:
                     logger.warning(f"[LibreOffice] failed: {result.stderr}, trying reportlab")
-                    return await self._fallback_reportlab(content, output_format)
+                    return await self._fallback_reportlab(content, output_format, theme)
 
             except subprocess.TimeoutExpired:
                 return ConversionResult(success=False, error="LibreOffice conversion timeout")
@@ -417,10 +437,55 @@ class MarkdownConverter:
     async def _fallback_reportlab(
             self,
             content: str,
-            output_format: OutputFormat
+            output_format: OutputFormat,
+            theme: str = 'chinese-red'
     ) -> ConversionResult:
-        """最后 fallback：使用 reportlab 直接生成 PDF"""
+        """最后 fallback：使用 Python 直接生成目标格式"""
         try:
+            tc = self.THEMES.get(theme, self.THEMES['chinese-red'])
+            primary_color = tc['primary']
+            accent_color = tc['accent']
+
+            # HTML: 用 markdown 库直接转，带主题色
+            if output_format == OutputFormat.HTML:
+                import markdown as md_lib
+                html_body = md_lib.markdown(content, extensions=['fenced_code', 'tables'])
+                styled_html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; color: #333; background: {accent_color}; }}
+a {{ color: {primary_color}; }}
+h1, h2, h3 {{ color: {primary_color}; }}
+pre {{ background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; border-left: 4px solid {primary_color}; }}
+code {{ background: #f0f0f0; padding: 2px 5px; border-radius: 3px; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+th {{ background: {primary_color}; color: white; }}
+</style></head><body>{html_body}</body></html>"""
+                return ConversionResult(success=True, content=styled_html.encode('utf-8'))
+
+            # DOCX: 用 python-docx 创建 Word 文档
+            if output_format == OutputFormat.DOCX:
+                from docx import Document
+                from docx.shared import Pt, Inches
+                doc = Document()
+                lines = content.split('\n')
+                for line in lines:
+                    stripped = line.strip()
+                    if stripped.startswith('# ') or stripped.startswith('## '):
+                        level = 1 if stripped.startswith('# ') else 2
+                        text = stripped.lstrip('#').strip()
+                        h = doc.add_heading(text, level=level)
+                    elif stripped.startswith('- ') or stripped.startswith('* '):
+                        doc.add_paragraph(stripped[2:], style='List Bullet')
+                    elif stripped:
+                        p = doc.add_paragraph(stripped)
+                    else:
+                        doc.add_paragraph()
+                buffer = io.BytesIO()
+                doc.save(buffer)
+                return ConversionResult(success=True, content=buffer.getvalue())
+
+            # PDF（原有 reportlab 逻辑）
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import ParagraphStyle
             from reportlab.lib.units import mm
@@ -477,9 +542,9 @@ class MarkdownConverter:
             return ConversionResult(success=True, content=buffer.getvalue())
 
         except ImportError as e:
-            return ConversionResult(success=False, error=f"reportlab not available: {e}")
+            return ConversionResult(success=False, error=f"required library not available: {e}")
         except Exception as e:
-            logger.error(f"Reportlab fallback failed: {e}")
+            logger.error(f"Fallback conversion failed: {e}")
             return ConversionResult(success=False, error=str(e))
 
     def _extract_text_paragraphs(self, content: str) -> list:

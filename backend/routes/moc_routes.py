@@ -14,9 +14,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/moc", tags=["MOC多维动态筛选"])
+from paths import DB_PATH
 
-DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"
+router = APIRouter(prefix="/api/moc", tags=["MOC多维动态筛选"])
 
 
 def get_db():

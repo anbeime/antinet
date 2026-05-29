@@ -381,132 +381,401 @@ class PDFourColorProcessor:
         
         return tags[:3]  # 最多3个标签
     
-    def export_to_excel(self, cards: List[Dict[str, Any]], output_path: str) -> Dict[str, Any]:
+    def _sanitize_for_docx(self, text: str) -> str:
+        """移除 XML 1.0 非法字符，保留 tab/newline/cr"""
+        if not isinstance(text, str):
+            text = str(text)
+        # XML 1.0 允许: 0x09 0x0A 0x0D, 0x20-0xD7FF, 0xE000-0xFFFD, 0x10000-0x10FFFF
+        def _valid(c: str) -> bool:
+            cp = ord(c)
+            if cp in (0x09, 0x0A, 0x0D):
+                return True
+            if 0x20 <= cp <= 0xD7FF:
+                return True
+            if 0xE000 <= cp <= 0xFFFD:
+                return True
+            if 0x10000 <= cp <= 0x10FFFF:
+                return True
+            return False
+        return ''.join(c if _valid(c) else ' ' for c in text)
+    
+    def export_to_excel(self, cards: List[Dict[str, Any]], output_path: str,
+                       title: str = "四色知识卡片报告") -> Dict[str, Any]:
         """
-        将卡片导出为 Excel
+        将卡片导出为 Excel（集成 skills/xlsx 专业导出器）
         
-        Args:
-            cards: 卡片列表
-            output_path: 输出文件路径
-            
-        Returns:
-            导出结果
+        支持多工作表：概览 + 按类型分组的卡片详情
         """
-        result = {
-            "success": False,
-            "output_path": output_path,
-            "error": None
-        }
-        
+        result = {"success": False, "output_path": output_path, "error": None}
+
         if not EXCEL_AVAILABLE:
             result["error"] = "openpyxl 未安装，请运行: pip install openpyxl"
             return result
-        
+
         try:
-            # 创建工作簿
-            wb = openpyxl.Workbook()
+            # 尝试使用 skills/xlsx 的专业导出器（多工作表、概览页、图表支持）
+            try:
+                from skills.xlsx.excel_exporter import AntinetExcelExporter
+
+                exporter = AntinetExcelExporter()
+                exporter.create_workbook()
+
+                # 统计卡片数量
+                cards_by_type: Dict[str, List[Dict]] = {}
+                card_counts = {}
+                for card in cards:
+                    # 跳过非字典项（防御性过滤）
+                    if not isinstance(card, dict):
+                        logger.warning(f"[export_to_excel] 跳过非字典卡片: {type(card).__name__}")
+                        continue
+                    ct = card.get("type", "fact")
+                    cards_by_type.setdefault(ct, []).append(card)
+                    type_name = exporter.CARD_NAMES.get(ct, ct)
+                    card_counts[type_name] = card_counts.get(type_name, 0) + 1
+
+                # 概览工作表
+                from datetime import datetime as dt
+                # 净化卡片文本（移除 XML 非法控制字符）
+                sanitized_cards_by_type: Dict[str, List[Dict]] = {}
+                for ct, gcards in cards_by_type.items():
+                    sanitized_cards_by_type[ct] = [
+                        {k: self._sanitize_for_docx(v) if isinstance(v, str) else v for k, v in card.items()}
+                        for card in gcards
+                    ]
+
+                analysis_info = {
+                    "title": self._sanitize_for_docx(title),
+                    "date": dt.now().strftime('%Y-%m-%d %H:%M'),
+                    "data_source": "PDF 四色卡片分析",
+                    "card_counts": card_counts,
+                    "summary": f"共提取 {len(cards)} 张知识卡片，涵盖 {len(cards_by_type)} 种类型。",
+                }
+                exporter.add_overview_sheet(analysis_info)
+
+                # 按类型分组的卡片工作表
+                for ct, grouped_cards in sanitized_cards_by_type.items():
+                    if grouped_cards:
+                        exporter.add_cards_sheet(ct, grouped_cards)
+
+                exporter.wb.save(output_path)
+                result["success"] = True
+                logger.info(f"Excel 导出成功（专业版 - 多工作表）: {output_path}")
+                return result
+
+            except ImportError:
+                # skills/xlsx 不可用，回退到内置实现
+                pass
+
+            # ========== 内置回退实现（单工作表，但增强样式）==========
+            from openpyxl import Workbook
+            from openpyxl.styles import Border, Side
+
+            wb = Workbook()
             ws = wb.active
             ws.title = "四色卡片"
-            
-            # 定义颜色
-            colors = {
-                "fact": "DDEBF7",      # 蓝色
-                "explanation": "E2EFDA", # 绿色
-                "risk": "FFF2CC",      # 黄色
-                "action": "FCE4D6"     # 红色
+
+            # 定义颜色方案（与 minimax-xlsx 技能一致）
+            color_map = {
+                "fact":       ("🔵 事实",   "D6DCE4", "0052CC"),
+                "explanation":("🟢 解释",   "D9EAD3", "009900"),
+                "risk":       ("🟡 风险",   "FFF2CC", "FFC000"),
+                "action":     ("🔴 行动",   "FCE4D6", "C00000"),
+                "blue":       ("🔵 核心概念","D6DCE4", "0052CC"),
+                "green":      ("🟢 关联链接","D9EAD3", "009900"),
+                "yellow":     ("🟡 参考来源","FFF2CC", "FFC000"),
+                "red":        ("🔴 索引关键词","FCE4D6", "C00000"),
             }
-            
-            # 设置表头
-            headers = ["ID", "类型", "标题", "内容", "标签", "来源"]
-            ws.append(headers)
-            
-            # 设置表头样式
-            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-            header_font = Font(bold=True, color="FFFFFF")
-            
-            for cell in ws[1]:
-                cell.fill = header_fill
-                cell.font = header_font
+
+            thin_border = Border(
+                left=Side(style='thin', color='CCCCCC'),
+                right=Side(style='thin', color='CCCCCC'),
+                top=Side(style='thin', color='CCCCCC'),
+                bottom=Side(style='thin', color='CCCCCC'),
+            )
+
+            # 表头
+            headers = ["序号", "类型", "标题", "内容摘要", "标签", "来源"]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(1, col, h)
+                cell.font = Font(bold=True, color="FFFFFF", size=10)
+                cell.fill = PatternFill(start_color="4472C4", fill_type="solid")
                 cell.alignment = Alignment(horizontal="center", vertical="center")
-            
-            # 添加数据
-            for card in cards:
-                row = [
-                    card.get("id", ""),
-                    self.CARD_TYPES.get(card.get("type", ""), {}).get("name", card.get("type", "")),
-                    card.get("title", ""),
-                    card.get("content", ""),
-                    ", ".join(card.get("tags", [])),
-                    card.get("source", "")
+                cell.border = thin_border
+
+            # 数据行
+            for idx, card in enumerate(cards, 1):
+                ct = card.get("type", "fact")
+                type_name, bg_color, font_color = color_map.get(ct, ("未知", "FFFFFF", "333333"))
+
+                row_data = [
+                    idx,
+                    type_name,
+                    self._sanitize_for_docx(card.get("title", "")),
+                    self._sanitize_for_docx((card.get("content", "") or "")[:200] + ("..." if len(card.get("content", "")) > 200 else "")),
+                    ", ".join(self._sanitize_for_docx(str(t)) for t in card.get("tags", [])),
+                    self._sanitize_for_docx(card.get("source", "") or card.get("address", ""))
                 ]
-                ws.append(row)
-                
-                # 设置行颜色
+                ws.append(row_data)
+
                 row_num = ws.max_row
-                card_type = card.get("type", "")
-                fill_color = colors.get(card_type, "FFFFFF")
-                
-                for cell in ws[row_num]:
-                    cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+                for col_idx in range(1, len(row_data) + 1):
+                    cell = ws.cell(row_num, col_idx)
+                    cell.fill = PatternFill(start_color=bg_color, fill_type="solid")
+                    cell.border = thin_border
+                    if col_idx == 3:
+                        cell.font = Font(bold=True, size=10)
+                    else:
+                        cell.font = Font(size=9.5)
                     cell.alignment = Alignment(vertical="top", wrap_text=True)
-            
-            # 调整列宽
-            ws.column_dimensions['A'].width = 10
-            ws.column_dimensions['B'].width = 12
-            ws.column_dimensions['C'].width = 30
-            ws.column_dimensions['D'].width = 50
-            ws.column_dimensions['E'].width = 20
-            ws.column_dimensions['F'].width = 15
-            
-            # 保存文件
+
+            # 列宽
+            widths = [8, 14, 30, 50, 18, 20]
+            for i, w in enumerate(widths, 1):
+                ws.column_dimensions[chr(64 + i)].width = w
+
+            # 自动筛选
+            ws.auto_filter.ref = f"A1:F{ws.max_row}"
+
+            # 冻结首行
+            ws.freeze_panes = 'A2'
+
             wb.save(output_path)
-            
             result["success"] = True
-            logger.info(f"Excel 导出成功: {output_path}")
-            
+            logger.info(f"Excel 导出成功（标准版）: {output_path}, 共 {len(cards)} 张卡片")
+
         except Exception as e:
             result["error"] = str(e)
             logger.error(f"Excel 导出失败: {e}", exc_info=True)
-        
+
         return result
 
-    def export_to_docx(self, cards: List[Dict[str, Any]], output_path: str) -> Dict[str, Any]:
-        """将卡片导出为 Word 文档"""
+    def export_to_docx(self, cards: List[Dict[str, Any]], output_path: str,
+                      title: str = "四色知识卡片报告", author: str = "Antinet 智能知识管家") -> Dict[str, Any]:
+        """将卡片导出为 Word 文档（专业排版，参考 minimax-docx 技能规范）"""
         result = {"success": False, "output_path": output_path, "error": None}
-        
+
         if not DOCX_AVAILABLE:
             result["error"] = "python-docx 未安装，请运行: pip install python-docx"
             return result
         
         try:
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+
             doc = Document()
-            doc.add_heading('四色知识卡片', 0)
+
+            # ========== 文档属性（参考 GB/T 9704-2012 公文标准）==========
+            core_props = doc.core_properties
+            core_props.title = title
+            core_props.author = author
+
+            # ========== 页面设置 ==========
+            section = doc.sections[0]
+            section.page_width = Inches(8.27)    # A4
+            section.page_height = Inches(11.69)  # A4
+            section.left_margin = Inches(0.79)   # 2cm
+            section.right_margin = Inches(0.79)
+            section.top_margin = Inches(0.79)
+            section.bottom_margin = Inches(0.59)
+
+            # ========== 页眉页脚 ==========
+            title = self._sanitize_for_docx(title)
+            author = self._sanitize_for_docx(author)
+            header = section.header
+            header_para = header.paragraphs[0]
+            header_para.text = f"{title}"
+            header_run = header_para.runs[0] if header_para.runs else header_para.add_run()
+            if not header_para.runs:
+                header_para.add_run(f"{title}")
+            header_para.runs[0].font.size = Pt(9)
+            header_para.runs[0].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            footer = section.footer
+            footer_para = footer.paragraphs[0]
+            footer_para.text = f"第 "
+            run1 = footer_para.add_run()
+            # 使用域代码实现页码
+            def add_page_number(paragraph):
+                fld_char_begin = OxmlElement('w:fldChar')
+                fld_char_begin.set(qn('w:fldCharType'), 'begin')
+                instr_text = OxmlElement('w:instrText')
+                instr_text.text = "PAGE"
+                fld_char_end = OxmlElement('w:fldChar')
+                fld_char_end.set(qn('w:fldCharType'), 'end')
+                run = paragraph.add_run()
+                run._r.append(fld_char_begin)
+                run._r.append(instr_text)
+                run._r.append(fld_char_end)
+                return run
             
+            # 清空默认页脚内容，重新构建
+            footer_para.clear()
+            pn_run = add_page_number(footer_para)
+            pn_run.font.size = Pt(9)
+            pn_run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            sep_run = footer_para.add_run(" / ")
+            sep_run.font.size = Pt(9)
+            sep_run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            tp_run = add_page_number(footer_para)
+            tp_run.font.size = Pt(9)
+            tp_run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            author_run = footer_para.add_run(f"  |  {author}  |  Antinet 智能知识管家")
+            author_run.font.size = Pt(9)
+            author_run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+            footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+            # ========== 颜色方案（参考四色卡片标准）==========
             color_map = {
-                "fact": ("事实", RGBColor(0, 82, 204)),
-                "explanation": ("解释", RGBColor(0, 153, 0)),
-                "risk": ("风险", RGBColor(255, 192, 0)),
-                "action": ("行动", RGBColor(192, 0, 0))
+                "fact":       ("事实",     RGBColor(0x00, 0x52, 0xCC), "DDEBF7"),
+                "explanation":("解释",     RGBColor(0x00, 0x99, 0x00), "E2EFDA"),
+                "risk":       ("风险",     RGBColor(0xFF, 0xC0, 0x00), "FFF2CC"),
+                "action":     ("行动",     RGBColor(0xC0, 0x00, 0x00), "FCE4D6"),
+                # 兼容英文类型名
+                "blue":       ("核心概念", RGBColor(0x00, 0x52, 0xCC), "DDEBF7"),
+                "green":      ("关联链接", RGBColor(0x00, 0x99, 0x00), "E2EFDA"),
+                "yellow":     ("参考来源", RGBColor(0xFF, 0xC0, 0x00), "FFF2CC"),
+                "red":        ("索引关键词",RGBColor(0xC0, 0x00, 0x00), "FCE4D6"),
             }
-            
+
+            # ========== 封面标题 ==========
+            title_para = doc.add_paragraph()
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_run = title_para.add_run(title)
+            title_run.font.size = Pt(22)
+            title_run.font.bold = True
+            title_run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x2E)
+
+            subtitle = doc.add_paragraph()
+            subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            sub_run = subtitle.add_run(f"{author}  |  共 {len(cards)} 张知识卡片")
+            sub_run.font.size = Pt(11)
+            sub_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
+            # 分隔线效果：添加一个段落作为视觉分隔
+            spacer = doc.add_paragraph()
+            spacer.paragraph_format.space_after = Pt(12)
+
+            # ========== 统计摘要表格 ==========
+            type_count: Dict[str, int] = {}
+            cards_by_type: Dict[str, List[Dict]] = {}
             for card in cards:
-                card_type = card.get("type", "fact")
-                type_name, type_color = color_map.get(card_type, ("事实", RGBColor(0, 0, 0)))
+                ct = card.get("type", "fact")
+                type_name, _, _ = color_map.get(ct, ("其他", RGBColor(0, 0, 0), "FFFFFF"))
+                type_count[type_name] = type_count.get(type_name, 0) + 1
+                cards_by_type.setdefault(ct, []).append(card)
+
+            if len(cards) > 0 and type_count:
+                stats_heading = doc.add_paragraph()
+                sh_run = stats_heading.add_run("📊 卡片统计")
+                sh_run.font.size = Pt(13)
+                sh_run.font.bold = True
+                sh_run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x2E)
                 
-                para = doc.add_paragraph()
-                run = para.add_run(f"[{type_name}] {card.get('title', '')}")
-                run.font.bold = True
-                run.font.color.rgb = type_color
+                stats_table = doc.add_table(rows=1, cols=4)
+                stats_table.style = 'Table Grid'
+                hdr_cells = stats_table.rows[0].cells
+                display_order = ["事实", "解释", "风险", "行动"]
+                col_idx = 0
+                for tn in display_order:
+                    count = type_count.get(tn, 0)
+                    bg_color = None
+                    for k, (name, rgb, hex_c) in color_map.items():
+                        if name == tn:
+                            bg_color = hex_c
+                            break
+                    cell = hdr_cells[col_idx]
+                    cell.text = f"{tn}\n{count}"
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for para in cell.paragraphs:
+                        for run in para.runs:
+                            run.font.bold = True
+                            run.font.size = Pt(10)
+                    # 背景色
+                    shading_elm = OxmlElement('w:shd')
+                    shading_elm.set(qn('w:fill'), bg_color or "F0F0F0")
+                    cell._tc.get_or_add_tcPr().append(shading_elm)
+                    col_idx += 1
+
+                doc.add_paragraph()  # 空行分隔
+
+            # ========== 卡片内容（按类型分组展示）==========
+            display_order_type = ["fact", "blue", "explanation", "green", "risk", "yellow", "action", "red"]
+
+            for group_idx, ct in enumerate(display_order_type):
+                grouped_cards = cards_by_type.get(ct, [])
+                if not grouped_cards:
+                    continue
                 
-                doc.add_paragraph(card.get("content", "")[:500])
-                doc.add_paragraph("")
+                type_name, type_color, bg_hex = color_map.get(ct, ("其他", RGBColor(0, 0, 0), "FFFFFF"))
+
+                # 类型标题
+                type_heading = doc.add_paragraph()
+                th_run = type_heading.add_run(f"■ {type_name} ({len(grouped_cards)}张)")
+                th_run.font.size = Pt(14)
+                th_run.font.bold = True
+                th_run.font.color.rgb = type_color
+                type_heading.paragraph_format.space_before = Pt(16)
+                type_heading.paragraph_format.space_after = Pt(8)
+
+                # 每张卡片
+                for card in grouped_cards:
+                    # 卡片标题
+                    card_title = doc.add_paragraph()
+                    ct_run = card_title.add_run(f"[{type_name}] ")
+                    ct_run.font.bold = True
+                    ct_run.font.color.rgb = type_color
+                    ct_run.font.size = Pt(12)
+                    
+                    title_text = self._sanitize_for_docx(card.get("title", ""))
+                    t_run = card_title.add_run(title_text)
+                    t_run.font.bold = True
+                    t_run.font.size = Pt(12)
+                    t_run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x2E)
+                    card_title.paragraph_format.space_before = Pt(10)
+                    card_title.paragraph_format.space_after = Pt(3)
+
+                    # 卡片内容
+                    raw_content = self._sanitize_for_docx(card.get("content", ""))
+                    content_text = raw_content[:1000] + ("..." if len(raw_content) > 1000 else "")
+
+                    content_para = doc.add_paragraph()
+                    crun = content_para.add_run(content_text)
+                    crun.font.size = Pt(10.5)
+                    crun.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+                    content_para.paragraph_format.space_after = Pt(2)
+
+                    # 来源信息
+                    source_text = ""
+                    if card.get("source"):
+                        source_text = f"来源：{self._sanitize_for_docx(card.get('source'))}"
+                    elif card.get("address"):
+                        source_text = f"来源：{self._sanitize_for_docx(card.get('address'))}"
+                    elif card.get("tags"):
+                        source_text = f"标签：{', '.join(self._sanitize_for_docx(str(t)) for t in card.get('tags', []))}"
+
+                    if source_text:
+                        meta_para = doc.add_paragraph()
+                        mrun = meta_para.add_run(source_text)
+                        mrun.font.size = Pt(8.5)
+                        mrun.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+                        meta_para.paragraph_format.space_after = Pt(6)
+
+            # ========== 文档末尾 ==========
+            doc.add_paragraph()
+            end_line = doc.add_paragraph()
+            end_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            erun = end_line.add_run("— 由 Antinet 智能知识管家自动生成 —")
+            erun.font.size = Pt(9)
+            erun.font.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
+            erun.font.italic = True
 
             doc.save(output_path)
             result["success"] = True
-            logger.info(f"Word 导出成功: {output_path}")
+            logger.info(f"Word 导出成功（专业排版）: {output_path}, 共 {len(cards)} 张卡片")
         except Exception as e:
             result["error"] = str(e)
-            logger.error(f"Word 导出失败: {e}")
+            logger.error(f"Word 导出失败: {e}", exc_info=True)
 
         return result
 

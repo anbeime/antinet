@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, AlertTriangle, Loader, FileText, Presentation, Edit3, Save, Plus, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus, History } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -335,12 +335,12 @@ const ExcelAnalysis: React.FC = () => {
                 在线查看
               </h3>
               <div className="space-y-2">
-                <button 
-                  onClick={() => window.open('http://localhost:3000/office-docs', '_blank')}
+<button 
+                  onClick={() => window.open('http://localhost:3000/pdf-viewer/markdown', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
-                  <FileSpreadsheet className="w-4 h-4 text-green-500" />
-                  <span>在线表格</span>
+                  <History className="w-4 h-4 text-green-500" />
+                  <span>markdown转换</span>
                 </button>
                 <button 
                   onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
@@ -355,13 +355,6 @@ const ExcelAnalysis: React.FC = () => {
                 >
                   <Presentation className="w-4 h-4 text-orange-500" />
                   <span>PPT演示</span>
-                </button>
-                <button 
-                  onClick={() => window.open('http://localhost:3000/report-automation', '_blank')}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
-                >
-                  <BarChart3 className="w-4 h-4 text-purple-500" />
-                  <span>报表生成</span>
                 </button>
                 <button 
                   onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import { ChevronLeft, ChevronRight, Bell, CheckCircle2, Circle, X, Plus, Trash2, Calendar, MapPin, Edit2, Clock, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, Circle, X, Plus, Trash2, Calendar, MapPin, Clock, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { getLunarDate, getTraditionalFestivalsData } from '@/utils/calendar/calendar';
@@ -63,9 +63,6 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
     location: '',
     category: 'default',
   });
-
-  // 编辑事件
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   // 日程面板全屏切换
   const [panelFullscreen, setPanelFullscreen] = useState(false);

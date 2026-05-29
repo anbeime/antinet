@@ -26,10 +26,9 @@ class UTF8Encoder(json.JSONEncoder):
     def encode(self, obj):
         return super().encode(obj).encode('utf-8').decode('utf-8')
 
-router = APIRouter(prefix="/api/research", tags=["专题研究"])
+from paths import DB_PATH
 
-# 数据库路径
-DB_PATH = Path(__file__).parent.parent / "data" / "antinet.db"
+router = APIRouter(prefix="/api/research", tags=["专题研究"])
 
 
 class ResearchProject(BaseModel):
@@ -285,7 +284,7 @@ async def create_project_card(project_id: int, card: CardCreateRequest):
         cursor.execute("""
             SELECT id FROM knowledge_cards 
             WHERE project_id = ? AND id != ?
-            ORDER BY created_at DESC LIMIT 20
+            ORDER BY created_at DESC LIMIT 100
         """, (project_id, card_id))
         sibling_ids = [row["id"] for row in cursor.fetchall()]
         

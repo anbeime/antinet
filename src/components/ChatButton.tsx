@@ -5,9 +5,8 @@
 
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, X, Sparkles, GripVertical } from 'lucide-react';
+import { Sparkles, GripVertical } from 'lucide-react';
 import chatAvatar from '../pages/logo.gif';
-import { Button } from '@/components/ui/button';
 import { EnhancedChatBot } from './EnhancedChatBot';
 import { cn } from '@/lib/utils';
 
@@ -23,7 +22,6 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
   onCardClick
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [hasNotification, setHasNotification] = useState(false);
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<HTMLDivElement>(null);
@@ -82,11 +80,6 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
               className="w-14 h-14 cursor-pointer relative"
             >
               <img src={chatAvatar} alt="智能助手" className="w-14 h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
-              
-              {/* 通知红点 */}
-              {hasNotification && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-background" />
-              )}
             </div>
 
             {/* 拖拽手柄 */}

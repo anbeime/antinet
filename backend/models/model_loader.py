@@ -25,8 +25,30 @@ _npu_cooldown_seconds = 0.5  # 推理间隔冷却时间
 
 # 添加Genie路径 - 支持多个位置查找
 import os
+import sys
+
 # 获取项目根目录（backend的上级目录）
-PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
+# PyInstaller 打包后 __file__ 指向 _MEI291162 内的路径，需要向上找到真正的项目根目录
+def _get_project_root() -> Path:
+    """智能获取项目根目录，支持 PyInstaller 打包后的环境"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后使用 _MEIPASS
+        app_base = Path(sys._MEIPASS)
+    else:
+        app_base = Path(__file__).parent.parent.parent.absolute()
+
+    # 查找标志性目录来确认项目根
+    markers = ['backend', 'src', 'data', 'dist_package']
+    current = app_base
+    for _ in range(5):  # 最多向上5层
+        if any((current / m).exists() for m in markers):
+            return current
+        current = current.parent
+
+    # 回退：直接使用 app_base
+    return app_base
+
+PROJECT_ROOT = _get_project_root()
 
 # 智能查找 ai-engine-direct-helper 目录
 def find_ai_engine_helper() -> Path:
@@ -34,15 +56,17 @@ def find_ai_engine_helper() -> Path:
     possible_locations = [
         PROJECT_ROOT / "ai-engine-direct-helper-main",
         PROJECT_ROOT / "ai-engine-direct-helper",
+        Path("C:/D/zhiyi/ai-engine-direct-helper"),
+        Path("C:/D/zhiyi/ai-engine-direct-helper-main"),
         Path("C:/D/zhiy/ai-engine-direct-helper"),
         Path("C:/D/zhiy/ai-engine-direct-helper-main"),
     ]
-    
+
     for loc in possible_locations:
         if loc.exists():
             logger.info(f"[OK] 找到 ai-engine-direct-helper: {loc}")
             return loc
-    
+
     logger.warning(f"[WARNING] 未找到 ai-engine-direct-helper，尝试位置: {possible_locations}")
     return possible_locations[0]  # 返回默认位置
 
@@ -117,19 +141,41 @@ def get_qai_libs_path() -> str:
 # AIPC 预装的额外 DLL 目录 - 智能查找实际包含 DLL 的目录
 def _find_extra_qai_libs() -> str:
     """查找 AIPC 预装 DLL 目录（包含 Genie.dll 的实际目录）"""
+    # PyInstaller 打包后，从 _MEIPASS 查找
+    meipass_base = Path(getattr(sys, '_MEIPASS', '')) if hasattr(sys, '_MEIPASS') else Path('')
+
     candidates = [
-        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "arm64x-windows-msvc",
-        AI_ENGINE_HELPER_PATH / "samples" / "qai_libs" / "QAIRT_Runtime" / "aarch64-windows-msvc",
+        # 打包后的 _MEIPASS 目录（优先）
+        meipass_base / "QAIRT",
+        meipass_base / "ai-engine-direct-helper-main" / "samples" / "qai_libs",
+        meipass_base / "models",
+        # 原始项目目录
+        PROJECT_ROOT / "QAIRT",
+        PROJECT_ROOT / "ai-engine-direct-helper-main" / "samples" / "qai_libs",
         AI_ENGINE_HELPER_PATH / "samples" / "qai_libs",
-        PROJECT_ROOT / "QAIRT_Runtime" / "aarch64-windows-msvc",
-        PROJECT_ROOT / "QAIRT_Runtime" / "arm64x-windows-msvc",
+        PROJECT_ROOT / "QAIRT_Runtime",
+        # 硬编码的开发路径
+        Path("C:/D/zhiyi/QAIRT"),
+        Path("C:/D/zhiyi/ai-engine-direct-helper-main/samples/qai_libs"),
     ]
+
+    # 查找包含 Genie.dll 的目录
     for c in candidates:
         if c.exists() and (c / "Genie.dll").exists():
             logger.info(f"[OK] 找到 AIPC 预装 DLL 目录: {c}")
             return str(c)
-    # 兜底返回上层目录
-    fallback = str(AI_ENGINE_HELPER_PATH / "samples" / "qai_libs")
+
+    # 查找 QAIRT 下的具体架构目录
+    for c in candidates:
+        if c.exists():
+            for arch in ["arm64x-windows-msvc", "aarch64-windows-msvc"]:
+                arch_path = c / arch
+                if arch_path.exists() and (arch_path / "Genie.dll").exists():
+                    logger.info(f"[OK] 找到 AIPC DLL 目录: {arch_path}")
+                    return str(arch_path)
+
+    # 兜底返回
+    fallback = str(PROJECT_ROOT / "QAIRT")
     logger.warning(f"[WARNING] 未找到包含 Genie.dll 的 AIPC 预装目录，使用: {fallback}")
     return fallback
 
@@ -349,7 +395,7 @@ class ModelConfig:
         # },
         "qwen2.0-7b": {
             "name": "Qwen2.0-7B-SSD",
-            "path": str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
+            "path": "C:/models/Qwen2.0-7B-SSD-8380-2.34",
             "params": "7B",
             "quantization": "QNN 2.34",
             "description": "对话/分析，速度快，中文支持好（需要KV缓存）",
@@ -358,7 +404,7 @@ class ModelConfig:
         },
         "llama3.2-3b": {
             "name": "Llama3.2-3B",
-            "path": str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),
+            "path": "C:/models/llama3.2-3b-8380-qnn2.37",
             "params": "3B",
             "quantization": "QNN 2.37",
             "description": "推荐首选，基础模式，3个分片，轻量快速",
@@ -367,8 +413,8 @@ class ModelConfig:
         }
     }
 
-    # 默认使用的模型（参考旧版本）
-    DEFAULT_MODEL = "llama3.2-3b"
+    # 默认使用的模型（Qwen2.0-7B 中文能力强，优先使用）
+    DEFAULT_MODEL = "qwen2.0-7b"
 
 
 
@@ -577,26 +623,24 @@ class NPUModelLoader:
 
     def _format_prompt(self, user_input: str, system_prompt: str = None) -> str:
         """
-        格式化用户输入为模型期望的提示格式
-        
-        【参考旧版本】简化处理：忽略自定义 system_prompt，把所有内容放到 user 部分
-        这样可以避免模型混淆输入输出
+        格式化用户输入为模型期望的 ChatML 格式
         
         Args:
             user_input: 用户输入文本（已包含所有上下文）
-            system_prompt: 忽略（旧版本兼容）
+            system_prompt: 自定义系统提示词，None 时使用默认值
             
         Returns:
             格式化后的完整提示
         """
-        # 使用固定的简单 system prompt，避免模型混淆（参考旧版本）
-        prompt_tags_1 = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n"
+        # 使用自定义 system_prompt（如 Agent 角色设定），否则使用通用默认值
+        effective_system = system_prompt if system_prompt else "You are a helpful assistant."
+        prompt_tags_1 = f"<|im_start|>system\n{effective_system}<|im_end|>\n<|im_start|>user\n"
         prompt_tags_2 = "<|im_end|>\n<|im_start|>assistant\n"
         
         # 构建完整提示（user_input 已包含所有内容）
         formatted_prompt = prompt_tags_1 + user_input + prompt_tags_2
         
-        logger.debug(f"[ChatML] user_input长度={len(user_input)}, 格式化后长度={len(formatted_prompt)}")
+        logger.debug(f"[ChatML] system_prompt长度={len(effective_system)}, user_input长度={len(user_input)}, 格式化后长度={len(formatted_prompt)}")
         
         return formatted_prompt
 
@@ -629,10 +673,10 @@ class NPUModelLoader:
         执行推理
 
         Args:
-            prompt: 输入提示词
-            max_new_tokens: 最大生成token数（默认32，参考旧版本）
-            temperature: 温度参数（默认0.7，参考旧版本）
-            system_prompt: 忽略（旧版本兼容）
+            prompt: 用户输入提示词
+            max_new_tokens: 最大生成token数
+            temperature: 温度参数
+            system_prompt: 自定义系统提示词（Agent角色设定等）
 
         Returns:
             生成的文本

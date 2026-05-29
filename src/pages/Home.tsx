@@ -4,14 +4,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Brain,
-  Home as HomeIcon,
   ChevronDown,
   ChevronRight,
   Search,
-  Plus,
   PlusCircle,
   X,
-  TrendingUp,
   AlertCircle,
   Presentation,
   Table,
@@ -19,19 +16,12 @@ import {
   Cpu,
   Sparkles,
   FileText,
-  Eye,
-  Trash2,
   Layers,
   ListTodo,
   Bot,
   Users,
-  Clapperboard,
-  FileSpreadsheet,
-  FileType,
   BookOpen,
   GitBranch,
-  BarChart3,
-  LayoutDashboard,
   Database,
   CheckSquare,
   Video,
@@ -51,9 +41,9 @@ import { useTheme } from '@/hooks/useTheme';
 import CreateCardModal from '@/components/CreateCardModal';
 import CardDetailModal from '@/components/CardDetailModal';
 import ImportModal from '@/components/ImportModal';
-import DataAnalysisPanel from '@/components/DataAnalysisPanel';
 import PPTAnalysis from '@/pages/PPTAnalysis';
 import ExcelAnalysis from '@/pages/ExcelAnalysis';
+import ResearchProjectManager from '@/components/ResearchProjectManager';
 import DataManagement from '@/pages/DataManagement';
 import AgentSystem from '@/pages/AgentSystem';
 import SkillCenter from '@/pages/SkillCenter';
@@ -67,7 +57,6 @@ import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import ChatButton from '@/components/ChatButton';
 import WikiEditor from '@/components/WikiEditor';
 import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
-import KnowledgeGraphWorkbenchPage from '@/pages/KnowledgeGraphWorkbenchPage';
 import MindMap from '@/pages/MindMap';
 import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 import PDFViewer from '@/pages/PDFViewer';
@@ -76,7 +65,8 @@ import ReportAutomation from '@/pages/ReportAutomation';
 import OfficeDocs from '@/pages/OfficeDocs';
 
 
-// 定义卡片类型
+
+// 定义卡片颜色类型
 type CardColor = 'blue' | 'green' | 'yellow' | 'red';
 
 // 定义表单数据类型
@@ -86,6 +76,7 @@ interface CardFormData {
   color: CardColor;
   address: string;
   relatedCards: string[];
+  projectId?: number;
 }
 
 interface KnowledgeCard {
@@ -100,7 +91,16 @@ interface KnowledgeCard {
 }
 
 // 卡片类型映射
-const cardTypeMap = {
+const cardTypeMap: Record<CardColor, { 
+  name: string; 
+  description: string;
+  icon: React.ReactNode;
+  color: string;
+  hoverColor: string;
+  textColor: string;
+  bgColor: string;
+  borderColor: string;
+}> = {
   blue: { 
     name: '核心概念', 
     description: '记录重要的想法、理论和主要观点',
@@ -157,6 +157,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   // 从URL参数获取tab
   const urlTab = searchParams.get('tab');
   
+  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>('cards');
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
@@ -168,7 +169,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedCard, setSelectedCard] = useState<KnowledgeCard | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [managementSearchQuery, setManagementSearchQuery] = useState('');
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
   const [createModalColor, setCreateModalColor] = useState<CardColor>('blue');
@@ -187,9 +187,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   
   // 卡片管理筛选和分页
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | CardColor>('all');
-  const [projectFilter, setProjectFilter] = useState<number | 'all'>('all');
-  const [projects, setProjects] = useState<{id: number; name: string}[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   
@@ -427,7 +424,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
       
       // 切换到卡片视图
-      setActiveTab('cards');
+      setActiveTab('cards-management');
       
     } catch (error) {
       console.error('导入卡片失败:', error);
@@ -435,13 +432,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     }
   };
 
-  // 打开创建卡片模态框
+// 打开创建卡片模态框
   const openCreateModal = (color?: CardColor) => {
     if (color) {
       setCreateModalColor(color);
     }
     setShowCreateModal(true);
-    setActiveTab('cards');
+    setActiveTab('cards-management');
   };
 
   // 打开卡片详情模态框
@@ -512,17 +509,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           }));
           setCards(formattedCards);
           
-          // 加载专题列表
-          try {
-            const projRes = await fetch(getApiBaseUrl() + '/api/research/projects');
-            if (projRes.ok) {
-              const projData = await projRes.json();
-              setProjects(projData.value || projData || []);
-            }
-          } catch (e) {
-            console.error('加载专题失败:', e);
-          }
-          
           console.log('从API加载卡片:', formattedCards.length);
         }
       } catch (error) {
@@ -586,19 +572,22 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           { label: '行动卡片', count: typeCount.red, color: 'red' },
         ]);
         
-        // 设置功能亮点
+// 设置功能亮点
         setFeatureHighlights([
           { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms', link: '/genie-playground' },
           { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理', link: 'tab:cards-management' },
           { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析', link: '/agent-system' },
-          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/PDF/Excel报告', link: '/report-automation' },
+          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/PDF/Excel报告', link: 'tab:ppt-analysis' },
         ]);
         
         // 设置应用场景
         setApplicationScenarios([
-          { icon: 'An', title: '数据分析报告', description: '智能分析数据，生成可视化报告', link: '/excel-analysis' },
-          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:document-center' },
+          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:data-management' },
+          { icon: 'Pr', title: '专题项目管理', description: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
+          { icon: 'Tm', title: '局域网团队协作', description: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
         ]);
+
+    
         
         console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
       } catch (error) {
@@ -697,7 +686,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <button
               onClick={() => setActiveTab('cards-management')}
               className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'cards-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
-            >
+>
               <Briefcase size={18} />
               <span>知识管理</span>
             </button>
@@ -717,27 +706,20 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
             >
               <Users size={18} />
-              <span>团队会议</span>
+              <span>智能协作会议</span>
             </button>
 
             {/* 文档处理下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis', 'document-center', 'format-converter', 'report-automation', 'wiki-editor'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <FolderOpen size={18} />
                 <span>文档处理</span>
                 <ChevronDown size={14} className="ml-1" />
               </button>
 
-              <div className="absolute top-full left-0 mt-0 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button
-                  onClick={() => setActiveTab('document-center')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'document-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <LayoutDashboard size={16} />
-                  <span>文档中心首页</span>
-                </button>
+<div className="absolute top-full left-0 mt-0 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                 <button
                   onClick={() => setActiveTab('pdf-analysis')}
                   className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
@@ -759,27 +741,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Table size={16} />
                   <span>Excel/在线表格</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab('report-automation')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'report-automation' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <BarChart3 size={16} />
-                  <span>报表生成</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('format-converter')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'format-converter' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <FileType size={16} />
-                  <span>格式转换</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('wiki-editor')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'wiki-editor' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <BookOpen size={16} />
-                  <span>Wiki编辑器</span>
-                </button>
+
               </div>
             </div>
 
@@ -790,7 +752,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* AI工具下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['data-analysis', 'agent-system', 'skill-center'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['agent-system', 'skill-center'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
               >
                 <Cpu size={18} />
                 <span>AI工具</span>
@@ -798,15 +760,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <div className="absolute top-full left-0 mt-0 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                 <button
-                  onClick={() => setActiveTab('data-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'data-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
-                >
-                  <TrendingUp size={16} />
-                  <span>智能分析</span>
-                </button>
-                <button
                   onClick={() => setActiveTab('agent-system')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 first:rounded-t-lg flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                 >
                   <Bot size={16} />
                   <span>Agent系统</span>
@@ -818,15 +773,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Sparkles size={16} />
                   <span>技能中心</span>
                 </button>
-                <a
-                  href="/book-skill"
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 last:rounded-b-lg flex items-center space-x-2`}
-                  onClick={(e) => { e.preventDefault(); window.location.href = '/book-skill'; }}
-                >
-                  <BookOpen size={16} />
-                  <span>Book Skill</span>
-                  <span className="ml-auto text-[10px] px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded">📚</span>
-                </a>
               </div>
             </div>
           </div>
@@ -895,11 +841,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
                 文档处理
               </div>
-              <button onClick={() => { setActiveTab('document-center'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'document-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <LayoutDashboard size={16} /><span>文档中心首页</span>
-              </button>
-              <button onClick={() => { setActiveTab('pdf-analysis'); setMobileMenuOpen(false); }}
+<button onClick={() => { setActiveTab('pdf-analysis'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <FileText size={16} /><span>PDF分析器</span>
               </button>
@@ -907,29 +849,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Presentation size={16} /><span>PPT生成</span>
               </button>
-              <button onClick={() => { setActiveTab('excel-analysis'); setMobileMenuOpen(false); }}
+<button onClick={() => { setActiveTab('excel-analysis'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Table size={16} /><span>Excel/在线表格</span>
-              </button>
-              <button onClick={() => { setActiveTab('report-automation'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'report-automation' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <BarChart3 size={16} /><span>报表生成</span>
-              </button>
-              <button onClick={() => { setActiveTab('format-converter'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'format-converter' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <FileType size={16} /><span>格式转换</span>
-              </button>
-              <button onClick={() => { setActiveTab('wiki-editor'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'wiki-editor' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <BookOpen size={16} /><span>Wiki编辑器</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
                 AI工具
               </div>
-              <button onClick={() => { setActiveTab('data-analysis'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'data-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
-                <TrendingUp size={16} /><span>智能分析</span>
-              </button>
               <button onClick={() => { setActiveTab('agent-system'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Bot size={16} /><span>Agent系统</span>
@@ -937,10 +863,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               <button onClick={() => { setActiveTab('skill-center'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
                 <Sparkles size={16} /><span>技能中心</span>
-              </button>
-              <button onClick={() => { setMobileMenuOpen(false); window.location.href = '/book-skill'; }}
-                className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <BookOpen size={16} /><span>Book Skill</span>
               </button>
             </div>
           </div>
@@ -978,8 +900,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       key={color}
                       className={`${type.bgColor} border ${type.borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow`}
                       onClick={() => {
-                        setActiveTab('cards');
+                        setActiveTab('cards-management');
                         setSelectedCardColor(color as CardColor);
+                        setTimeout(() => {
+                          document.getElementById(`card-stat-${color}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 100);
                       }}
                     >
                       <div className="flex justify-between items-start mb-2">
@@ -1186,21 +1111,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                         <ChevronRight size={16} />
                       </motion.button>
                     ))}
-                    {/* 自进化聊天入口 */}
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors mt-2"
-                      onClick={() => navigate('/evolving-chat')}
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-white/20 p-1.5 rounded-lg mr-3">
-                          <Brain className="w-4 h-4" />
-                        </div>
-                        <span className="font-medium">自进化聊天</span>
-                      </div>
-                      <ChevronRight size={16} />
-                    </motion.button>
                   </div>
                </motion.div>
 
@@ -1234,7 +1144,16 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                          key={index}
                          whileHover={{ x: 5 }}
                          className="flex items-start cursor-pointer"
-                         onClick={() => scenario.link.startsWith('tab:') ? setActiveTab(scenario.link.slice(4) as any) : navigate(scenario.link)}
+                         onClick={() => {
+                           if (scenario.link.startsWith('tab:')) {
+                             const tabTarget = scenario.link.slice(4);
+                             const [mainTab, subTab] = tabTarget.split('|');
+                             setActiveTab(mainTab as any);
+                             if (subTab) setKnowledgeSubTab(subTab as any);
+                           } else {
+                             navigate(scenario.link);
+                           }
+                         }}
                        >
                          <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
                            {scenario.icon}
@@ -1255,6 +1174,56 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 知识管理（卡片管理）视图 */}
         {activeTab === 'cards-management' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+            {/* 子导航标签 */}
+            <div className="flex items-center border-b border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setKnowledgeSubTab('cards')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'cards'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <Layers size={16} className="inline mr-1.5" />
+                卡片管理
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('research')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'research'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <BookOpen size={16} className="inline mr-1.5" />
+                专题研究
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('knowledge-graph')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'knowledge-graph'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <Network size={16} className="inline mr-1.5" />
+                知识网络
+              </button>
+              <button
+                onClick={() => setKnowledgeSubTab('mindmap')}
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                  knowledgeSubTab === 'mindmap'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                }`}
+              >
+                <GitBranch size={16} className="inline mr-1.5" />
+                思维导图
+              </button>
+            </div>
+
+            {knowledgeSubTab === 'cards' && (
+            <>
             {/* 页面标题 */}
             <div className="flex items-center justify-between">
               <h1 className="text-2xl font-bold">卡片管理</h1>
@@ -1275,6 +1244,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               {Object.entries(cardTypeMap).map(([color, type]) => (
                 <div 
                   key={color} 
+                  id={`card-stat-${color}`}
                   onClick={() => setSelectedCardColor(color as CardColor)}
                   className={`${type.bgColor} p-4 rounded-xl border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
                 >
@@ -1478,6 +1448,25 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 </span>
               </div>
             )}
+            </>
+          )}
+
+
+          {knowledgeSubTab === 'research' && (
+            <ResearchProjectManager />
+          )}
+
+          {knowledgeSubTab === 'knowledge-graph' && (
+            <div className="-mx-6 -mb-6" style={{ height: 'calc(100vh - 200px)' }}>
+              <KnowledgeGraphView />
+            </div>
+          )}
+
+          {knowledgeSubTab === 'mindmap' && (
+            <div className="-mx-6 -mb-6" style={{ height: 'calc(100vh - 200px)', overflow: 'auto' }}>
+              <MindMap />
+            </div>
+          )}
           </motion.div>
         )}
 
@@ -1494,11 +1483,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 技能中心视图 */}
         {activeTab === 'skill-center' && (
           <SkillCenter />
-        )}
-
-        {/* 数据分析视图 */}
-        {activeTab === 'data-analysis' && (
-          <DataAnalysisPanel />
         )}
 
         {/* 批量处理视图 */}
@@ -1551,10 +1535,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           <VirtualOfficeMeeting />
         )}
 
-        {/* 知识网络视图 */}
-        {activeTab === 'knowledge-network' && (
-          <KnowledgeGraphWorkbenchPage />
-        )}
+{/* 知识网络视图 —— 使用 WikiEditor（含编辑/图谱/搜索/智能） */}
+{activeTab === 'knowledge-network' && (
+<WikiEditor />
+)}
 
         {/* 预留：以后可以整合到PPT生成中 */}
 
@@ -1587,41 +1571,21 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <h3 className="font-semibold">PPT演示</h3>
                   <p className="text-sm text-gray-500">在线演示PPT文件</p>
                 </button>
-                <button onClick={() => setActiveTab('excel-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+<button onClick={() => setActiveTab('excel-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Table className="w-10 h-10 text-green-500 mb-3" />
                   <h3 className="font-semibold">Excel/在线表格</h3>
                   <p className="text-sm text-gray-500">数据分析与可视化</p>
                 </button>
-                <button onClick={() => { localStorage.setItem('openExcelEditor', 'true'); setActiveTab('excel-analysis'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Table className="w-10 h-10 text-green-400 mb-3" />
-                  <h3 className="font-semibold">在线编辑</h3>
-                  <p className="text-sm text-gray-500">在线编辑表格</p>
-                </button>
-                <button onClick={() => setActiveTab('report-automation')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <BarChart3 className="w-10 h-10 text-purple-500 mb-3" />
-                  <h3 className="font-semibold">报表生成</h3>
-                  <p className="text-sm text-gray-500">自动化报表输出</p>
-                </button>
-                <button onClick={() => setActiveTab('format-converter')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <FileType className="w-10 h-10 text-cyan-500 mb-3" />
-                  <h3 className="font-semibold">格式转换</h3>
-                  <p className="text-sm text-gray-500">文档格式转换</p>
-                </button>
-                <button onClick={() => setActiveTab('knowledge-graph')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <GitBranch className="w-10 h-10 text-blue-500 mb-3" />
-                  <h3 className="font-semibold">知识图谱</h3>
-                  <p className="text-sm text-gray-500">可视化知识网络</p>
-                </button>
-                <button onClick={() => setActiveTab('mindmap')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                <button onClick={() => { setActiveTab('cards-management'); setKnowledgeSubTab('mindmap'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Brain className="w-10 h-10 text-pink-500 mb-3" />
                   <h3 className="font-semibold">思维导图</h3>
                   <p className="text-sm text-gray-500">结构化思维整理</p>
                 </button>
-                <button onClick={() => setActiveTab('knowledge-network')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+{/* <button onClick={() => setActiveTab('knowledge-network')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Network className="w-10 h-10 text-indigo-500 mb-3" />
                   <h3 className="font-semibold">知识网络</h3>
                   <p className="text-sm text-gray-500">在线知识协作</p>
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
@@ -1642,24 +1606,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           <ExcelAnalysis />
         )}
 
-        {/* 报表生成 */}
+        {/* 报表生成 → 重定向到 PPT 演示 */}
         {activeTab === 'report-automation' && (
-          <ReportAutomation />
-        )}
-
-        {/* 思维导图 */}
-        {activeTab === 'mindmap' && (
-          <MindMap />
-        )}
-
-        {/* Wiki编辑器 */}
-        {activeTab === 'wiki-editor' && (
-          <WikiEditor />
-        )}
-
-        {/* 知识图谱 */}
-        {activeTab === 'knowledge-graph' && (
-          <KnowledgeGraphView />
+          <PPTViewer />
         )}
 
         {/* PDF查看器 */}
@@ -1725,7 +1674,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             // 短暂延迟后打开创建卡片模态框，确保动画流畅
             setTimeout(() => {
               setCreateModalColor('blue'); // 默认使用蓝色卡片（核心概念）
-              setActiveTab('cards');
+              setActiveTab('cards-management');
               // 在实际应用中，这里可以预填充创建卡片的表单
               toast(`准备创建新卡片：${title}`, {
                 className: 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-100'

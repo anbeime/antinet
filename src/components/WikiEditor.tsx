@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, Sparkles, BarChart3, Copy, Check } from 'lucide-react';
+import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, BarChart3, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import WikiGraphView from './WikiGraphView';
@@ -70,16 +70,13 @@ const WikiEditor = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [activeTab, setActiveTab] = useState<'editor' | 'graph' | 'search' | 'semantic'>('editor');
+  const [activeTab, setActiveTab] = useState<'editor' | 'graph' | 'search'>('editor');
   const [graphSubTab, setGraphSubTab] = useState<'wiki' | 'cards'>('wiki');
   const [graphNodes, setGraphNodes] = useState<WikiNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['articles', 'concepts', 'entities']));
-  const [semanticResults, setSemanticResults] = useState<SearchResult[]>([]);
-  const [compilerStats, setCompilerStats] = useState<any>(null);
-  const [semanticLoading, setSemanticLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -137,7 +134,10 @@ const WikiEditor = () => {
       const data = await res.json();
       if (data.page) {
         setCurrentPage(data.page);
-        setContent(data.page.content || '');
+        // Handle both string and dict content
+        const rawContent = data.page.content || '';
+        const contentStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+        setContent(contentStr);
         setTitle(data.page.title || '');
         setPageType(data.page.type);
         setTags(data.page.tags || []);
@@ -145,6 +145,7 @@ const WikiEditor = () => {
         setBacklinks(data.backlinks || []);
         setConnected(data.connected || []);
         setEditMode(false);
+        setViewMode('preview');
       }
     } catch (e) {
       console.error('Failed to load page:', e);
@@ -236,43 +237,6 @@ const WikiEditor = () => {
       console.error('Search failed:', e);
     }
     setIsSearching(false);
-  };
-
-  const loadCompilStats = async () => {
-    try {
-      const res = await fetch(getApiBaseUrl() + '/api/wiki/compiler/stats');
-      const data = await res.json();
-      setCompilerStats(data);
-    } catch (e) {
-      console.error('Failed to load compiler stats:', e);
-    }
-  };
-
-  const triggerCompile = async () => {
-    try {
-      toast.info('正在运行智能编译...');
-      const res = await fetch(getApiBaseUrl() + '/api/wiki/compiler/run', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        toast.success('编译完成!');
-        loadCompilStats();
-      }
-    } catch (e) {
-      toast.error('编译失败');
-    }
-  };
-
-  const runSemanticSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setSemanticLoading(true);
-    try {
-      const res = await fetch(getApiBaseUrl() + `/api/wiki/semantic/search?q=${encodeURIComponent(searchQuery)}&limit=10`);
-      const data = await res.json();
-      setSemanticResults(data.results || []);
-    } catch (e) {
-      console.error('Semantic search failed:', e);
-    }
-    setSemanticLoading(false);
   };
 
   const insertLink = (linkTitle: string) => {
@@ -439,17 +403,7 @@ const WikiEditor = () => {
           >
             搜索
           </button>
-          <button
-            onClick={() => {
-              setActiveTab('semantic');
-              loadCompilStats();
-            }}
-            className={`px-3 py-1.5 rounded-lg text-sm ${activeTab === 'semantic' ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
-          >
-            <Sparkles className="w-4 h-4 inline mr-1" />
-            智能
-          </button>
-        </div>
+          </div>
 
         {/* Editor Area */}
         {activeTab === 'editor' && (
@@ -739,95 +693,8 @@ const WikiEditor = () => {
           </div>
         )}
 
-        {/* Semantic Search Tab */}
-        {activeTab === 'semantic' && (
-          <div className="flex-1 p-4 overflow-y-auto">
-            <div className="max-w-2xl mx-auto">
-              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-4 mb-4 border border-purple-200">
-                <h3 className="text-lg font-semibold text-purple-800 mb-2 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  智能语义搜索
-                </h3>
-                <p className="text-sm text-purple-700">
-                  基于向量语义理解，查找与查询意图相关的页面，而非简单关键词匹配
-                </p>
-              </div>
-
-              <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && runSemanticSearch()}
-                  placeholder="输入搜索意图..."
-                  className="flex-1 p-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-                <button
-                  onClick={runSemanticSearch}
-                  disabled={semanticLoading}
-                  className="px-6 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {semanticLoading ? '分析中...' : '语义搜索'}
-                </button>
-              </div>
-
-              {semanticLoading && (
-                <div className="text-center py-8">
-                  <Sparkles className="w-8 h-8 animate-spin text-purple-600 mx-auto" />
-                  <p className="text-gray-500 mt-2">正在分析语义...</p>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                {semanticResults.map(result => (
-                  <div
-                    key={result.page_id}
-                    onClick={() => loadPage(result.page_id)}
-                    className="p-4 bg-white border border-gray-200 rounded-lg hover:bg-purple-50 cursor-pointer transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{result.title}</div>
-                      <div className="text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                        相似度: {(result.score * 100).toFixed(1)}%
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1 line-clamp-2">{result.snippet}</div>
-                  </div>
-                ))}
-                {semanticResults.length === 0 && !semanticLoading && (
-                  <div className="text-center text-gray-400 py-8">
-                    输入查询并点击语义搜索
-                  </div>
-                )}
-              </div>
-
-              {compilerStats && (
-                <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-                  <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4" />
-                    编译统计
-                  </h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>页面总数: <span className="font-medium">{compilerStats.total_pages}</span></div>
-                    <div>关系总数: <span className="font-medium">{compilerStats.total_relations}</span></div>
-                    <div className="col-span-2">
-                      <button
-                        onClick={triggerCompile}
-                        className="w-full mt-2 flex items-center justify-center gap-2 bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        运行智能编译
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+</div>
     </div>
   );
 };
-
 export default WikiEditor;

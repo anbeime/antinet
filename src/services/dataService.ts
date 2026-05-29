@@ -581,6 +581,49 @@ export interface SourceFileCards {
   total: number;
 }
 
+// 源文件 Markdown 内容（用于溯源高亮查看）
+export interface SourceFileMarkdown {
+  success: boolean;
+  source_file: {
+    id: string;
+    name: string;
+    type: string;
+    markdown_content: string;
+    created_at: string;
+  };
+  cards: {
+    card_id: number | string;
+    title: string;
+    card_type: string;
+    location_in_source: string;
+    content_preview: string;
+  }[];
+}
+
+// 同批次兄弟卡片（同一源文件导入的其他卡片）
+export interface SiblingCard {
+  id: number;
+  title: string;
+  content: string;
+  card_type: string;
+  category: string;
+  location_in_source: string;
+  created_at: string;
+  link_type?: string;  // 与当前卡片的已有链接类型（如 same_batch）
+}
+
+export interface SiblingCardsResponse {
+  success: boolean;
+  source_file: {
+    source_file_id: string;
+    original_name: string;
+    file_type: string;
+  } | null;
+  total: number;
+  siblings: SiblingCard[];
+  message?: string;
+}
+
 export const sourceFileService = {
   // 获取卡片关联的源文件信息
   getCardSourceFile: async (cardId: number): Promise<SourceFileInfo> => {
@@ -599,5 +642,19 @@ export const sourceFileService = {
   // 下载源文件
   downloadSourceFile: (sourceFileId: string) => {
     window.open(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/download`, '_blank');
+  },
+
+  // 获取源文件 Markdown 内容（用于溯源查看和高亮）
+  getSourceFileMarkdown: async (sourceFileId: string): Promise<SourceFileMarkdown> => {
+    const response = await fetch(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/markdown`);
+    if (!response.ok) throw new Error('获取源文件内容失败');
+    return response.json();
+  },
+
+  // 获取同批次兄弟卡片（同一源文件导入的其他卡片）
+  getCardSiblings: async (cardId: number): Promise<SiblingCardsResponse> => {
+    const response = await fetch(`${KNOWLEDGE_API_BASE}/cards/${cardId}/siblings`);
+    if (!response.ok) throw new Error('获取同批次卡片失败');
+    return response.json();
   },
 };

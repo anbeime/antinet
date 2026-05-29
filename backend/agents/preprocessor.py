@@ -3,6 +3,7 @@
 数据感知与预处理专家，负责原始数据的清洗、转换、特征提取
 """
 import logging
+import os
 import pandas as pd
 from typing import Dict, List, Optional, Union
 from datetime import datetime
@@ -76,31 +77,94 @@ class PreprocessorAgent:
             logger.error(f"数据预处理失败: {e}", exc_info=True)
             raise
     
+    def _detect_data_type(self, content: str, hint_type: str = "auto") -> str:
+        """
+        自动检测数据类型
+        
+        参数：
+            content: 文本内容
+            hint_type: 提示类型
+        
+        返回：
+            检测到的类型 (csv/json/text)
+        """
+        if hint_type and hint_type != "auto":
+            return hint_type
+        
+        content = content.strip()
+        
+        # 检测 JSON
+        if content.startswith('{') or content.startswith('['):
+            try:
+                json.loads(content)
+                return "json"
+            except:
+                pass
+        
+        # 检测 CSV（包含多个逗号分隔的列）
+        lines = content.split('\n')[:5]  # 只检查前5行
+        comma_counts = [line.count(',') for line in lines if line.strip()]
+        if comma_counts and max(comma_counts) >= 2:
+            return "csv"
+        
+        return "text"
+    
     def _load_data(self, data_source: str, data_type: str) -> pd.DataFrame:
         """
         加载数据
         
         参数：
-            data_source: 数据来源
-            data_type: 数据类型
+            data_source: 数据来源（可以是文件路径或文本内容）
+            data_type: 数据类型（csv/json/text/auto）
         
         返回：
             原始数据
         """
+        import io
         try:
-            if data_type == "csv":
-                return pd.read_csv(data_source)
-            elif data_type == "json":
-                return pd.read_json(data_source)
-            elif data_type == "excel":
-                return pd.read_excel(data_source)
+            # 判断 data_source 是文件路径还是文本内容
+            # 如果是文件路径且文件存在，则从文件读取；否则当作文本内容处理
+            if os.path.isfile(data_source):
+                if data_type == "csv":
+                    return pd.read_csv(data_source)
+                elif data_type == "json":
+                    return pd.read_json(data_source)
+                elif data_type == "excel":
+                    return pd.read_excel(data_source)
+                else:
+                    return pd.DataFrame(json.loads(data_source))
             else:
-                # 假设是JSON字符串
-                return pd.DataFrame(json.loads(data_source))
+                # 当作文本内容处理（StringIO）
+                self.log.append(f"[密卷房] 数据来源是文本内容，长度: {len(data_source)} 字符")
+                
+                # 自动检测数据类型
+                detected_type = self._detect_data_type(data_source, data_type)
+                self.log.append(f"[密卷房] 自动检测数据类型: {data_type} -> {detected_type}")
+                
+                if detected_type == "csv":
+                    try:
+                        return pd.read_csv(io.StringIO(data_source))
+                    except Exception as e:
+                        self.log.append(f"[密卷房] CSV解析失败: {e}，回退到文本模式")
+                        lines = [line.strip() for line in data_source.split('\n') if line.strip()]
+                        return pd.DataFrame({'text': lines})
+                elif detected_type == "json":
+                    try:
+                        return pd.read_json(io.StringIO(data_source))
+                    except:
+                        try:
+                            return pd.DataFrame(json.loads(data_source))
+                        except:
+                            return pd.DataFrame({'text': [data_source]})
+                else:
+                    # 通用文本解析：按行拆分
+                    lines = [line.strip() for line in data_source.split('\n') if line.strip()]
+                    return pd.DataFrame({'text': lines})
         
         except Exception as e:
             logger.error(f"加载数据失败: {e}", exc_info=True)
-            raise
+            # 返回空的 DataFrame 而不是抛出异常，让流程继续
+            return pd.DataFrame()
     
     def _clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -238,14 +302,18 @@ class PreprocessorAgent:
             overall_score = (completeness + accuracy + consistency) / 3
             
             # 生成质量报告
+            raw_count = len(raw_data)
+            cleaned_count = len(cleaned_data)
+            cleaning_ratio = round(cleaned_count / raw_count, 2) if raw_count > 0 else 0.0
+
             report = {
                 "completeness": round(completeness, 2),
                 "accuracy": round(accuracy, 2),
                 "consistency": round(consistency, 2),
                 "overall_score": round(overall_score, 2),
-                "records_after_cleaning": len(cleaned_data),
-                "records_original": len(raw_data),
-                "cleaning_ratio": round(len(cleaned_data) / len(raw_data), 2)
+                "records_after_cleaning": cleaned_count,
+                "records_original": raw_count,
+                "cleaning_ratio": cleaning_ratio
             }
             
             return report

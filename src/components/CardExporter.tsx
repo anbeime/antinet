@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Download, FileText, FileSpreadsheet, FileType, Loader, ChevronDown, Eye, FilePen } from 'lucide-react';
+import { Download, FileSpreadsheet, FileType, Loader, ChevronDown, Eye, FilePen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 // 定义卡片类型
 interface KnowledgeCard {
@@ -30,7 +31,7 @@ interface CardExporterProps {
   showPPTVPreview?: boolean;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = getApiBaseUrl();
 
 const CardExporter: React.FC<CardExporterProps> = ({
   cards,
@@ -385,12 +386,14 @@ const [isExporting, setIsExporting] = useState(false);
             <div 
               className="fixed inset-0 z-10" 
               onClick={() => setShowDropdown(false)}
+            />
+            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
                 onClick={() => {
                   setExportFormat('pdf');
                   handleExport('pdf');
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-t border-gray-200 dark:border-gray-700"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg transition-colors"
               >
                 <FilePen className="w-5 h-5 text-red-600" />
                 <div>
@@ -398,14 +401,12 @@ const [isExporting, setIsExporting] = useState(false);
                   <div className="text-xs text-gray-500">排版精美，适合打印</div>
                 </div>
               </button>
-            />
-            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
                 onClick={() => {
                   setExportFormat('word');
                   handleExport('word');
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <FileType className="w-5 h-5 text-blue-600" />
                 <div>
@@ -503,23 +504,23 @@ const [isExporting, setIsExporting] = useState(false);
               className="fixed inset-0 z-10" 
               onClick={() => setShowDropdown(false)}
             />
+            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
                 onClick={() => {
                   setExportFormat('pdf');
                   handleExport('pdf');
                 }}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors border-t border-gray-200 dark:border-gray-700"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg transition-colors"
               >
                 <FilePen className="w-5 h-5 text-red-600" />
                 <div>
-                  <div className="font-medium text-gray-900 dark:text-white">导出 PDF</div>
+                  <div className="font-medium text-gray-900 dark:text-white">PDF 文档</div>
                   <div className="text-xs text-gray-500">排版精美，适合打印</div>
                 </div>
               </button>
-            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20">
               <button
                 onClick={() => handleExport('excel')}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 <FileSpreadsheet className="w-5 h-5 text-green-600" />
                 <div>

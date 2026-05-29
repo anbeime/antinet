@@ -172,15 +172,48 @@ const AgentMeetingPanel: React.FC = () => {
         content += `## 第${round.round}轮:${round.theme}\n\n`;
         round.speeches.forEach((speech: any) => {
           content += `### ${speech.agent_name}(${speech.agent_title})${speech.avatar}\n\n`;
-          content += `${speech.speech}\n\n`;
+          const formatSpeechContent = (raw: string) => {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
+              }
+              return raw;
+            } catch {
+              return raw;
+            }
+          };
+          content += `${formatSpeechContent(speech.speech)}\n\n`;
         });
       });
       
-      content += `## 会议决策\n\n${meetingResult.decision}\n\n`;
-      content += `## 行动项\n\n`;
-      meetingResult.action_items.forEach((item: string, idx: number) => {
-        content += `${idx + 1}. ${item}\n`;
-      });
+const formatSpeechContent = (raw: string) => {
+            try {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
+              }
+              return raw;
+            } catch {
+              return raw;
+            }
+          };
+          const decisionText = (() => {
+            try {
+              const p = JSON.parse(meetingResult.decision);
+              return typeof p === 'string' ? p : JSON.stringify(p);
+            } catch { return meetingResult.decision; }
+          })();
+          let actionItems: string[] = meetingResult.action_items;
+          try {
+            if (typeof actionItems === 'string') actionItems = JSON.parse(actionItems);
+          } catch { /* use as-is */ }
+          if (!Array.isArray(actionItems)) actionItems = [actionItems];
+          content += `## 会议决策\n\n${decisionText}\n\n`;
+          content += `## 行动项\n\n`;
+          actionItems.forEach((item: string, idx: number) => {
+            content += `${idx + 1}. ${item}\n`;
+          });
       
       filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.md`;
     } else {
@@ -342,7 +375,14 @@ const AgentMeetingPanel: React.FC = () => {
               会议决策
             </h4>
             <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-              {meetingResult.decision}
+              {(() => {
+                try {
+                  const parsed = JSON.parse(meetingResult.decision);
+                  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+                } catch {
+                  return meetingResult.decision;
+                }
+              })()}
             </p>
           </div>
 
@@ -353,14 +393,20 @@ const AgentMeetingPanel: React.FC = () => {
               行动项
             </h4>
             <ul className="space-y-2">
-              {meetingResult.action_items.map((item: string, idx: number) => (
-                <li key={idx} className="flex items-start">
-                  <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center text-sm mr-3 flex-shrink-0">
-                    {idx + 1}
-                  </span>
-                  <span className="text-gray-700 dark:text-gray-300">{item}</span>
-                </li>
-              ))}
+              {(() => {
+                let items: string[] = meetingResult.action_items;
+                try {
+                  if (typeof items === 'string') items = JSON.parse(items);
+                } catch { /* use as-is */ }
+                return (Array.isArray(items) ? items : [items]).map((item: string, idx: number) => (
+                  <li key={idx} className="flex items-start">
+                    <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center text-sm mr-3 flex-shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="text-gray-700 dark:text-gray-300">{item}</span>
+                  </li>
+                ));
+              })()}
             </ul>
           </div>
 
@@ -405,7 +451,25 @@ const AgentMeetingPanel: React.FC = () => {
                             <span className="font-medium text-sm">{speech.agent_name}</span>
                             <span className="text-xs text-gray-500 ml-2">{speech.agent_title}</span>
                           </div>
-                          <p className="text-sm text-gray-700 dark:text-gray-300">{speech.speech}</p>
+                          {(() => {
+                            try {
+                              const parsed = JSON.parse(speech.speech);
+                              if (Array.isArray(parsed)) {
+                                return parsed.map((item: any, i: number) => (
+                                  <span key={i} className={`inline-block mr-2 text-sm ${
+                                    item.color === 'red' ? 'text-red-600 dark:text-red-400' :
+                                    item.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
+                                    item.color === 'green' ? 'text-green-600 dark:text-green-400' :
+                                    item.color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400' :
+                                    'text-gray-700 dark:text-gray-300'
+                                  }`}>{item.content}</span>
+                                ));
+                              }
+                              return <span>{speech.speech}</span>;
+                            } catch {
+                              return <span>{speech.speech}</span>;
+                            }
+                          })()}
                         </div>
                       ))}
                     </motion.div>

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Send, Bot, User, Upload, Loader, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface Message {
   id: string;

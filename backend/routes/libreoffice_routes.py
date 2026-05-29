@@ -88,9 +88,10 @@ async def convert_document(
         content = await file.read()
         input_file.write_bytes(content)
         
-        # 输出文件
+        # 输出文件（LibreOffice 输出为 原文件名.ext，保留输入文件名）
         output_ext = output_format.lower()
-        output_file = temp_path / f"output.{output_ext}"
+        input_stem = Path(file.filename).stem
+        output_file = temp_path / f"{input_stem}.{output_ext}"
         
         # 构建命令
         cmd = [
@@ -117,8 +118,8 @@ async def convert_document(
             if result.returncode != 0:
                 raise HTTPException(status_code=500, detail=f"转换失败: {result.stderr}")
             
-            # 查找输出文件
-            output_files = list(temp_path.glob(f"output.*"))
+            # 查找输出文件（LibreOffice 输出为 原文件名.ext）
+            output_files = list(temp_path.glob(f"{input_stem}.*"))
             if not output_files:
                 raise HTTPException(status_code=500, detail="未生成输出文件")
             
