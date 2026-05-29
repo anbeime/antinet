@@ -803,9 +803,16 @@ const loadPdfJs = async (): Promise<any> => {
     setPdfDoc(null);
   };
 
+  const pdfRenderTaskRef = useRef<any>(null);
+
   // 渲染 PDF 页面
   const renderPdfPage = async () => {
     if (!pdfDoc || !pdfCanvasRef.current) return;
+
+    if (pdfRenderTaskRef.current) {
+      try { pdfRenderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
+      pdfRenderTaskRef.current = null;
+    }
 
     try {
       const page = await pdfDoc.getPage(pdfCurrentPage);
@@ -817,12 +824,13 @@ const loadPdfJs = async (): Promise<any> => {
       canvas.width = viewport.width;
 
       if (context) {
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise;
+        const renderTask = page.render({ canvasContext: context, viewport });
+        pdfRenderTaskRef.current = renderTask;
+        await renderTask.promise;
+        pdfRenderTaskRef.current = null;
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'RenderingCancelledException') return;
       console.error('渲染 PDF 页面失败:', error);
     }
   };

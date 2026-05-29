@@ -84,6 +84,11 @@ const KnowledgeGraphView: React.FC = () => {
   const [listMarkdown, setListMarkdown] = useState('');
   const [listEditorSide, setListEditorSide] = useState<'edit' | 'preview' | 'split'>('preview');
   const [listCardNetwork, setListCardNetwork] = useState<{nodes: any[], links: any[]}>({nodes: [], links: []});
+  const [exportTheme, setExportTheme] = useState('chinese-red');
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
@@ -367,6 +372,82 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
       }
     } catch (e) {
       console.error('保存失败:', e);
+    }
+  };
+
+  // 预览卡片（PDF/HTML 新标签，DOCX 转 HTML 弹窗）
+  const handlePreviewCard = async (format: 'pdf' | 'docx' | 'html') => {
+    if (!listMarkdown) return;
+    try {
+      if (format === 'pdf') {
+        const formData = new FormData();
+        const blob = new Blob([listMarkdown], { type: 'text/markdown' });
+        formData.append('file', blob, 'card.md');
+        formData.append('title', listSelectedCard?.title || '知识卡片');
+        formData.append('author', 'Antinet');
+        formData.append('theme', exportTheme);
+        const res = await fetch(`${API_BASE}/api/md2pdf/convert`, {
+          method: 'POST', body: formData,
+        });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
+        window.open(window.URL.createObjectURL(await res.blob()), '_blank');
+        return;
+      }
+
+      const formData = new FormData();
+      const blob = new Blob([listMarkdown], { type: 'text/markdown' });
+      formData.append('file', blob, 'card.md');
+      formData.append('output_format', format);
+      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file`, {
+        method: 'POST', body: formData,
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
+
+      if (format === 'html') {
+        const html = await res.text();
+        setPreviewTitle(listSelectedCard?.title || 'HTML 预览');
+        setPreviewHtml(html);
+        setShowPreview(true);
+      } else {
+        // DOCX: 用 mammoth 转 HTML 预览
+        const arrayBuffer = await res.arrayBuffer();
+        if (typeof (window as any).mammoth === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+          await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
+        }
+        const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
+        setPreviewTitle(listSelectedCard?.title || 'DOCX 预览');
+        setPreviewHtml(result.value);
+        setShowPreview(true);
+      }
+    } catch (e: any) {
+      console.error('预览失败:', e);
+    }
+  };
+
+  // 下载卡片（仅 DOCX/HTML，PDF 通过预览后自行下载）
+  const handleDownloadCard = async (format: 'docx' | 'html') => {
+    if (!listMarkdown) return;
+    const extMap = { docx: '.docx', html: '.html' };
+    try {
+      const formData = new FormData();
+      const blob = new Blob([listMarkdown], { type: 'text/markdown' });
+      formData.append('file', blob, 'card.md');
+      formData.append('output_format', format);
+      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file`, {
+        method: 'POST', body: formData,
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
+      const outBlob = await res.blob();
+      const url = window.URL.createObjectURL(outBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `card_${listSelectedCard?.id || 'export'}${extMap[format]}`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('下载失败:', e);
     }
   };
 
@@ -917,6 +998,48 @@ return (
                       </button>
                     ))}
                   </div>
+                  {/* 预览/导出按钮 */}
+                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 relative">
+                    <button onClick={() => handlePreviewCard('pdf')}
+                      className="relative px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1"
+                      onMouseEnter={() => setShowThemePicker(true)} onMouseLeave={() => setShowThemePicker(false)}>
+                      <Eye className="w-3 h-3" />PDF
+                      {showThemePicker && (
+                        <div className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 p-2 min-w-[160px]">
+                          <div className="text-[10px] text-gray-400 mb-1 px-1">PDF 主题</div>
+                          {[
+                            {id:'warm-academic',name:'暖学术'},{id:'classic-thesis',name:'经典论文'},
+                            {id:'tufte',name:'Tufte'},{id:'ieee-journal',name:'期刊蓝'},
+                            {id:'elegant-book',name:'精装书'},{id:'chinese-red',name:'中国红'},
+                            {id:'ink-wash',name:'水墨'},{id:'github-light',name:'GitHub'},
+                            {id:'nord-frost',name:'Nord冰霜'},{id:'ocean-breeze',name:'海洋'},
+                          ].map(t => (
+                            <button key={t.id} onClick={() => { setExportTheme(t.id); setShowThemePicker(false); handlePreviewCard('pdf'); }}
+                              className={`w-full text-left px-2 py-1 text-xs rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${exportTheme===t.id?'bg-gray-100 dark:bg-gray-700 font-medium':''}`}>
+                              {t.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </button>
+                    <button onClick={() => handlePreviewCard('docx')}
+                      className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
+                      <Eye className="w-3 h-3" />DOCX
+                    </button>
+                    <button onClick={() => handlePreviewCard('html')}
+                      className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
+                      <Eye className="w-3 h-3" />HTML
+                    </button>
+                    <div className="w-px h-4 bg-gray-300 dark:bg-gray-500 mx-0.5 self-center" />
+                    <button onClick={() => handleDownloadCard('docx')}
+                      className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
+                      <Download className="w-3 h-3" />DOCX
+                    </button>
+                    <button onClick={() => handleDownloadCard('html')}
+                      className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
+                      <Download className="w-3 h-3" />HTML
+                    </button>
+                  </div>
                   <button onClick={() => setListSelectedCard(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><X className="w-4 h-4" /></button>
                 </div>
               </div>
@@ -1182,6 +1305,23 @@ return (
                     );
                   })
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 预览弹窗（DOCX/HTML） */}
+      {showPreview && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
+              <h3 className="font-semibold truncate">{previewTitle}</h3>
+              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
             </div>
           </div>
         </div>

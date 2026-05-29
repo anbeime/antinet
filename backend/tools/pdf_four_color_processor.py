@@ -381,6 +381,24 @@ class PDFourColorProcessor:
         
         return tags[:3]  # 最多3个标签
     
+    def _sanitize_for_docx(self, text: str) -> str:
+        """移除 XML 1.0 非法字符，保留 tab/newline/cr"""
+        if not isinstance(text, str):
+            text = str(text)
+        # XML 1.0 允许: 0x09 0x0A 0x0D, 0x20-0xD7FF, 0xE000-0xFFFD, 0x10000-0x10FFFF
+        def _valid(c: str) -> bool:
+            cp = ord(c)
+            if cp in (0x09, 0x0A, 0x0D):
+                return True
+            if 0x20 <= cp <= 0xD7FF:
+                return True
+            if 0xE000 <= cp <= 0xFFFD:
+                return True
+            if 0x10000 <= cp <= 0x10FFFF:
+                return True
+            return False
+        return ''.join(c if _valid(c) else ' ' for c in text)
+    
     def export_to_excel(self, cards: List[Dict[str, Any]], output_path: str,
                        title: str = "四色知识卡片报告") -> Dict[str, Any]:
         """
@@ -417,8 +435,16 @@ class PDFourColorProcessor:
 
                 # 概览工作表
                 from datetime import datetime as dt
+                # 净化卡片文本（移除 XML 非法控制字符）
+                sanitized_cards_by_type: Dict[str, List[Dict]] = {}
+                for ct, gcards in cards_by_type.items():
+                    sanitized_cards_by_type[ct] = [
+                        {k: self._sanitize_for_docx(v) if isinstance(v, str) else v for k, v in card.items()}
+                        for card in gcards
+                    ]
+
                 analysis_info = {
-                    "title": title,
+                    "title": self._sanitize_for_docx(title),
                     "date": dt.now().strftime('%Y-%m-%d %H:%M'),
                     "data_source": "PDF 四色卡片分析",
                     "card_counts": card_counts,
@@ -427,7 +453,7 @@ class PDFourColorProcessor:
                 exporter.add_overview_sheet(analysis_info)
 
                 # 按类型分组的卡片工作表
-                for ct, grouped_cards in cards_by_type.items():
+                for ct, grouped_cards in sanitized_cards_by_type.items():
                     if grouped_cards:
                         exporter.add_cards_sheet(ct, grouped_cards)
 
@@ -484,10 +510,10 @@ class PDFourColorProcessor:
                 row_data = [
                     idx,
                     type_name,
-                    card.get("title", ""),
-                    (card.get("content", "") or "")[:200] + ("..." if len(card.get("content", "")) > 200 else ""),
-                    ", ".join(card.get("tags", [])),
-                    card.get("source", "") or card.get("address", "")
+                    self._sanitize_for_docx(card.get("title", "")),
+                    self._sanitize_for_docx((card.get("content", "") or "")[:200] + ("..." if len(card.get("content", "")) > 200 else "")),
+                    ", ".join(self._sanitize_for_docx(str(t)) for t in card.get("tags", [])),
+                    self._sanitize_for_docx(card.get("source", "") or card.get("address", ""))
                 ]
                 ws.append(row_data)
 
@@ -553,6 +579,8 @@ class PDFourColorProcessor:
             section.bottom_margin = Inches(0.59)
 
             # ========== 页眉页脚 ==========
+            title = self._sanitize_for_docx(title)
+            author = self._sanitize_for_docx(author)
             header = section.header
             header_para = header.paragraphs[0]
             header_para.text = f"{title}"
@@ -699,7 +727,7 @@ class PDFourColorProcessor:
                     ct_run.font.color.rgb = type_color
                     ct_run.font.size = Pt(12)
                     
-                    title_text = card.get("title", "")
+                    title_text = self._sanitize_for_docx(card.get("title", ""))
                     t_run = card_title.add_run(title_text)
                     t_run.font.bold = True
                     t_run.font.size = Pt(12)
@@ -708,9 +736,8 @@ class PDFourColorProcessor:
                     card_title.paragraph_format.space_after = Pt(3)
 
                     # 卡片内容
-                    content_text = card.get("content", "")
-                    if len(content_text) > 1000:
-                        content_text = content_text[:1000] + "..."
+                    raw_content = self._sanitize_for_docx(card.get("content", ""))
+                    content_text = raw_content[:1000] + ("..." if len(raw_content) > 1000 else "")
 
                     content_para = doc.add_paragraph()
                     crun = content_para.add_run(content_text)
@@ -721,11 +748,11 @@ class PDFourColorProcessor:
                     # 来源信息
                     source_text = ""
                     if card.get("source"):
-                        source_text = f"来源：{card.get('source')}"
+                        source_text = f"来源：{self._sanitize_for_docx(card.get('source'))}"
                     elif card.get("address"):
-                        source_text = f"来源：{card.get('address')}"
+                        source_text = f"来源：{self._sanitize_for_docx(card.get('address'))}"
                     elif card.get("tags"):
-                        source_text = f"标签：{', '.join(card.get('tags', []))}"
+                        source_text = f"标签：{', '.join(self._sanitize_for_docx(str(t)) for t in card.get('tags', []))}"
 
                     if source_text:
                         meta_para = doc.add_paragraph()

@@ -28,6 +28,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
   const [loadError, setLoadError] = useState<string>('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfjsRef = useRef<any>(null);
+  const renderTaskRef = useRef<any>(null);
 
   // 动态加载 PDF.js 库
   const loadPDFJS = async (): Promise<any> => {
@@ -148,14 +149,19 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
   const renderPage = async (pageNum: number) => {
     if (!pdfDoc || !canvasRef.current) return;
 
+    const doc = pdfDoc;
+    if (!doc || typeof doc.getPage !== 'function') {
+      console.error('pdfDoc 不是有效的 PDFDocumentProxy:', typeof doc, doc);
+      setLoadError('PDF 文档加载异常，请重试');
+      return;
+    }
+
+    if (renderTaskRef.current) {
+      try { renderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
+      renderTaskRef.current = null;
+    }
+
     try {
-      // 防御性检查：确保 pdfDoc 是有效的 PDFDocumentProxy 对象
-      const doc = pdfDoc;
-      if (!doc || typeof doc.getPage !== 'function') {
-        console.error('pdfDoc 不是有效的 PDFDocumentProxy:', typeof doc, doc);
-        setLoadError('PDF 文档加载异常，请重试');
-        return;
-      }
       const page = await doc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
       const canvas = canvasRef.current;
@@ -165,12 +171,13 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
       canvas.width = viewport.width;
 
       if (context) {
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise;
+        const renderTask = page.render({ canvasContext: context, viewport });
+        renderTaskRef.current = renderTask;
+        await renderTask.promise;
+        renderTaskRef.current = null;
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'RenderingCancelledException') return;
       console.error('渲染页面失败:', error);
     }
   };
