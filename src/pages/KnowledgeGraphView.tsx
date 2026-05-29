@@ -724,6 +724,18 @@ useEffect(() => {
       categories: graphData.categories
     };
 
+    // 同步更新 apiData（让 API 模式下的 initChart 能读到新节点）
+    if (apiData) {
+      const apiNodes = apiData.nodes || [];
+      const apiLinks = apiData.links || [];
+      const apiSourceNode = selectedNode || (apiNodes.length > 0 ? String(apiNodes[0].id) : null);
+      setApiData({
+        ...apiData,
+        nodes: [...apiNodes, { id: card.id, title: card.title, type: cardType, is_current: false }],
+        links: [...apiLinks, ...(apiSourceNode ? [{ source: apiSourceNode, target: newNodeId, type: '关联' }] : [])]
+      });
+    }
+
     setGraphData(newGraphData);
     setShowAddNodeModal(false);
     setAddNodeSearch('');
@@ -755,6 +767,16 @@ useEffect(() => {
       links: graphData.links.filter(l => String(l.source) !== String(selectedNode) && String(l.target) !== String(selectedNode)),
       categories: graphData.categories
     };
+
+    // 同步更新 apiData（让 API 模式下的 initChart 能读到删除结果）
+    if (apiData) {
+      const sid = String(selectedNode);
+      setApiData({
+        ...apiData,
+        nodes: (apiData.nodes || []).filter((n: any) => String(n.id) !== sid),
+        links: (apiData.links || []).filter((l: any) => String(l.source) !== sid && String(l.target) !== sid)
+      });
+    }
 
     setGraphData(newData);
     chartInstance.current?.setOption({
