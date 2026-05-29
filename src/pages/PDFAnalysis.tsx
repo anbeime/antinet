@@ -1238,7 +1238,7 @@ const PDFAnalysis: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -1260,7 +1260,7 @@ const PDFAnalysis: React.FC = () => {
         </motion.div>
 
         {/* Feature Tabs */}
-        <div className="grid grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-8">
           {features.map((feature) => (
             <motion.button
               key={feature.id}
@@ -1548,7 +1548,7 @@ const PDFAnalysis: React.FC = () => {
                     文本提取结果
                   </h3>
                   
-                  <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
                       <p className="text-2xl font-bold text-blue-600">{analysisResult.pageCount}</p>
                       <p className="text-sm text-gray-600 dark:text-gray-400">页数</p>
@@ -2004,6 +2004,12 @@ const PDFAnalysis: React.FC = () => {
             </button>
           </div>
         </div>
+        <DocxPreviewModal
+          isOpen={showDocxPreview}
+          onClose={() => setShowDocxPreview(false)}
+          html={docxPreviewHtml}
+          fileName={previewFileName}
+        />
       </div>
     </div>
   );
@@ -2151,7 +2157,6 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
   };
 
   return (
-    <>
     <div className="flex flex-col h-full min-h-[500px] bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
       <div className="bg-gray-200 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
         <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
@@ -2198,14 +2203,6 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
         )}
       </div>
     </div>
-    {/* Word 文档预览弹窗 */}
-    <DocxPreviewModal
-      isOpen={showDocxPreview}
-      onClose={() => setShowDocxPreview(false)}
-      html={docxPreviewHtml}
-      fileName={previewFileName}
-    />
-    </>
   );
 };
 

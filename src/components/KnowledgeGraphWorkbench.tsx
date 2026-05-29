@@ -10,7 +10,7 @@ import {
   ZoomIn, ZoomOut, Maximize2, RefreshCw, Link2, ChevronRight,
   ChevronDown, X, Plus, Trash2, ExternalLink, FileText,
   Calendar, SortAsc, SortDesc, Copy as CopyIcon, FileDown, Image,
-  Presentation
+  Presentation, Menu
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -142,8 +142,15 @@ const KnowledgeGraphWorkbench: React.FC<KnowledgeGraphWorkbenchProps> = ({ initi
   const chartInstance = useRef<echarts.ECharts | null>(null);
   
   // 视图状态
-  const [viewMode, setViewMode] = useState<ViewMode>('graph');
-  const [editorSide, setEditorSide] = useState<EditorSide>('split');
+const [viewMode, setViewMode] = useState<ViewMode>('graph');
+const [editorSide, setEditorSide] = useState<EditorSide>('split');
+const [sidebarOpen, setSidebarOpen] = useState(true);
+
+useEffect(() => {
+  const onResize = () => { if (window.innerWidth >= 768) setSidebarOpen(true); };
+  window.addEventListener('resize', onResize);
+  return () => window.removeEventListener('resize', onResize);
+}, []);
   
   // 数据状态
   const [graphData, setGraphData] = useState<GraphData | null>(null);
@@ -876,9 +883,13 @@ result = result.filter(card => {
 
   // ============ 渲染 ============
   const mainContent = (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 relative">
+      {/* 移动端遮罩 */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
       {/* 左侧边栏 - 卡片列表 */}
-      <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+      <div className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed md:static md:translate-x-0 z-40 md:z-auto w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 ease-in-out h-full md:h-auto`}>
         {/* 头部 */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
@@ -1057,24 +1068,28 @@ result = result.filter(card => {
 </div>
 
       {/* 右侧详情面板 */}
-      {selectedCard && (
-        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+      <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+        {selectedCard ? (
+          <>
           {/* 面板头部 */}
           <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button className="md:hidden mr-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" onClick={() => setSidebarOpen(true)}>
+                <Menu className="w-5 h-5" />
+              </button>
               <span
-                className="text-xs px-2 py-1 rounded text-white font-medium"
+                className="text-xs px-2 py-1 rounded text-white font-medium shrink-0"
                 style={{ backgroundColor: CARD_COLOR_CSS[selectedCard.card_type as CardColor] }}
               >
                 {CARD_COLOR_MAP[selectedCard.card_type as CardColor] || '事实'}
               </span>
-              <h2 className="font-semibold text-lg truncate max-w-md">
+              <h2 className="font-semibold text-lg truncate">
                 {selectedCard.title || '无标题'}
               </h2>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {/* 编辑模式切换 */}
-              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <div className="hidden sm:flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
                 {(['edit', 'preview', 'split'] as EditorSide[]).map(side => (
                   <button
                     key={side}
@@ -1097,7 +1112,6 @@ result = result.filter(card => {
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  // 跳转到知识图谱页面，以当前卡片ID为焦点
                   window.open(`/knowledge-graph?card=${selectedCard.id}`, '_blank');
                 }}
                 title="在知识网络中查看"
@@ -1258,8 +1272,17 @@ result = result.filter(card => {
               </div>
             </div>
           )}
+        </>
+      ) : (
+        <div className="flex-1 flex items-center justify-center text-gray-400">
+          <div className="text-center p-8">
+            <button className="md:hidden mb-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm" onClick={() => setSidebarOpen(true)}>
+              打开卡片列表
+            </button>
+          </div>
         </div>
       )}
+      </div>
     </div>
   );
 

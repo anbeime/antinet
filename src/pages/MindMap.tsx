@@ -160,6 +160,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const [dragNodeId, setDragNodeId] = useState<string | null>(null);
   const [dragNodeStart, setDragNodeStart] = useState({ x: 0, y: 0 });
   const [showMinimap, setShowMinimap] = useState(true);  // 小地图开关
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
 
   const nodeColors = [
     '#3b82f6', '#22c55e', '#eab308', '#ef4444', 
@@ -179,6 +180,15 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
       loadMindmaps();
     }
 }, []);
+
+  // 窗口宽度变化时自动更新侧边栏状态
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarOpen(window.innerWidth >= 768);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // 嵌入模式：图谱侧切换到不同主题时，同步更新导图树
   useEffect(() => {
@@ -732,8 +742,19 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   };
 
   return (
-    <div className={`flex ${embedded ? 'h-full' : 'h-screen'} bg-gray-100 dark:bg-gray-900`}>
-      <aside className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col overflow-hidden">
+    <div className={`flex flex-col md:flex-row ${embedded ? 'h-full' : 'h-screen'} bg-gray-100 dark:bg-gray-900`}>
+      {!embedded && (
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700"
+        >
+          {sidebarOpen ? <X className="w-4 h-4" /> : <Brain className="w-4 h-4" />}
+        </button>
+      )}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)} />
+      )}
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static z-40 md:z-auto top-0 left-0 h-full md:h-auto w-full md:w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col overflow-hidden transition-transform duration-200`}>
         <h2 className="text-lg font-semibold mb-4 flex items-center">
           <Brain className="w-5 h-5 mr-2 text-purple-500" />
           思维导图
@@ -927,7 +948,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
       </aside>
 
       <main 
-        className="flex-1 overflow-hidden p-8 cursor-grab active:cursor-grabbing"
+        className="flex-1 overflow-hidden p-4 md:p-8 pt-12 md:pt-8 cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

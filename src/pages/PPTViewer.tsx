@@ -251,7 +251,7 @@ const parsePPTX = async (file: File) => {
 
   return (
     <div className="flex flex-col h-screen bg-gray-900">
-      <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center space-x-3">
           <Presentation className="w-5 h-5 text-blue-400" />
           <span className="text-white font-medium">PPT 演示查看器</span>
