@@ -91,6 +91,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+  const [pdfPreviewError, setPdfPreviewError] = useState('');
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
@@ -383,6 +384,7 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
         const pdfBlob = await res.blob();
         if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewError('');
         setPdfPreviewUrl(URL.createObjectURL(pdfBlob));
         setPdfPreviewTitle(listSelectedCard?.title || 'PDF 预览');
         setShowPdfPreview(true);
@@ -416,7 +418,7 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
         setShowPreview(true);
       }
     } catch (e: any) {
-      console.error('预览失败:', e);
+      if (format === "pdf") { setPdfPreviewError(e.message || "预览失败"); setShowPdfPreview(true); } else { console.error("预览失败:", e); }
     }
   };
 
@@ -945,7 +947,18 @@ return (
                 const filtered = listDataSource.filter((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   if (listColorFilter !== 'all' && t !== listColorFilter) return false;
-                  if (listSearch) { const q = listSearch.toLowerCase(); const ti = (card.title||'').toLowerCase(); const co = (card.content||'').toLowerCase(); if (!ti.includes(q) && !co.includes(q)) return false; }
+                  if (listSearch) {
+                    const getContentText = (c: any): string => {
+                      if (!c) return '';
+                      if (typeof c === 'string') return c;
+                      if (typeof c === 'object') return c.description || c.text || JSON.stringify(c);
+                      return String(c);
+                    };
+                    const q = listSearch.toLowerCase();
+                    const ti = (card.title||'').toLowerCase();
+                    const co = getContentText(card.content).toLowerCase();
+                    if (!ti.includes(q) && !co.includes(q)) return false;
+                  }
                   return true;
                 });
                 if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{listDataSource.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
@@ -1302,10 +1315,10 @@ return (
         </div>
       )}
 
-      {/* PDF 预览弹窗（内嵌主题选择 + 下载） */}
+      {/* PDF 预览弹窗（内嵌主题选择 + 下载 + 最大化） */}
       {showPdfPreview && (
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); }}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 md:p-6" onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); setPdfMaximized(false); }}>
+          <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col ${pdfMaximized ? 'fixed inset-4 md:inset-6' : 'w-full max-w-5xl max-h-[95vh] h-[85vh]'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0 gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <h3 className="font-semibold truncate">{pdfPreviewTitle}</h3>
@@ -1330,14 +1343,24 @@ return (
                     <Download className="w-3.5 h-3.5" />下载 PDF
                   </a>
                 )}
-                <button onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <button onClick={() => setPdfMaximized(!pdfMaximized)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title={pdfMaximized ? '还原' : '最大化'}>
+                  {pdfMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); setPdfMaximized(false); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
             <div className="flex-1 bg-gray-100 dark:bg-gray-900 min-h-0">
-              {pdfPreviewUrl ? (
-                <embed src={pdfPreviewUrl} type="application/pdf" className="w-full h-full" />
+              {pdfPreviewError ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-red-500">
+                    <div className="text-lg mb-2">⚠️ 预览加载失败</div>
+                    <div className="text-sm">{pdfPreviewError}</div>
+                  </div>
+                </div>
+              ) : pdfPreviewUrl ? (
+                <iframe src={pdfPreviewUrl} className="w-full h-full border-0" title="PDF 预览" />
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400"><Loader className="w-6 h-6 animate-spin" /></div>
               )}

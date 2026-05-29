@@ -459,15 +459,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
       {/* 预览弹窗（DOCX/HTML） */}
       {showPreview && (
         <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <h3 className="font-semibold truncate">{previewTitle}</h3>
               <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="flex-1 bg-white dark:bg-gray-900 min-h-0">
+              <iframe srcDoc={previewHtml} className="w-full h-full border-0" title="文档预览" sandbox="allow-same-origin" />
             </div>
           </div>
         </div>
