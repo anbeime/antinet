@@ -137,15 +137,16 @@ const PDFAnalysis: React.FC = () => {
   const [previewFileName, setPreviewFileName] = useState('');
 
   const handlePreviewDocx = async (task: ConversionTask) => {
-    if (!task.resultBlob) {
+    if (!task.resultUrl) {
       toast.error('文档未准备好，请稍后重试');
       return;
     }
     try {
-      const arrayBuffer = await task.resultBlob.arrayBuffer();
+      const response = await fetch(task.resultUrl);
+      const arrayBuffer = await response.arrayBuffer();
       const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
       setDocxPreviewHtml(result.value);
-      setDocxPreviewFileName(task.fileName.replace('.pdf', '.docx'));
+      setPreviewFileName(task.fileName.replace('.pdf', '.docx'));
       setShowDocxPreview(true);
     } catch (err) {
       console.error('mammoth 转换失败:', err);
@@ -2008,6 +2009,34 @@ const PDFAnalysis: React.FC = () => {
   );
 };
 
+// ============ Word 文档预览弹窗 ============
+const DocxPreviewModal: React.FC<{ isOpen: boolean; onClose: () => void; html: string; fileName: string }> = ({ isOpen, onClose, html, fileName }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[90vw] h-[85vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center space-x-3">
+            <FileType className="w-5 h-5 text-blue-500" />
+            <h3 className="text-lg font-semibold">{fileName}</h3>
+            <span className="text-xs text-gray-400">（预览版，格式可能有细微差异）</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-auto p-8 bg-gray-50 dark:bg-gray-900">
+          <div
+            className="max-w-3xl mx-auto bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: html }}
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalFile }) => {
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -2018,9 +2047,6 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<any>(null);
 
-  // pdfjs-dist 已通过 npm 本地导入，无需异步加载
-
-  // 监听外部文件变化并自动加载
   React.useEffect(() => {
     if (!externalFile) return;
     const loadExternalFile = async () => {
@@ -2054,7 +2080,6 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
     }
   }, [pdfDoc, currentPage, scale]);
 
-// pdfjs-dist 已通过 npm 本地打包，无需 CDN 加载
   const getPdfJs = () => pdfjsLib;
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2063,21 +2088,15 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
       toast.error('请选择PDF文件');
       return;
     }
-    console.log('[PDF] 上传文件:', file.name, file.size, 'bytes');
     setIsLoading(true);
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = async (e) => {
       const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      console.log('[PDF] FileReader loaded, data length:', data.length);
       try {
         const pdfjs = getPdfJs();
-        console.log('[PDF] PDF.js loaded:', !!pdfjs, 'version:', pdfjs?.version);
         const doc = pdfjs.getDocument({ data });
-        console.log('[PDF] getDocument returned, type:', typeof doc, 'keys:', Object.keys(doc), 'numPages:', doc.numPages);
-        // 如果是 loading task，用 .promise 获取真正文档
         const realDoc = doc.promise ? await doc.promise : doc;
-        console.log('[PDF] Final doc, numPages:', realDoc.numPages);
         setPdfDoc(realDoc);
         setTotalPages(realDoc.numPages);
         setCurrentPage(1);
@@ -2187,36 +2206,6 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
       fileName={previewFileName}
     />
     </>
-  );
-};
-
-// ============ Word 文档预览弹窗 ============
-const DocxPreviewModal: React.FC<{ isOpen: boolean; onClose: () => void; html: string; fileName: string }> = ({ isOpen, onClose, html, fileName }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-[90vw] h-[85vh] flex flex-col overflow-hidden">
-        {/* 标题栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center space-x-3">
-            <FileType className="w-5 h-5 text-blue-500" />
-            <h3 className="text-lg font-semibold">{fileName}</h3>
-            <span className="text-xs text-gray-400">（预览版，格式可能有细微差异）</span>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        {/* 内容区 */}
-        <div className="flex-1 overflow-auto p-8 bg-gray-50 dark:bg-gray-900">
-          <div
-            className="max-w-3xl mx-auto bg-white dark:bg-gray-800 shadow-lg p-8 rounded-lg prose dark:prose-invert max-w-none"
-            dangerouslySetInnerHTML={{ __html: html }}
-            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
-          />
-        </div>
-      </div>
-    </div>
   );
 };
 
