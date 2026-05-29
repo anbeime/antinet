@@ -103,8 +103,9 @@ const KnowledgeGraphView: React.FC = () => {
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
-const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
 
 
 
@@ -228,6 +229,18 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
 
   
   // 从URL参数加载指定卡片的链接图谱
+  // 响应式：窗口变化时自动调整侧栏状态和图表尺寸
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(true);
+      }
+      chartInstance.current?.resize();
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const cardId = params.get('card');
@@ -739,24 +752,7 @@ useEffect(() => {
     setGraphData(newGraphData);
     setShowAddNodeModal(false);
     setAddNodeSearch('');
-    // 持久化到数据库
     saveGraphState(newGraphData);
-
-    // 强制刷新图表
-    if (chartInstance.current) {
-      chartInstance.current.setOption({
-        series: [{
-          data: newGraphData.nodes.map((n: any) => ({
-            id: n.id, name: n.name, category: n.category ?? 0, symbolSize: n.symbolSize || 30
-          })),
-          links: newGraphData.links.map((l: any) => ({
-            source: l.source, target: l.target,
-            lineStyle: { width: 2, curveness: 0.2 },
-            label: { show: true, fontSize: 10, formatter: l.label || '' }
-          }))
-        }]
-      });
-    }
   };
 
   const handleDeleteNode = () => {
@@ -779,18 +775,6 @@ useEffect(() => {
     }
 
     setGraphData(newData);
-    chartInstance.current?.setOption({
-      series: [{
-        data: newData.nodes.map(node => ({
-          id: node.id,
-          name: node.name,
-          category: node.category,
-          symbolSize: node.symbolSize,
-        })),
-        links: newData.links,
-      }]
-    });
-
     setSelectedNode(null);
     // 持久化到数据库
     saveGraphState(newData);
@@ -815,8 +799,19 @@ useEffect(() => {
   };
 
 return (
-    <div className="flex h-full">
-      <aside className="w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+    <div className="flex h-full relative">
+      {/* Mobile toggle */}
+      <button onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        {sidebarOpen ? <X className="w-5 h-5" /> : <Network className="w-5 h-5" />}
+      </button>
+
+      {/* Overlay on mobile */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static z-40 md:z-auto w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto transition-transform duration-200 h-full`}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold flex items-center space-x-2">
             <Network className="w-5 h-5" />
@@ -948,7 +943,7 @@ return (
         /* ========== 卡片列表 - 双栏布局（仿工作台） ========== */
         <>
           {/* 左栏：卡片列表 */}
-          <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+          <div className={`${listSelectedCard ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-hidden pt-12 md:pt-0`}>
             <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold dark:text-white flex items-center gap-1.5">
@@ -984,7 +979,9 @@ return (
                 const clrMap: Record<string,string> = { blue:'bg-blue-500', green:'bg-green-500', yellow:'bg-yellow-500', red:'bg-red-500' };
                 const clrLight: Record<string,string> = { blue:'bg-blue-50 dark:bg-blue-900/20', green:'bg-green-50 dark:bg-green-900/20', yellow:'bg-yellow-50 dark:bg-yellow-900/20', red:'bg-red-50 dark:bg-red-900/20' };
                 const lbl: Record<string,string> = { blue:'事实', green:'解释', yellow:'风险', red:'行动' };
-                const filtered = listDataSource.filter((card: any) => {
+                const isSearching = listSearch.trim().length > 0;
+                const source = isSearching ? cards : listDataSource;
+                const filtered = source.filter((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   if (listColorFilter !== 'all' && t !== listColorFilter) return false;
                   if (listSearch) {
@@ -1001,7 +998,7 @@ return (
                   }
                   return true;
                 });
-                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{listDataSource.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
+                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{source.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
                 return filtered.map((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   const isSel = listSelectedCard?.id === card.id;
@@ -1026,10 +1023,14 @@ return (
 
           {/* 右栏：卡片详情 + 编辑/预览 */}
           {listSelectedCard ? (
-            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden pt-12 md:pt-0">
               {/* 头部 */}
               <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
+                  <button onClick={() => setListSelectedCard(null)}
+                    className="md:hidden p-1 mr-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    ←
+                  </button>
                   <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
                     {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
                   <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
@@ -1117,7 +1118,7 @@ return (
               )}
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 text-gray-400">
+            <div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
               <div className="text-center">
                 <FileText className="w-12 h-12 mb-3 mx-auto opacity-40" />
                 <p className="text-sm">从左侧选择一张卡片查看详情</p>
@@ -1127,12 +1128,12 @@ return (
         </>
       ) : pageMode === 'mindmap' ? (
         /* ========== 思维导图视图（原版 MindMap 组件） ========== */
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden pt-12 md:pt-0">
           <MindMap initialRoot={mindmapTree} initialCards={cards} embedded={true} />
         </div>
       ) : (
         /* ========== 图谱视图 ========== */
-        <main className="flex-1 relative">
+        <main className="flex-1 relative pt-12 md:pt-0">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
               <Loader className="w-8 h-8 animate-spin text-blue-500" />
