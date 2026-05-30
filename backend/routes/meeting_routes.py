@@ -798,6 +798,21 @@ _degrade_state = {
 _DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
 
 
+def _is_valid_genie_content(content: str) -> bool:
+    """验证Genie返回内容是否有效（排除错误响应）"""
+    if not content or len(content) <= 5:
+        return False
+    _error_markers = ['[E]', '[ERROR]', '[error]', 'connection has been broken',
+                      'ConnectionError', 'connection refused', 'Connection refused',
+                      'Internal Server Error', '500', 'Bad Gateway', '502',
+                      'Service Unavailable', '503']
+    for marker in _error_markers:
+        if marker in content:
+            logger.warning(f"[Meeting] Genie内容包含错误标记'{marker}'，视为失败: {content[:100]}")
+            return False
+    return True
+
+
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0, 
  agent_id: str = None, task_type: str = "analysis", max_tokens: int = 80, temperature: float = 0.7) -> str:
     """
@@ -972,10 +987,12 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                 response.raise_for_status()
                 result = response.json()
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if content:
+                if _is_valid_genie_content(content):
                     logger.info(f"[Meeting] Genie({_genie_model}) 生成成功: {len(content)}字, 耗时{_genie_elapsed:.1f}s")
                     call_llm._genie_consecutive_fails = 0
                     return content
+                else:
+                    logger.warning(f"[Meeting] Genie响应无效(内容:{repr(content[:80])})，降级到下一层")
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400:
                 logger.warning(f"[Meeting] Genie 拒绝请求(输入过长或格式问题)")
@@ -1002,7 +1019,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                         response.raise_for_status()
                         result = response.json()
                         content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                        if content:
+                        if _is_valid_genie_content(content):
                             logger.info(f"[Meeting] Genie 重试成功: {len(content)}字")
                             call_llm._genie_consecutive_fails = 0
                             return content
@@ -1038,7 +1055,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                     response.raise_for_status()
                     result = response.json()
                     content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
+                    if _is_valid_genie_content(content):
                         logger.info(f"[Meeting] Genie 超时重试成功: {len(content)}字")
                         call_llm._genie_consecutive_fails = 0
                         return content
@@ -1065,7 +1082,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                             response.raise_for_status()
                             result = response.json()
                             content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                            if content:
+                            if _is_valid_genie_content(content):
                                 logger.info(f"[Meeting] Genie 超时二次重试成功: {len(content)}字")
                                 call_llm._genie_consecutive_fails = 0
                                 return content
@@ -1095,7 +1112,7 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
                                 )
                                 result = response.json()
                                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                                if content:
+                                if _is_valid_genie_content(content):
                                     logger.info(f"[Meeting] Genie 第三次重试成功: {len(content)}字")
                                     call_llm._genie_consecutive_fails = 0
                                     return content

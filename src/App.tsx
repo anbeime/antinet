@@ -30,11 +30,13 @@ import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
 import { AuthProvider } from '@/contexts/authContext';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 export default function App() {
   return (
     <AuthProvider>
       <ReminderNotification />
+      <ErrorBoundary>
       <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/npu-analysis" element={<NPUAnalysis />} />
@@ -69,6 +71,7 @@ export default function App() {
             </div>
           } />
         </Routes>
+      </ErrorBoundary>
     </AuthProvider>
   );
 }

@@ -54,6 +54,7 @@ import GeniePlayground from '@/pages/GeniePlayground';
 import GenieNPUTest from '@/pages/GenieNPUTest';
 import FormatConverter from '@/pages/FormatConverter';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import ChatButton from '@/components/ChatButton';
 import WikiEditor from '@/components/WikiEditor';
 import KnowledgeGraphView from '@/pages/KnowledgeGraphView';
@@ -1590,7 +1591,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
         {/* 虚拟办公室会议视图 */}
         {activeTab === 'virtual-office-meeting' && (
-          <VirtualOfficeMeeting />
+          <ErrorBoundary>
+            <VirtualOfficeMeeting />
+          </ErrorBoundary>
         )}
 
 {/* 知识网络视图 —— 使用 WikiEditor（含编辑/图谱/搜索/智能） */}

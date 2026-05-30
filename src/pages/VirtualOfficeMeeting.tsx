@@ -397,14 +397,15 @@ const VirtualOfficeMeeting: React.FC = () => {
           }, 500);
           
           // 将查询返回的卡片追加到会议卡片列表
-          if (data.cards && data.cards.length > 0) {
+          if (data.cards && Array.isArray(data.cards) && data.cards.length > 0) {
             const newCards: MeetingCard[] = data.cards.map((c: any) => ({
               card_type: c.card_type || 'blue',
               title: c.title || '',
               content: c.content || '',
               source: 'human_query' as const,
-              match_score: c.similarity,
+              agent_name: c.agent_name || '太史阁',
               saved: false,
+              match_score: c.similarity || 0,
               timestamp: new Date().toISOString()
             }));
             setMeetingCards(prev => [...prev, ...newCards]);
@@ -1828,22 +1829,22 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                               <div className="p-4 space-y-3">
                                 {(round.discussions || []).map((disc: any, idx: number) => (
                                  <div key={idx} className="flex gap-3">
-                                   <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent.color} flex items-center justify-center text-lg flex-shrink-0`}>
-                                     {disc.agent.avatar}
-                                   </div>
-                                   <div className="flex-1 min-w-0">
-                                     <div className="flex items-center gap-2 mb-1">
-                                       <span className="text-white text-sm font-medium">{disc.agent.name}</span>
-                                       <span className="text-gray-500 text-xs">{disc.agent.title}</span>
-                                     </div>
-                                     {disc.agent.systemPrompt && (
-                                       <div className="text-gray-500 text-[10px] mb-0.5 truncate">
-                                         {disc.agent.systemPrompt}
-                                       </div>
-                                     )}
-                                     <p className="text-gray-300 text-sm leading-relaxed">{disc.message}</p>
-                                   </div>
-                                 </div>
+                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent?.color || 'from-gray-500 to-gray-600'} flex items-center justify-center text-lg flex-shrink-0`}>
+                                      {disc.agent?.avatar || '💬'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-white text-sm font-medium">{disc.agent?.name || '未知'}</span>
+                                        <span className="text-gray-500 text-xs">{disc.agent?.title || ''}</span>
+                                      </div>
+                                      {disc.agent?.systemPrompt && (
+                                        <div className="text-gray-500 text-[10px] mb-0.5 truncate">
+                                          {disc.agent.systemPrompt}
+                                        </div>
+                                      )}
+                                      <p className="text-gray-300 text-sm leading-relaxed">{disc.message || ''}</p>
+                                    </div>
+                                  </div>
                                ))}
                             </div>
 
