@@ -1316,10 +1316,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border">
               <input
                 type="checkbox"
-                checked={filteredCards.length > 0 && selectedCardIds.size === filteredCards.length}
+                checked={filteredCards.length > 0 && selectedCardIds.size === filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).length}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedCardIds(new Set(filteredCards.map(c => c.id)));
+                    setSelectedCardIds(new Set(filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(c => c.id)));
                   } else {
                     setSelectedCardIds(new Set());
                   }

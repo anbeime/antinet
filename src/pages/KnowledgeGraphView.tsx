@@ -593,57 +593,25 @@ useEffect(() => {
             name: node.name,
             category: node.category ?? 0,
             symbolSize: node.symbolSize || 30,
-            x: node.x,
-            y: node.y,
-            label: {
-              show: true,
-              fontSize: 11,
-              position: 'bottom',
-              triggerEvent: true, // 让点击标签文字也能触发事件
-            },
+            label: { show: true, fontSize: 11, position: 'bottom' },
           })),
           links: displayData.links.map((link: any) => ({
             source: link.source,
             target: link.target,
-            lineStyle: {
-              width: 2,
-              curveness: 0.2
-            },
-            label: {
-              show: true,
-              fontSize: 10,
-              formatter: link.label || ''
-            }
+            lineStyle: { width: 2, curveness: 0.2 },
+            label: { show: true, fontSize: 10, formatter: link.label || '' }
           })),
           categories: displayData.categories?.map((c: any, i: number) => ({ name: c.name || ['事实', '解释', '风险', '行动'][i] })) || [
             { name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }
           ],
           roam: true,
           draggable: true,
-          label: {
-            show: true,
-            position: 'bottom',
-            fontSize: 11,
-            formatter: '{b}'
-          },
-          labelLayout: { hideOverlap: true },
+          label: { show: true, position: 'bottom', fontSize: 11, formatter: '{b}' },
           scaleLimit: { min: 0.3, max: 3 },
           lineStyle: { color: 'source', curveness: 0.3 },
-          emphasis: {
-            focus: 'adjacency',
-            lineStyle: { width: 4 }
-          },
-          force: {
-            repulsion: 5000,
-            gravity: 0.03,
-            edgeLength: [150, 400],
-            layoutAnimation: true,
-            alphaDecay: 0.02,
-            alphaMin: 0.001
-          }
-        }],
-        animationDuration: 5000,
-        animationEasing: 'elasticOut'
+          emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
+          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 }
+        }]
       };
 
       chartInstance.current.setOption(option, true);
@@ -693,7 +661,6 @@ useEffect(() => {
 
     } catch (e) {
       console.error('initChart 错误:', e);
-      alert('图表渲染错误: ' + String(e));
     } finally {
       setIsLoading(false);
     }

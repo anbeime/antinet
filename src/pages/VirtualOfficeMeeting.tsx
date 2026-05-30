@@ -1096,7 +1096,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
       </div>
 
       {/* ==================== 主内容区：左右分栏 ==================== */}
-      <div className="flex flex-col lg:flex-row gap-5 p-5" style={{ height: 'calc(100vh - 90px)' }}>
+      <div className="flex flex-col lg:flex-row gap-5 p-5 lg:h-[calc(100vh-90px)]">
 
         {/* ========== 左侧栏 35% ========== */}
         <div className="w-full lg:w-[35%] lg:min-w-[340px] flex flex-col gap-5 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
