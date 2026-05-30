@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 from config import settings
+from design_system import DesignPresets, CardColors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/remotion", tags=["Remotion动态演示"])
@@ -217,21 +218,22 @@ SUMMARY_POINT_TEMPLATE = """        <div style={{
 def generate_remotion_source(slides: List[SlideData], topic: str, config: Dict[str, Any]) -> str:
     """生成 Remotion React 组件源码（正确的 JSX 语法）"""
 
+    cc = CardColors()
     card_colors = {
-        "blue": "#3b82f6",
-        "green": "#22c55e",
-        "yellow": "#eab308",
-        "red": "#ef4444",
+        "blue": cc.blue,
+        "green": cc.green,
+        "yellow": cc.yellow,
+        "red": cc.red,
     }
 
-    theme = config.get("style", "modern")
-    theme_colors = {
-        "modern": {"bg": "#0f172a", "primary": "#ffffff", "accent": "#8b5cf6"},
-        "corporate": {"bg": "#1e293b", "primary": "#f8fafc", "accent": "#3b82f6"},
-        "creative": {"bg": "#1a1a2e", "primary": "#ffffff", "accent": "#ec4899"},
-        "minimal": {"bg": "#f8fafc", "primary": "#0f172a", "accent": "#3b82f6"},
+    theme = config.get("style", "professional")
+    design_theme = DesignPresets.get(theme)
+    tc = design_theme.colors
+    colors = {
+        "bg": tc.background,
+        "primary": tc.text,
+        "accent": tc.accent,
     }
-    colors = theme_colors.get(theme, theme_colors["modern"])
 
     component_names = []
     slide_components = []

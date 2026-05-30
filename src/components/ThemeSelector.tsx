@@ -35,6 +35,20 @@ const themes: Theme[] = [
     desc: '简约现代', 
     colors: ['#2C3E50', '#95A5A6', '#3498DB'] 
   },
+  { 
+    id: 'tech', 
+    name: 'Tech Innovation', 
+    icon: '🚀', 
+    desc: '科技创新', 
+    colors: ['#1E3A8A', '#3B82F6', '#10B981'] 
+  },
+  { 
+    id: 'business', 
+    name: 'Business', 
+    icon: '🏢', 
+    desc: '高端商务', 
+    colors: ['#DC2626', '#F59E0B', '#1F2937'] 
+  },
 ];
 
 const ThemeSelector: React.FC<ThemeSelectorProps> = ({ selectedTheme, onThemeSelect }) => {

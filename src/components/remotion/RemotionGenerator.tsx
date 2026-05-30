@@ -40,7 +40,7 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
   const [showAdvanced, setShowAdvanced] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [config, setConfig] = useState({
-    style: 'modern',
+    style: 'professional',
     duration: 'medium',
     includeTransitions: true,
     autoMusic: false,
@@ -228,10 +228,11 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
                 onChange={(e) => setConfig({ ...config, style: e.target.value })}
                 className="w-full px-3 py-2 text-sm border rounded"
               >
-                <option value="modern">现代简约</option>
-                <option value="corporate">企业商务</option>
+                <option value="professional">专业商务</option>
                 <option value="creative">创意活泼</option>
-                <option value="minimal">极简主义</option>
+                <option value="minimal">简约现代</option>
+                <option value="tech">科技创新</option>
+                <option value="business">高端商务</option>
               </select>
             </div>
             <div>

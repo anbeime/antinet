@@ -341,11 +341,30 @@ const PPTAnalysis: React.FC = () => {
     }
   };
 
-  const themes = [
+  const [themes, setThemes] = useState([
     { id: 'professional', name: 'Professional', icon: '💼', desc: '专业商务', colors: ['#1C2833', '#3498DB', '#F1C40F'] },
     { id: 'creative', name: 'Creative', icon: '🎨', desc: '创意活泼', colors: ['#9B59B6', '#3498DB', '#E67E22'] },
     { id: 'minimal', name: 'Minimal', icon: '✨', desc: '简约现代', colors: ['#2C3E50', '#95A5A6', '#3498DB'] },
-  ];
+    { id: 'tech', name: 'Tech', icon: '🚀', desc: '科技创新', colors: ['#1E3A8A', '#3B82F6', '#10B981'] },
+    { id: 'business', name: 'Business', icon: '📊', desc: '高端商务', colors: ['#DC2626', '#F59E0B', '#1F2937'] },
+  ]);
+
+  useEffect(() => {
+    fetch(`${getApiBaseUrl()}/api/design-system/themes`)
+      .then(r => r.ok ? r.json() : [])
+      .then(list => {
+        if (list.length > 0) {
+          setThemes(list.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            icon: t.id === 'tech' ? '🚀' : t.id === 'business' ? '📊' : t.id === 'creative' ? '🎨' : t.id === 'minimal' ? '✨' : '💼',
+            desc: t.description,
+            colors: [t.colors.primary, t.colors.secondary, t.colors.accent],
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
