@@ -8,6 +8,7 @@
 import os
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # ============================================================
 # 1. 路径设置（必须在导入之前）
@@ -64,10 +65,30 @@ from conf.app import AppConfig
 
 app_config = AppConfig()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期管理（替代已弃用的 on_event）"""
+    # 启动时
+    try:
+        from services.reminder_service import start_reminder_service
+        start_reminder_service()
+        print("[OK] 提醒服务已启动")
+    except Exception as e:
+        print(f"[WARN] 提醒服务启动失败: {e}")
+    yield
+    # 关闭时
+    try:
+        from services.reminder_service import stop_reminder_service
+        stop_reminder_service()
+        print("[OK] 提醒服务已停止")
+    except Exception as e:
+        print(f"[WARN] 提醒服务停止失败: {e}")
+
 app = FastAPI(
     title=app_config.APP_NAME,
     version=app_config.APP_VERSION,
     description=app_config.APP_DESCRIPTION,
+    lifespan=lifespan,
 )
 
 # ============================================================
@@ -104,28 +125,8 @@ print("[OK] AI 服务工厂已初始化")
 # ============================================================
 
 # ============================================================
-# 7. FastAPI 启动/关闭事件（需要在事件循环启动后才能执行的任务）
+# 7. 提醒服务已通过 lifespan 事件管理（见上方 app = FastAPI(lifespan=...) 定义）
 # ============================================================
-@app.on_event("startup")
-async def on_startup():
-    """FastAPI 启动时执行（此时事件循环已存在）"""
-    # 启动提醒服务（AsyncIOScheduler 需要事件循环）
-    try:
-        from services.reminder_service import start_reminder_service
-        start_reminder_service()
-        print("[OK] 提醒服务已启动")
-    except Exception as e:
-        print(f"[WARN] 提醒服务启动失败: {e}")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    """FastAPI 关闭时执行"""
-    try:
-        from services.reminder_service import stop_reminder_service
-        stop_reminder_service()
-        print("[OK] 提醒服务已停止")
-    except Exception as e:
-        print(f"[WARN] 提醒服务停止失败: {e}")
 
 # ============================================================
 # 8. 路由注册（简化版）
