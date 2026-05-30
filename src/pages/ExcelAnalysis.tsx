@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus, History } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus, History, Receipt } from 'lucide-react';
+import InvoiceManager from '@/components/InvoiceManager';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -32,13 +33,23 @@ const ExcelAnalysis: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
+  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor' | 'invoice'>('analysis');
+  const [invoiceTabKey, setInvoiceTabKey] = useState(0);
 
-  // 检查是否需要直接打开编辑器
+  // 检查是否需要直接打开编辑器或发票管理
   useEffect(() => {
     if (localStorage.getItem('openExcelEditor') === 'true') {
       localStorage.removeItem('openExcelEditor');
       setActiveFeature('editor');
+    }
+    if (localStorage.getItem('openInvoiceManager') === 'true') {
+      localStorage.removeItem('openInvoiceManager');
+      setActiveFeature('invoice');
+    }
+    // URL hash detection: ?tab=invoice
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'invoice') {
+      setActiveFeature('invoice');
     }
   }, []);
 
@@ -244,10 +255,23 @@ const ExcelAnalysis: React.FC = () => {
             <Edit3 className="w-4 h-4 inline mr-2" />
             在线编辑
           </button>
+          <button
+            onClick={() => setActiveFeature('invoice')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeFeature === 'invoice' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+            }`}
+          >
+            <Receipt className="w-4 h-4 inline mr-2" />
+            发票管理
+          </button>
         </div>
 
         {/* 功能内容 */}
-        {activeFeature === 'analysis' ? (
+        {activeFeature === 'invoice' ? (
+          <InvoiceManager key={invoiceTabKey} />
+        ) : activeFeature === 'analysis' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Panel */}
           <motion.div 

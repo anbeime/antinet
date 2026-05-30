@@ -12,6 +12,7 @@ Invoice API Routes — 发票处理与查询
 """
 import logging
 import os
+import sys
 import json
 import shutil
 import tempfile
@@ -378,6 +379,162 @@ async def export_invoices(
         "download_url": f"/api/excel/download/{filename}",
         "count": len(rows),
     }
+
+
+@router.get("/export-advanced")
+async def export_invoices_advanced(
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    add_formulas: bool = Query(True, description="Add formula columns via minimax-xlsx"),
+    run_validation: bool = Query(True, description="Run formula_check.py after export"),
+):
+    """
+    Advanced Excel export using minimax-xlsx scripts (subprocess calls).
+
+    Pipeline:
+      1. openpyxl → base xlsx
+      2. xlsx_unpack.py → unpack to temp dir
+      3. xlsx_add_column.py → add formula column (校验: 金额+税额)
+      4. formula_check.py → validate formulas
+      5. xlsx_pack.py → repack final xlsx
+
+    The 7B Agent only calls this one API; all complex CLI work is backend-managed.
+    """
+    SKILL_DIR = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "skills", "minimax-xlsx", "scripts")))
+
+    conn = _get_conn()
+    cursor = conn.cursor()
+    where = ["invoices.is_excluded = 0"]
+    params = []
+    if from_date:
+        where.append("invoices.invoice_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where.append("invoices.invoice_date <= ?")
+        params.append(to_date)
+    where_clause = " AND ".join(where)
+    cursor.execute(f"SELECT * FROM invoices WHERE {where_clause} ORDER BY invoice_date DESC", params)
+    rows = cursor.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="no invoices found for export")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"invoices_advanced_{timestamp}"
+    xlsx_path = OUTPUT_DIR / f"{base_name}.xlsx"
+
+    # Step 1: Create base xlsx with openpyxl
+    import pandas as pd
+    data = []
+    for r in rows:
+        data.append({
+            "ID": r["id"],
+            "发票号码": r["invoice_number"],
+            "发票代码": r["invoice_code"],
+            "开票日期": r["invoice_date"],
+            "销售方": r["seller_name"],
+            "销售方税号": r["seller_tax_id"],
+            "购买方": r["buyer_name"],
+            "购买方税号": r["buyer_tax_id"],
+            "金额": r["amount"],
+            "税额": r["tax_amount"],
+            "价税合计": r["total_amount"],
+            "状态": r["status"],
+            "识别引擎": r["engine_used"],
+        })
+    df = pd.DataFrame(data)
+    df.to_excel(xlsx_path, index=False, engine="openpyxl")
+
+    result = {
+        "status": "ok",
+        "filename": xlsx_path.name,
+        "path": str(xlsx_path),
+        "download_url": f"/api/excel/download/{xlsx_path.name}",
+        "count": len(rows),
+        "pipeline": [],
+    }
+
+    if not add_formulas:
+        return result
+
+    # Step 2: Unpack with xlsx_unpack.py
+    import tempfile, subprocess
+    work_dir = Path(tempfile.mkdtemp(prefix="invoice_xlsx_"))
+    try:
+        unpack_script = SKILL_DIR / "xlsx_unpack.py"
+        if unpack_script.exists():
+            r1 = subprocess.run(
+                [sys.executable, str(unpack_script), str(xlsx_path), str(work_dir)],
+                capture_output=True, text=True, timeout=30
+            )
+            result["pipeline"].append({
+                "step": "unpack",
+                "exit_code": r1.returncode,
+                "stderr": r1.stderr[:200] if r1.returncode != 0 else "",
+            })
+
+            # Step 3: Add formula column using xlsx_add_column.py
+            add_col_script = SKILL_DIR / "xlsx_add_column.py"
+            if add_col_script.exists() and r1.returncode == 0:
+                data_rows = len(rows)
+                r2 = subprocess.run(
+                    [sys.executable, str(add_col_script), str(work_dir),
+                     "--col", "N",
+                     "--sheet", "Sheet1",
+                     "--header", "校验(金额+税额)",
+                     "--formula", "=I{row}+J{row}",
+                     "--formula-rows", f"2:{data_rows+1}",
+                     "--numfmt", "#,##0.00",
+                     "--border-row", str(data_rows + 1),
+                     "--border-style", "medium"],
+                    capture_output=True, text=True, timeout=30
+                )
+                result["pipeline"].append({
+                    "step": "add_formula_column",
+                    "exit_code": r2.returncode,
+                    "stderr": r2.stderr[:200] if r2.returncode != 0 else "",
+                })
+
+                # Step 4: Run formula_check.py for validation
+                if run_validation:
+                    check_script = SKILL_DIR / "formula_check.py"
+                    if check_script.exists():
+                        r3 = subprocess.run(
+                            [sys.executable, str(check_script), str(xlsx_path), "--summary"],
+                            capture_output=True, text=True, timeout=30
+                        )
+                        result["pipeline"].append({
+                            "step": "formula_validation",
+                            "exit_code": r3.returncode,
+                            "stdout": r3.stdout[:300],
+                            "stderr": r3.stderr[:200] if r3.returncode != 0 else "",
+                        })
+
+            # Step 5: Pack with xlsx_pack.py
+            pack_script = SKILL_DIR / "xlsx_pack.py"
+            if pack_script.exists():
+                r4 = subprocess.run(
+                    [sys.executable, str(pack_script), str(work_dir), str(xlsx_path)],
+                    capture_output=True, text=True, timeout=30
+                )
+                result["pipeline"].append({
+                    "step": "pack",
+                    "exit_code": r4.returncode,
+                    "stderr": r4.stderr[:200] if r4.returncode != 0 else "",
+                })
+        else:
+            result["pipeline"].append({"step": "unpack", "warning": "xlsx_unpack.py not found"})
+    except subprocess.TimeoutExpired:
+        result["pipeline"].append({"step": "error", "message": "minimax-xlsx subprocess timed out"})
+    except Exception as e:
+        result["pipeline"].append({"step": "error", "message": str(e)})
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(str(work_dir), ignore_errors=True)
+        except Exception:
+            pass
+
+    return result
 
 
 @router.get("/problems")

@@ -1747,8 +1747,8 @@ async def create_meeting_stream(request: MeetingRequest):
                  })
                  await asyncio.sleep(0.1)
 
-                  # 构建上下文 — 使用完整人设提示词
-                  role_question = {
+                # 构建上下文 — 使用完整人设提示词
+                 role_question = {
                      "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
                      "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
                      "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
@@ -1817,7 +1817,7 @@ async def create_meeting_stream(request: MeetingRequest):
 
                   # 使用完整人设调用LLM
                   # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                  llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
+                 llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
                  speech_content = None
                  try:
                      while not llm_task.done():
