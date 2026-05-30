@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Upload, Download, ZoomIn, ZoomOut,
   ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
@@ -37,14 +37,16 @@ const PDFViewer: React.FC = () => {
   const pdfjsRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
 
+  // 文本项位置存储（用于导出编辑后的 PDF）
+  const textItemsByPageRef = useRef<Map<number, any[]>>(new Map());
+  const originalPageTextsRef = useRef<string[]>([]);
+
   // 源文件查看器（跟 CardDetailModal 一致）
   const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');
   const [sourcePdfUrl, setSourcePdfUrl] = useState('');
   const [sourcePdfGenerating, setSourcePdfGenerating] = useState(false);
   const [sourcePdfError, setSourcePdfError] = useState('');
   const [sourceFullscreen, setSourceFullscreen] = useState(false);
-  const [sourcePdfPage, setSourcePdfPage] = useState(1);
-  const [sourcePdfTotalPages, setSourcePdfTotalPages] = useState(1);
 
   // 卡片编辑
   const [cardTitle, setCardTitle] = useState('');
@@ -63,10 +65,6 @@ const PDFViewer: React.FC = () => {
 
   // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
   const [activeView, setActiveView] = useState<'pdf' | 'source'>('pdf');
-  const [editMode, setEditMode] = useState(false);
-  const textLayerRef = useRef<HTMLDivElement>(null);
-  const sourceCanvasRef = useRef<HTMLCanvasElement>(null);
-  const sourcePageRef = useRef(1);
 
   const loadPDFJS = async () => {
     if (pdfjsRef.current) return pdfjsRef.current;
@@ -108,10 +106,21 @@ const PDFViewer: React.FC = () => {
     if (!pdfDoc) return;
     setIsNewCard(true); setCardType('blue'); setActiveView('source'); setSourceViewMode('pdf');
     setCardTitle(fileName.replace(/\.pdf$/i, '') || '导入文档');
+    const itemsByPage = new Map<number, any[]>();
+    const pageTexts: string[] = [];
     let text = '';
     for (let i = 1; i <= Math.min(pdfDoc.numPages, 50); i++) {
-      try { const p = await pdfDoc.getPage(i); const tc = await p.getTextContent(); text += tc.items.map((t: any) => t.str).join(' ') + '\n\n'; } catch {}
+      try {
+        const p = await pdfDoc.getPage(i);
+        const tc = await p.getTextContent();
+        itemsByPage.set(i, tc.items);
+        const pageText = tc.items.map((t: any) => t.str).join(' ');
+        pageTexts.push(pageText);
+        text += pageText + '\n\n';
+      } catch {}
     }
+    textItemsByPageRef.current = itemsByPage;
+    originalPageTextsRef.current = pageTexts;
     setCardContent(text.trim() || '');
     if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
   };
@@ -123,12 +132,6 @@ const PDFViewer: React.FC = () => {
       switchToEditorWithExtractedText();
     }
   }, [pdfDoc, pdfLoading]);
-
-  useEffect(() => {
-    if (editMode && sourceViewMode === 'pdf' && !sourcePdfUrl && pdfUrl) {
-      renderPdfTextLayer(sourcePdfPage);
-    }
-  }, [editMode, sourceViewMode]);
 
   useEffect(() => {
     if (sourceViewMode === 'pdf' && selectedCard?.id && cardContent && !sourcePdfUrl) {
@@ -188,42 +191,6 @@ const PDFViewer: React.FC = () => {
     } catch (e: any) { setSourcePdfError(e.message || 'PDF 生成失败'); } finally { setSourcePdfGenerating(false); }
   };
 
-  // ========== PDF 文本层渲染（可编辑）==========
-  const renderPdfTextLayer = useCallback(async (pageNum: number) => {
-    if (!pdfDoc || !sourceCanvasRef.current || !textLayerRef.current) return;
-    try {
-      const page = await pdfDoc.getPage(pageNum);
-      const vp = page.getViewport({ scale: 1.5 });
-      const c = sourceCanvasRef.current;
-      c.height = vp.height; c.width = vp.width;
-      const ctx = c.getContext('2d');
-      if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
-
-      const tc = await page.getTextContent();
-      const tl = textLayerRef.current;
-      tl.innerHTML = '';
-      tl.style.width = vp.width + 'px';
-      tl.style.height = vp.height + 'px';
-      const textDivs = tc.items.map((item: any) => {
-        const div = document.createElement('div');
-        const tx = page.getViewport({ scale: 1.5 });
-        const tf = pdfjsLib.Util.transform(tx.transform, item.transform);
-        div.style.left = tf[4] + 'px';
-        div.style.top = (tf[5] - item.height) + 'px';
-        div.style.fontSize = (item.height || 12) + 'px';
-        div.style.fontFamily = item.fontName || 'sans-serif';
-        div.style.position = 'absolute';
-        div.style.whiteSpace = 'pre';
-        div.style.minHeight = (item.height || 12) + 'px';
-        div.style.cursor = 'text';
-        div.textContent = item.str;
-        return div;
-      });
-      textDivs.forEach(d => tl.appendChild(d));
-      setSourcePdfTotalPages(pdfDoc.numPages);
-    } catch {}
-  }, [pdfDoc]);
-
   // ========== 知识卡片 CRUD ==========
   const loadCards = async () => {
     setCardsLoading(true);
@@ -282,6 +249,85 @@ const PDFViewer: React.FC = () => {
     const q = cardFilter.toLowerCase();
     return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
   });
+
+  // ========== 导出编辑后的 PDF（保留原样式 + 文字编辑） ==========
+  const exportEditedPdf = async () => {
+    if (!pdfDoc) { setSourcePdfError('没有可导出的 PDF'); return; }
+    setSourcePdfGenerating(true);
+    setSourcePdfError('');
+    try {
+      const editedPages = cardContent.split('\n\n');
+      const pagesData: any[] = [];
+
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const vp = page.getViewport({ scale: 1 });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+        const textItems = textItemsByPageRef.current.get(pageNum) || [];
+        const originalPageText = originalPageTextsRef.current[pageNum - 1] || '';
+        const editedPageText = editedPages[pageNum - 1] || '';
+
+        const edits: any[] = [];
+        if (editedPageText && editedPageText !== originalPageText) {
+          const origWords = originalPageText.split(/\s+/);
+          const editWords = editedPageText.split(/\s+/);
+          if (origWords.length === editWords.length && textItems.length === origWords.length) {
+            for (let j = 0; j < textItems.length; j++) {
+              const item = textItems[j];
+              if ((item.str || '') !== (editWords[j] || '')) {
+                edits.push({
+                  x: item.transform[4],
+                  y: item.transform[5],
+                  width: item.width || 100,
+                  height: item.height || Math.abs(item.transform[3]) || 12,
+                  fontSize: item.fontSize || Math.abs(item.transform[3]) || 12,
+                  text: editWords[j] || '',
+                });
+              }
+            }
+          }
+        }
+
+        pagesData.push({
+          page: pageNum,
+          width: vp.width,
+          height: vp.height,
+          data: dataUrl,
+          edits,
+        });
+      }
+
+      const fd = new FormData();
+      fd.append('images', JSON.stringify(pagesData));
+      fd.append('title', cardTitle || '文档');
+      fd.append('author', 'PDFViewer');
+
+      const res = await fetch(`${API_BASE}/api/pdf/edit-text`, { method: 'POST', body: fd });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || '导出失败'); }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${cardTitle || 'export'}-edited.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e: any) {
+      setSourcePdfError(e.message || '导出编辑 PDF 失败');
+    } finally {
+      setSourcePdfGenerating(false);
+    }
+  };
 
   // ========== 渲染源文件查看器（跟 CardDetailModal 完全一致） ==========
   const renderSourceViewer = () => (
@@ -348,16 +394,15 @@ const PDFViewer: React.FC = () => {
                 <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
                   {isOriginal ? (
                     <>
-                      <button onClick={() => setEditMode(!editMode)}
-                        className={`flex items-center gap-1 px-3 py-1 text-xs rounded-lg ${editMode ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-500'}`}>
-                        {editMode ? '✓ 完成编辑' : '✎ 编辑文字'}
+                      <button onClick={() => setSourceViewMode('markdown')}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500">
+                        ✎ 编辑文本
                       </button>
-                      <span className="text-xs text-gray-400">第 {sourcePdfPage}/{sourcePdfTotalPages} 页</span>
-                      <button onClick={async () => { if (sourcePdfPage > 1) { const p = sourcePdfPage - 1; setSourcePdfPage(p); if (editMode) await renderPdfTextLayer(p); } }} disabled={sourcePdfPage <= 1}
-                        className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-30">&lt;</button>
-                      <button onClick={async () => { if (sourcePdfPage < sourcePdfTotalPages) { const p = sourcePdfPage + 1; setSourcePdfPage(p); if (editMode) await renderPdfTextLayer(p); } }} disabled={sourcePdfPage >= sourcePdfTotalPages}
-                        className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-600 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-30">&gt;</button>
-                      <span className="text-xs text-gray-400 ml-2">原始文件</span>
+                      <a href={displayUrl} download={`${cardTitle || 'export'}.pdf`}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        <Download size={12} />下载 PDF
+                      </a>
+                      <span className="text-xs text-gray-400">原始文件</span>
                     </>
                   ) : (
                     <>
@@ -369,31 +414,21 @@ const PDFViewer: React.FC = () => {
                     </>
                   )}
                   <div className="flex-1" />
-                  {isOriginal && cardContent && !editMode && (
-                    <button onClick={() => generateSourcePdf()}
-                      className="text-xs px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600">生成主题 PDF</button>
+                  {isOriginal && cardContent && (
+                    <>
+                      <button onClick={exportEditedPdf} disabled={sourcePdfGenerating}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                        {sourcePdfGenerating ? <Loader size={12} className="animate-spin" /> : <FileText size={12} />}导出编辑 PDF
+                      </button>
+                      <button onClick={async () => { if (cardContent) { const md = `# ${cardTitle}\n\n${cardContent}`; const fd = new FormData(); fd.append('file', new Blob([md], { type: 'text/markdown' }), 'doc.md'); fd.append('title', cardTitle); fd.append('author', 'PDFViewer'); fd.append('theme', exportTheme); const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (res.ok) { const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${cardTitle}-${exportTheme}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } } }}
+                        className="text-xs px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600">生成主题 PDF</button>
+                    </>
                   )}
                 </div>
-                <div className="flex-1 min-h-0 relative">
-                  {isOriginal && editMode ? (
-                    <>
-                      <canvas ref={sourceCanvasRef} className="w-full" />
-                      <div ref={textLayerRef}
-                        className="absolute inset-0"
-                        contentEditable
-                        suppressContentEditableWarning
-                        style={{ outline: 'none', cursor: 'text' }}
-                        onInput={() => {
-                          const tl = textLayerRef.current;
-                          if (tl) setCardContent(tl.innerText || '');
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <object data={displayUrl} type="application/pdf" className="w-full h-full">
-                      <embed src={displayUrl} type="application/pdf" className="w-full h-full" />
-                    </object>
-                  )}
+                <div className="flex-1 min-h-0">
+                  <object data={displayUrl} type="application/pdf" className="w-full h-full">
+                    <embed src={displayUrl} type="application/pdf" className="w-full h-full" />
+                  </object>
                 </div>
               </div>
             ) : (

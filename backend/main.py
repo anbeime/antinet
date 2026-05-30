@@ -194,6 +194,7 @@ register_router("routes.report_routes")
 register_router("routes.collaboration_routes")  # 实时协作 (WebSocket + REST)
 register_router("routes.mindmap_routes")  # 思维导图
 register_router("routes.remotion_routes")  # Remotion 动态演示
+register_router("routes.pdf_edit_routes")  # PDF 文本编辑
 
 # ============================================================
 # 9. 初始化各模块的数据库连接
