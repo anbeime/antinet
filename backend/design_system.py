@@ -180,6 +180,7 @@ class SlideShape:
     top: float
     width: float
     height: float
+    name: Optional[str] = None
     text: Optional[str] = None
     font_size: Optional[float] = None
     font_bold: Optional[bool] = None
@@ -187,6 +188,10 @@ class SlideShape:
     fill_color: Optional[str] = None
     table: Optional[list[list[str]]] = None
     image_url: Optional[str] = None
+    paragraphs: Optional[list] = None
+    default_font_size: Optional[float] = None
+    default_font_color: Optional[str] = None
+    default_font_name: Optional[str] = None
 
 
 @dataclass

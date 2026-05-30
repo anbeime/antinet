@@ -89,6 +89,7 @@ app = FastAPI(
     version=app_config.APP_VERSION,
     description=app_config.APP_DESCRIPTION,
     lifespan=lifespan,
+    max_form_memory_size=app_config.MAX_UPLOAD_SIZE,
 )
 
 # ============================================================
@@ -173,6 +174,7 @@ register_router("routes.backlink_routes")
 register_router("routes.integration_routes")
 register_router("routes.moc_routes")
 register_router("routes.vision_routes")
+register_router("routes.invoice_routes")
 
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
@@ -260,6 +262,13 @@ except Exception as e:
     print(f"[WARN] ppt_routes: {e}")
 
 try:
+    from routes import invoice_routes
+    invoice_routes.set_db_manager(db_manager)
+    print("[OK] invoice_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] invoice_routes: {e}")
+
+try:
     from routes import vector_search
     vector_search.set_db_manager(db_manager)
     vector_search.init_on_startup()
@@ -267,13 +276,6 @@ try:
     print("[OK] vector_search 数据库已连接，embedding 已初始化")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
-
-try:
-    from routes import ppt_routes
-    ppt_routes.set_db_manager(db_manager)
-    print("[OK] ppt_routes 数据库已连接")
-except Exception as e:
-    print(f"[WARN] ppt_routes: {e}")
 
 try:
     from routes import collaboration_routes

@@ -821,7 +821,7 @@ def _is_valid_genie_content(content: str) -> bool:
 async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                        system_prompt: str, user_prompt: str, max_tokens: int,
                        degrade_state: dict, scheduler, inference_start: float,
-                       agent_id: str, layer: str) -> str | None:
+                       agent_id: str, layer: str) -> Optional[str]:
     """调用 Genie HTTP（端口 8910），含速率控制 + 重试 + 冷却"""
     now = time.time()
     if not (now > degrade_state.get("skip_vision_until", 0)):
@@ -845,7 +845,7 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
     if len(user_prompt) > remaining:
         logger.info(f"[Meeting] 层{layer} Genie输入截断({len(user_prompt)}→{remaining}字)")
 
-    async def _do_call() -> str | None:
+    async def _do_call() -> Optional[str]:
         async with httpx.AsyncClient(timeout=timeout_sec, limits=httpx.Limits(max_keepalive_connections=2, max_connections=4)) as client:
             response = await client.post(
                 "http://127.0.0.1:8910/v1/chat/completions",

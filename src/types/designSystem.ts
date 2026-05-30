@@ -41,6 +41,7 @@ export interface SlideShape {
   top: number;
   width: number;
   height: number;
+  name?: string;
   text?: string;
   font_size?: number;
   font_bold?: boolean;
@@ -48,6 +49,10 @@ export interface SlideShape {
   fill_color?: string;
   table?: string[][];
   image_url?: string;
+  paragraphs?: Array<{ text: string; align?: string; runs?: Array<{ text: string; font_size?: number; bold?: boolean; color?: string }> }>;
+  default_font_size?: number;
+  default_font_color?: string;
+  default_font_name?: string;
 }
 
 export interface SlideData {

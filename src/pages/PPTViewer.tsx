@@ -184,8 +184,6 @@ const PPTViewer: React.FC = () => {
   const handleThemeChange = async (name: string) => {
     setSelectedTheme(name);
     try {
-      const formData = new FormData();
-      formData.append('file', '');
       const resp = await fetch(`${API_BASE}/api/design-system/themes/${name}`);
       if (resp.ok) {
         const theme: DesignTheme = await resp.json();
@@ -238,41 +236,35 @@ const PPTViewer: React.FC = () => {
   const colors = brandStyle.theme.colors;
   const slideBg = current?.background || colors.background;
 
-  const renderSlideContent = (sd: SlideData, isThumb = false) => {
+  const renderSlideContent = (sd: SlideData) => {
     if (!sd) return null;
+    const origW = preview?.slide_width || 960;
+    const origH = preview?.slide_height || 540;
+    const pct = (v: number, dim: number) => `${(v / dim) * 100}%`;
+    const scaleFont = (v?: number | null) => Math.max(6, ((v || 14) * origH) / 540);
+
     return (
-      <div
-        style={{
-          width: '100%', height: '100%', background: sd.background || '#ffffff',
-          position: 'relative', overflow: 'hidden', padding: isThumb ? 4 : 0,
-        }}
-      >
+      <div style={{
+        width: '100%', height: '100%', background: sd.background || '#ffffff',
+        position: 'relative', overflow: 'hidden',
+      }}>
         {sd.shapes.map((shape, i) => {
-          const sLeft = isThumb ? shape.left * 0.2 : shape.left;
-          const sTop = isThumb ? shape.top * 0.2 : shape.top;
-          const sWidth = isThumb ? shape.width * 0.2 : shape.width;
-          const sHeight = isThumb ? shape.height * 0.2 : shape.height;
-
-          const defaultFontSize = isThumb ? 10 : (shape.font_size || 14);
+          const defaultFontSize = scaleFont(shape.font_size);
           const defaultColor = shape.font_color || colors.text;
-
-          let textContent = shape.text || '';
-          const paragraphs = (shape as any).paragraphs;
-          if (paragraphs?.length) {
-            textContent = paragraphs.map((p: any) => p.text).join('\n');
-          }
+          const paragraphs = shape.paragraphs;
 
           if (shape.table) {
             return (
               <table key={i} style={{
-                position: 'absolute', left: sLeft, top: sTop, width: sWidth, height: sHeight,
-                borderCollapse: 'collapse', fontSize: isThumb ? 8 : defaultFontSize,
+                position: 'absolute', left: pct(shape.left, origW), top: pct(shape.top, origH),
+                width: pct(shape.width, origW), height: pct(shape.height, origH),
+                borderCollapse: 'collapse', fontSize: defaultFontSize,
               }}>
                 <tbody>
                   {shape.table.map((row, ri) => (
                     <tr key={ri}>
                       {row.map((cell, ci) => (
-                        <td key={ci} style={{ border: '1px solid #ccc', padding: 2 }}>{cell}</td>
+                        <td key={ci} style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{cell}</td>
                       ))}
                     </tr>
                   ))}
@@ -285,7 +277,8 @@ const PPTViewer: React.FC = () => {
             <div
               key={i}
               style={{
-                position: 'absolute', left: sLeft, top: sTop, width: sWidth, height: sHeight,
+                position: 'absolute', left: pct(shape.left, origW), top: pct(shape.top, origH),
+                width: pct(shape.width, origW), height: pct(shape.height, origH),
                 background: shape.fill_color || 'transparent',
                 overflow: 'hidden',
                 fontSize: defaultFontSize,
@@ -293,22 +286,18 @@ const PPTViewer: React.FC = () => {
                 fontWeight: shape.font_bold ? 'bold' : 'normal',
                 lineHeight: 1.4,
                 wordBreak: 'break-word',
-                padding: paragraphs?.length ? 4 : 0,
+                padding: '2px 4px',
               }}
             >
-              {paragraphs?.length ? (
-                paragraphs.map((p: any, pi: number) => (
-                  <div key={pi} style={{ textAlign: p.align || 'left', marginBottom: 4 }}>
-                    {textContent.split('\n').map((line, li) => (
-                      <div key={li}>{line}</div>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                textContent.split('\n').map((line, li) => (
-                  <div key={li}>{line}</div>
-                ))
-              )}
+              {paragraphs?.length
+                ? paragraphs.map((p, pi) => (
+                    <div key={pi} style={{ textAlign: (p as any).align || 'left', marginBottom: 2 }}>
+                      {p.text}
+                    </div>
+                  ))
+                : (shape.text || '').split('\n').map((line, li) => (
+                    <div key={li}>{line}</div>
+                  ))}
             </div>
           );
         })}
@@ -321,7 +310,7 @@ const PPTViewer: React.FC = () => {
     if (!sd) return null;
     return (
       <div className="flex flex-col h-full p-4 gap-4">
-        <div className="flex-1 bg-white rounded-lg overflow-hidden shadow-inner" style={{ aspectRatio: '16/9', maxHeight: '60%' }}>
+        <div className="flex-1 bg-white rounded-lg overflow-hidden shadow-inner relative" style={{ aspectRatio: '16/9', maxHeight: '60%' }}>
           {renderSlideContent(sd)}
         </div>
         <div className="flex-1 overflow-y-auto space-y-2">
@@ -427,7 +416,7 @@ const PPTViewer: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3 }}
-                  className="w-full max-w-5xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden cursor-pointer"
+                  className="w-full max-w-5xl aspect-video bg-white rounded-lg shadow-2xl overflow-hidden cursor-pointer relative"
                   onClick={() => setCurrentSlide(p => (p + 1) % totalSlides)}
                   style={{ maxHeight: 'calc(100vh - 180px)' }}
                 >
@@ -447,11 +436,9 @@ const PPTViewer: React.FC = () => {
                   key={idx}
                   whileHover={{ scale: 1.02 }}
                   onClick={() => { setCurrentSlide(idx); setViewMode('slide'); }}
-                  className={`aspect-video rounded-lg cursor-pointer overflow-hidden ${currentSlide === idx ? 'ring-4 ring-blue-500' : ''} bg-white shadow`}
+                  className={`aspect-video rounded-lg cursor-pointer overflow-hidden relative ${currentSlide === idx ? 'ring-4 ring-blue-500' : ''} bg-white shadow`}
                 >
-                  <div style={{ width: '100%', height: '100%', transform: 'scale(0.2)', transformOrigin: 'top left' }}>
-                    {renderSlideContent(sd, true)}
-                  </div>
+                  {renderSlideContent(sd)}
                   <div className="absolute bottom-1 left-2 text-xs text-white bg-black/50 px-1 rounded">
                     {idx + 1}
                   </div>

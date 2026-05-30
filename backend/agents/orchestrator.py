@@ -436,31 +436,29 @@ class OrchestratorAgent:
         except Exception as e:
             logger.debug(f"[指挥使] call_llm降级链不可用，回退直接HTTP: {e}")
         
-        # 回退：直接调用8910 Genie API
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": "qwen2.5vl3b-8380-2.42",
-                        "messages": [
-                            {"role": "system", "content": "你是锦衣卫总指挥使，负责任务分解与调度。"},
-                            {"role": "user", "content": prompt}
-                        ],
-                        "size": 2000,
-                        "seed": 42,
-                        "temp": 0.7,
-                        "top_k": 1,
-                        "top_p": 1.0
-                    }
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if content:
-                    return content
-        except Exception as e:
-            logger.debug(f"[指挥使] 8910 Genie API不可用: {e}")
+        # 回退：直接调用8910 Genie API（7B优先，3B兜底）
+        messages = [
+            {"role": "system", "content": "你是锦衣卫总指挥使，负责任务分解与调度。"},
+            {"role": "user", "content": prompt}
+        ]
+        for model in ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]:
+            try:
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    response = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": model,
+                            "messages": messages,
+                            "max_tokens": 2000,
+                            "temperature": 0.7
+                        }
+                    )
+                    response.raise_for_status()
+                    content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if content:
+                        return content
+            except Exception as e:
+                logger.debug(f"[指挥使] Genie {model}不可用: {e}")
         
         # 最终回退：NPU进程内推理
         try:
