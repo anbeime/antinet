@@ -461,8 +461,15 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
             card_content = card.get('content') or card.get('description') or card.get('text', '')
 
             if not card_type:
-                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color字段: {list(card.keys())}")
-                continue
+                # 根据 Agent 角色推断默认类型
+                _AGENT_TYPE_FALLBACK = {
+                    'mijuanfang': 'blue', 'taishige': 'blue',
+                    'tongzhengsi': 'blue',
+                    'jinjiyu': 'yellow', 'jianchayuan': 'yellow',
+                    'chengxiangfu': 'red', 'junjichu': 'red', 'zhihuishi': 'red',
+                }
+                card_type = _AGENT_TYPE_FALLBACK.get(agent_id, 'blue')
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color，使用Agent默认类型: {card_type}")
 
             if card_type not in ('blue', 'green', 'yellow', 'red'):
                 logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card_type}")
@@ -1740,9 +1747,8 @@ async def create_meeting_stream(request: MeetingRequest):
                  })
                  await asyncio.sleep(0.1)
 
-                 # 构建上下文 — 极简化 prompt，适配 3B 小模型
-                 # 小模型对"你是XX"类指令会本能复读，改用角色代号+直接提问
-                 role_question = {
+                  # 构建上下文 — 使用完整人设提示词
+                  role_question = {
                      "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
                      "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
                      "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
@@ -1809,9 +1815,9 @@ async def create_meeting_stream(request: MeetingRequest):
                      except Exception as e:
                          logger.warning(f"密卷房视觉分析失败: {e}")
 
-                 # 调用LLM — 人设已嵌入 user_prompt 头部，不再依赖 system role
-                 # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                 llm_task = asyncio.create_task(call_llm("你是一位古代朝廷官员，简洁回答问题，不要自我介绍。", user_prompt, max_tokens=150))
+                  # 使用完整人设调用LLM
+                  # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
+                  llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
                  speech_content = None
                  try:
                      while not llm_task.done():

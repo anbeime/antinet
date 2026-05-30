@@ -61,6 +61,26 @@ def clean_model_output(text: str) -> str:
         return "抱歉，模型返回了无效响应"
     
     return text
+
+async def call_genie(messages: list, max_tokens: int = 256, temperature: float = 0.3, timeout_sec: float = 60.0) -> Optional[str]:
+    """调用 Genie API，7B 优先，3B 兜底"""
+    import httpx
+    models = ["qwen2.0-7b-ssd-8380-2.34", "llama3.2-3b-8380-qnn2.37"]
+    for model in models:
+        try:
+            resp = httpx.post(
+                "http://127.0.0.1:8910/v1/chat/completions",
+                json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature},
+                timeout=httpx.Timeout(timeout_sec, connect=15.0)
+            )
+            if resp.status_code == 200:
+                text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                if text:
+                    return clean_model_output(text)
+        except Exception:
+            continue
+    return None
+
 from database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -1191,29 +1211,16 @@ async def enhanced_chat(request: ChatRequest):
                 response_data["skill_result"] = skill_result
                 response_data["response"] = generate_skill_response(skill_result)
             else:
-                # 技能未注册时，使用Genie生成指导性回复
-                try:
-                    import httpx
-                    resp = httpx.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "llama3.2-3b-8380-qnn2.37",
-                            "messages": [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
-                            "max_tokens": 256,
-                            "temperature": 0.3
-                        },
-                        timeout=httpx.Timeout(60.0, connect=15.0)
-                    )
-                    if resp.status_code == 200:
-                        result_data = resp.json()
-                        raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        raw_response = clean_model_output(raw_response)
-                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + raw_response
-                        response_data["reply"] = response_data["response"]  # 前端兼容
-                        response_data["metadata"]["model"] = "genie-npu"
-                    else:
-                        raise Exception("Genie不可用")
-                except Exception:
+                # 技能未注册时，使用Genie生成指导性回复（7B优先，3B兜底）
+                genie_text = await call_genie(
+                    [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
+                    max_tokens=256, timeout_sec=60.0
+                )
+                if genie_text:
+                    response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + genie_text
+                    response_data["reply"] = response_data["response"]
+                    response_data["metadata"]["model"] = "genie-npu"
+                else:
                     response_data["response"] = f"该技能暂时不可用。"
                 
         elif scene_type == SceneType.GREETING:
@@ -1224,29 +1231,16 @@ async def enhanced_chat(request: ChatRequest):
 📚 知识库查询 | 🖼️ 图片分析 | 🛠️ 技能调用 | 🧠 深度思考"""
             
         elif scene_type == SceneType.SELF_INTRO:
-            # 自我介绍 - 使用Genie快速响应
-            try:
-                import httpx
-                resp = httpx.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": "llama3.2-3b-8380-qnn2.37",
-                        "messages": [{"role": "user", "content": "请用50字以内介绍自己，你叫小易，是知易智能知识管家的AI助手"}],
-                        "max_tokens": 100,
-                        "temperature": 0.3
-                    },
-                    timeout=httpx.Timeout(30.0, connect=10.0)
-                )
-                if resp.status_code == 200:
-                    result_data = resp.json()
-                    raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    raw_response = clean_model_output(raw_response)
-                    response_data["response"] = raw_response
-                    response_data["reply"] = raw_response  # 前端兼容
-                    response_data["metadata"]["model"] = "genie-npu"
-                else:
-                    raise Exception("Genie不可用")
-            except Exception:
+            # 自我介绍 - 使用Genie快速响应（7B优先，3B兜底）
+            genie_text = await call_genie(
+                [{"role": "user", "content": "请用50字以内介绍自己，你叫小易，是知易智能知识管家的AI助手"}],
+                max_tokens=100, temperature=0.3, timeout_sec=30.0
+            )
+            if genie_text:
+                response_data["response"] = genie_text
+                response_data["reply"] = genie_text
+                response_data["metadata"]["model"] = "genie-npu"
+            else:
                 response_data["response"] = "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
             
         else:
@@ -1261,65 +1255,33 @@ async def enhanced_chat(request: ChatRequest):
                     for e in result.kg_entities[:3]
                 ]
                 
-                # 使用LLM综合检索结果生成自然语言回答（注入知识到prompt）
-                # 优先使用Genie API (端口8910)
-                try:
-                    import httpx
-                    import json
-                    context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
-                    quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
-                    
-                    # 使用Genie API (端口8910)
-                    resp = httpx.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "llama3.2-3b-8380-qnn2.37",
-                            "messages": [{"role": "user", "content": quick_prompt}],
-                            "max_tokens": 256,
-                            "temperature": 0.3
-                        },
-                        timeout=httpx.Timeout(60.0, connect=15.0)
-                    )
-                    if resp.status_code == 200:
-                        result_data = resp.json()
-                        genie_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        # 清理模型输出的特殊token
-                        genie_response = clean_model_output(genie_response)
-                        logger.info(f"[Chat] Genie响应长度: {len(genie_response) if genie_response else 0}")
-                        response_data["response"] = genie_response[:500] if genie_response else "无回复"
-                        response_data["reply"] = response_data["response"]  # 前端兼容
-                        response_data["metadata"]["model"] = "genie-npu"
-                    else:
-                        raise Exception(f"Genie不可用: {resp.status_code}")
-                except Exception as e:
-                    logger.warning(f"Genie生成失败，回退到简单格式: {e}")
+                # 使用LLM综合检索结果生成自然语言回答（7B优先，3B兜底）
+                context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
+                quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
+                genie_text = await call_genie(
+                    [{"role": "user", "content": quick_prompt}],
+                    max_tokens=256, timeout_sec=60.0
+                )
+                if genie_text:
+                    logger.info(f"[Chat] Genie响应长度: {len(genie_text)}")
+                    response_data["response"] = genie_text[:500]
+                    response_data["reply"] = response_data["response"]
+                    response_data["metadata"]["model"] = "genie-npu"
+                else:
+                    logger.warning("Genie生成失败，回退到简单格式")
                     response_data["response"] = generate_hybrid_response(query, result)
             else:
-                # 无匹配时，优先使用Genie API快速响应
-                try:
-                    import httpx
-                    resp = httpx.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "llama3.2-3b-8380-qnn2.37",
-                            "messages": [{"role": "user", "content": query}],
-                            "max_tokens": 256,
-                            "temperature": 0.3
-                        },
-                        timeout=httpx.Timeout(60.0, connect=15.0)
-                    )
-                    if resp.status_code == 200:
-                        result_data = resp.json()
-                        raw_response = result_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        # 清理模型输出的特殊token
-                        raw_response = clean_model_output(raw_response)
-                        response_data["response"] = raw_response
-                        response_data["reply"] = raw_response  # 前端兼容
-                        response_data["metadata"]["model"] = "genie-npu"
-                    else:
-                        raise Exception(f"Genie不可用: {resp.status_code}")
-                except Exception as e2:
-                    logger.warning(f"[Chat] Genie不可用: {e2}")
+                # 无匹配时，使用Genie快速响应（7B优先，3B兜底）
+                genie_text = await call_genie(
+                    [{"role": "user", "content": query}],
+                    max_tokens=256, timeout_sec=60.0
+                )
+                if genie_text:
+                    response_data["response"] = genie_text
+                    response_data["reply"] = genie_text
+                    response_data["metadata"]["model"] = "genie-npu"
+                else:
+                    logger.warning("[Chat] Genie不可用")
                     response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
         
         response_data["suggested_questions"] = generate_suggested_questions(
