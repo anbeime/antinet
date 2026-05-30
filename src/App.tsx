@@ -45,7 +45,6 @@ export default function App() {
           <Route path="/report-automation" element={<ReportAutomation />} />
           <Route path="/office-docs" element={<OfficeDocs />} />
 <Route path="/pdf-viewer" element={<PDFViewer />} />
-          <Route path="/pdf-viewer/markdown" element={<MarkdownConverter />} />
           <Route path="/ppt-viewer" element={<PPTViewer />} />
           <Route path="/mindmap" element={<MindMap />} />
           <Route path="/knowledge-graph" element={<KnowledgeGraphView />} />

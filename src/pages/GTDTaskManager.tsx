@@ -73,8 +73,8 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
 
   return (
     <div className="h-screen flex flex-col" style={{ backgroundColor: '#faf8f5' }}>
-      <div className="border-b px-6 py-4" style={{ backgroundColor: '#fff9f3', borderColor: '#e8ddd0' }}>
-        <div className="flex items-center justify-between">
+      <div className="border-b px-4 md:px-6 py-3 md:py-4" style={{ backgroundColor: '#fff9f3', borderColor: '#e8ddd0' }}>
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif', letterSpacing: '0.05em' }}>任务管理</h1>
             <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: '#f5ebe0', color: '#8b7355' }}>

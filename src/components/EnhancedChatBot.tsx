@@ -346,51 +346,118 @@ const saveMessages = (messages: ChatMessage[]) => {
   }
 };
 
-// 根据用户输入生成动态推荐问题
-const generateLocalSuggestions = (query: string, hasImage: boolean): string[] => {
+// 根据用户输入和对话上下文生成动态推荐问题
+const generateLocalSuggestions = (query: string, hasImage: boolean, recentMessages?: ChatMessage[]): string[] => {
   const s: string[] = [];
-
   const q = query.toLowerCase();
 
   if (hasImage || q.includes('图片') || q.includes('图像') || q.includes('截图') || q.includes('照片')) {
     s.push('分析一下这张图片的详细内容');
     s.push('这张图片说明了什么问题');
+    s.push('基于这张图片生成知识卡片');
   }
 
-  if (q.includes('ppt') || q.includes('演示') || q.includes('幻灯片') || q.includes('文稿')) {
+  if (q.includes('ppt') || q.includes('演示') || q.includes('幻灯片') || q.includes('文稿') || q.includes('工作总结')) {
     s.push('帮我完善这个PPT的结构');
     s.push('生成一份更详细的大纲');
+    s.push('换一种风格重新生成');
   }
 
-  if (q.includes('卡片') || q.includes('知识库') || q.includes('搜索') || q.includes('查找') || q.includes('查询') || q.includes('找')) {
-    const topic = query.replace(/(?:搜索|查找|找|查询|关于)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息)/g, '').trim();
+  if (q.includes('卡片') || q.includes('知识库') || q.includes('搜索') || q.includes('查找') || q.includes('查询') || q.includes('找') || q.includes('关于')) {
+    const topic = query.replace(/(?:搜索|查找|找|查询|关于|帮我)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息|相关内容)/g, '').trim();
     if (topic && topic.length < 20) {
       s.push(`帮我搜索更多关于${topic}的知识卡片`);
+      s.push(`用四色卡片总结${topic}`);
     }
     s.push('这些卡片之间有什么关联');
+    s.push('基于这些卡片生成一个报告');
   }
 
-  if (q.includes('excel') || q.includes('表格') || q.includes('数据') || q.includes('分析')) {
+  if (q.includes('excel') || q.includes('表格') || q.includes('电子表格') || q.includes('xlsx') || q.includes('csv')) {
     s.push('对这份数据进行可视化分析');
     s.push('总结数据中的关键趋势');
+    s.push('生成数据分析报告');
   }
 
-  if (q.includes('总结') || q.includes('摘要') || q.includes('概括')) {
+  if (q.includes('总结') || q.includes('摘要') || q.includes('概括') || q.includes('提炼')) {
     s.push('提炼出核心要点');
     s.push('生成一份详细的报告');
+    s.push('将总结内容保存为知识卡片');
   }
 
-  if (q.includes('对比') || q.includes('比较') || q.includes('区别')) {
+  if (q.includes('对比') || q.includes('比较') || q.includes('区别') || q.includes('差异')) {
     s.push('用表格展示对比结果');
     s.push('哪个方案更优');
+    s.push('总结各自的优缺点');
+  }
+
+  if (q.includes('风险') || q.includes('问题') || q.includes('注意') || q.includes('警告')) {
+    s.push('如何规避这些风险');
+    s.push('制定应对措施');
+    s.push('创建风险卡片存档');
+  }
+
+  if (q.includes('项目') || q.includes('任务') || q.includes('计划') || q.includes('规划')) {
+    s.push('制定详细的项目计划');
+    s.push('生成项目进度时间线');
+    s.push('需要哪些资源支持');
+  }
+
+  if (q.includes('word') || q.includes('文档') || q.includes('报告') || q.includes('文章') || q.includes('论文')) {
+    s.push('调整文档的格式和样式');
+    s.push('导出为PDF格式');
+    s.push('在文档中插入图表');
+  }
+
+  if (q.includes('pdf') || q.includes('文件') || q.includes('上传') || q.includes('导入')) {
+    s.push('提取文档的核心内容');
+    s.push('将文档转换为知识卡片');
+    s.push('文档中有哪些关键数据');
+  }
+
+  if (q.includes('管理') || q.includes('团队') || q.includes('协作') || q.includes('协同')) {
+    s.push('如何提高团队协作效率');
+    s.push('推荐协作工具和方法');
+    s.push('建立团队知识库');
+  }
+
+  if (q.includes('学习') || q.includes('教程') || q.includes('教学') || q.includes('培训') || q.includes('课程')) {
+    s.push('制定学习计划');
+    s.push('生成学习笔记卡片');
+    s.push('推荐相关学习资源');
+  }
+
+  // 根据对话上下文生成连续性推荐
+  if (s.length === 0 && recentMessages && recentMessages.length >= 2) {
+    const lastAssistantMsg = [...recentMessages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistantMsg) {
+      const lastContent = lastAssistantMsg.content.toLowerCase();
+      if (lastContent.includes('卡片') || lastContent.includes('知识')) {
+        s.push('这些信息如何应用到实际工作中');
+        s.push('帮我梳理一下这些知识点');
+      } else if (lastContent.includes('ppt') || lastContent.includes('演示')) {
+        s.push('调整PPT的主题风格');
+        s.push('在PPT中添加图表和数据');
+      } else if (lastContent.includes('数据') || lastContent.includes('分析')) {
+        s.push('这些数据说明了什么趋势');
+        s.push('基于数据给出建议');
+      }
+    }
   }
 
   if (s.length === 0) {
     s.push('帮我搜索相关知识卡片');
     s.push('能详细展开说明一下吗');
+    s.push('我可以使用哪些功能');
   }
 
-  return s.slice(0, 3);
+  // 去重并返回前3个
+  const unique: string[] = [];
+  for (const item of s) {
+    if (!unique.includes(item)) unique.push(item);
+    if (unique.length >= 3) break;
+  }
+  return unique;
 };
 
 export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
@@ -440,6 +507,11 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 有什么可以帮您的吗？`,
         timestamp: new Date().toISOString()
       }]);
+      setSuggestedQuestions([
+        "帮我搜索关于项目管理的知识卡片",
+        "分析一下这张图片",
+        "生成一个工作总结的PPT"
+      ]);
     }
   }, [isOpen]);
 
@@ -780,12 +852,11 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         }
       };
       setMessages(prev => [...prev, assistantMessage]);
-      const localSuggestions = generateLocalSuggestions(query, !!imgData);
-      setSuggestedQuestions(
-        response.suggestions && response.suggestions.length > 0
-          ? response.suggestions
-          : localSuggestions
-      );
+      const localSuggestions = generateLocalSuggestions(query, !!imgData, messages);
+      const mergedSuggestions = response.suggestions && response.suggestions.length > 0
+        ? response.suggestions
+        : localSuggestions;
+      setSuggestedQuestions(mergedSuggestions.slice(0, 3));
 
       // 自动朗读
       if (autoSpeak && replyContent) {

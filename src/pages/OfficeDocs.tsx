@@ -465,12 +465,12 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   }, [activeTab, loadConverterStatus]);
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+    <div className="flex flex-col md:flex-row h-screen bg-gray-100 dark:bg-gray-900">
       {showFileList && (
         <motion.aside
           initial={{ x: -300 }}
           animate={{ x: 0 }}
-          className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col"
+          className="w-full md:w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col"
         >
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-lg font-semibold flex items-center">
@@ -525,15 +525,16 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
       <div className="flex-1 flex flex-col">
         <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 flex-wrap">
               <button
                 onClick={() => setShowFileList(!showFileList)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                className="p-2 md:hidden hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="切换文件列表"
               >
                 <FolderOpen className="w-5 h-5" />
               </button>
               
-              <div className="flex space-x-1">
+              <div className="flex space-x-1 flex-wrap gap-1">
                 {[
                   { id: 'excel', label: '文档查看', icon: FileSpreadsheet, color: 'text-green-500' },
                   { id: 'convert', label: '格式转换', icon: FileCode, color: 'text-blue-500' },

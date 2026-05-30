@@ -327,12 +327,69 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     content: string;
     color: CardColor;
     address: string;
-  }>, syncToGTD: boolean = false) => {
+  }>, syncToGTD: boolean = false, rawText?: string) => {
     try {
       if (importedCards.length === 0) {
         toast('没有可导入的卡片', {
           className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
         });
+        return;
+      }
+      
+      // 粘贴文本导入：使用新的 /import/text 端点（自动保存源文件实现溯源 + 同批次关联）
+      if (rawText && rawText.trim()) {
+        let textSavedCount = 0;
+        try {
+          const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: rawText, auto_save: true })
+          });
+          if (response.ok) {
+            const result = await response.json();
+            textSavedCount = result.saved || 0;
+            toast(`成功导入 ${textSavedCount} 张卡片（已保存源文件可溯源）`, {
+              className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+            });
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || '文本导入服务异常');
+          }
+        } catch (e: any) {
+          console.error('文本导入失败:', e);
+          toast(`文本导入失败: ${e.message}`, {
+            className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+          });
+          return;
+        }
+        
+        // 重新从后端加载卡片列表
+        try {
+          const cardsResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
+          if (cardsResponse.ok) {
+            const responseData = await cardsResponse.json();
+            const apiCards = responseData.cards || responseData;
+            const formattedCards = apiCards.map((card: any) => ({
+              id: String(card.id || card.ID),
+              title: card.title || '',
+              content: card.content || '',
+              card_type: card.card_type || card.type || 'blue',
+              category: card.category || '',
+              address: card.address || '',
+              tags: Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' ? JSON.parse(card.tags) : []),
+              core_tags: Array.isArray(card.core_tags) ? card.core_tags : (typeof card.core_tags === 'string' ? JSON.parse(card.core_tags) : []),
+              created_at: card.created_at || null,
+              updated_at: card.updated_at || null,
+            }));
+            setCards(formattedCards);
+          }
+        } catch (refreshErr) {
+          console.error('刷新卡片列表失败:', refreshErr);
+        }
+        
+        if (syncToGTD && textSavedCount > 0) {
+          try { await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' }); } catch (e) {}
+        }
         return;
       }
       
@@ -379,7 +436,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       // 重新从后端加载卡片列表
       const cardsResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
       if (cardsResponse.ok) {
-        const apiCards = await cardsResponse.json();
+        const responseData = await cardsResponse.json();
+        const apiCards = responseData.cards || responseData;  // 兼容 {cards:[], total:N} 和纯数组
         const formattedCards = apiCards.map((card: any) => ({
           id: String(card.id),
           title: card.title,
@@ -1258,10 +1316,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border">
               <input
                 type="checkbox"
-                checked={filteredCards.length > 0 && selectedCardIds.size === filteredCards.length}
+                checked={filteredCards.length > 0 && selectedCardIds.size === filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).length}
                 onChange={(e) => {
                   if (e.target.checked) {
-                    setSelectedCardIds(new Set(filteredCards.map(c => c.id)));
+                    setSelectedCardIds(new Set(filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(c => c.id)));
                   } else {
                     setSelectedCardIds(new Set());
                   }

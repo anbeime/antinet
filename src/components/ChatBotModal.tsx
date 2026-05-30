@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, User } from 'lucide-react';
+import { X, Send, User, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { chatService, ChatMessage, formatCardType, formatSimilarity } from '../services/chatService';
 import chatAvatar from '../pages/logo.gif';
@@ -30,6 +30,11 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
+    "帮我搜索关于项目管理的知识卡片",
+    "分析一下这张图片",
+    "生成一个工作总结的PPT"
+  ]);
 
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
@@ -131,6 +136,7 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      updateSuggestedQuestions(input);
     } catch (error) {
       console.error('查询失败:', error);
       toast.error('查询失败，请重试');
@@ -145,6 +151,58 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 根据用户输入生成动态推荐问题
+  const updateSuggestedQuestions = (query: string) => {
+    const q = query.toLowerCase();
+    const s: string[] = [];
+
+    if (q.includes('卡片') || q.includes('知识') || q.includes('搜索') || q.includes('查找') || q.includes('查询') || q.includes('找') || q.includes('关于')) {
+      const topic = query.replace(/(?:搜索|查找|找|查询|关于|帮我)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息|相关内容)/g, '').trim();
+      if (topic && topic.length < 20) {
+        s.push(`帮我搜索更多关于${topic}的知识卡片`);
+      }
+      s.push('这些卡片之间有什么关联');
+    }
+
+    if (q.includes('ppt') || q.includes('演示') || q.includes('幻灯片') || q.includes('工作总结')) {
+      s.push('帮我完善这个PPT的结构');
+      s.push('换一种风格重新生成');
+    }
+
+    if (q.includes('excel') || q.includes('数据') || q.includes('分析') || q.includes('表格')) {
+      s.push('总结数据中的关键趋势');
+      s.push('生成数据分析报告');
+    }
+
+    if (q.includes('图片') || q.includes('图像') || q.includes('截图')) {
+      s.push('这张图片说明了什么问题');
+      s.push('基于这张图片生成知识卡片');
+    }
+
+    if (q.includes('风险') || q.includes('问题') || q.includes('注意')) {
+      s.push('如何规避这些风险');
+      s.push('制定应对措施');
+    }
+
+    if (q.includes('总结') || q.includes('摘要') || q.includes('概括')) {
+      s.push('提炼出核心要点');
+      s.push('生成一份详细的报告');
+    }
+
+    if (s.length === 0) {
+      s.push('帮我搜索相关知识卡片');
+      s.push('能详细展开说明一下吗');
+      s.push('我可以使用哪些功能');
+    }
+
+    const unique: string[] = [];
+    for (const item of s) {
+      if (!unique.includes(item)) unique.push(item);
+      if (unique.length >= 3) break;
+    }
+    setSuggestedQuestions(unique);
   };
 
   // 处理键盘事件
@@ -310,6 +368,28 @@ const ChatBotModal: React.FC<ChatBotModalProps> = ({ isOpen, onClose }) => {
 
           <div ref={messagesEndRef} />
         </div>
+
+        {/* 推荐问题 */}
+        {suggestedQuestions.length > 0 && messages.length > 0 && (
+          <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">推荐问题：</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedQuestions.map((question, index) => (
+                <button
+                  key={index}
+                  className="text-xs h-auto py-1 px-2 rounded-md transition-colors cursor-pointer bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  onClick={() => {
+                    setInput(question);
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  {question}
+                  <ChevronRight className="w-3 h-3 ml-1 inline" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 输入区域 */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">

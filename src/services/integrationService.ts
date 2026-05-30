@@ -285,19 +285,22 @@ export default { backlinkService, calendarEventService, cardTaskService };
 // ============ 源文件服务 ============
 export interface SourceFileInfo {
   has_source?: boolean;
-  source_file_id?: number;
+  source_file_id?: string;
   original_name?: string;
   file_name?: string;
   file_path?: string;
+  file_type?: string;
   paragraph_index?: number;
   paragraph_text?: string;
+  location_in_source?: string;
+  stored_path?: string;
 }
 
 export const sourceFileService = {
   /** 获取卡片的源文件信息 */
   async getCardSourceFile(cardId: number): Promise<SourceFileInfo> {
     try {
-      const response = await apiFetch<SourceFileInfo>(`/api/knowledge/cards/${cardId}`);
+      const response = await apiFetch<SourceFileInfo>(`/api/knowledge/cards/${cardId}/source-file`);
       return response || {};
     } catch (err) {
       console.error('获取源文件信息失败:', err);
@@ -305,8 +308,8 @@ export const sourceFileService = {
     }
   },
 
-  /** 下载源文件 */
-  async downloadSourceFile(sourceFileId: number): Promise<void> {
-    window.open(`${API_BASE_URL}/api/knowledge/sources/${sourceFileId}/download`, '_blank');
+  /** 下载源文件（原始格式，如 PDF） */
+  async downloadSourceFile(sourceFileId: string): Promise<void> {
+    window.open(`${API_BASE_URL}/api/knowledge/source-files/${sourceFileId}/download`, '_blank');
   },
 };

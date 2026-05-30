@@ -84,17 +84,31 @@ async def create_task_from_card(req: CreateTaskFromCardRequest):
         conn = get_db()
         cursor = conn.cursor()
         
-        # 检查卡片是否存在
-        cursor.execute("SELECT id FROM knowledge_cards WHERE id = ?", (req.card_id,))
-        if not cursor.fetchone():
+        # 检查卡片是否存在并获取其专题信息
+        cursor.execute("SELECT id, project_id FROM knowledge_cards WHERE id = ?", (req.card_id,))
+        card_row = cursor.fetchone()
+        if not card_row:
             conn.close()
             raise HTTPException(status_code=404, detail="知识卡片不存在")
         
-        # 创建任务并建立关联（在DatabaseManager中已经实现，这里直接SQL操作）
+        card_project_id = card_row.get("project_id") if hasattr(card_row, "get") else card_row[1]
+        
+        # 如果卡片属于某个专题，自动关联到该专题
+        if card_project_id:
+            source_type = 'project'
+            source_id = card_project_id
+            category = req.category or 'projects'
+            project_id = card_project_id
+        else:
+            source_type = 'card'
+            source_id = req.card_id
+            category = req.category or 'inbox'
+            project_id = None
+        
         cursor.execute("""
-            INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id)
-            VALUES (?, ?, ?, ?, ?, 'card', ?)
-        """, (req.title, req.description, req.priority, req.category, req.due_date, req.card_id))
+            INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id, project_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (req.title, req.description, req.priority, category, req.due_date, source_type, source_id, project_id))
         task_id = cursor.lastrowid
         
         # 创建关联关系

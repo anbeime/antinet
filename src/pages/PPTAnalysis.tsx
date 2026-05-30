@@ -348,7 +348,7 @@ const PPTAnalysis: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -750,11 +750,11 @@ const PPTAnalysis: React.FC = () => {
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
-              onClick={() => window.open('http://localhost:3000/pdf-viewer/markdown', '_blank')}
+              onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
               <History className="w-4 h-4 text-green-600" />
-              <span className="text-green-700 dark:text-green-400">markdown转换</span>
+              <span className="text-green-700 dark:text-green-400">知识库图谱工作台</span>
             </button>
             <button
               onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}

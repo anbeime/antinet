@@ -7,7 +7,8 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
-  Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText
+  Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -91,6 +92,8 @@ const KnowledgeGraphView: React.FC = () => {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+  const [pdfPreviewError, setPdfPreviewError] = useState('');
+  const [pdfMaximized, setPdfMaximized] = useState(false);
   const [topic, setTopic] = useState('');
   const [loadingAPI, setLoadingAPI] = useState(false);
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
@@ -100,8 +103,9 @@ const KnowledgeGraphView: React.FC = () => {
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
-const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
 
 
 
@@ -156,10 +160,26 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
     return { nodes: Array.from(nodeMap.values()), links, categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
   };
 
-  // 列表数据源：始终使用全部卡片（确保搜索覆盖所有卡片）
+  // 列表数据源：有 currentCardId 时与图谱/导图保持一致
   const listDataSource = useMemo(() => {
+    if (currentCardId && apiData) {
+      const graphNodes = apiData.nodes || apiData.entities || [];
+      if (graphNodes.length === 0) return cards;
+      const graphIds = new Set(graphNodes.map((n: any) => String(n.id)));
+      // 优先从 cards 中匹配（保持完整卡片数据）
+      const matched = cards.filter((c: any) => graphIds.has(String(c.id)));
+      if (matched.length > 0) return matched;
+      // 如果 ID 不匹配，从图谱节点直接派生卡片对象
+      return graphNodes.map((n: any) => ({
+        id: n.id,
+        title: n.title || n.name || `节点${n.id}`,
+        content: n.content || n.description || '',
+        card_type: n.type || n.card_type || 'blue',
+        type: n.type || n.card_type || 'blue',
+      }));
+    }
     return cards;
-  }, [cards]);
+  }, [cards, currentCardId, apiData]);
 
   // 从图谱数据构建思维导图树（与图谱/列表共享同一数据源）
   const mindmapTree = useMemo(() => {
@@ -209,6 +229,18 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
 
   
   // 从URL参数加载指定卡片的链接图谱
+  // 响应式：窗口变化时自动调整侧栏状态和图表尺寸
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(true);
+      }
+      chartInstance.current?.resize();
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const cardId = params.get('card');
@@ -383,6 +415,7 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
         const pdfBlob = await res.blob();
         if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+        setPdfPreviewError('');
         setPdfPreviewUrl(URL.createObjectURL(pdfBlob));
         setPdfPreviewTitle(listSelectedCard?.title || 'PDF 预览');
         setShowPdfPreview(true);
@@ -416,7 +449,7 @@ const [showAddNodeModal, setShowAddNodeModal] = useState(false);
         setShowPreview(true);
       }
     } catch (e: any) {
-      console.error('预览失败:', e);
+      if (format === "pdf") { setPdfPreviewError(e.message || "预览失败"); setShowPdfPreview(true); } else { console.error("预览失败:", e); }
     }
   };
 
@@ -560,57 +593,25 @@ useEffect(() => {
             name: node.name,
             category: node.category ?? 0,
             symbolSize: node.symbolSize || 30,
-            x: node.x,
-            y: node.y,
-            label: {
-              show: true,
-              fontSize: 11,
-              position: 'bottom',
-              triggerEvent: true, // 让点击标签文字也能触发事件
-            },
+            label: { show: true, fontSize: 11, position: 'bottom' },
           })),
           links: displayData.links.map((link: any) => ({
             source: link.source,
             target: link.target,
-            lineStyle: {
-              width: 2,
-              curveness: 0.2
-            },
-            label: {
-              show: true,
-              fontSize: 10,
-              formatter: link.label || ''
-            }
+            lineStyle: { width: 2, curveness: 0.2 },
+            label: { show: true, fontSize: 10, formatter: link.label || '' }
           })),
           categories: displayData.categories?.map((c: any, i: number) => ({ name: c.name || ['事实', '解释', '风险', '行动'][i] })) || [
             { name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }
           ],
           roam: true,
           draggable: true,
-          label: {
-            show: true,
-            position: 'bottom',
-            fontSize: 11,
-            formatter: '{b}'
-          },
-          labelLayout: { hideOverlap: true },
+          label: { show: true, position: 'bottom', fontSize: 11, formatter: '{b}' },
           scaleLimit: { min: 0.3, max: 3 },
           lineStyle: { color: 'source', curveness: 0.3 },
-          emphasis: {
-            focus: 'adjacency',
-            lineStyle: { width: 4 }
-          },
-          force: {
-            repulsion: 5000,
-            gravity: 0.03,
-            edgeLength: [150, 400],
-            layoutAnimation: true,
-            alphaDecay: 0.02,
-            alphaMin: 0.001
-          }
-        }],
-        animationDuration: 5000,
-        animationEasing: 'elasticOut'
+          emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
+          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 }
+        }]
       };
 
       chartInstance.current.setOption(option, true);
@@ -660,7 +661,6 @@ useEffect(() => {
 
     } catch (e) {
       console.error('initChart 错误:', e);
-      alert('图表渲染错误: ' + String(e));
     } finally {
       setIsLoading(false);
     }
@@ -704,27 +704,22 @@ useEffect(() => {
       categories: graphData.categories
     };
 
+    // 同步更新 apiData（让 API 模式下的 initChart 能读到新节点）
+    if (apiData) {
+      const apiNodes = apiData.nodes || [];
+      const apiLinks = apiData.links || [];
+      const apiSourceNode = selectedNode || (apiNodes.length > 0 ? String(apiNodes[0].id) : null);
+      setApiData({
+        ...apiData,
+        nodes: [...apiNodes, { id: card.id, title: card.title, type: cardType, is_current: false }],
+        links: [...apiLinks, ...(apiSourceNode ? [{ source: apiSourceNode, target: newNodeId, type: '关联' }] : [])]
+      });
+    }
+
     setGraphData(newGraphData);
     setShowAddNodeModal(false);
     setAddNodeSearch('');
-    // 持久化到数据库
     saveGraphState(newGraphData);
-
-    // 强制刷新图表
-    if (chartInstance.current) {
-      chartInstance.current.setOption({
-        series: [{
-          data: newGraphData.nodes.map((n: any) => ({
-            id: n.id, name: n.name, category: n.category ?? 0, symbolSize: n.symbolSize || 30
-          })),
-          links: newGraphData.links.map((l: any) => ({
-            source: l.source, target: l.target,
-            lineStyle: { width: 2, curveness: 0.2 },
-            label: { show: true, fontSize: 10, formatter: l.label || '' }
-          }))
-        }]
-      });
-    }
   };
 
   const handleDeleteNode = () => {
@@ -736,19 +731,17 @@ useEffect(() => {
       categories: graphData.categories
     };
 
-    setGraphData(newData);
-    chartInstance.current?.setOption({
-      series: [{
-        data: newData.nodes.map(node => ({
-          id: node.id,
-          name: node.name,
-          category: node.category,
-          symbolSize: node.symbolSize,
-        })),
-        links: newData.links,
-      }]
-    });
+    // 同步更新 apiData（让 API 模式下的 initChart 能读到删除结果）
+    if (apiData) {
+      const sid = String(selectedNode);
+      setApiData({
+        ...apiData,
+        nodes: (apiData.nodes || []).filter((n: any) => String(n.id) !== sid),
+        links: (apiData.links || []).filter((l: any) => String(l.source) !== sid && String(l.target) !== sid)
+      });
+    }
 
+    setGraphData(newData);
     setSelectedNode(null);
     // 持久化到数据库
     saveGraphState(newData);
@@ -773,8 +766,19 @@ useEffect(() => {
   };
 
 return (
-    <div className="flex h-full">
-      <aside className="w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto">
+    <div className="flex h-screen relative">
+      {/* Mobile toggle */}
+      <button onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+        {sidebarOpen ? <X className="w-5 h-5" /> : <Network className="w-5 h-5" />}
+      </button>
+
+      {/* Overlay on mobile */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static z-40 md:z-auto w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto transition-transform duration-200 h-full`}>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold flex items-center space-x-2">
             <Network className="w-5 h-5" />
@@ -906,7 +910,7 @@ return (
         /* ========== 卡片列表 - 双栏布局（仿工作台） ========== */
         <>
           {/* 左栏：卡片列表 */}
-          <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+          <div className={`${listSelectedCard ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-hidden pt-12 md:pt-0`}>
             <div className="p-3 border-b border-gray-200 dark:border-gray-700 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold dark:text-white flex items-center gap-1.5">
@@ -942,13 +946,26 @@ return (
                 const clrMap: Record<string,string> = { blue:'bg-blue-500', green:'bg-green-500', yellow:'bg-yellow-500', red:'bg-red-500' };
                 const clrLight: Record<string,string> = { blue:'bg-blue-50 dark:bg-blue-900/20', green:'bg-green-50 dark:bg-green-900/20', yellow:'bg-yellow-50 dark:bg-yellow-900/20', red:'bg-red-50 dark:bg-red-900/20' };
                 const lbl: Record<string,string> = { blue:'事实', green:'解释', yellow:'风险', red:'行动' };
-                const filtered = listDataSource.filter((card: any) => {
+                const isSearching = listSearch.trim().length > 0;
+                const source = isSearching ? cards : listDataSource;
+                const filtered = source.filter((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   if (listColorFilter !== 'all' && t !== listColorFilter) return false;
-                  if (listSearch) { const q = listSearch.toLowerCase(); const ti = (card.title||'').toLowerCase(); const co = (card.content||'').toLowerCase(); if (!ti.includes(q) && !co.includes(q)) return false; }
+                  if (listSearch) {
+                    const getContentText = (c: any): string => {
+                      if (!c) return '';
+                      if (typeof c === 'string') return c;
+                      if (typeof c === 'object') return c.description || c.text || JSON.stringify(c);
+                      return String(c);
+                    };
+                    const q = listSearch.toLowerCase();
+                    const ti = (card.title||'').toLowerCase();
+                    const co = getContentText(card.content).toLowerCase();
+                    if (!ti.includes(q) && !co.includes(q)) return false;
+                  }
                   return true;
                 });
-                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{listDataSource.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
+                if (filtered.length === 0) return <div className="text-center text-gray-400 text-sm py-8">{source.length===0?(graphSource === 'api'?'暂无关联卡片':'暂无卡片，请刷新'):'无匹配卡片'}</div>;
                 return filtered.map((card: any) => {
                   const t = card.card_type || card.type || 'blue';
                   const isSel = listSelectedCard?.id === card.id;
@@ -973,17 +990,21 @@ return (
 
           {/* 右栏：卡片详情 + 编辑/预览 */}
           {listSelectedCard ? (
-            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
+            <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden pt-12 md:pt-0">
               {/* 头部 */}
               <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
+                  <button onClick={() => setListSelectedCard(null)}
+                    className="md:hidden p-1 mr-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    ←
+                  </button>
                   <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
                     {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
                   <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 overflow-x-auto shrink-0">
                   {/* 编辑/预览/分屏切换 */}
-                  <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  <div className="hidden sm:flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
                     {(['edit','preview','split'] as const).map(s => (
                       <button key={s} onClick={() => { setListEditorSide(s); if(s==='edit'){setListMarkdown(`# ${listSelectedCard.title||'无标题'}\n\n${listSelectedCard.content||''}`);} }}
                         className={`px-2.5 py-1 text-xs rounded-md ${listEditorSide===s?'bg-white dark:bg-gray-600 shadow-sm font-medium':'text-gray-500'}`}>
@@ -995,24 +1016,24 @@ return (
                   <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5 relative">
 <button onClick={() => handlePreviewCard('pdf')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />PDF
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">PDF</span>
                     </button>
                     <button onClick={() => handlePreviewCard('docx')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />DOCX
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">DOCX</span>
                     </button>
                     <button onClick={() => handlePreviewCard('html')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Eye className="w-3 h-3" />HTML
+                      <Eye className="w-3 h-3" /><span className="hidden sm:inline">HTML</span>
                     </button>
                     <div className="w-px h-4 bg-gray-300 dark:bg-gray-500 mx-0.5 self-center" />
                     <button onClick={() => handleDownloadCard('docx')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Download className="w-3 h-3" />DOCX
+                      <Download className="w-3 h-3" /><span className="hidden sm:inline">DOCX</span>
                     </button>
                     <button onClick={() => handleDownloadCard('html')}
                       className="px-2 py-1 text-xs rounded-md hover:bg-white dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 flex items-center gap-1">
-                      <Download className="w-3 h-3" />HTML
+                      <Download className="w-3 h-3" /><span className="hidden sm:inline">HTML</span>
                     </button>
                   </div>
                   <button onClick={() => setListSelectedCard(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><X className="w-4 h-4" /></button>
@@ -1064,7 +1085,7 @@ return (
               )}
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 text-gray-400">
+            <div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
               <div className="text-center">
                 <FileText className="w-12 h-12 mb-3 mx-auto opacity-40" />
                 <p className="text-sm">从左侧选择一张卡片查看详情</p>
@@ -1074,12 +1095,12 @@ return (
         </>
       ) : pageMode === 'mindmap' ? (
         /* ========== 思维导图视图（原版 MindMap 组件） ========== */
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden pt-12 md:pt-0">
           <MindMap initialRoot={mindmapTree} initialCards={cards} embedded={true} />
         </div>
       ) : (
         /* ========== 图谱视图 ========== */
-        <main className="flex-1 relative">
+        <main className="flex-1 relative pt-12 md:pt-0">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-black/50 z-10">
               <Loader className="w-8 h-8 animate-spin text-blue-500" />
@@ -1302,10 +1323,10 @@ return (
         </div>
       )}
 
-      {/* PDF 预览弹窗（内嵌主题选择 + 下载） */}
+      {/* PDF 预览弹窗（内嵌主题选择 + 下载 + 最大化） */}
       {showPdfPreview && (
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); }}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 md:p-6" onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); setPdfMaximized(false); }}>
+          <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col ${pdfMaximized ? 'fixed inset-4 md:inset-6' : 'w-full max-w-5xl max-h-[95vh] h-[85vh]'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0 gap-3">
               <div className="flex items-center gap-3 min-w-0">
                 <h3 className="font-semibold truncate">{pdfPreviewTitle}</h3>
@@ -1330,14 +1351,26 @@ return (
                     <Download className="w-3.5 h-3.5" />下载 PDF
                   </a>
                 )}
-                <button onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <button onClick={() => setPdfMaximized(!pdfMaximized)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title={pdfMaximized ? '还原' : '最大化'}>
+                  {pdfMaximized ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button onClick={() => { setShowPdfPreview(false); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(''); setPdfMaximized(false); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
             <div className="flex-1 bg-gray-100 dark:bg-gray-900 min-h-0">
-              {pdfPreviewUrl ? (
-                <embed src={pdfPreviewUrl} type="application/pdf" className="w-full h-full" />
+              {pdfPreviewError ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center text-red-500">
+                    <div className="text-lg mb-2">⚠️ 预览加载失败</div>
+                    <div className="text-sm">{pdfPreviewError}</div>
+                  </div>
+                </div>
+              ) : pdfPreviewUrl ? (
+                <object data={pdfPreviewUrl} type="application/pdf" className="w-full h-full">
+                  <embed src={pdfPreviewUrl} type="application/pdf" className="w-full h-full" />
+                </object>
               ) : (
                 <div className="flex items-center justify-center h-full text-gray-400"><Loader className="w-6 h-6 animate-spin" /></div>
               )}

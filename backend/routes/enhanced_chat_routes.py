@@ -997,61 +997,135 @@ def generate_skill_response(skill_result: SkillResult) -> str:
     return response
 
 
-def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any], cards: List[Any] = None) -> List[str]:
-    """根据搜索结果动态生成推荐问题"""
+def generate_suggested_questions(scene_type: SceneType, context: Dict[str, Any], cards: List[Any] = None, query: str = "") -> List[str]:
+    """根据场景、上下文和搜索结果动态生成推荐问题"""
     
-    # 如果有搜索结果，基于卡片内容生成推荐
+    result_questions = []
+    
+    # 1. 基于搜索卡片的动态推荐
     if cards and len(cards) > 0:
         card_titles = [c.title for c in cards[:3]]
         first_title = card_titles[0][:15] if card_titles else ""
         
         if scene_type == SceneType.CARD_SEARCH:
-            return [
-                f"查看「{first_title}」详情",
+            result_questions = [
+                f"查看「{first_title}」详情" if first_title else "查看卡片详情",
                 "搜索相关联的其他卡片",
-                "生成知识报告"
+                "基于这些卡片生成知识报告"
+            ]
+        else:
+            result_questions = [
+                f"查看「{first_title}」详情" if first_title else "查看卡片详情",
+                "基于这些知识生成一份报告",
+                "这些信息如何应用到实际工作中"
             ]
     
-    # 基于场景的基础推荐
-    suggestions = {
-        SceneType.GENERAL: [
-            "帮我搜索关于项目管理的知识卡片",
-            "分析一下这张图片",
-            "生成一个工作总结的PPT"
-        ],
-        SceneType.CARD_SEARCH: [
-            "显示更多相关卡片",
-            "这些卡片之间有什么联系？",
-            "基于这些卡片生成报告"
-        ],
-        SceneType.IMAGE_ANALYSIS: [
-            "基于分析结果生成知识卡片",
-            "这张图片的关键点是什么？",
-            "图片中的数据趋势如何？"
-        ],
-        SceneType.SKILL_PPT: [
-            "帮我生成另一个主题的PPT",
-            "修改PPT的样式",
-            "导出PPT为PDF"
-        ],
-        SceneType.SKILL_EXCEL: [
-            "分析这个Excel文件",
-            "生成数据可视化图表",
-            "导出分析结果"
-        ],
-        SceneType.HELP: [
-            "如何搜索知识卡片？",
-            "支持哪些技能？",
-            "如何分析图片？"
-        ],
-        SceneType.SELF_INTRO: [
-            "你能做什么？",
-            "帮我搜索知识卡片",
-            "分析一下这张图片"
-        ]
-    }
+    # 2. 基于查询关键词的动态推荐（无卡片时）
+    if not result_questions and query:
+        q = query.lower()
+        if any(kw in q for kw in ['项目管理', '管理', '项目']):
+            result_questions = [
+                "项目管理的核心方法论有哪些？",
+                "如何制定有效的项目计划？",
+                "项目管理中常见的风险如何规避？"
+            ]
+        elif any(kw in q for kw in ['ppt', '演示', '幻灯片', '工作总结']):
+            result_questions = [
+                "帮我生成另一个主题的PPT",
+                "如何让PPT演示更吸引人？",
+                "PPT中应该包含哪些核心内容？"
+            ]
+        elif any(kw in q for kw in ['图片', '图像', '截图', '照片', '分析']):
+            result_questions = [
+                "基于分析结果生成知识卡片",
+                "这张图片的关键点是什么？",
+                "图片中的数据趋势如何？"
+            ]
+        elif any(kw in q for kw in ['excel', '表格', '数据', '电子表格']):
+            result_questions = [
+                "如何对数据进行可视化分析？",
+                "数据中的关键趋势是什么？",
+                "生成一份数据分析报告"
+            ]
+        elif any(kw in q for kw in ['卡片', '知识', '搜索', '查找', '查询', '关于']):
+            topic = q
+            for kw in ['搜索', '查找', '查询', '关于', '帮我', '知识', '卡片']:
+                topic = topic.replace(kw, '')
+            topic = topic.strip()
+            if topic and len(topic) < 20:
+                result_questions = [
+                    f"帮我搜索更多关于{topic}的知识卡片",
+                    f"用四色卡片总结{topic}",
+                    "这些卡片之间有什么关联"
+                ]
+            else:
+                result_questions = [
+                    "帮我搜索相关知识卡片",
+                    "如何创建和分类知识卡片？",
+                    "四色卡片分别代表什么含义？"
+                ]
     
-    return suggestions.get(scene_type, suggestions[SceneType.GENERAL])
+    # 3. 基于场景的兜底推荐
+    if not result_questions:
+        scene_defaults = {
+            SceneType.GENERAL: [
+                "帮我搜索关于项目管理的知识卡片",
+                "分析一下这张图片",
+                "生成一个工作总结的PPT"
+            ],
+            SceneType.CARD_SEARCH: [
+                "显示更多相关卡片",
+                "这些卡片之间有什么联系？",
+                "基于这些卡片生成报告"
+            ],
+            SceneType.IMAGE_ANALYSIS: [
+                "基于分析结果生成知识卡片",
+                "这张图片的关键点是什么？",
+                "图片中的数据趋势如何？"
+            ],
+            SceneType.SKILL_PPT: [
+                "帮我生成另一个主题的PPT",
+                "修改PPT的样式和配色",
+                "导出PPT为PDF"
+            ],
+            SceneType.SKILL_EXCEL: [
+                "分析这个Excel文件",
+                "生成数据可视化图表",
+                "导出分析结果为Word报告"
+            ],
+            SceneType.SKILL_WORD: [
+                "调整文档的格式和样式",
+                "导出为PDF格式",
+                "在文档中插入图表和数据"
+            ],
+            SceneType.GREETING: [
+                "帮我搜索知识卡片",
+                "如何创建知识卡片？",
+                "我可以使用哪些功能？"
+            ],
+            SceneType.HELP: [
+                "如何搜索知识卡片？",
+                "支持哪些技能？",
+                "如何分析图片？"
+            ],
+            SceneType.SELF_INTRO: [
+                "你能做什么？",
+                "帮我搜索知识卡片",
+                "分析一下这张图片"
+            ]
+        }
+        result_questions = scene_defaults.get(scene_type, scene_defaults[SceneType.GENERAL])
+    
+    # 去重并返回前3个
+    seen = set()
+    unique = []
+    for q in result_questions:
+        if q not in seen:
+            seen.add(q)
+            unique.append(q)
+        if len(unique) >= 3:
+            break
+    return unique
 
 
 # ============ API 端点 ============
@@ -1249,9 +1323,10 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
         
         response_data["suggested_questions"] = generate_suggested_questions(
-            scene_type, 
+            scene_type,
             request.context,
-            result.cards if 'result' in locals() else []
+            result.cards if 'result' in locals() else [],
+            query
         )
         
         # 自动提取卡片建议（不自动创建）

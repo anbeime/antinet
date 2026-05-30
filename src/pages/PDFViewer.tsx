@@ -6,12 +6,15 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import * as pdfjsLib from 'pdfjs-dist';
 
 const API_BASE = getApiBaseUrl();
 
-// CDN 动态加载 PDF.js（避免 pdfjs-dist 依赖缺失问题）
-const PDFJS_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-const PDFJS_WORKER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// 使用本地安装的 pdfjs-dist（支持离线使用）
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 
 interface PDFViewerProps {
   fileUrl?: string;
@@ -40,28 +43,11 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
   const [previewTitle, setPreviewTitle] = useState('');
   const [showPreview, setShowPreview] = useState(false);
 
-  // 动态加载 PDF.js 库
+  // 使用本地安装的 pdfjs-dist（离线可用）
   const loadPDFJS = async (): Promise<any> => {
     if (pdfjsRef.current) return pdfjsRef.current;
-
-    // 检查是否已全局加载
-    if ((window as any).pdfjsLib) {
-      pdfjsRef.current = (window as any).pdfjsLib;
-      return pdfjsRef.current;
-    }
-
-    return new Promise<any>((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = PDFJS_CDN_URL;
-      script.onload = () => {
-        const pdfjs = (window as any).pdfjsLib;
-        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_CDN_URL;
-        pdfjsRef.current = pdfjs;
-        resolve(pdfjs);
-      };
-      script.onerror = () => reject(new Error('PDF.js 库加载失败，请检查网络连接'));
-      document.head.appendChild(script);
-    });
+    pdfjsRef.current = pdfjsLib;
+    return pdfjsLib;
   };
 
   // Load PDF from URL if provided
@@ -294,7 +280,7 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
       {/* ========== 顶部工具栏 ========== */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="px-4 py-2 flex items-center justify-between">
+        <div className="px-3 md:px-4 py-2 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center space-x-4">
             <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600">
               <Upload className="w-4 h-4" />
@@ -459,15 +445,15 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
       {/* 预览弹窗（DOCX/HTML） */}
       {showPreview && (
         <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
               <h3 className="font-semibold truncate">{previewTitle}</h3>
               <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="flex-1 bg-white dark:bg-gray-900 min-h-0">
+              <iframe srcDoc={previewHtml} className="w-full h-full border-0" title="文档预览" sandbox="allow-same-origin" />
             </div>
           </div>
         </div>

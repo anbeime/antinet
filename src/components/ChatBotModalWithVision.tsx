@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { X, Send, Bot, User, Upload, Loader, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { X, Send, Bot, User, Upload, Loader, Mic, MicOff, Volume2, VolumeX, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -31,6 +31,11 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([
+    "帮我搜索关于项目管理的知识卡片",
+    "分析一下这张图片",
+    "生成一个工作总结的PPT"
+  ]);
 
   // 语音相关状态
   const [isListening, setIsListening] = useState(false);
@@ -255,6 +260,53 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
       setIsLoading(false);
       handleRemoveImage();
     }
+  };
+
+  // 根据用户输入生成动态推荐问题
+  const updateSuggestedQuestions = (query: string) => {
+    const q = query.toLowerCase();
+    const s: string[] = [];
+
+    if (q.includes('图片') || q.includes('图像') || q.includes('截图') || q.includes('照片')) {
+      s.push('这张图片说明了什么问题');
+      s.push('基于这张图片生成知识卡片');
+    }
+
+    if (q.includes('卡片') || q.includes('知识') || q.includes('搜索') || q.includes('查找')) {
+      const topic = query.replace(/(?:搜索|查找|找|查询|关于|帮我)\s*/g, '').replace(/(?:的)?(?:知识|卡片|资料|信息)/g, '').trim();
+      if (topic && topic.length < 20) s.push(`帮我搜索更多关于${topic}的知识卡片`);
+      s.push('这些卡片之间有什么关联');
+    }
+
+    if (q.includes('ppt') || q.includes('演示') || q.includes('工作总结')) {
+      s.push('帮我完善这个PPT的结构');
+      s.push('换一种风格重新生成');
+    }
+
+    if (q.includes('数据') || q.includes('分析') || q.includes('表格')) {
+      s.push('总结数据中的关键趋势');
+      s.push('生成数据分析报告');
+    }
+
+    if (s.length === 0) {
+      s.push('帮我搜索相关知识卡片');
+      s.push('能详细展开说明一下吗');
+      s.push('我可以使用哪些功能');
+    }
+
+    const unique: string[] = [];
+    for (const item of s) {
+      if (!unique.includes(item)) unique.push(item);
+      if (unique.length >= 3) break;
+    }
+    setSuggestedQuestions(unique);
+  };
+
+  // 在发送消息后更新推荐问题
+  const handleSendAndUpdate = async () => {
+    const text = input.trim();
+    await handleSend();
+    if (text) updateSuggestedQuestions(text);
   };
 
   // 语音识别（ASR）
@@ -562,8 +614,8 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
               disabled={isLoading}
             />
             
-            <button
-              onClick={handleSend}
+             <button
+              onClick={handleSendAndUpdate}
               disabled={isLoading || (!input.trim() && !selectedImage)}
               className="p-2 text-white rounded-lg transition-colors disabled:opacity-50"
               style={{ backgroundColor: '#8b4513' }}
@@ -571,6 +623,23 @@ const ChatBotModalWithVision: React.FC<ChatBotModalWithVisionProps> = ({ isOpen,
               {isLoading ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
           </div>
+
+          {/* 推荐问题 */}
+          {suggestedQuestions.length > 0 && messages.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {suggestedQuestions.map((question, index) => (
+                <button
+                  key={index}
+                  className="text-xs h-auto py-1 px-2 rounded-md transition-colors cursor-pointer"
+                  style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
+                  onClick={() => setInput(question)}
+                >
+                  {question}
+                  <ChevronRight className="w-3 h-3 ml-1 inline" />
+                </button>
+              ))}
+            </div>
+          )}
           
           <div className="mt-2 text-xs" style={{ color: '#8b7355' }}>
             {isListening ? '🎤 正在聆听...' : '[提示] 支持文本和图片分析 · 语音输入 · 基于本地 NPU 模型'}

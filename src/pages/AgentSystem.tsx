@@ -160,11 +160,11 @@ const AgentSystem: React.FC = () => {
   const Icon = selectedAgentData.icon;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center space-x-3 mb-4">
+          <div className="flex items-center space-x-3 mb-4 flex-wrap">
             <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
               <Users className="w-6 h-6 text-white" />
             </div>
@@ -179,7 +179,7 @@ const AgentSystem: React.FC = () => {
           </div>
 
           {/* 系统状态概览 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between">
                 <span className="text-gray-500 dark:text-gray-400 text-xs">系统状态</span>
@@ -272,7 +272,7 @@ const AgentSystem: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               {/* 头部 */}
               <div className={`bg-gradient-to-r ${selectedAgentData.color} p-6 text-white relative`}>
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-4 flex-wrap">
                   <div className="w-16 h-16 rounded-xl bg-white/20 flex items-center justify-center">
                     <Icon className="w-8 h-8 text-white" />
                   </div>

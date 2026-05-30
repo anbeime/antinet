@@ -1083,10 +1083,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
   }, []);
 
   return (
-    <div className="min-h-screen" style={{ background: '#121826' }}>
+    <div className="min-h-screen overflow-x-auto" style={{ background: '#121826' }}>
       {/* ==================== 页面标题区 ==================== */}
-      <div className="px-6 py-5 border-b border-gray-800">
-        <div className="flex items-center gap-3">
+      <div className="px-3 md:px-6 py-3 md:py-5 border-b border-gray-800">
+        <div className="flex items-center gap-3 flex-wrap">
           <Crown className="w-7 h-7 text-red-500" />
           <div>
             <h1 className="text-2xl font-bold text-white">八府巡按 · 智能协作会议</h1>
@@ -1096,10 +1096,10 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
       </div>
 
       {/* ==================== 主内容区：左右分栏 ==================== */}
-      <div className="flex gap-5 p-5" style={{ height: 'calc(100vh - 90px)' }}>
+      <div className="flex flex-col lg:flex-row gap-5 p-5 lg:h-[calc(100vh-90px)]">
 
         {/* ========== 左侧栏 35% ========== */}
-        <div className="w-[35%] min-w-[340px] flex flex-col gap-5 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+        <div className="w-full lg:w-[35%] lg:min-w-[340px] flex flex-col gap-5 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
 
           {/* 模块1: 会议配置 */}
           <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>

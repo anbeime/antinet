@@ -788,10 +788,10 @@ const GTDSystem: React.FC = () => {
                 <div className="flex items-center space-x-3">
                   <input
                     type="checkbox"
-                    checked={filteredTasks.length > 0 && selectedTaskIds.size === filteredTasks.length}
+                    checked={paginatedTasks.length > 0 && selectedTaskIds.size === paginatedTasks.length}
                     onChange={(e) => {
                       if (e.target.checked) {
-                        setSelectedTaskIds(new Set(filteredTasks.map(t => t.id!)));
+                        setSelectedTaskIds(new Set(paginatedTasks.map(t => t.id!)));
                       } else {
                         setSelectedTaskIds(new Set());
                       }
