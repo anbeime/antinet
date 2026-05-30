@@ -15,15 +15,15 @@ const getOnlineToolUrl = (fileType: string): string => {
   switch (fileType) {
     case 'xlsx':
     case 'xls':
-      return 'http://localhost:3000/office-docs';
+      return '/office-docs';
     case 'pptx':
     case 'ppt':
-      return 'http://localhost:3000/ppt-viewer';
+      return '/ppt-viewer';
     case 'docx':
     case 'doc':
-      return 'http://localhost:3000/pdf-viewer';
+      return '/pdf-viewer';
     default:
-      return 'http://localhost:3000/office-docs';
+      return '/office-docs';
   }
 };
 

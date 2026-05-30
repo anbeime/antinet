@@ -1042,7 +1042,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[200px]">
                       <button
                         onClick={() => {
-                          window.open(`http://localhost:3000/?tab=pdf-analysis`, '_blank');
+                          window.open(`/?tab=pdf-analysis`, '_blank');
                         }}
                         className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg flex items-center gap-2 text-green-600 dark:text-green-400"
                       >

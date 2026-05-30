@@ -336,28 +336,28 @@ const ExcelAnalysis: React.FC = () => {
               </h3>
               <div className="space-y-2">
 <button 
-                  onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+                  onClick={() => window.open('/knowledge-graph', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <History className="w-4 h-4 text-green-500" />
                   <span>知识库图谱工作台</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+                  onClick={() => window.open('/pdf-viewer', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <FileText className="w-4 h-4 text-red-500" />
                   <span>PDF查看器</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+                  onClick={() => window.open('/ppt-viewer', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <Presentation className="w-4 h-4 text-orange-500" />
                   <span>PPT演示</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+                  onClick={() => window.open('/knowledge-graph', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
@@ -366,7 +366,7 @@ const ExcelAnalysis: React.FC = () => {
                   <span>知识图谱</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/mindmap', '_blank')}
+                  onClick={() => window.open('/mindmap', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="currentColor">
