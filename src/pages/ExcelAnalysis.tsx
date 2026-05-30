@@ -34,13 +34,23 @@ const ExcelAnalysis: React.FC = () => {
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor' | 'invoice'>('analysis');
-  const [invoiceTabKey, setInvoiceTabKey] = useState(0);
+  const [invoiceTabKey] = useState(0);
 
   // 检查是否需要直接打开编辑器或发票管理
   useEffect(() => {
+    const savedData = localStorage.getItem('excelEditorData');
     if (localStorage.getItem('openExcelEditor') === 'true') {
       localStorage.removeItem('openExcelEditor');
       setActiveFeature('editor');
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEditData(parsed);
+          }
+        } catch {}
+        localStorage.removeItem('excelEditorData');
+      }
     }
     if (localStorage.getItem('openInvoiceManager') === 'true') {
       localStorage.removeItem('openInvoiceManager');

@@ -35,11 +35,36 @@ OUTPUT_DIR = Path("./data/exports")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 db_manager = None
+_migrated = False
 
 
 def set_db_manager(dbm):
-    global db_manager
+    global db_manager, _migrated
     db_manager = dbm
+    if not _migrated:
+        _migrated = True
+        _migrate_existing_data()
+
+
+def _migrate_existing_data():
+    """Fix existing records where amounts are stored as strings with currency symbols"""
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        for col in ("total_amount", "amount", "tax_amount"):
+            cursor.execute(f"SELECT id, {col} FROM invoices WHERE {col} IS NOT NULL")
+            for row in cursor.fetchall():
+                val = row[col]
+                if isinstance(val, str):
+                    cleaned = _clean_amount(val)
+                    if cleaned is not None:
+                        cursor.execute(f"UPDATE invoices SET {col}=?, updated_at=? WHERE id=?",
+                                       (cleaned, datetime.now().isoformat(), row["id"]))
+        conn.commit()
+        conn.close()
+        logger.info(f"[Invoice] Data migration completed")
+    except Exception as e:
+        logger.warning(f"[Invoice] Data migration skipped: {e}")
 
 
 # ---- Models ----
@@ -79,6 +104,20 @@ class InvoiceQueryParams(BaseModel):
 
 # ---- Helpers ----
 
+def _clean_amount(v) -> Optional[float]:
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        v = v.strip().replace(",", "").replace("¥", "").replace("￥", "").replace("元", "")
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return None
+
+
 def _row_to_invoice(row) -> InvoiceInfo:
     return InvoiceInfo(
         id=row["id"],
@@ -90,9 +129,9 @@ def _row_to_invoice(row) -> InvoiceInfo:
         seller_tax_id=row["seller_tax_id"],
         buyer_name=row["buyer_name"],
         buyer_tax_id=row["buyer_tax_id"],
-        total_amount=row["total_amount"],
-        amount=row["amount"],
-        tax_amount=row["tax_amount"],
+        total_amount=_clean_amount(row["total_amount"]),
+        amount=_clean_amount(row["amount"]),
+        tax_amount=_clean_amount(row["tax_amount"]),
         is_excluded=bool(row["is_excluded"]),
         status=row["status"],
         engine_used=row["engine_used"],

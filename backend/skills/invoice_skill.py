@@ -290,6 +290,21 @@ def _pdf_to_image(pdf_path: str, dpi: int = 200) -> Optional[str]:
 
 # ---- Database helpers ----
 
+def _clean_amount(val) -> Optional[float]:
+    """Convert amount value to float, handling currency symbols and string inputs"""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        val = val.strip().replace(",", "").replace("¥", "").replace("￥", "").replace("元", "")
+        try:
+            return float(val)
+        except ValueError:
+            return None
+    return None
+
+
 def save_invoice_to_db(db_conn, result: Dict[str, Any]) -> int:
     """Save processed invoice result to database, return invoice id"""
     fields = result.get("fields", {})
@@ -312,9 +327,9 @@ def save_invoice_to_db(db_conn, result: Dict[str, Any]) -> int:
         fields.get("seller_tax_id"),
         fields.get("buyer_name"),
         fields.get("buyer_tax_id"),
-        fields.get("total_amount"),
-        fields.get("amount"),
-        fields.get("tax_amount"),
+        _clean_amount(fields.get("total_amount")),
+        _clean_amount(fields.get("amount")),
+        _clean_amount(fields.get("tax_amount")),
         result.get("status", "processed"),
         result.get("engine_used"),
         result.get("raw_text", ""),

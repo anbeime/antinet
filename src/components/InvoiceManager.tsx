@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
-  FileText, Upload, Download, Search, X, Eye, CheckCircle, XCircle,
-  RefreshCw, Filter, Calendar, Building2, Hash, DollarSign, AlertTriangle,
-  FileSpreadsheet, Loader, ChevronDown, ChevronUp, Trash2, BarChart3,
-  Clock, Tag, ShieldAlert, Printer, FileUp,
+  FileText, Upload, Download, X, CheckCircle, XCircle,
+  RefreshCw, Filter, Building2, DollarSign, AlertTriangle,
+  Loader, ChevronDown, ChevronUp, Trash2,
+  Clock, Tag, ShieldAlert,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -213,7 +213,7 @@ const InvoiceManager: React.FC = () => {
             <div className="flex items-center space-x-2 text-yellow-500 mb-1">
               <DollarSign className="w-4 h-4" /><span className="text-xs font-medium">合计金额</span>
             </div>
-            <p className="text-2xl font-bold text-green-600">¥{stats.total_amount.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-green-600">¥{Number(stats.total_amount).toFixed(2)}</p>
             {stats.failed > 0 && <p className="text-xs text-red-400">({stats.failed} 条失败)</p>}
           </div>
         </div>
@@ -231,10 +231,6 @@ const InvoiceManager: React.FC = () => {
           <button onClick={() => handleExport(false)} disabled={exporting}
             className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
             <Download className="w-4 h-4" /><span>导出 xlsx</span>
-          </button>
-          <button onClick={() => handleExport(true)} disabled={exporting}
-            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-            <FileSpreadsheet className="w-4 h-4" /><span>高级导出(公式)</span>
           </button>
           <button onClick={() => { fetchInvoices(); fetchStats(); }}
             className="flex items-center space-x-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
@@ -329,7 +325,7 @@ const InvoiceManager: React.FC = () => {
                     <td className="px-3 py-2 text-xs">{inv.invoice_date || '-'}</td>
                     <td className="px-3 py-2 text-xs max-w-[200px] truncate">{inv.seller_name || '-'}</td>
                     <td className="px-3 py-2 text-xs text-right font-mono">
-                      {inv.total_amount != null ? `¥${inv.total_amount.toFixed(2)}` : '-'}
+                      {inv.total_amount != null ? `¥${Number(inv.total_amount).toFixed(2)}` : '-'}
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span className={`text-xs px-1.5 py-0.5 rounded ${
@@ -343,11 +339,11 @@ const InvoiceManager: React.FC = () => {
                     </td>
                     <td className="px-3 py-2 text-center">
                       {inv.status === 'failed' ? (
-                        <ShieldAlert className="w-4 h-4 text-red-500 mx-auto" title="识别失败" />
+                        <ShieldAlert className="w-4 h-4 text-red-500 mx-auto" aria-label="识别失败" />
                       ) : inv.is_excluded ? (
-                        <XCircle className="w-4 h-4 text-red-400 mx-auto" title="不报销" />
+                        <XCircle className="w-4 h-4 text-red-400 mx-auto" aria-label="不报销" />
                       ) : (
-                        <CheckCircle className="w-4 h-4 text-green-500 mx-auto" title="可报销" />
+                        <CheckCircle className="w-4 h-4 text-green-500 mx-auto" aria-label="可报销" />
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
@@ -436,19 +432,19 @@ const InvoiceManager: React.FC = () => {
                     <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center">
                       <p className="text-xs text-gray-400">金额</p>
                       <p className="text-lg font-bold font-mono text-blue-600">
-                        {selectedInvoice.amount != null ? `¥${selectedInvoice.amount.toFixed(2)}` : '-'}
+                        {selectedInvoice.amount != null ? `¥${Number(selectedInvoice.amount).toFixed(2)}` : '-'}
                       </p>
                     </div>
                     <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center">
                       <p className="text-xs text-gray-400">税额</p>
                       <p className="text-lg font-bold font-mono text-red-500">
-                        {selectedInvoice.tax_amount != null ? `¥${selectedInvoice.tax_amount.toFixed(2)}` : '-'}
+                        {selectedInvoice.tax_amount != null ? `¥${Number(selectedInvoice.tax_amount).toFixed(2)}` : '-'}
                       </p>
                     </div>
                     <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg text-center">
                       <p className="text-xs text-gray-400">价税合计</p>
                       <p className="text-lg font-bold font-mono text-green-600">
-                        {selectedInvoice.total_amount != null ? `¥${selectedInvoice.total_amount.toFixed(2)}` : '-'}
+                        {selectedInvoice.total_amount != null ? `¥${Number(selectedInvoice.total_amount).toFixed(2)}` : '-'}
                       </p>
                     </div>
                   </div>
@@ -477,8 +473,8 @@ const InvoiceManager: React.FC = () => {
                                 <td className="px-2 py-1">{item.name || '-'}</td>
                                 <td className="px-2 py-1 text-gray-400">{item.specification || '-'}</td>
                                 <td className="px-2 py-1 text-right">{item.quantity ?? '-'}</td>
-                                <td className="px-2 py-1 text-right">{item.unit_price != null ? item.unit_price.toFixed(2) : '-'}</td>
-                                <td className="px-2 py-1 text-right">{item.amount != null ? item.amount.toFixed(2) : '-'}</td>
+                                <td className="px-2 py-1 text-right">{item.unit_price != null ? Number(item.unit_price).toFixed(2) : '-'}</td>
+                                <td className="px-2 py-1 text-right">{item.amount != null ? Number(item.amount).toFixed(2) : '-'}</td>
                               </tr>
                             ))}
                           </tbody>

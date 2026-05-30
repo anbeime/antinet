@@ -550,8 +550,8 @@ useEffect(() => {
     } else if (activeTab === 'tasks') {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
       // 同时加载协作历史消息（REST 回退）
-      const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?:\/\//, '')}/api/activities?limit=30`)
+      const collabHost = import.meta.env.DEV ? 'localhost:8000' : window.location.host;
+      fetch(`http://${collabHost}/api/activities?limit=30`)
         .then(r => r.json())
         .then(activities => {
           if (Array.isArray(activities) && activities.length > 0) {
@@ -1012,20 +1012,21 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
       if (abortControllerRef.current) abortControllerRef.current.abort();
       stopPolling();
     };
-  }, []);
+}, []);
 
   // 协作聊天 WebSocket 连接
   useEffect(() => {
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
-    const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
+    // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
+    const wsUrl = import.meta.env.DEV
+      ? `ws://localhost:8000/ws/collaboration/${userId}`
+      : `ws://${window.location.host}/ws/collaboration/${userId}`;
     
-    console.log('[Collab] 连接 WebSocket:', url);
+    console.log('[Collab] 连接 WebSocket:', wsUrl);
     setCollabStatus('connecting');
     
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(wsUrl);
     collabWsRef.current = ws;
     
     ws.onopen = () => {

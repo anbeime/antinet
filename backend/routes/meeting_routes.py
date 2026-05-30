@@ -800,7 +800,10 @@ _degrade_state = {
     "vision_last_fail": 0,     # Genie 上次失败时间
     "skip_vision_until": 0,    # 跳过 Genie 直到该时间
 }
-_DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
+_DEGRADE_COOLDOWN = 10  # 降级冷却时间（秒），失败后跳过该层这么久
+
+# NPU 串行锁：Genie 服务一次只能处理一个请求
+_GENIE_LOCK = asyncio.Lock()
 
 
 def _is_valid_genie_content(content: str) -> bool:
@@ -822,18 +825,27 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                        system_prompt: str, user_prompt: str, max_tokens: int,
                        degrade_state: dict, scheduler, inference_start: float,
                        agent_id: str, layer: str) -> Optional[str]:
-    """调用 Genie HTTP（端口 8910），含速率控制 + 重试 + 冷却"""
+    """调用 Genie HTTP（端口 8910），NPU 串行锁 + 冷却"""
     now = time.time()
     if not (now > degrade_state.get("skip_vision_until", 0)):
         logger.info(f"[Meeting] 层{layer} Genie({model_name}) 跳过（冷却中）")
         return None
 
-    # 速率控制：至少间隔 1.2s
-    _last = getattr(_call_genie, '_last_genie_call', 0.0)
-    elapsed = now - _last
-    if elapsed < 1.2:
-        await asyncio.sleep(1.2 - elapsed)
-    _call_genie._last_genie_call = time.time()
+    # NPU 串行锁：Genie 一次只能处理一个请求，排队等待而非并发导致429
+    async with _GENIE_LOCK:
+        return await _do_call_genie(
+            model_name=model_name, timeout_sec=timeout_sec, max_chars=max_chars,
+            system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=max_tokens,
+            degrade_state=degrade_state, scheduler=scheduler, inference_start=inference_start,
+            agent_id=agent_id, layer=layer
+        )
+
+
+async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
+                          system_prompt: str, user_prompt: str, max_tokens: int,
+                          degrade_state: dict, scheduler, inference_start: float,
+                          agent_id: str, layer: str) -> Optional[str]:
+    """实际的 Genie HTTP 调用（受 _GENIE_LOCK 保护，不会并发）"""
 
     # 连续失败计数器
     _consecutive_fails = getattr(_call_genie, '_consecutive_fails', 0)
@@ -933,7 +945,7 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
     _consecutive_fails += 1
     _call_genie._consecutive_fails = _consecutive_fails
     degrade_state["vision_last_fail"] = time.time()
-    if _consecutive_fails >= 2:
+    if _consecutive_fails >= 3:
         degrade_state["skip_vision_until"] = time.time() + _DEGRADE_COOLDOWN
         logger.warning(f"[Meeting] 层{layer} Genie({model_name}) 连续失败{_consecutive_fails}次，进入冷却{_DEGRADE_COOLDOWN}s")
     if scheduler:
