@@ -921,7 +921,7 @@ useEffect(() => {
       return;
     }
     try {
-      const response = await fetch(`${BACKEND_URL}/cards`, {
+      const response = await fetch(`${BACKEND_URL}/cards/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
