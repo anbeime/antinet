@@ -161,6 +161,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const urlTab = searchParams.get('tab');
   
   const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>('cards');
+  const [cardViewMode, setCardViewMode] = useState<'grid' | 'timeline'>('grid');
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
@@ -1331,6 +1332,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <option value="week">本周</option>
                 <option value="year">本年</option>
               </select>
+              <button
+                onClick={() => setCardViewMode(prev => prev === 'grid' ? 'timeline' : 'grid')}
+                className={`px-3 py-1.5 text-sm border rounded-lg flex items-center gap-1 transition-colors ${cardViewMode === 'timeline' ? 'bg-blue-50 border-blue-300 text-blue-600' : 'hover:bg-gray-50'}`}
+                title={cardViewMode === 'timeline' ? '切换网格视图' : '切换时间线视图'}
+              >
+                <Calendar size={14} />
+                {cardViewMode === 'timeline' ? '网格' : '时间线'}
+              </button>
             </div>
 
             {/* 批量操作 */}
@@ -1357,99 +1366,113 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </div>
             )}
 
-            {/* 卡片列表 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(card => (
-                <motion.div
-                  key={card.id}
-                  whileHover={{ y: -5 }}
-                  className={`border rounded-xl overflow-hidden ${cardTypeMap[card.color].borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
-                >
-                  <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center flex-1 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={selectedCardIds.has(card.id)}
-                          onChange={(e) => {
-                            const newSelected = new Set(selectedCardIds);
-                            if (e.target.checked) {
-                              newSelected.add(card.id);
-                            } else {
-                              newSelected.delete(card.id);
-                            }
-                            setSelectedCardIds(newSelected);
-                          }}
-                          className="mr-2 w-4 h-4"
-                        />
-                        <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
-                          {cardTypeMap[card.color].icon}
+            {/* 卡片列表：网格模式 */}
+            {cardViewMode === 'grid' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(card => (
+                  <motion.div
+                    key={card.id}
+                    whileHover={{ y: -5 }}
+                    className={`border rounded-xl overflow-hidden ${cardTypeMap[card.color].borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
+                  >
+                    <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedCardIds.has(card.id)}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedCardIds);
+                              if (e.target.checked) { newSelected.add(card.id); } else { newSelected.delete(card.id); }
+                              setSelectedCardIds(newSelected);
+                            }}
+                            className="mr-2 w-4 h-4"
+                          />
+                          <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
+                            {cardTypeMap[card.color].icon}
+                          </div>
+                          <h3 className="font-semibold truncate cursor-pointer hover:text-blue-600" onClick={() => openDetailModal(card)}>
+                            {card.title}
+                          </h3>
                         </div>
-                        <h3 
-                          className="font-semibold truncate cursor-pointer hover:text-blue-600"
-                          onClick={() => openDetailModal(card)}
-                        >
-                          {card.title}
-                        </h3>
                       </div>
                     </div>
-                  </div>
-                  <div className="p-3 bg-white dark:bg-gray-800">
-                    {(() => {
-                      const summary = extractSummary(card.content);
-                      const isLong = card.content.length > 120;
-                      if (isLong && !expandedCardIds.has(card.id)) {
+                    <div className="p-3 bg-white dark:bg-gray-800">
+                      {(() => {
+                        const summary = extractSummary(card.content);
+                        const isLong = card.content.length > 120;
+                        if (isLong && !expandedCardIds.has(card.id)) {
+                          return (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">{summary}</p>
+                              <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">展开全文</button>
+                            </div>
+                          );
+                        }
                         return (
                           <div>
-                            <p className="text-sm text-gray-600 mb-1">{summary}</p>
-                            <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">展开全文</button>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap mb-1">{card.content}</p>
+                            {isLong && <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">收起</button>}
                           </div>
                         );
-                      }
-                      return (
-                        <div>
-                          <p className="text-sm text-gray-600 whitespace-pre-wrap mb-1">{card.content}</p>
-                          {isLong && (
-                            <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">收起</button>
-                          )}
+                      })()}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">{formatDate(card.createdAt)}</span>
+                        <div className="flex gap-1">
+                          <button onClick={(e) => handleCopyCard(card, e)} className="text-gray-500 hover:text-blue-600 p-1" title="复制内容"><Copy size={14} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }} className="text-gray-500 hover:text-purple-600 p-1" title="放大查看"><ZoomIn size={14} /></button>
+                          <button onClick={() => openDetailModal(card)} className="text-blue-600 text-sm hover:underline">编辑</button>
+                          <button onClick={() => handleDeleteCard(card.id)} className="text-red-500 text-sm hover:underline ml-2">删除</button>
                         </div>
-                      );
-                    })()}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">{formatDate(card.createdAt)}</span>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={(e) => handleCopyCard(card, e)}
-                          className="text-gray-500 hover:text-blue-600 p-1"
-                          title="复制内容"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }}
-                          className="text-gray-500 hover:text-purple-600 p-1"
-                          title="放大查看"
-                        >
-                          <ZoomIn size={14} />
-                        </button>
-                        <button
-                          onClick={() => openDetailModal(card)}
-                          className="text-blue-600 text-sm hover:underline"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCard(card.id)}
-                          className="text-red-500 text-sm hover:underline ml-2"
-                        >
-                          删除
-                        </button>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
+            {/* 卡片列表：时间线模式 */}
+            {cardViewMode === 'timeline' && (
+              <div className="space-y-6">
+                {(() => {
+                  const grouped: Record<string, typeof filteredCards> = {};
+                  const pageCards = filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+                  pageCards.forEach(card => {
+                    const day = new Date(card.createdAt).toLocaleDateString('zh-CN');
+                    if (!grouped[day]) grouped[day] = [];
+                    grouped[day].push(card);
+                  });
+                  return Object.entries(grouped).map(([day, dayCards]) => (
+                    <div key={day}>
+                      <div className="flex items-center gap-3 mb-3 sticky top-0 bg-gray-50 dark:bg-gray-900 py-2 z-10">
+                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{day}</span>
+                        <span className="text-xs text-gray-400">({dayCards.length} 条)</span>
+                        <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        {dayCards.map(card => (
+                          <motion.div
+                            key={card.id}
+                            whileHover={{ y: -3 }}
+                            className={`border rounded-lg overflow-hidden cursor-pointer ${cardTypeMap[card.color].borderColor} bg-white dark:bg-gray-800`}
+                            onClick={() => openDetailModal(card)}
+                          >
+                            <div className={`${cardTypeMap[card.color].bgColor} px-3 py-2 flex items-center gap-2`}>
+                              <div className={`${cardTypeMap[card.color].color} p-1 rounded`}>{cardTypeMap[card.color].icon}</div>
+                              <span className="font-medium text-sm truncate">{card.title}</span>
+                            </div>
+                            <div className="p-3">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{extractSummary(card.content, 80)}</p>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
 
             {filteredCards.length === 0 && (
               <div className="text-center py-12 text-gray-500">

@@ -1020,9 +1020,12 @@ const ProjectDetailPanel: React.FC<{
         toast.success('已转换为任务并关联到专题');
         loadData();
         onConvertCardToTask(cardId);
-        setTaskRefreshTrigger(prev => prev + 1);  // 触发 CardDetailModal 刷新任务列表
+        setTaskRefreshTrigger(prev => prev + 1);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        toast.error(errData.detail || '转换失败，请确认后端已重启');
       }
-    } catch { toast.error('转换失败'); }
+    } catch { toast.error('转换请求失败，请检查后端是否运行'); }
   };
 
   const cardStats = { blue: 0, green: 0, yellow: 0, red: 0 };

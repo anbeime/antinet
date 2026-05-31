@@ -1,0 +1,33 @@
+PPT 模块加载，PPTX可用: True
+INFO:routes.wiki:routes/wiki.py: PROJECT_ROOT=C:\D\zhiyi\backend, WIKI_ROOT=C:\D\zhiyi\backend\data\wiki
+INFO:wiki.semantic:[VectorStore] Loaded 1 vectors
+INFO:wiki.semantic:[SemanticSearch] 使用关键词语义搜索
+INFO:services.report_automation_service:Python path: ['C:\\D\\zhiyi', 'C:\\D\\zhiyi', 'C:\\D\\zhiyi\\backend']
+INFO:services.report_automation_service:python-pptx loaded successfully
+INFO:database:[GraphState] 知识图谱状态表初始化完成
+INFO:database:数据库已有默认数据，跳过初始化
+INFO:collaboration:Collaboration 路由数据库管理器已设置
+INFO:routes.knowledge_graph:[KG] 数据库管理器已设置
+INFO:routes.enhanced_chat_routes:[Chat] 知识图谱模块已连接
+INFO:routes.invoice_routes:[Invoice] Data migration completed
+INFO:routes.auto_card:[AutoCard] 数据库管理器已设置
+INFO:routes.knowledge_graph:[KG] 数据库管理器已设置
+INFO:routes.enhanced_chat_routes:[Chat] 知识图谱模块已连接
+INFO:routes.vector_search:[Vector] 数据库管理器已设置
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建已在后台启动
+INFO:routes.vector_search:[Vector] 向量搜索模块初始化完成（TF-IDF）
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建已在后台启动
+INFO:collaboration:Collaboration 路由数据库管理器已设置
+INFO:     Started server process [89128]
+INFO:     Waiting for application startup.
+INFO:services.reminder_service:[Reminder] 已从数据库加载 1 条已发送提醒记录
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "ReminderService.check_reminders" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:services.reminder_service:[Reminder] 提醒服务已启动 (检查间隔: 1440分钟)
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8000): [winerror 10048] 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。
+INFO:     Waiting for application shutdown.
+INFO:services.reminder_service:[Reminder] 提醒服务已停止
+INFO:apscheduler.scheduler:Scheduler has been shut down
+INFO:     Application shutdown complete.

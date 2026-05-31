@@ -270,6 +270,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [cardTasks, setCardTasks] = useState<TaskWithRelation[]>([]);
   const [cardEvents, setCardEvents] = useState<CalendarEvent[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());  // 已展开的任务ID
 
   // P0: 创建任务弹窗
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -1572,46 +1573,109 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                             key={task.id}
                             className={`p-3 border rounded-lg transition-colors ${
                               task.is_completed
-                                ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60'
+                                ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-75'
                                 : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800'
                             }`}
                           >
                             <div className="flex items-start gap-2">
+                              {/* 完成切换 */}
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   try {
-                                    const { cardTaskService } = await import('../services/integrationService');
-                                    await cardTaskService.createTaskFromCard({ card_id: parseInt(card?.id || '0'), title: task.title, priority: task.priority as any });
-                                    toast.success('任务已标记完成');
-                                    loadCardIntegrations();
+                                    const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}/complete?is_completed=${!task.is_completed}`, { method: 'PUT' });
+                                    if (res.ok) {
+                                      toast.success(task.is_completed ? '已取消完成' : '已完成 ✓');
+                                      loadCardIntegrations();
+                                    }
                                   } catch { toast.error('操作失败'); }
                                 }}
-                                className="mt-1 text-gray-400 hover:text-green-500 flex-shrink-0"
+                                className="mt-0.5 text-gray-400 hover:text-green-500 flex-shrink-0"
                                 title={task.is_completed ? '取消完成' : '标记完成'}
                               >
                                 {task.is_completed ? (
-                                  <Circle className="w-4 h-4 text-green-500" />
+                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
                                 ) : (
                                   <Circle className="w-4 h-4" />
                                 )}
                               </button>
                               <div className="flex-1 min-w-0">
-                                <div className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
-                                  {task.title}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] text-white ${
-                                    task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
-                                  }`}>
-                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                                    {task.title}
                                   </span>
+                                  {/* 优先级下拉 */}
+                                  <select
+                                    value={task.priority}
+                                    onChange={async (e) => {
+                                      const newPriority = e.target.value;
+                                      try {
+                                        await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}`, {
+                                          method: 'PUT',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ priority: newPriority }),
+                                        });
+                                        toast.success('优先级已更新');
+                                        loadCardIntegrations();
+                                      } catch { toast.error('更新失败'); }
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                    className="text-[10px] border rounded px-1.5 py-0.5 bg-white dark:bg-gray-700"
+                                  >
+                                    <option value="high">高</option>
+                                    <option value="medium">中</option>
+                                    <option value="low">低</option>
+                                  </select>
+                                  {/* 分类下拉 */}
+                                  <select
+                                    value={task.category || 'inbox'}
+                                    onChange={async (e) => {
+                                      const newCat = e.target.value;
+                                      try {
+                                        await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}`, {
+                                          method: 'PUT',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ category: newCat }),
+                                        });
+                                        toast.success('分类已更新');
+                                        loadCardIntegrations();
+                                      } catch { toast.error('更新失败'); }
+                                    }}
+                                    onClick={e => e.stopPropagation()}
+                                    className="text-[10px] border rounded px-1.5 py-0.5 bg-white dark:bg-gray-700"
+                                  >
+                                    <option value="inbox">收集箱</option>
+                                    <option value="today">今日待办</option>
+                                    <option value="later">将来可能</option>
+                                    <option value="archive">归档</option>
+                                    <option value="projects">项目</option>
+                                  </select>
+                                </div>
+                                {task.description && (
+                                  <div className="mt-1">
+                                    <p className={`text-xs text-gray-500 dark:text-gray-400 ${expandedTasks.has(task.id) ? '' : 'line-clamp-2'}`}>
+                                      {task.description}
+                                    </p>
+                                    {task.description.length > 100 && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedTasks(prev => {
+                                            const next = new Set(prev);
+                                            next.has(task.id) ? next.delete(task.id) : next.add(task.id);
+                                            return next;
+                                          });
+                                        }}
+                                        className="text-[10px] text-blue-500 hover:underline mt-0.5"
+                                      >
+                                        {expandedTasks.has(task.id) ? '收起' : '展开全部'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
                                   {task.due_date && <span>截止: {task.due_date}</span>}
-                                  {task.extract_paragraph && (
-                                    <span className="truncate max-w-[200px]" title={task.extract_paragraph}>
-                                      源自: 「{task.extract_paragraph.slice(0, 20)}...」
-                                    </span>
-                                  )}
+                                  {task.created_at && <span>创建于 {new Date(task.created_at).toLocaleDateString()}</span>}
                                 </div>
                               </div>
                             </div>

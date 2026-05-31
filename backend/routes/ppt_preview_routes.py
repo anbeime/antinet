@@ -500,6 +500,7 @@ def _serialize_preview(preview: PPTPreviewData) -> dict:
                         "font_bold": sh.font_bold,
                         "font_color": sh.font_color,
                         "fill_color": sh.fill_color,
+                        "fill_opacity": getattr(sh, "fill_opacity", None),
                         "table": sh.table,
                         "image_url": sh.image_url,
                         "paragraphs": getattr(sh, "paragraphs", None) or (
