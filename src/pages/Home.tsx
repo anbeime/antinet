@@ -411,7 +411,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         if (syncToGTD && textSavedCount > 0) {
           try { await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' }); } catch (e) {}
         }
-        return;
+        
+        // 仍继续导入 AI 分类的卡片结果（rawText 路径仅保存源文件，卡片由 importedCards 导入）
       }
       
       let savedCount = 0;

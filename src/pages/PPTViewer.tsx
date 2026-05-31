@@ -236,6 +236,25 @@ const PPTViewer: React.FC = () => {
   const colors = brandStyle.theme.colors;
   const slideBg = current?.background || colors.background;
 
+  const getLuminance = (hex: string) => {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16) / 255;
+    const g = parseInt(h.substring(2, 4), 16) / 255;
+    const b = parseInt(h.substring(4, 6), 16) / 255;
+    const sr = r <= 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+    const sg = g <= 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+    const sb = b <= 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+    return 0.2126 * sr + 0.7152 * sg + 0.0722 * sb;
+  };
+
+  const getTextColor = (shape: SlideShape, slideBg: string) => {
+    if (shape.font_color) return shape.font_color;
+    const bg = shape.fill_color || slideBg || colors.background;
+    if (bg === 'transparent') return colors.text;
+    const lum = getLuminance(bg);
+    return lum < 0.3 ? '#FFFFFF' : colors.text;
+  };
+
   const renderSlideContent = (sd: SlideData) => {
     if (!sd) return null;
     const origW = preview?.slide_width || 960;
@@ -250,7 +269,7 @@ const PPTViewer: React.FC = () => {
       }}>
         {sd.shapes.map((shape, i) => {
           const defaultFontSize = scaleFont(shape.font_size);
-          const defaultColor = shape.font_color || colors.text;
+          const defaultColor = getTextColor(shape, sd.background || colors.background);
           const paragraphs = shape.paragraphs;
 
           if (shape.table) {

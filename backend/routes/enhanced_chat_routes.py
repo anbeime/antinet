@@ -1312,7 +1312,17 @@ async def enhanced_chat(request: ChatRequest):
 # ============ SSE 流式聊天端点 ============
 
 def _sse_event(event_type: str, data: dict) -> str:
-    return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+    def _to_json_safe(obj):
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        if isinstance(obj, list):
+            return [_to_json_safe(i) for i in obj]
+        if isinstance(obj, dict):
+            return {k: _to_json_safe(v) for k, v in obj.items()}
+        if hasattr(obj, '__dict__'):
+            return {k: _to_json_safe(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
+        return obj
+    return f"event: {event_type}\ndata: {json.dumps(_to_json_safe(data), ensure_ascii=False)}\n\n"
 
 async def _call_genie_stream(messages: list, max_tokens: int = 256, temperature: float = 0.3, timeout_sec: float = 60.0):
     """调用 Genie API 流式输出，7B 优先 3B 兜底，逐个 yield token"""
@@ -1363,112 +1373,125 @@ async def enhanced_chat_stream(request: ChatRequest):
             "image_analysis": None,
         }
 
+        def _to_json_safe(obj):
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            if isinstance(obj, list):
+                return [_to_json_safe(i) for i in obj]
+            if isinstance(obj, dict):
+                return {k: _to_json_safe(v) for k, v in obj.items()}
+            if hasattr(obj, '__dict__'):
+                return {k: _to_json_safe(v) for k, v in obj.__dict__.items() if not k.startswith('_')}
+            return obj
+
         async def event_generator():
             full_text = ""
+            try:
+                # 图片分析（不流式，直接出结果）
+                if request.image_data:
+                    analysis = await analyze_image_base64(request.image_data)
+                    if analysis:
+                        response_data["image_analysis"] = analysis.model_dump() if hasattr(analysis, 'model_dump') else analysis
+                        response_data["scene_type"] = "image_analysis"
+                        text = generate_image_analysis_response(analysis)
+                        full_text = text
+                        yield _sse_event("meta", {"scene_type": "image_analysis"})
+                        for ch in text:
+                            yield _sse_event("token", {"content": ch})
+                            await asyncio.sleep(0.02)
+                    else:
+                        yield _sse_event("meta", {"scene_type": "image_analysis"})
+                        yield _sse_event("token", {"content": "图片分析服务暂时不可用，请稍后重试。"})
 
-            # 图片分析（不流式，直接出结果）
-            if request.image_data:
-                analysis = await analyze_image_base64(request.image_data)
-                if analysis:
-                    response_data["image_analysis"] = analysis.model_dump() if hasattr(analysis, 'model_dump') else analysis
-                    response_data["scene_type"] = "image_analysis"
-                    text = generate_image_analysis_response(analysis)
+                elif scene_type == SceneType.CARD_SEARCH:
+                    cards = search_cards_semantic(query)
+                    response_data["cards"] = cards
+                    text = generate_card_search_response(query, cards)
                     full_text = text
-                    yield _sse_event("meta", {"scene_type": "image_analysis"})
+                    yield _sse_event("meta", {"scene_type": "card_search", "cards": cards})
                     for ch in text:
                         yield _sse_event("token", {"content": ch})
                         await asyncio.sleep(0.02)
-                else:
-                    yield _sse_event("meta", {"scene_type": "image_analysis"})
-                    yield _sse_event("token", {"content": "图片分析服务暂时不可用，请稍后重试。"})
 
-            elif scene_type == SceneType.CARD_SEARCH:
-                cards = search_cards_semantic(query)
-                response_data["cards"] = cards
-                text = generate_card_search_response(query, cards)
-                full_text = text
-                yield _sse_event("meta", {"scene_type": "card_search", "cards": cards})
-                for ch in text:
-                    yield _sse_event("token", {"content": ch})
-                    await asyncio.sleep(0.02)
+                elif scene_type in [SceneType.SKILL_PPT, SceneType.SKILL_EXCEL, SceneType.SKILL_WORD]:
+                    skill_map = {
+                        SceneType.SKILL_PPT: "ppt_generator",
+                        SceneType.SKILL_EXCEL: "excel_analyzer",
+                        SceneType.SKILL_WORD: "word_generator"
+                    }
+                    skill_name = skill_map.get(scene_type)
+                    if skill_name and skill_name in skill_registry:
+                        skill_result = await execute_skill(skill_name, query, request.context)
+                        response_data["skill_result"] = skill_result
+                        text = generate_skill_response(skill_result)
+                        full_text = text
+                        yield _sse_event("meta", {"scene_type": scene_type.value, "skill": skill_name})
+                        for ch in text:
+                            yield _sse_event("token", {"content": ch})
+                            await asyncio.sleep(0.02)
+                    else:
+                        yield _sse_event("meta", {"scene_type": scene_type.value})
+                        async for token in _call_genie_stream(
+                            [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
+                            max_tokens=256, timeout_sec=60.0
+                        ):
+                            full_text += token
+                            yield _sse_event("token", {"content": token})
 
-            elif scene_type in [SceneType.SKILL_PPT, SceneType.SKILL_EXCEL, SceneType.SKILL_WORD]:
-                skill_map = {
-                    SceneType.SKILL_PPT: "ppt_generator",
-                    SceneType.SKILL_EXCEL: "excel_analyzer",
-                    SceneType.SKILL_WORD: "word_generator"
-                }
-                skill_name = skill_map.get(scene_type)
-                if skill_name and skill_name in skill_registry:
-                    skill_result = await execute_skill(skill_name, query, request.context)
-                    response_data["skill_result"] = skill_result
-                    text = generate_skill_response(skill_result)
+                elif scene_type == SceneType.GREETING:
+                    text = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
                     full_text = text
-                    yield _sse_event("meta", {"scene_type": scene_type.value, "skill": skill_name})
+                    yield _sse_event("meta", {"scene_type": "greeting"})
+                    for ch in text:
+                        yield _sse_event("token", {"content": ch})
+                        await asyncio.sleep(0.01)
+
+                elif scene_type == SceneType.SELF_INTRO:
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": "请用50字以内介绍自己，你叫小易，是知易智能知识管家的AI助手"}],
+                        max_tokens=100, temperature=0.3, timeout_sec=30.0
+                    )
+                    text = genie_text or "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
+                    full_text = text
+                    yield _sse_event("meta", {"scene_type": "self_intro"})
                     for ch in text:
                         yield _sse_event("token", {"content": ch})
                         await asyncio.sleep(0.02)
+
                 else:
-                    yield _sse_event("meta", {"scene_type": scene_type.value})
-                    async for token in _call_genie_stream(
-                        [{"role": "user", "content": f"用户想要{scene_type.value}，请给出详细的操作步骤和建议：{query}"}],
-                        max_tokens=256, timeout_sec=60.0
-                    ):
-                        full_text += token
-                        yield _sse_event("token", {"content": token})
+                    # GENERAL：搜索知识库 + 流式 Genie
+                    result = hybrid_search_all(query, limit=5)
+                    if result and (result.cards or result.kg_entities):
+                        response_data["cards"] = _to_json_safe(result.cards[:3])
+                        context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
+                        quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
+                        yield _sse_event("meta", {"scene_type": "general", "cards": _to_json_safe(result.cards[:3])})
+                        async for token in _call_genie_stream(
+                            [{"role": "user", "content": quick_prompt}],
+                            max_tokens=256, timeout_sec=60.0
+                        ):
+                            full_text += token
+                            yield _sse_event("token", {"content": token})
+                    else:
+                        yield _sse_event("meta", {"scene_type": "general"})
+                        async for token in _call_genie_stream(
+                            [{"role": "user", "content": query}],
+                            max_tokens=256, timeout_sec=60.0
+                        ):
+                            full_text += token
+                            yield _sse_event("token", {"content": token})
 
-            elif scene_type == SceneType.GREETING:
-                text = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
-                full_text = text
-                yield _sse_event("meta", {"scene_type": "greeting"})
-                for ch in text:
-                    yield _sse_event("token", {"content": ch})
-                    await asyncio.sleep(0.01)
-
-            elif scene_type == SceneType.SELF_INTRO:
-                genie_text = await call_genie(
-                    [{"role": "user", "content": "请用50字以内介绍自己，你叫小易，是知易智能知识管家的AI助手"}],
-                    max_tokens=100, temperature=0.3, timeout_sec=30.0
-                )
-                text = genie_text or "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
-                full_text = text
-                yield _sse_event("meta", {"scene_type": "self_intro"})
-                for ch in text:
-                    yield _sse_event("token", {"content": ch})
-                    await asyncio.sleep(0.02)
-
-            else:
-                # GENERAL：搜索知识库 + 流式 Genie
-                from database import DatabaseManager
-                result = hybrid_search_all(query, limit=5)
-                if result and (result.cards or result.kg_entities):
-                    response_data["cards"] = result.cards[:3]
-                    context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
-                    quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
-                    yield _sse_event("meta", {"scene_type": "general", "cards": result.cards[:3]})
-                    async for token in _call_genie_stream(
-                        [{"role": "user", "content": quick_prompt}],
-                        max_tokens=256, timeout_sec=60.0
-                    ):
-                        full_text += token
-                        yield _sse_event("token", {"content": token})
-                else:
-                    yield _sse_event("meta", {"scene_type": "general"})
-                    async for token in _call_genie_stream(
-                        [{"role": "user", "content": query}],
-                        max_tokens=256, timeout_sec=60.0
-                    ):
-                        full_text += token
-                        yield _sse_event("token", {"content": token})
-
-            # 最终事件：携带完整回复 + 元数据
-            yield _sse_event("done", {
-                "full_text": full_text,
-                "scene_type": response_data["scene_type"],
-                "cards": response_data["cards"],
-                "skill_result": response_data["skill_result"],
-                "image_analysis": response_data["image_analysis"],
-            })
+                # 最终事件：携带完整回复 + 元数据（确保所有值 JSON 可序列化）
+                yield _sse_event("done", {
+                    "full_text": full_text,
+                    "scene_type": response_data["scene_type"],
+                    "cards": response_data["cards"],
+                    "skill_result": _to_json_safe(response_data["skill_result"]),
+                    "image_analysis": _to_json_safe(response_data["image_analysis"]),
+                })
+            except Exception as e:
+                logger.error(f"[event_generator] 流式生成错误: {e}", exc_info=True)
+                yield _sse_event("error", {"error": str(e)})
 
         return StreamingResponse(event_generator(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"})
