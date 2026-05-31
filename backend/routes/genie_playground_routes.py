@@ -281,6 +281,53 @@ async def genie_classify(request: ClassifyRequest):
 
     raise HTTPException(status_code=502, detail=f"Genie 分类失败: {last_error}")
 
+class AnalyzeRequest(BaseModel):
+    card_title: str = Field(..., description="卡片标题")
+    card_content: str = Field(..., description="卡片内容")
+    related_titles: Optional[str] = Field("", description="关联卡片标题列表")
+
+@router.post("/analyze")
+async def genie_analyze(request: AnalyzeRequest):
+    """AI 知识洞察：分析卡片并生成洞察"""
+    related_part = f"\n关联卡片：{request.related_titles}" if request.related_titles else ""
+    user_prompt = (
+        f"你是一个知识管理专家。分析以下知识卡片，给出3个方面的洞察：\n\n"
+        f"卡片标题：{request.card_title}\n"
+        f"卡片内容：{request.card_content}{related_part}\n\n"
+        f"请严格按照JSON格式返回，不要其他文字：\n"
+        f"{{\n"
+        f'  "summary": "一句话总结这张卡片在知识体系中的角色（30字内）",\n'
+        f'  "importance": "重要性评分 0-100 的数字",\n'
+        f'  "gap": "一个知识空白点（20字内）",\n'
+        f'  "recommendations": [\n'
+        f'    {{"title": "推荐主题", "reason": "推荐原因（10字内）"}}\n'
+        f'  ]\n'
+        f"}}"
+    )
+
+    models_to_try = ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    last_error = ""
+    for model in models_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(
+                    f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": user_prompt}],
+                        "max_tokens": 1024,
+                        "temperature": 0.5
+                    }
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content:
+                    return {"success": True, "response": content}
+        except Exception as e:
+            last_error = f"{model}: {str(e)[:100]}"
+    raise HTTPException(status_code=502, detail=f"Genie 分析失败: {last_error}")
+
 @router.post("/chat")
 async def genie_chat(request: GenieChatRequest):
     """通过 model_loader 直接调用 NPU（优先）或 GenieAPIService"""

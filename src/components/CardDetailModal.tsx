@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, History, Eye, FileSearch } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
@@ -244,6 +244,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 }) => {
   // 原有状态
   const [showMoreInsights, setShowMoreInsights] = useState(false);
+  const [insights, setInsights] = useState<any>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [isEditingRelations, setIsEditingRelations] = useState(false);
   const [editingRelatedCards, setEditingRelatedCards] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -359,6 +361,33 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setEditContent(card.content);
     }
   }, [card?.relatedCards, card?.title, card?.content]);
+
+  // 加载 AI 知识洞察
+  useEffect(() => {
+    if (!card) return;
+    setInsights(null);
+    setInsightsLoading(true);
+    const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
+    fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_title: card.title,
+        card_content: card.content.slice(0, 500),
+        related_titles: relatedTitles
+      })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const text = data.response || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          setInsights(JSON.parse(jsonMatch[0]));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setInsightsLoading(false));
+  }, [card?.id]);
 
   // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）
   const mergedRelatedIds = useMemo(() => {
@@ -1749,25 +1778,30 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
           {/* AI分析建议 */}
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg p-6 border border-blue-100 dark:border-blue-800">
-            <h3 className="text-lg font-semibold mb-3 text-blue-800 dark:text-blue-300">AI知识洞察</h3>
-            <div className="space-y-3">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                这张卡片与您知识体系中的多个核心概念相关联，是连接不同知识领域的重要节点。
-              </p>
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                建议您进一步探索与"{card.title}"相关的最新研究和实践，以丰富这一核心概念的深度和广度。
-              </p>
-              <div className="mt-4 flex justify-end">
-                <button
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
-                  onClick={() => setShowMoreInsights(!showMoreInsights)}
-                >
-                  {showMoreInsights ? '收起洞察' : '查看更多洞察'} <ExternalLink size={14} className="ml-1" />
-                </button>
-              </div>
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-300">AI知识洞察</h3>
+              {insightsLoading && <Loader2 size={16} className="animate-spin text-blue-500" />}
             </div>
+            {insightsLoading ? (
+              <p className="text-sm text-blue-400 animate-pulse">AI 正在分析...</p>
+            ) : insights ? (
+              <div className="space-y-3">
+                <p className="text-sm text-blue-700 dark:text-blue-400">{insights.summary || '暂无分析'}</p>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
+                    onClick={() => setShowMoreInsights(!showMoreInsights)}
+                  >
+                    {showMoreInsights ? '收起洞察' : '查看更多洞察'} <ExternalLink size={14} className="ml-1" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-blue-500">AI 分析暂不可用</p>
+            )}
 
             {/* 更多AI洞察详情 */}
+            {insights && (
             <motion.div
               initial={false}
               animate={{
@@ -1782,26 +1816,26 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">知识重要性分析</h4>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-blue-700 dark:text-blue-400">在知识体系中的重要性</span>
-                    <span className="text-xs font-medium text-blue-800 dark:text-blue-300">85%</span>
+                    <span className="text-xs font-medium text-blue-800 dark:text-blue-300">{insights.importance || 'N/A'}%</span>
                   </div>
                   <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1.5">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '85%' }}></div>
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(parseInt(insights.importance) || 50, 100)}%` }}></div>
                   </div>
                 </div>
 
                 <div className="mb-4">
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">关联强度分析</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    {relatedCardsDetails.slice(0, 2).map((related, index) => (
+                    {(relatedCardsDetails.length > 0 ? relatedCardsDetails.slice(0, 2) : []).map((related, index) => (
                       <div key={index} className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg">
                         <div className="flex items-center mb-1">
                           <div className={`${cardTypeMap[related.color].color} w-2 h-2 rounded-full mr-2`}></div>
                           <span className="text-xs font-medium">{related.title}</span>
                         </div>
                         <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1">
-                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${80 - index * 10}%` }}></div>
+                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.max(60 - index * 10, 30)}%` }}></div>
                         </div>
-                        <span className="text-xs text-blue-600 dark:text-blue-400">{80 - index * 10}% 关联强度</span>
+                        <span className="text-xs text-blue-600 dark:text-blue-400">{Math.max(60 - index * 10, 30)}% 关联强度</span>
                       </div>
                     ))}
                   </div>
@@ -1814,9 +1848,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       <div className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 mr-2 mt-0.5 flex-shrink-0">
                         <Lightbulb size={10} />
                       </div>
-                      <span className="text-xs text-blue-700 dark:text-blue-400">
-                        缺乏与{card.title}相关的最新行业案例研究
-                      </span>
+                      <span className="text-xs text-blue-700 dark:text-blue-400">{insights.gap || '暂无识别'}</span>
                     </li>
                   </ul>
                 </div>
@@ -1824,11 +1856,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <div>
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">推荐相关卡片</h4>
                   <div className="space-y-2">
-                    {[
-                      { title: "知识管理系统的最佳实践", reason: "补充方法论知识" },
-                      { title: "AI在知识发现中的应用", reason: "拓展技术应用场景" },
-                      { title: "组织学习与知识创新", reason: "增强理论深度" }
-                    ].map((rec, index) => (
+                    {(insights.recommendations || []).map((rec: any, index: number) => (
                       <div key={index} className="flex items-center p-2 bg-white/50 dark:bg-gray-800/50 rounded-lg">
                         <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0">
                           <ChevronRight size={10} />
@@ -1849,6 +1877,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 </div>
               </div>
             </motion.div>
+            )}
           </div>
         </div>
 
