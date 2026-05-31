@@ -876,12 +876,13 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
     # 连续失败计数器
     _consecutive_fails = getattr(_call_genie, '_consecutive_fails', 0)
 
-    # 截断输入 - 保留更多内容让回复更丰富
-    truncated_system = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
-    remaining = max_chars - len(truncated_system)
-    truncated_user = user_prompt[:remaining] if len(user_prompt) > remaining else user_prompt
-    if len(user_prompt) > remaining:
-        logger.info(f"[Meeting] 层{layer} Genie输入截断({len(user_prompt)}→{remaining}字)")
+    # Genie 忽略 system_prompt（硬编码在 prompt.conf），改为在 user_prompt 开头嵌入角色指令
+    role_instruction = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
+    embedded_user = f"{role_instruction}\n\n用户问题：{user_prompt}"
+    remaining = max_chars - len(role_instruction)
+    truncated_user = embedded_user if len(embedded_user) <= max_chars else embedded_user[:remaining]
+    if len(embedded_user) > max_chars:
+        logger.info(f"[Meeting] 层{layer} Genie输入截断({len(embedded_user)}→{max_chars}字)")
 
     async def _do_call() -> Optional[str]:
         async with httpx.AsyncClient(timeout=timeout_sec, limits=httpx.Limits(max_keepalive_connections=2, max_connections=4)) as client:
@@ -890,7 +891,7 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                 json={
                     "model": model_name,
                     "messages": [
-                        {"role": "system", "content": truncated_system},
+                        {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": truncated_user}
                     ],
                     "max_tokens": max_tokens,
