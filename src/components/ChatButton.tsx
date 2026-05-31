@@ -61,19 +61,18 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
       {/* 聊天按钮 */}
       <AnimatePresence>
         {!isOpen && (
-          <div
+          <motion.div
+            key="chat-button"
             ref={dragRef}
             onMouseDown={handleMouseDown}
             style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
             className={cn(
               "fixed z-40 cursor-move bottom-6 right-6",
               className
             )}
-          >
-          <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
           >
             <div
               onClick={() => setIsOpen(true)}
@@ -98,8 +97,7 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
                 <span className="text-sm font-medium">小易</span>
               </div>
             </motion.div>
-            </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

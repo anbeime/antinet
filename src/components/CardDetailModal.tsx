@@ -362,9 +362,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card?.relatedCards, card?.title, card?.content]);
 
-  // 加载 AI 知识洞察
+  // 加载 AI 知识洞察（等待 forwardlinks 加载完成后再触发）
   useEffect(() => {
     if (!card) return;
+    if (backlinksLoading) return;
+
     setInsights(null);
     setInsightsLoading(true);
     const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
@@ -387,7 +389,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       })
       .catch(() => {})
       .finally(() => setInsightsLoading(false));
-  }, [card?.id]);
+  }, [card?.id, forwardlinks, backlinksLoading]);
 
   // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）
   const mergedRelatedIds = useMemo(() => {

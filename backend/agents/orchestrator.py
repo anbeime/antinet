@@ -441,7 +441,7 @@ class OrchestratorAgent:
             {"role": "system", "content": "你是锦衣卫总指挥使，负责任务分解与调度。"},
             {"role": "user", "content": prompt}
         ]
-        for model in ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]:
+        for model in ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]:
             try:
                 async with httpx.AsyncClient(timeout=20.0) as client:
                     response = await client.post(

@@ -176,11 +176,16 @@ const getFileType = (filename: string): BatchFile['type'] => {
         ));
       }, 500);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+
       const response = await fetch(apiUrl, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       clearInterval(progressInterval);
 
       const result = await response.json();

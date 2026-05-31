@@ -251,7 +251,7 @@ async def genie_classify(request: ClassifyRequest):
     """AI 精准分类：直接调用 Genie 8910（Genie 会忽略 system 消息，所以指令放 user 里）"""
     user_prompt = f"将以下内容按段落分类为四色卡片：blue(核心概念/事实), green(关联/解释), yellow(参考来源/URL), red(索引关键词/行动)。\n\n只返回JSON数组，不要其他文字，格式：\n[{{\"title\":\"段落标题\",\"content\":\"原文段落\",\"color\":\"blue|green|yellow|red\"}}]\n\n内容：\n{request.content}"
 
-    models_to_try = ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
     last_error = ""
     for model in models_to_try:
         try:
@@ -305,7 +305,7 @@ async def genie_analyze(request: AnalyzeRequest):
         f"}}"
     )
 
-    models_to_try = ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
     last_error = ""
     for model in models_to_try:
         try:
