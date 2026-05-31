@@ -1020,8 +1020,8 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     const userId = collabUserId.current;
     // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
     const wsUrl = import.meta.env.DEV
-      ? `ws://localhost:8000/ws/collaboration/${userId}`
-      : `ws://${window.location.host}/ws/collaboration/${userId}`;
+      ? `ws://localhost:8000/api/ws/collaboration/${userId}`
+      : `ws://${window.location.host}/api/ws/collaboration/${userId}`;
     
     console.log('[Collab] 连接 WebSocket:', wsUrl);
     setCollabStatus('connecting');

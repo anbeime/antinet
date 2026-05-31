@@ -242,24 +242,113 @@ def _semantic_search_cards(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         return _search_cards_by_keyword(query, limit)
 
 
+def _search_invoices(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    搜索发票数据库
+
+    参数：
+        query: 查询关键词（发票号码、销售方、购买方等）
+        limit: 返回数量限制
+
+    返回：
+        匹配的发票列表
+    """
+    global db_manager
+    if db_manager is None:
+        logger.error("数据库管理器未初始化")
+        return []
+
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+
+        query_lower = query.lower()
+
+        # 搜索多个字段
+        sql = """
+            SELECT id, invoice_number, invoice_code, invoice_date,
+                   seller_name, seller_tax_id, buyer_name, buyer_tax_id,
+                   total_amount, amount, tax_amount, is_excluded, status, engine_used
+            FROM invoices
+            WHERE LOWER(invoice_number) LIKE ?
+               OR LOWER(seller_name) LIKE ?
+               OR LOWER(buyer_name) LIKE ?
+               OR LOWER(invoice_code) LIKE ?
+            ORDER BY invoice_date DESC
+            LIMIT ?
+        """
+        like = f"%{query_lower}%"
+        cursor.execute(sql, (like, like, like, like, limit))
+
+        rows = cursor.fetchall()
+        invoices = []
+        for row in rows:
+            invoices.append({
+                "id": row["id"],
+                "invoice_number": row["invoice_number"],
+                "invoice_code": row["invoice_code"],
+                "invoice_date": row["invoice_date"],
+                "seller_name": row["seller_name"],
+                "seller_tax_id": row["seller_tax_id"],
+                "buyer_name": row["buyer_name"],
+                "buyer_tax_id": row["buyer_tax_id"],
+                "total_amount": row["total_amount"],
+                "amount": row["amount"],
+                "tax_amount": row["tax_amount"],
+                "is_excluded": bool(row["is_excluded"]),
+                "status": row["status"],
+                "engine_used": row["engine_used"],
+            })
+
+        conn.close()
+        logger.info(f"[ChatRoutes] 发票搜索找到 {len(invoices)} 条结果")
+        return invoices
+
+    except Exception as e:
+        logger.error(f"搜索发票失败: {e}", exc_info=True)
+        return []
+
+
+def _is_invoice_query(query: str) -> bool:
+    """判断用户查询是否与发票相关"""
+    keywords = [
+        "发票", "invoice", "报销", "进项", "销项", "税",
+        "开票", "收票", "发票夹子", "金额", "价税",
+        "¥", "￥",
+    ]
+    query_lower = query.lower()
+    for kw in keywords:
+        if kw.lower() in query_lower or kw in query:
+            return True
+    return False
+
+
+def _generate_invoice_response(query: str, invoices: List[Dict]) -> str:
+    """生成发票查询的文本回答"""
+    if not invoices:
+        return f"没有找到与「{query}」相关的发票记录。"
+
+    lines = [f"找到 {len(invoices)} 张相关发票：\n"]
+    for inv in invoices:
+        total = inv.get("total_amount")
+        total_str = f"¥{total:.2f}" if total is not None else "-"
+        date = inv.get("invoice_date", "-")
+        seller = inv.get("seller_name", "-")
+        number = inv.get("invoice_number", "-")
+        excluded = " [不报销]" if inv.get("is_excluded") else ""
+        lines.append(f"• {date} {seller} ￥{total_str}（{number}）{excluded}")
+
+    return "\n".join(lines)
+
+
 def _hybrid_search(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
     混合搜索：结合语义搜索和关键词搜索的结果
-    
-    参数：
-        query: 查询文本
-        limit: 返回数量限制
-    
-    返回：
-        合并后的卡片列表
     """
     # 获取语义搜索结果
     semantic_results = _semantic_search_cards(query, limit)
-    
-    # 如果语义搜索结果为空或失败，回退到关键词搜索
     if not semantic_results:
         return _search_cards_by_keyword(query, limit)
-    
     return semantic_results
 
 
@@ -697,12 +786,26 @@ async def chat_query(request: ChatRequest):
         # 搜索卡片 - 使用混合搜索（语义+关键词）
         t_search = _time.time()
         cards = _hybrid_search(request.query, limit=10)
+
+        # 如果查询与发票相关，也搜索发票
+        invoices = []
+        if _is_invoice_query(request.query):
+            invoices = _search_invoices(request.query, limit=5)
+
         t_search_ms = (_time.time() - t_search) * 1000
-        logger.info(f"[ChatRoutes] 搜索耗时 {t_search_ms:.0f}ms, 找到 {len(cards)} 张卡片")
+        logger.info(f"[ChatRoutes] 搜索耗时 {t_search_ms:.0f}ms, 找到 {len(cards)} 张卡片, {len(invoices)} 张发票")
         
         # 生成回答
         t_gen = _time.time()
-        response = _generate_response(request.query, cards)
+        if invoices:
+            invoice_part = _generate_invoice_response(request.query, invoices)
+            card_part = _generate_response(request.query, cards)
+            if cards:
+                response = f"{card_part}\n\n---\n\n{invoice_part}"
+            else:
+                response = invoice_part
+        else:
+            response = _generate_response(request.query, cards)
         t_gen_ms = (_time.time() - t_gen) * 1000
         logger.info(f"[ChatRoutes] 生成回答耗时 {t_gen_ms:.0f}ms")
         
@@ -730,7 +833,7 @@ async def chat_query(request: ChatRequest):
             suggested_questions=suggested_questions
         )
 
-        logger.info(f"[ChatRoutes] 查询完成: {len(cards)}条相关卡片, {len(suggested_questions)}个推荐问题")
+        logger.info(f"[ChatRoutes] 查询完成: {len(cards)}条相关卡片, {len(invoices)}张发票, {len(suggested_questions)}个推荐问题")
         return result
 
     except Exception as e:

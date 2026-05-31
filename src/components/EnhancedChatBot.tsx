@@ -560,8 +560,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     setSelectedImage(null);
     setImageData(null);
     if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
+      const oldUrl = previewUrl;
+      setPreviewUrl(null);          // 先置空，React 不会再挂载旧 img
+      setTimeout(() => URL.revokeObjectURL(oldUrl), 100); // 延迟释放
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';

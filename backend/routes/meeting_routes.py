@@ -72,6 +72,32 @@ _agent_messages: List[Dict[str, Any]] = []
 # 用户干预队列 - meeting_id → List[intervention]
 _user_interventions: Dict[str, List[Dict[str, Any]]] = {}
 
+# GPU 显存清理状态
+_last_gpu_cleanup = 0
+_GPU_CLEANUP_INTERVAL = 30  # 每30秒最多清理一次
+
+
+def _try_cleanup_gpu_memory():
+    """尝试清理 GPU 显存，减少 context 冲突"""
+    global _last_gpu_cleanup
+    import time
+    now = time.time()
+    
+    if now - _last_gpu_cleanup < _GPU_CLEANUP_INTERVAL:
+        return
+    
+    _last_gpu_cleanup = now
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info("[GPU] CUDA 缓存已清理")
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"[GPU] 清理缓存失败: {e}")
+
 
 @router.post("/delegate")
 async def delegate_task(request: AgentDelegateRequest):
@@ -948,6 +974,8 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
     if _consecutive_fails >= 3:
         degrade_state["skip_vision_until"] = time.time() + _DEGRADE_COOLDOWN
         logger.warning(f"[Meeting] 层{layer} Genie({model_name}) 连续失败{_consecutive_fails}次，进入冷却{_DEGRADE_COOLDOWN}s")
+        # 连续失败时尝试清理 GPU 显存
+        _try_cleanup_gpu_memory()
     if scheduler:
         scheduler.record_inference(model_name, time.time() - inference_start, False, agent_id=agent_id)
     return None
@@ -965,6 +993,9 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     _max_tokens = max_tokens  # 避免闭包捕获问题
     import time as _time
     now = _time.time()
+    
+    # 每次 LLM 调用前尝试清理 GPU 显存
+    _try_cleanup_gpu_memory()
     
     # 闭环三：尝试使用智能调度器选择模型
     scheduler = None
