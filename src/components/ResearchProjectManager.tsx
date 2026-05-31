@@ -23,7 +23,11 @@ import {
   ExternalLink,
   TrendingUp,
   Network,
-  AlertTriangle
+  AlertTriangle,
+  Circle,
+  CheckCircle2,
+  Eye,
+  UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -779,6 +783,7 @@ const ProjectDetailPanel: React.FC<{
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<ProjectCard | null>(null);
   const [showCardDetail, setShowCardDetail] = useState(false);
+  const [taskRefreshTrigger, setTaskRefreshTrigger] = useState(0);  // 触发 CardDetailModal 刷新任务列表
   const [showCreateCard, setShowCreateCard] = useState(false);
   const [projectStats, setProjectStats] = useState<{
     cards: Record<string, number>;
@@ -838,6 +843,26 @@ const ProjectDetailPanel: React.FC<{
     } finally {
       setLoading(false);
     }
+  };
+
+  // 刷新项目统计（任务完成/重置后调用）
+  const loadProjectStats = async () => {
+    if (!project.id) return;
+    try {
+      try {
+        const { researchStatsService } = await import('../services/dataService');
+        const stats = await researchStatsService.getStats(project.id);
+        setProjectStats(stats);
+        return;
+      } catch { /* 回退到本地计算 */ }
+      const t = tasks;
+      const taskCompleted = t.filter((task: any) => task.is_completed).length;
+      setProjectStats(prev => prev ? {
+        ...prev,
+        tasks: { total: t.length, completed: taskCompleted, pending: t.length - taskCompleted },
+        task_progress: t.length > 0 ? Math.round(taskCompleted / t.length * 100) : 0,
+      } : null);
+    } catch {}
   };
 
   // 刷新卡片数据
@@ -995,6 +1020,7 @@ const ProjectDetailPanel: React.FC<{
         toast.success('已转换为任务并关联到专题');
         loadData();
         onConvertCardToTask(cardId);
+        setTaskRefreshTrigger(prev => prev + 1);  // 触发 CardDetailModal 刷新任务列表
       }
     } catch { toast.error('转换失败'); }
   };
@@ -1246,7 +1272,17 @@ const ProjectDetailPanel: React.FC<{
                 {/* ===== 任务 Tab ===== */}
                 {activeTab === 'tasks' && (
                   <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">关联任务</h2>
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">关联任务</h2>
+                      {tasks.length > 0 && (
+                        <button
+                          onClick={() => window.open('/?tab=gtd', '_blank')}
+                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> 任务管理
+                        </button>
+                      )}
+                    </div>
                     {tasks.length === 0 ? (
                       <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
                         <CheckSquare className="w-16 h-16 mx-auto mb-4 text-gray-200 dark:text-gray-600" />
@@ -1258,25 +1294,59 @@ const ProjectDetailPanel: React.FC<{
                         {tasks.map((task) => (
                           <div
                             key={task.id}
-                            className="flex items-center p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all"
+                            className={`flex items-center p-4 bg-white dark:bg-gray-800 rounded-xl border transition-all hover:shadow-md ${
+                              task.is_completed
+                                ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10'
+                                : 'border-gray-200 dark:border-gray-700 cursor-pointer'
+                            }`}
                           >
-                            <div className={`w-3 h-3 rounded-full mr-4 flex-shrink-0 ${
-                              task.priority === 'high' ? 'bg-red-500' :
-                              task.priority === 'medium' ? 'bg-amber-500' : 'bg-green-500'
-                            }`} />
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-gray-900 dark:text-white truncate">{task.title}</h4>
+                            {/* 完成状态切换按钮 */}
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}/complete?is_completed=${!task.is_completed}`, { method: 'PUT' });
+                                  if (res.ok) {
+                                    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_completed: !task.is_completed } : t));
+                                    loadProjectStats();
+                                    toast.success(task.is_completed ? '任务已取消完成' : '任务已完成 ✓');
+                                  }
+                                } catch { toast.error('操作失败'); }
+                              }}
+                              className="mr-3 flex-shrink-0 text-gray-400 hover:text-green-500 transition-colors"
+                              title={task.is_completed ? '取消完成' : '标记完成'}
+                            >
+                              {task.is_completed ? (
+                                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                              ) : (
+                                <Circle className="w-5 h-5" />
+                              )}
+                            </button>
+                            <div
+                              className="flex-1 min-w-0 mr-3"
+                              onClick={() => window.open('/?tab=gtd', '_blank')}
+                            >
+                              <h4 className={`font-medium truncate ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                                {task.title}
+                              </h4>
                               {task.description && (
                                 <p className="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{task.description}</p>
                               )}
                             </div>
-                            <span className={`text-xs px-2.5 py-1 rounded-full ml-3 flex-shrink-0 ${
-                              task.priority === 'high' ? 'bg-red-100 text-red-700' :
-                              task.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
-                              'bg-green-100 text-green-700'
-                            }`}>
-                              {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
-                            </span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {task.assigned_to_name && (
+                                <span className="text-xs px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
+                                  {task.assigned_to_name}
+                                </span>
+                              )}
+                              <span className={`text-xs px-2.5 py-1 rounded-full ${
+                                task.priority === 'high' ? 'bg-red-100 text-red-700' :
+                                task.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
+                                'bg-green-100 text-green-700'
+                              }`}>
+                                {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1468,6 +1538,7 @@ const ProjectDetailPanel: React.FC<{
             // 可以在这里实现推荐卡片创建的逻辑
             toast.info(`推荐创建: ${title}`);
           }}
+          refreshTrigger={taskRefreshTrigger}
         />
 
         {/* ===== 创建卡片弹窗 - 复用首页 CreateCardModal ===== */}

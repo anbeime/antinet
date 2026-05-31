@@ -1261,7 +1261,11 @@ async def get_project_tasks(project_id: int):
                 "priority": row["priority"],
                 "due_date": row["due_date"],
                 "created_at": row["created_at"],
-                "updated_at": row["updated_at"]
+                "updated_at": row["updated_at"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"],
+                "project_id": row["project_id"]
             })
         return tasks
     except HTTPException:

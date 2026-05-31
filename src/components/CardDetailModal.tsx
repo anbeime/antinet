@@ -54,6 +54,7 @@ interface CardDetailModalProps {
   onRelatedCardClick: (id: string) => void;
   onUpdateCard: (updatedCard: KnowledgeCard) => void;
   onCreateRecommendedCard: (title: string, reason: string) => void;
+  refreshTrigger?: number;  // 外部触发刷新（如任务创建后）
 }
 
 // 卡片类型映射
@@ -237,7 +238,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   onDelete,
   onRelatedCardClick,
   onUpdateCard,
-  onCreateRecommendedCard
+  onCreateRecommendedCard,
+  refreshTrigger,
 }) => {
   // 原有状态
   const [showMoreInsights, setShowMoreInsights] = useState(false);
@@ -533,6 +535,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       generateSourcePdf();
     }
   }, [sourceViewMode, showSourceMarkdown]);
+
+  // 外部触发刷新（如任务创建后）
+  useEffect(() => {
+    if (isOpen && card && refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadCardIntegrations();
+    }
+  }, [refreshTrigger]);
 
   // P0: 选中文本创建任务 — 检测选中文本
   const handleTextSelect = () => {
@@ -1561,10 +1570,11 @@ className="text-lg select-text"
                         {cardTasks.map(task => (
                           <div
                             key={task.id}
-                            className={`p-3 border rounded-lg transition-colors ${
+                            onClick={() => window.open('/?tab=gtd', '_blank')}
+                            className={`p-3 border rounded-lg transition-colors cursor-pointer hover:shadow-md ${
                               task.is_completed
                                 ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60'
-                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800'
+                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800 hover:bg-green-100/50 dark:hover:bg-green-900/20'
                             }`}
                           >
                             <div className="flex items-start gap-2">
