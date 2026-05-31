@@ -475,33 +475,17 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setIsAIClassifying(true);
     setErrors([]);
     try {
-      const prompt = `你是一个四色卡片分类专家。将以下内容按段落分割（空行分隔），为每段判断类型：
-
-- 🔵 核心概念：定义、理论、原理、事实数据
-- 🟢 关联链接：关联、对比、解释、因果关系
-- 🟡 参考来源：URL、引用、出处、文档资料
-- 🔴 索引关键词：关键词、标签、短文本、行动项
-
-请严格按 JSON 格式返回，不要有任何额外说明：
-[
-  {"title": "简短标题", "content": "原文段落", "color": "blue|green|yellow|red"}
-]
-
-内容：
-${content}`;
-
-      const res = await fetch(getApiBaseUrl() + '/api/genie-playground/chat', {
+      const res = await fetch(getApiBaseUrl() + '/api/genie-playground/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'qwen2.5vl3b-8380-2.42',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.1,
-          max_tokens: 2048
-        })
+        body: JSON.stringify({ content: content })
       });
 
-      if (!res.ok) throw new Error('AI 分类服务不可用');
+      if (!res.ok) {
+        let detail = '';
+        try { const err = await res.json(); detail = err.detail || ''; } catch {}
+        throw new Error(`AI 分类失败 (${res.status})${detail ? ': ' + detail : ''}`);
+      }
 
       const data = await res.json();
       const text = data.response || '';

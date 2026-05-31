@@ -1242,9 +1242,12 @@ class HybridQuestionResponse(BaseModel):
 
 class SaveCardRequest(BaseModel):
     """保存会议卡片到知识库的请求"""
-    card: Dict[str, Any] = Field(..., description="卡片数据 {card_type, title, content}")
-    meeting_id: str = Field(..., description="会议ID")
-    topic: str = Field(default="", description="会议主题")
+    card: Optional[Dict[str, Any]] = Field(None, description="卡片数据 {card_type, title, content}")
+    meeting_id: Optional[str] = Field(None, description="会议ID")
+    topic: Optional[str] = Field("", description="会议主题")
+    type: Optional[str] = Field(None, description="卡片类型(旧版兼容)")
+    title: Optional[str] = Field(None, description="卡片标题(旧版兼容)")
+    content: Optional[str] = Field(None, description="卡片内容(旧版兼容)")
 
 
 # ==================== 路由 ====================
@@ -1664,7 +1667,19 @@ async def hybrid_question(request: HybridQuestionRequest):
 @router.post("/cards/save")
 async def save_meeting_card(request: SaveCardRequest):
     """将会议产出的卡片保存到知识库"""
-    card = request.card
+    # 兼容前端发送的扁平结构 {type, title, content, category} 和后端的 {card, meeting_id, topic}
+    if "card" in request.model_dump():
+        card = request.card
+        topic = request.topic
+    else:
+        # 前端扁平结构兼容
+        card = {
+            "card_type": getattr(request, 'type', 'blue'),
+            "title": getattr(request, 'title', '会议卡片'),
+            "content": getattr(request, 'content', '')
+        }
+        topic = getattr(request, 'topic', '') or getattr(request, 'category', '')
+    
     card_type = card.get("card_type", "blue")
     title = card.get("title", "会议卡片")
     content = card.get("content", "")
@@ -1684,7 +1699,7 @@ async def save_meeting_card(request: SaveCardRequest):
                 content,
                 card_type,
                 '会议生成',
-                json.dumps(['会议', request.topic[:20]]),
+                json.dumps(['会议', (topic or '')[:20]]),
                 json.dumps([]),
                 datetime.now().isoformat()
             ))

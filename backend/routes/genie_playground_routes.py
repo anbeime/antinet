@@ -14,6 +14,7 @@ import json
 import subprocess
 import time
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,44 @@ async def get_loaded_model_name() -> str | None:
         pass
     return None
 
+
+class ClassifyRequest(BaseModel):
+    content: str = Field(..., description="待分类的文本内容")
+
+@router.post("/classify")
+async def genie_classify(request: ClassifyRequest):
+    """AI 精准分类：直接调用 Genie 8910（Genie 会忽略 system 消息，所以指令放 user 里）"""
+    user_prompt = f"将以下内容按段落分类为四色卡片：blue(核心概念/事实), green(关联/解释), yellow(参考来源/URL), red(索引关键词/行动)。\n\n只返回JSON数组，不要其他文字，格式：\n[{{\"title\":\"段落标题\",\"content\":\"原文段落\",\"color\":\"blue|green|yellow|red\"}}]\n\n内容：\n{request.content}"
+
+    models_to_try = ["qwen2.0-7b-ssd-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    last_error = ""
+    for model in models_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(
+                    f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "max_tokens": 1024,
+                        "temperature": 0.3
+                    }
+                )
+                resp.raise_for_status()
+                result = resp.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if content:
+                    return {"success": True, "response": content}
+        except httpx.HTTPStatusError as e:
+            last_error = f"{model} HTTP {e.response.status_code}"
+            try: last_error += ": " + e.response.text[:100]
+            except: pass
+        except Exception as e:
+            last_error = f"{model}: {str(e)[:100]}"
+
+    raise HTTPException(status_code=502, detail=f"Genie 分类失败: {last_error}")
 
 @router.post("/chat")
 async def genie_chat(request: GenieChatRequest):

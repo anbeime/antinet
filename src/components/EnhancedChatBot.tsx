@@ -834,40 +834,114 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           setEvolutionMode(false);
           response = await enhancedChatService.sendMessage(query, { imageData: imgData });
         }
-      } else {
-        // 普通模式
-        response = await enhancedChatService.sendMessage(query, {
-          imageData: imgData
-        });
-      }
-      
-      const replyContent = response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。';
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: replyContent,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          scene_type: response.scene_type,
-          cards: response.cards,
-          skill_result: response.skill_result
-        }
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-      const localSuggestions = generateLocalSuggestions(query, !!imgData, messages);
-      const mergedSuggestions = response.suggestions && response.suggestions.length > 0
-        ? response.suggestions
-        : localSuggestions;
-      setSuggestedQuestions(mergedSuggestions.slice(0, 3));
+        
+        const replyContent = response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。';
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: replyContent,
+          timestamp: new Date().toISOString(),
+          metadata: {
+            scene_type: response.scene_type,
+            cards: response.cards,
+            skill_result: response.skill_result
+          }
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        const localSuggestions = generateLocalSuggestions(query, !!imgData, messages);
+        const mergedSuggestions = response.suggestions && response.suggestions.length > 0
+          ? response.suggestions
+          : localSuggestions;
+        setSuggestedQuestions(mergedSuggestions.slice(0, 3));
 
-      // 自动朗读
-      if (autoSpeak && replyContent) {
-        // 停止当前朗读
-        synthRef.current?.cancel();
-        if (currentAudioRef.current) {
-          currentAudioRef.current.pause();
-          currentAudioRef.current = null;
+        if (autoSpeak && replyContent) {
+          synthRef.current?.cancel();
+          if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+          setTimeout(() => speakText(replyContent), 300);
         }
-        setTimeout(() => speakText(replyContent), 300);
+      } else {
+        // 普通模式 — SSE 流式输出
+        const apiBase = getApiBaseUrl();
+        setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date().toISOString(), metadata: {} }]);
+        let fullContent = '';
+
+        try {
+          const res = await fetch(`${apiBase}/api/chat/enhanced/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, image_data: imgData, session_id: 'default_user' })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+          const reader = res.body?.getReader();
+          if (!reader) throw new Error('无响应流');
+
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop() || '';
+
+            for (const block of parts) {
+              if (!block.trim()) continue;
+              const lines = block.split('\n');
+              let eventType = '', dataStr = '';
+              for (const l of lines) {
+                if (l.startsWith('event:')) eventType = l.slice(6).trim();
+                if (l.startsWith('data:')) dataStr = l.slice(5).trim();
+              }
+              if (!eventType || !dataStr) continue;
+              if (eventType === 'token') {
+                try {
+                  fullContent += JSON.parse(dataStr).content;
+                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: fullContent }; return u; });
+                } catch {}
+              } else if (eventType === 'meta') {
+                try {
+                  const d = JSON.parse(dataStr);
+                  if (d.cards) {
+                    setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, metadata: { ...m.metadata, cards: d.cards } }; return u; });
+                  }
+                } catch {}
+              } else if (eventType === 'done') {
+                try {
+                  const d = JSON.parse(dataStr);
+                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: d.full_text || fullContent, metadata: { scene_type: d.scene_type, cards: d.cards || [], skill_result: d.skill_result } }; return u; });
+                  setSuggestedQuestions(generateLocalSuggestions(query, !!imgData, messages).slice(0, 3));
+                  if (autoSpeak && fullContent) {
+                    synthRef.current?.cancel();
+                    if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+                    setTimeout(() => speakText(fullContent), 300);
+                  }
+                } catch {}
+              } else if (eventType === 'error') {
+                try { throw new Error(JSON.parse(dataStr).error); } catch {}
+              }
+            }
+          }
+        } catch (e: any) {
+          console.error('流式输出失败，回退到普通模式:', e);
+          // 移除空白助手消息
+          setMessages(prev => prev.filter(m => m.content !== '' || m.role !== 'assistant'));
+          response = await enhancedChatService.sendMessage(query, { imageData: imgData });
+          const replyContent = response.reply || '抱歉，我暂时无法回答这个问题。请尝试换个方式提问。';
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: replyContent,
+            timestamp: new Date().toISOString(),
+            metadata: { scene_type: response.scene_type, cards: response.cards, skill_result: response.skill_result }
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          setSuggestedQuestions(generateLocalSuggestions(query, !!imgData, messages).slice(0, 3));
+          if (autoSpeak && replyContent) {
+            synthRef.current?.cancel();
+            if (currentAudioRef.current) { currentAudioRef.current.pause(); currentAudioRef.current = null; }
+            setTimeout(() => speakText(replyContent), 300);
+          }
+        }
       }
 
 
