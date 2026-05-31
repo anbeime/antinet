@@ -1591,6 +1591,299 @@ async def select_optimal_model(
         }
 
 
+# ==================== 会议内智能知识检索端点 ====================
+
+class KnowledgeRetrievalRequest(BaseModel):
+    """会议内智能知识检索请求"""
+    question: str = Field(..., description="用户问题（自然语言）")
+    topic: str = Field(default="", description="会议主题")
+    context: Optional[str] = Field(default="", description="会议讨论上下文")
+
+
+class KnowledgeRetrievalResponse(BaseModel):
+    """会议内智能知识检索响应 - 通政司协调 → 参谋司建议 → 驿传司输出"""
+    query: str
+    topic: str
+    # 通政司协调汇总
+    tongzhengsi_summary: Dict[str, Any] = Field(default_factory=dict, description="通政司汇总的信息")
+    # 参谋司结构化行动建议
+    canmousi_actions: List[Dict[str, Any]] = Field(default_factory=list, description="参谋司生成的行动建议")
+    # 驿传司格式化输出
+    final_response: str = Field(default="", description="驿传司格式化后的最终输出")
+    # 引用卡片
+    cards: List[Dict[str, Any]] = Field(default_factory=list, description="引用的知识卡片")
+    sources: List[Dict[str, Any]] = Field(default_factory=list, description="卡片来源列表")
+    # Agent 执行日志
+    agent_logs: List[str] = Field(default_factory=list, description="各 Agent 执行日志")
+
+
+@router.post("/knowledge-retrieval", response_model=KnowledgeRetrievalResponse)
+async def knowledge_retrieval_in_meeting(request: KnowledgeRetrievalRequest):
+    """
+    会议内智能知识检索 - 完整5步流程
+
+    流程：
+    1. 用户输入自然语言问题
+    2. 向量语义搜索匹配相关卡片（太史阁/密卷房）
+    3. 通政司协调各 Agent 汇总信息
+    4. 参谋司生成结构化行动建议
+    5. 驿传司格式化输出给用户
+    """
+    logs = []
+    cards = []
+    sources = []
+
+    # ========== 步骤1: 用户问题接收 ==========
+    query = request.question
+    topic = request.topic or ""
+    context = request.context or ""
+    logs.append(f"【用户】问题: {query}")
+
+    # ========== 步骤2: 向量语义搜索匹配相关卡片 ==========
+    logs.append("【密卷房/太史阁】开始向量语义搜索...")
+    try:
+        from routes.enhanced_chat_routes import search_cards_semantic
+        card_refs = search_cards_semantic(query, limit=10)
+
+        if card_refs:
+            for ref in card_refs:
+                cards.append({
+                    "card_id": ref.card_id,
+                    "card_type": ref.card_type,
+                    "title": ref.title,
+                    "content": ref.content,
+                    "similarity": ref.similarity,
+                    "color": ref.color
+                })
+                sources.append({
+                    "card_id": ref.card_id,
+                    "title": ref.title,
+                    "similarity": ref.similarity
+                })
+            logs.append(f"【密卷房/太史阁】搜索完成，找到 {len(card_refs)} 张相关卡片")
+        else:
+            logs.append("【密卷房/太史阁】未找到相关卡片")
+    except Exception as e:
+        logger.warning(f"[会议知识检索] 搜索卡片失败: {e}")
+        logs.append(f"【密卷房/太史阁】搜索失败: {e}")
+
+    # ========== 步骤3: 通政司协调各 Agent 汇总信息 ==========
+    logs.append("【通政司】开始协调汇总...")
+    tongzhengsi_summary = {
+        "facts": [],      # 蓝色卡片 - 事实
+        "interpretations": [],  # 绿色卡片 - 解释
+        "risks": [],      # 黄色卡片 - 风险
+        "actions": []     # 红色卡片 - 行动建议
+    }
+
+    if cards:
+        # 按卡片类型分类整理
+        for card in cards:
+            card_type = card.get("card_type", "")
+            card_entry = {
+                "title": card.get("title", ""),
+                "content": card.get("content", "")[:200],
+                "similarity": card.get("similarity", 0)
+            }
+            if card_type == "blue":
+                tongzhengsi_summary["facts"].append(card_entry)
+            elif card_type == "green":
+                tongzhengsi_summary["interpretations"].append(card_entry)
+            elif card_type == "yellow":
+                tongzhengsi_summary["risks"].append(card_entry)
+            elif card_type == "red":
+                tongzhengsi_summary["actions"].append(card_entry)
+            else:
+                # 默认归为事实
+                tongzhengsi_summary["facts"].append(card_entry)
+
+        logs.append(f"【通政司】汇总完成：{len(tongzhengsi_summary['facts'])} 事实, "
+                    f"{len(tongzhengsi_summary['interpretations'])} 解释, "
+                    f"{len(tongzhengsi_summary['risks'])} 风险, "
+                    f"{len(tongzhengsi_summary['actions'])} 行动建议")
+    else:
+        logs.append("【通政司】无相关卡片可汇总")
+
+    # 通政司生成汇总描述
+    tongzhengsi_description = ""
+    if tongzhengsi_summary["facts"]:
+        fact_texts = [f"• {f['title']}: {f['content'][:80]}" for f in tongzhengsi_summary["facts"][:3]]
+        tongzhengsi_description += "【事实】\n" + "\n".join(fact_texts) + "\n\n"
+    if tongzhengsi_summary["interpretations"]:
+        interp_texts = [f"• {i['title']}: {i['content'][:80]}" for i in tongzhengsi_summary["interpretations"][:2]]
+        tongzhengsi_description += "【解释】\n" + "\n".join(interp_texts) + "\n\n"
+    if tongzhengsi_summary["risks"]:
+        risk_texts = [f"• {r['title']}: {r['content'][:80]}" for r in tongzhengsi_summary["risks"][:2]]
+        tongzhengsi_description += "【风险】\n" + "\n".join(risk_texts) + "\n\n"
+    if tongzhengsi_summary["actions"]:
+        action_texts = [f"• {a['title']}: {a['content'][:80]}" for a in tongzhengsi_summary["actions"][:2]]
+        tongzhengsi_description += "【已有行动建议】\n" + "\n".join(action_texts)
+
+    tongzhengsi_summary["description"] = tongzhengsi_description
+
+    # ========== 步骤4: 参谋司生成结构化行动建议 ==========
+    logs.append("【参谋司】开始生成结构化行动建议...")
+    canmousi_actions = []
+
+    try:
+        # 构建参谋司提示词
+        canmousi_prompt = f"""你是八府巡按的参谋司，负责基于已有信息生成结构化行动建议。
+
+会议主题：{topic}
+用户问题：{query}
+讨论上下文：{context}
+
+参考信息：
+{tongzhengsi_description if tongzhengsi_description else '（无相关知识卡片）'}
+
+请生成 3-5 条结构化行动建议，每条包含：
+1. 行动标题（简短有力）
+2. 行动描述（具体可执行）
+3. 优先级（高/中/低）
+4. 预期效果
+
+要求：
+- 优先基于已有事实和解释
+- 考虑识别的风险因素
+- 避免重复已有的行动建议
+- 60字以内，简明扼要"""
+
+        action_result = await call_llm(
+            system_prompt="你是参谋司，负责生成结构化行动建议。",
+            user_prompt=canmousi_prompt,
+            max_tokens=300,
+            agent_id="canmousi",
+            temperature=0.6
+        )
+
+        if action_result:
+            # 解析生成的行动建议
+            lines = action_result.strip().split('\n')
+            current_action = {}
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('【') and '】' in line:
+                    # 新行动开始
+                    if current_action:
+                        canmousi_actions.append(current_action)
+                    current_action = {"title": line, "description": "", "priority": "中", "effect": ""}
+                elif line.startswith('•') or line.startswith('-'):
+                    desc = line.lstrip('•-').strip()
+                    if current_action and not current_action["description"]:
+                        current_action["description"] = desc
+                    elif current_action and current_action["description"]:
+                        current_action["description"] += " " + desc
+                elif '优先级' in line or 'priority' in line.lower():
+                    if '高' in line:
+                        current_action["priority"] = "高"
+                    elif '低' in line:
+                        current_action["priority"] = "低"
+            if current_action:
+                canmousi_actions.append(current_action)
+
+        if not canmousi_actions:
+            # Fallback: 生成简单行动建议
+            canmousi_actions = [
+                {
+                    "title": "📋 深入分析",
+                    "description": f"针对「{query}」进行进一步数据收集和分析",
+                    "priority": "高",
+                    "effect": "获取更全面的信息支撑决策"
+                },
+                {
+                    "title": "⚠️ 风险评估",
+                    "description": "识别「" + query[:20] + "..." if len(query) > 20 else query + "」相关的潜在风险",
+                    "priority": "中",
+                    "effect": "提前规避可能的负面影响"
+                },
+                {
+                    "title": "✅ 制定计划",
+                    "description": "基于现有知识卡片，制定具体的执行方案",
+                    "priority": "中",
+                    "effect": "将知识转化为可落地的行动"
+                }
+            ]
+
+        logs.append(f"【参谋司】生成 {len(canmousi_actions)} 条行动建议")
+
+    except Exception as e:
+        logger.warning(f"[会议知识检索] 参谋司生成行动建议失败: {e}")
+        logs.append(f"【参谋司】生成失败: {e}")
+
+    # ========== 步骤5: 驿传司格式化输出 ==========
+    logs.append("【驿传司】开始格式化输出...")
+
+    final_response = ""
+    try:
+        # 构建驿传司格式化提示
+        yichuansi_prompt = f"""你是八府巡按的驿传司，负责将会议知识检索结果格式化输出给用户。
+
+用户问题：{query}
+会议主题：{topic}
+
+知识汇总：
+{tongzhengsi_description if tongzhengsi_description else '（无相关知识）'}
+
+行动建议：
+{chr(10).join([f"{i+1}. {a.get('title', a.get('description', ''))}" for i, a in enumerate(canmousi_actions[:3])]) if canmousi_actions else '（无建议）'}
+
+输出要求：
+1. 简洁有力，200字以内
+2. 先给出核心结论
+3. 再列出具体行动建议
+3. 用 emoji 增加可读性
+
+格式：
+【结论】...
+【建议】
+1. ...
+2. ...
+3. ..."""
+
+        final_response = await call_llm(
+            system_prompt="你是驿传司，负责格式化输出会议结果。简洁有力，200字以内。",
+            user_prompt=yichuansi_prompt,
+            max_tokens=250,
+            agent_id="yichuansi",
+            temperature=0.5
+        )
+
+        if not final_response:
+            raise ValueError("LLM 返回为空")
+
+        logs.append("【驿传司】格式化完成")
+
+    except Exception as e:
+        logger.warning(f"[会议知识检索] 驿传司格式化失败: {e}")
+        # Fallback 简单格式化
+        final_response = f"【{query}】\n\n"
+        if cards:
+            final_response += f"📚 找到 {len(cards)} 张相关知识卡片\n\n"
+            for card in cards[:3]:
+                final_response += f"• {card.get('title', '')}: {card.get('content', '')[:60]}...\n"
+        else:
+            final_response += "❌ 未找到相关知识卡片，建议补充相关知识后再讨论。\n"
+
+        if canmousi_actions:
+            final_response += "\n【建议行动】\n"
+            for i, action in enumerate(canmousi_actions[:3], 1):
+                title = action.get("title", action.get("description", ""))[:30]
+                final_response += f"{i}. {title}\n"
+
+    return KnowledgeRetrievalResponse(
+        query=query,
+        topic=topic,
+        tongzhengsi_summary=tongzhengsi_summary,
+        canmousi_actions=canmousi_actions,
+        final_response=final_response,
+        cards=cards,
+        sources=sources,
+        agent_logs=logs
+    )
+
+
 # ==================== 人工干预：混合查询（知识卡片 + LLM） ====================
 
 @router.post("/hybrid-question", response_model=HybridQuestionResponse)
