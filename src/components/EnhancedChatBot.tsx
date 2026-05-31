@@ -793,7 +793,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         content: query,
         timestamp: new Date().toISOString(),
         metadata: {
-          image_url: previewUrl || undefined
+          image_url: imgData || undefined
         }
       };
       setMessages(prev => [...prev, userMessage]);

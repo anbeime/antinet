@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   FileText, Upload, Download, X, CheckCircle, XCircle,
   RefreshCw, Filter, Building2, DollarSign, AlertTriangle,
-  Loader, ChevronDown, ChevronUp, Trash2,
+  Loader, ChevronDown, ChevronUp, Trash2, FileSpreadsheet,
   Clock, Tag, ShieldAlert,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -231,6 +231,10 @@ const InvoiceManager: React.FC = () => {
           <button onClick={() => handleExport(false)} disabled={exporting}
             className="flex items-center space-x-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
             <Download className="w-4 h-4" /><span>导出 xlsx</span>
+          </button>
+          <button onClick={() => handleExport(true)} disabled={exporting}
+            className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+            <FileSpreadsheet className="w-4 h-4" /><span>高级导出(公式)</span>
           </button>
           <button onClick={() => { fetchInvoices(); fetchStats(); }}
             className="flex items-center space-x-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 transition-colors">

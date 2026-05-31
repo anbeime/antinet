@@ -914,6 +914,39 @@ useEffect(() => {
     toast.info('会议已停止');
   };
 
+  // 保存会议中提取的卡片到知识库
+  const handleSaveMeetingCard = async (card: { type: string; title: string; content: string }) => {
+    if (!card.title || !card.content) {
+      toast.error('卡片内容不完整');
+      return;
+    }
+    try {
+      const response = await fetch(`${BACKEND_URL}/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: card.type || 'blue',
+          title: card.title,
+          content: card.content,
+          category: card.type === 'red' ? '行动' : card.type === 'yellow' ? '风险' : card.type === 'green' ? '解释' : '事实'
+        })
+      });
+      if (response.ok) {
+        const savedCard = await response.json();
+        toast.success(`卡片「${card.title}」已保存到知识库`);
+        // 将卡片标记为已保存
+        setMeetingCards(prev => prev.map(c => 
+          c.title === card.title && c.content === card.content ? { ...c, saved: true } : c
+        ));
+      } else {
+        toast.error('保存失败');
+      }
+    } catch (err) {
+      console.error('保存卡片失败:', err);
+      toast.error('保存失败');
+    }
+  };
+
   // 重置会议
   const resetMeeting = () => {
     if (abortControllerRef.current) {
@@ -1849,13 +1882,18 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                                ))}
                             </div>
 
-                            {/* 卡片 */}
+                            {/* 卡片 - 可点击保存 */}
                             {round.cards && round.cards.length > 0 && (
                               <div className="grid grid-cols-2 gap-2.5 px-4 pb-4 pt-2 border-t border-gray-700/30 mx-4">
                                 {round.cards.map((card: any, idx: number) => {
                                   const cardType = CARD_TYPE_MAP[card.type as keyof typeof CARD_TYPE_MAP];
                                   return (
-                                    <div key={idx} className={`p-3 rounded-lg ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                                    <div 
+                                      key={idx} 
+                                      onClick={() => handleSaveMeetingCard(card)}
+                                      className={`p-3 rounded-lg cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
+                                      title="点击保存到知识库"
+                                    >
                                       <div className="flex items-center gap-1.5 mb-1">
                                         {cardType?.icon}
                                         <span className="text-white font-medium text-xs">{card.title}</span>
@@ -1920,18 +1958,24 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       </div>
                     )}
 
-                    {/* 核心卡片 */}
+                    {/* 核心卡片 - 可点击保存 */}
                     {meetingCards.length > 0 && (
                       <div className="rounded-lg border border-purple-700/50 p-4" style={{ background: '#0f1729' }}>
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-purple-400">📋</span>
                           <span className="text-purple-400 text-sm font-medium">核心知识卡片</span>
+                          <span className="text-gray-500 text-xs ml-auto">点击保存</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           {meetingCards.slice(0, 4).map((card: MeetingCard, idx: number) => {
                             const cardType = CARD_TYPE_MAP[card.card_type as keyof typeof CARD_TYPE_MAP];
                             return (
-                              <div key={idx} className={`p-2 rounded ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                              <div 
+                                key={idx} 
+                                onClick={() => handleSaveMeetingCard({ type: card.card_type, title: card.title, content: card.content })}
+                                className={`p-2 rounded cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
+                                title="点击保存到知识库"
+                              >
                                 <div className="text-white text-xs font-medium truncate">{card.title}</div>
                                 <div className="text-gray-400 text-[10px] truncate mt-0.5">{card.content}</div>
                               </div>

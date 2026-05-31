@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, X, Maximize2, Minimize2 } from 'lucide-react';
+import { Plus, X, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
@@ -23,6 +23,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [calendarFullscreen, setCalendarFullscreen] = useState(false);
+  const [pageScale, setPageScale] = useState(1);
   const [formData, setFormData] = useState<NewTaskForm>({
     title: '',
     description: '',
@@ -82,6 +83,31 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
             </span>
           </div>
           
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPageScale(s => Math.min(2, s + 0.2))}
+              className="p-1.5 hover:bg-amber-100 rounded transition-colors"
+              title="放大"
+            >
+              <ZoomIn className="w-4 h-4" style={{ color: '#8b7355' }} />
+            </button>
+            <span className="text-xs w-8 text-center" style={{ color: '#8b7355' }}>{Math.round(pageScale * 100)}%</span>
+            <button
+              onClick={() => setPageScale(s => Math.max(0.5, s - 0.2))}
+              className="p-1.5 hover:bg-amber-100 rounded transition-colors"
+              title="缩小"
+            >
+              <ZoomOut className="w-4 h-4" style={{ color: '#8b7355' }} />
+            </button>
+            <button
+              onClick={() => setPageScale(1)}
+              className="p-1.5 hover:bg-amber-100 rounded transition-colors text-xs"
+              style={{ color: '#8b7355' }}
+              title="重置缩放"
+            >
+              1:1
+            </button>
+          </div>
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
@@ -93,14 +119,16 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex">
+      <div className="flex-1 min-h-0 overflow-auto" style={{ touchAction: 'pinch-zoom' }}>
+      <div className="h-full" style={{ transform: `scale(${pageScale})`, transformOrigin: 'top left', width: pageScale < 1 ? `${100 / pageScale}%` : '100%' }}>
+        <div className="h-full flex flex-col lg:flex-row">
         {/* 左侧：任务列表 */}
         <div className="flex-1 overflow-hidden">
           <TaskListView />
         </div>
         
         {/* 右侧：日历面板 */}
-        <div className="w-[400px] border-l overflow-hidden" style={{ borderColor: '#e8ddd0' }}>
+        <div className="w-full lg:w-[400px] border-t lg:border-t-0 lg:border-l overflow-x-auto" style={{ borderColor: '#e8ddd0' }}>
           {calendarFullscreen ? (
             <div className="fixed inset-0 z-50" style={{ backgroundColor: '#faf8f5' }}>
               <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
@@ -137,6 +165,8 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
             </div>
           )}
         </div>
+      </div>
+      </div>
       </div>
 
       {showCreateModal && (

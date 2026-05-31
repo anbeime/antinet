@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="summaryBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="{{BG}}"/>
+      <stop offset="100%" stop-color="{{BG}}" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#summaryBg)"/>
+  <text x="640" y="100" font-family="{{TITLE_FONT}}" font-size="40" font-weight="bold" fill="{{PRIMARY}}" text-anchor="middle">{{TITLE}}</text>
+  <rect x="580" y="116" width="120" height="4" fill="{{ACCENT}}"/>
+  <g transform="translate(200, 180)">
+    {{POINTS}}
+  </g>
+  <rect x="0" y="714" width="1280" height="6" fill="{{ACCENT}}"/>
+</svg>

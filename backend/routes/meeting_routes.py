@@ -876,8 +876,8 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
     # 连续失败计数器
     _consecutive_fails = getattr(_call_genie, '_consecutive_fails', 0)
 
-    # 截断输入
-    truncated_system = system_prompt[:300] if len(system_prompt) > 300 else system_prompt
+    # 截断输入 - 保留更多内容让回复更丰富
+    truncated_system = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
     remaining = max_chars - len(truncated_system)
     truncated_user = user_prompt[:remaining] if len(user_prompt) > remaining else user_prompt
     if len(user_prompt) > remaining:
@@ -1745,6 +1745,11 @@ async def create_meeting_stream(request: MeetingRequest):
         for round_num in range(1, request.rounds + 1):
             theme = themes[min(round_num - 1, len(themes) - 1)]
 
+            # 每轮开始前：如果是第2轮及之后，先让GPU休息一下
+            if round_num > 1:
+                await asyncio.sleep(0.5)  # 轮次间短暂休息
+                _try_cleanup_gpu_memory()  # 尝试清理GPU显存
+
             yield _sse_event("round_start", {
                 "round": round_num,
                 "theme": theme,
@@ -2039,13 +2044,38 @@ async def create_meeting_stream(request: MeetingRequest):
                 saved_agent_cards = []
                 with db.get_connection() as conn:
                     cursor = conn.cursor()
-                    # 去重（根据 title 和 content）
-                    seen = set()
+                    # 智能去重：精确匹配 + 相似内容匹配
+                    seen_titles = set()
+                    seen_contents = set()
                     for card in extracted_cards:
-                        key = f"{card.get('title', '')}|{card.get('content', '')}"
-                        if key in seen:
+                        title = card.get('title', '')[:50]
+                        content = card.get('content', '')[:200]
+                        
+                        # 跳过完全相同的卡片
+                        key = f"{title}|{content}"
+                        if key in seen_titles:
                             continue
-                        seen.add(key)
+                        
+                        # 跳过标题相同或内容相似度>70%的卡片
+                        title_normalized = title.lower().strip()
+                        content_normalized = content.lower().strip()
+                        
+                        is_duplicate = False
+                        for seen_title in seen_titles:
+                            # 标题相似度检查
+                            if len(title_normalized) > 5 and len(seen_title) > 5:
+                                # 简单重叠检查
+                                title_words = set(title_normalized.split())
+                                seen_words = set(seen_title.split())
+                                overlap = len(title_words & seen_words) / max(len(title_words), len(seen_words))
+                                if overlap > 0.7:
+                                    is_duplicate = True
+                                    break
+                        
+                        if is_duplicate:
+                            continue
+                        
+                        seen_titles.add(key)
                         
                         try:
                             cursor.execute("""

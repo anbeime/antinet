@@ -200,6 +200,7 @@ register_router("routes.remotion_routes")  # Remotion 动态演示
 register_router("routes.pdf_edit_routes")  # PDF 文本编辑
 register_router("routes.design_system_routes")  # 统一设计系统
 register_router("routes.ppt_preview_routes")  # PPT 预览（增强版）
+register_router("routes.ppt_native_routes")  # PPT 原生形状生成（SVG→DrawingML）
 
 # ============================================================
 # 9. 初始化各模块的数据库连接
