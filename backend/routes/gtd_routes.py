@@ -83,7 +83,7 @@ async def get_all_tasks():
             SELECT id, title, description, category, priority, due_date, 
                    created_at, updated_at, remind_at, remind_before_minutes, project_id,
                    reminder_enabled, recurrence, recurrence_end_date,
-                   is_completed, completed_at
+                   is_completed, completed_at, assigned_to, assigned_to_name
             FROM gtd_tasks
             ORDER BY is_completed ASC, 
                      CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
@@ -108,7 +108,9 @@ async def get_all_tasks():
                 "recurrence_end_date": row["recurrence_end_date"],
                 "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
                 "completed_at": row["completed_at"],
-                "project_id": row["project_id"]
+                "project_id": row["project_id"],
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"]
             })
         
         conn.close()
@@ -155,7 +157,9 @@ async def get_tasks_by_category(category: str):
                 "recurrence_end_date": row["recurrence_end_date"],
                 "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
                 "completed_at": row["completed_at"],
-                "project_id": row["project_id"]
+                "project_id": row["project_id"],
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"]
             })
         
         conn.close()

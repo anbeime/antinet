@@ -11,6 +11,14 @@ import {
   Database, Link2, Eye, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import type { CardColors } from '@/types/designSystem';
+
+const defaultCardColors: CardColors = {
+  blue: '#3b82f6',
+  green: '#22c55e',
+  yellow: '#eab308',
+  red: '#ef4444',
+};
 
 interface FourColorCard {
   card_id: string;
@@ -59,12 +67,12 @@ const FourColorCardPanel: React.FC = () => {
   const [exportedCards, setExportedCards] = useState<FourColorCard[]>([]);
   const [systemPrompt, setSystemPrompt] = useState('');
 
-  // 颜色映射
-  const colorMap: Record<string, { bg: string; border: string; text: string; label: string }> = {
-    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-300 dark:border-blue-700', text: 'text-blue-600 dark:text-blue-400', label: '事实' },
-    green: { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-300 dark:border-green-700', text: 'text-green-600 dark:text-green-400', label: '解释' },
-    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-300 dark:border-yellow-700', text: 'text-yellow-600 dark:text-yellow-400', label: '风险' },
-    red: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-300 dark:border-red-700', text: 'text-red-600 dark:text-red-400', label: '行动' }
+  // 颜色映射（基于设计系统 CardColors）
+  const colorMap: Record<string, { bg: string; border: string; text: string; label: string; hex: string }> = {
+    blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-300 dark:border-blue-700', text: 'text-blue-600 dark:text-blue-400', label: '事实', hex: defaultCardColors.blue },
+    green: { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-300 dark:border-green-700', text: 'text-green-600 dark:text-green-400', label: '解释', hex: defaultCardColors.green },
+    yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-300 dark:border-yellow-700', text: 'text-yellow-600 dark:text-yellow-400', label: '风险', hex: defaultCardColors.yellow },
+    red: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-300 dark:border-red-700', text: 'text-red-600 dark:text-red-400', label: '行动', hex: defaultCardColors.red }
   };
 
   // 提取四色卡片

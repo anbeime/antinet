@@ -749,12 +749,19 @@ async def generate_ai_cards(
 
 
 @router.post("/toolkit/images-to-pdf")
-async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
-    """图片转 PDF（使用 pypdf + img2pdf 或 PIL）"""
+async def images_to_pdf_compat(
+    files: List[UploadFile] = File(...),
+    ocr: bool = Form(False)
+):
+    """图片转 PDF（使用 pypdf + img2pdf 或 PIL），可选 OCR 提取图片文字加入 PDF"""
     from fastapi import HTTPException
+    from PIL import Image
+    import io as python_io
+    import base64 as b64_module
     
     temp_files = []
     temp_pdfs = []
+    ocr_texts: list[str] = []
     try:
         for f in files:
             ext = os.path.splitext(f.filename)[1].lower()
@@ -762,38 +769,91 @@ async def images_to_pdf_compat(files: List[UploadFile] = File(...)):
                 shutil.copyfileobj(f.file, tmp)
                 temp_files.append(tmp.name)
         
+        # === OCR 阶段：提取每张图片的文字 ===
+        if ocr:
+            for img_path in temp_files:
+                try:
+                    from routes.ocr_routes import _call_genie_vl
+                    img = Image.open(img_path)
+                    buf = python_io.BytesIO()
+                    img.save(buf, format='PNG')
+                    img_b64 = b64_module.b64encode(buf.getvalue()).decode('utf-8')
+                    text = await _call_genie_vl(img_b64, "请识别图片中的所有文字内容，按原格式输出", task_id="img2pdf_ocr")
+                    if text:
+                        ocr_texts.append(text.strip())
+                    else:
+                        ocr_texts.append("[OCR 未识别到文字]")
+                except Exception as e:
+                    logger.warning(f"OCR 识别失败 ({img_path}): {e}")
+                    ocr_texts.append("[OCR 识别失败]")
+        
         output_pdf = tempfile.mktemp(suffix='.pdf')
         
-        # 尝试使用 PIL + img2pdf
+        # 尝试使用 img2pdf
         try:
             from img2pdf import convert
             convert(temp_files, outputfile=output_pdf)
-            return FileResponse(output_pdf, media_type="application/pdf")
         except ImportError:
             pass
         except Exception as e:
             logger.warning(f"img2pdf失败，回退到PIL: {e}")
         
-        # 回退：使用 PIL + pypdf
-        from pypdf import PdfWriter, PdfReader
-        from PIL import Image
-        writer = PdfWriter()
+        # 如果 img2pdf 失败或没生成文件，用 PIL + pypdf
+        if not os.path.exists(output_pdf) or os.path.getsize(output_pdf) == 0:
+            from pypdf import PdfWriter, PdfReader
+            writer = PdfWriter()
+            for img_path in temp_files:
+                img = Image.open(img_path)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                img_pdf = tempfile.mktemp(suffix='.pdf')
+                img.save(img_pdf, 'PDF', resolution=100.0)
+                temp_pdfs.append(img_pdf)
+                reader = PdfReader(img_pdf)
+                for page in reader.pages:
+                    writer.add_page(page)
+            writer.write(output_pdf)
         
-        for img_path in temp_files:
-            img = Image.open(img_path)
-            # 转换为RGB
-            if img.mode != 'RGB':
-                img = img.convert('RGB')
-            # 保存为临时PDF页
-            img_pdf = tempfile.mktemp(suffix='.pdf')
-            img.save(img_pdf, 'PDF', resolution=100.0)
-            temp_pdfs.append(img_pdf)
-            # 读取并添加到writer
-            reader = PdfReader(img_pdf)
+        # === 附加 OCR 文本页 ===
+        if ocr and ocr_texts:
+            from pypdf import PdfWriter, PdfReader
+            from reportlab.pdfgen import canvas
+            from routes.card_pdf_routes import _ensure_chinese_font
+            
+            font_name = _ensure_chinese_font()
+            text_pdf = tempfile.mktemp(suffix='.pdf')
+            c = canvas.Canvas(text_pdf)
+            width, height = 595, 842  # A4
+            
+            for i, text in enumerate(ocr_texts):
+                c.setPageSize((width, height))
+                c.setFont(font_name, 11)
+                c.drawString(50, height - 50, f"--- OCR 识别结果: 图片 {i+1} ---")
+                c.setFont(font_name, 10)
+                y = height - 80
+                for line in text.split('\n'):
+                    if y < 50:
+                        c.showPage()
+                        c.setPageSize((width, height))
+                        c.setFont(font_name, 10)
+                        y = height - 50
+                    c.drawString(50, y, line[:100])  # 截断超长行
+                    y -= 16
+                c.showPage()
+            
+            c.save()
+            
+            # 合并
+            reader = PdfReader(output_pdf)
+            text_reader = PdfReader(text_pdf)
+            writer = PdfWriter()
             for page in reader.pages:
                 writer.add_page(page)
+            for page in text_reader.pages:
+                writer.add_page(page)
+            writer.write(output_pdf)
+            temp_pdfs.append(text_pdf)
         
-        writer.write(output_pdf)
         return FileResponse(output_pdf, media_type="application/pdf")
     except Exception as e:
         logger.error(f"图片转PDF失败: {e}")

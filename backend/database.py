@@ -166,7 +166,9 @@ class DatabaseManager:
                     recurrence_end_date TEXT,
                     is_completed BOOLEAN DEFAULT 0,
                     completed_at TEXT,
-                    project_id INTEGER
+                    project_id INTEGER,
+                    assigned_to INTEGER,
+                    assigned_to_name TEXT
                 )
             """)
             
@@ -197,6 +199,14 @@ class DatabaseManager:
                 pass
             try:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN recurrence_end_date TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN assigned_to INTEGER")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN assigned_to_name TEXT")
             except:
                 pass
             try:
@@ -602,7 +612,50 @@ class DatabaseManager:
 
             conn.commit()
             logger.info("[GraphState] 知识图谱状态表初始化完成")
-            conn.commit()
+            # 16. 发票表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                file_path TEXT,
+                file_size INTEGER,
+                invoice_number TEXT,
+                invoice_code TEXT,
+                invoice_date TEXT,
+                seller_name TEXT,
+                seller_tax_id TEXT,
+                buyer_name TEXT,
+                buyer_tax_id TEXT,
+                total_amount REAL,
+                amount REAL,
+                tax_amount REAL,
+                is_excluded INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                error_message TEXT,
+                engine_used TEXT,
+                raw_text TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # 17. 发票明细表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS invoice_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id INTEGER NOT NULL,
+                name TEXT,
+                specification TEXT,
+                unit TEXT,
+                quantity REAL,
+                unit_price REAL,
+                amount REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.commit()
 
     def insert_default_data(self):
         """插入默认的硬编码数据"""

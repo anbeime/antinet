@@ -115,6 +115,7 @@ const PDFAnalysis: React.FC = () => {
   const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
+  const [ocrEnabled, setOcrEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 格式转换相关状态
@@ -529,6 +530,7 @@ const PDFAnalysis: React.FC = () => {
     uploadedFiles.forEach(file => {
       formData.append('files', file);
     });
+    formData.append('ocr', String(ocrEnabled));
 
     try {
       const response = await fetch(`${API_BASE}/api/pdf/toolkit/images-to-pdf`, {
@@ -1089,6 +1091,8 @@ const PDFAnalysis: React.FC = () => {
                   const url = URL.createObjectURL(blob);
                   setConvertedPdfUrl(url);
                   
+                  addConversionRecord(pptFile.name, 'pdf', 'completed', pptFile.size, undefined, url);
+                  
                   // 下载
                   const a = document.createElement('a');
                   a.href = url;
@@ -1105,6 +1109,7 @@ const PDFAnalysis: React.FC = () => {
                   });
                 } else {
                   const error = await response.json();
+                  addConversionRecord(pptFile.name, 'pdf', 'error', pptFile.size, error.detail || '未知错误');
                   toast.error(`转换失败: ${error.detail || '未知错误'}`);
                 }
               } catch (error) {
@@ -1166,7 +1171,7 @@ const PDFAnalysis: React.FC = () => {
             <div className="text-center py-12">
               <Clock className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
               <h4 className="text-lg font-medium text-gray-500 dark:text-gray-400 mb-2">暂无转换记录</h4>
-              <p className="text-sm text-gray-400 dark:text-gray-500">使用"转Word"或"转Excel"功能后，记录将显示在这里</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">使用"转Word"、"转Excel"或"PPT转PDF"功能后，记录将显示在这里</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1182,6 +1187,10 @@ const PDFAnalysis: React.FC = () => {
                       <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                         <FileType className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                       </div>
+                    ) : record.targetFormat === 'pdf' ? (
+                      <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                        <FileDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      </div>
                     ) : (
                       <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                         <FileSpreadsheet className="w-5 h-5 text-green-600 dark:text-green-400" />
@@ -1194,7 +1203,7 @@ const PDFAnalysis: React.FC = () => {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                          title="点击查看原文档"
+                          title="点击查看"
                         >
                           {record.fileName}
                         </a>
@@ -1202,13 +1211,45 @@ const PDFAnalysis: React.FC = () => {
                         <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
                       )}
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        转换为 {record.targetFormat === 'word' ? 'Word' : 'Excel'} · {record.createdAt.toLocaleString()}
+                        转换为 {record.targetFormat === 'word' ? 'Word' : record.targetFormat === 'pdf' ? 'PDF' : 'Excel'} · {record.createdAt.toLocaleString()}
                       </p>
                     </div>
                   </div>
-                  <div>
+                  <div className="flex items-center gap-2">
                     {record.status === 'completed' ? (
-                      <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
+                      <>
+                        {record.fileDataUrl && (
+                          <>
+                            <a
+                              href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:underline whitespace-nowrap"
+                              title="在线查看"
+                            >
+                              <Eye className="w-3 h-3 inline mr-0.5" />
+                              查看
+                            </a>
+                            <button
+                              onClick={() => {
+                                const a = document.createElement('a');
+                                a.href = record.fileDataUrl!;
+                                const ext = record.targetFormat === 'word' ? '.docx' : record.targetFormat === 'excel' ? '.xlsx' : '.pdf';
+                                a.download = record.fileName.replace(/\.\w+$/, ext);
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                              }}
+                              className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:underline whitespace-nowrap"
+                              title="下载文件"
+                            >
+                              <Download className="w-3 h-3 inline mr-0.5" />
+                              下载
+                            </button>
+                          </>
+                        )}
+                        <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
+                      </>
                     ) : (
                       <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 cursor-help" title={record.errorMessage || '失败'}>
                         失败
@@ -1379,6 +1420,13 @@ const PDFAnalysis: React.FC = () => {
                         </button>
                       </div>
                     ))}
+                    {activeFeature === 'fromImages' && (
+                      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer select-none pt-1">
+                        <input type="checkbox" checked={ocrEnabled} onChange={e => setOcrEnabled(e.target.checked)}
+                          className="rounded border-gray-300 dark:border-gray-600 text-teal-500 focus:ring-teal-400" />
+                        <span>启用 OCR 文字识别（提取图片文字，附加到 PDF 末尾）</span>
+                      </label>
+                    )}
                   </div>
                 )}
 
@@ -1459,16 +1507,18 @@ const PDFAnalysis: React.FC = () => {
                           if (response.ok) {
                             const blob = await response.blob();
                             const url = URL.createObjectURL(blob);
+                            setConvertedPdfUrl(url);
+                            addConversionRecord(pptFile.name, 'pdf', 'completed', pptFile.size, undefined, url);
                             const a = document.createElement('a');
                             a.href = url;
                             a.download = pptFile.name.replace(/\.(pptx?)$/, '.pdf');
                             document.body.appendChild(a);
                             a.click();
                             document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
                             toast.success('PDF 转换成功！');
                           } else {
                             const error = await response.json();
+                            addConversionRecord(pptFile.name, 'pdf', 'error', pptFile.size, error.detail || '未知错误');
                             toast.error(`转换失败: ${error.detail || '未知错误'}`);
                           }
                         } catch (error) {
@@ -1880,10 +1930,21 @@ const PDFAnalysis: React.FC = () => {
               {/* 转换记录 - 右侧显示记录列表 */}
               {activeFeature === 'history' && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                  <h3 className="text-xl font-semibold mb-4 flex items-center">
-                    <History className="w-5 h-5 mr-2 text-gray-500" />
-                    转换历史记录
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-semibold flex items-center">
+                      <History className="w-5 h-5 mr-2 text-gray-500" />
+                      转换历史记录
+                    </h3>
+                    {conversionRecords.length > 0 && (
+                      <button
+                        onClick={clearConversionRecords}
+                        className="text-sm text-red-500 hover:text-red-600 flex items-center space-x-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>清空记录</span>
+                      </button>
+                    )}
+                  </div>
 
                   {conversionRecords.length > 0 ? (
                     <div className="space-y-3">
@@ -1899,21 +1960,69 @@ const PDFAnalysis: React.FC = () => {
                               <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                                 <FileType className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                               </div>
+                            ) : record.targetFormat === 'pdf' ? (
+                              <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                <FileDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                              </div>
                             ) : (
                               <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
                                 <FileSpreadsheet className="w-5 h-5 text-green-600 dark:text-green-400" />
                               </div>
                             )}
                             <div>
-                              <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                              {record.fileDataUrl ? (
+                                <a
+                                  href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
+                                  title="点击查看"
+                                >
+                                  {record.fileName}
+                                </a>
+                              ) : (
+                                <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
+                              )}
                               <p className="text-xs text-gray-500 dark:text-gray-400">
-                                转换为 {record.targetFormat === 'word' ? 'Word' : 'Excel'} · {record.createdAt.toLocaleString()}
+                                转换为 {record.targetFormat === 'word' ? 'Word' : record.targetFormat === 'pdf' ? 'PDF' : 'Excel'} · {record.createdAt.toLocaleString()}
                               </p>
                             </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right flex items-center gap-1.5">
                             {record.status === 'completed' ? (
-                              <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
+                              <>
+                                {record.fileDataUrl && (
+                                  <>
+                                    <a
+                                      href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:underline whitespace-nowrap"
+                                      title="在线查看"
+                                    >
+                                      <Eye className="w-3 h-3 inline mr-0.5" />
+                                      查看
+                                    </a>
+                                    <button
+                                      onClick={() => {
+                                        const a = document.createElement('a');
+                                        a.href = record.fileDataUrl!;
+                                        const ext = record.targetFormat === 'word' ? '.docx' : record.targetFormat === 'excel' ? '.xlsx' : '.pdf';
+                                        a.download = record.fileName.replace(/\.\w+$/, ext);
+                                        document.body.appendChild(a);
+                                        a.click();
+                                        document.body.removeChild(a);
+                                      }}
+                                      className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:underline whitespace-nowrap"
+                                      title="下载文件"
+                                    >
+                                      <Download className="w-3 h-3 inline mr-0.5" />
+                                      下载
+                                    </button>
+                                  </>
+                                )}
+                                <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
+                              </>
                             ) : (
                               <div>
                                 <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
@@ -1947,28 +2056,28 @@ const PDFAnalysis: React.FC = () => {
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
-              onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+              onClick={() => window.open('/knowledge-graph', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
               <History className="w-4 h-4 text-green-600" />
               <span className="text-green-700 dark:text-green-400">知识库图谱工作台</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+              onClick={() => window.open('/pdf-viewer', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
             >
               <FileText className="w-4 h-4 text-red-600" />
               <span className="text-red-700 dark:text-red-400">PDF查看器</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+              onClick={() => window.open('/ppt-viewer', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
             >
               <Presentation className="w-4 h-4 text-orange-600" />
               <span className="text-orange-700 dark:text-orange-400">PPT演示</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
+              onClick={() => window.open('/excel-analysis', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
             >
               <BarChart3 className="w-4 h-4 text-blue-600" />

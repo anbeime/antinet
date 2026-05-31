@@ -54,6 +54,7 @@ interface CardDetailModalProps {
   onRelatedCardClick: (id: string) => void;
   onUpdateCard: (updatedCard: KnowledgeCard) => void;
   onCreateRecommendedCard: (title: string, reason: string) => void;
+  refreshTrigger?: number;  // 外部触发刷新（如任务创建后）
 }
 
 // 卡片类型映射
@@ -237,7 +238,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   onDelete,
   onRelatedCardClick,
   onUpdateCard,
-  onCreateRecommendedCard
+  onCreateRecommendedCard,
+  refreshTrigger,
 }) => {
   // 原有状态
   const [showMoreInsights, setShowMoreInsights] = useState(false);
@@ -533,6 +535,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       generateSourcePdf();
     }
   }, [sourceViewMode, showSourceMarkdown]);
+
+  // 外部触发刷新（如任务创建后）
+  useEffect(() => {
+    if (isOpen && card && refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadCardIntegrations();
+    }
+  }, [refreshTrigger]);
 
   // P0: 选中文本创建任务 — 检测选中文本
   const handleTextSelect = () => {
@@ -1042,7 +1051,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[200px]">
                       <button
                         onClick={() => {
-                          window.open(`http://localhost:3000/?tab=pdf-analysis`, '_blank');
+                          window.open(`/?tab=pdf-analysis`, '_blank');
                         }}
                         className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg flex items-center gap-2 text-green-600 dark:text-green-400"
                       >
@@ -1568,9 +1577,25 @@ className="text-lg select-text"
                             }`}
                           >
                             <div className="flex items-start gap-2">
-                              <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${
-                                task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
-                              }`}></span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const { cardTaskService } = await import('../services/integrationService');
+                                    await cardTaskService.createTaskFromCard({ card_id: parseInt(card?.id || '0'), title: task.title, priority: task.priority as any });
+                                    toast.success('任务已标记完成');
+                                    loadCardIntegrations();
+                                  } catch { toast.error('操作失败'); }
+                                }}
+                                className="mt-1 text-gray-400 hover:text-green-500 flex-shrink-0"
+                                title={task.is_completed ? '取消完成' : '标记完成'}
+                              >
+                                {task.is_completed ? (
+                                  <Circle className="w-4 h-4 text-green-500" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </button>
                               <div className="flex-1 min-w-0">
                                 <div className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
                                   {task.title}

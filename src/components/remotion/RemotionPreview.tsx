@@ -4,6 +4,7 @@ import {
   Download, Settings, Loader, Film,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import type { CardColors } from '@/types/designSystem';
 
 interface SlideData {
   id: string;
@@ -20,7 +21,7 @@ interface RemotionPreviewProps {
   topic: string;
 }
 
-const cardColors = {
+const cardColors: Record<string, string> = {
   blue: '#3b82f6',
   green: '#22c55e',
   yellow: '#eab308',

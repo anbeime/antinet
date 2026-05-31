@@ -2,7 +2,7 @@
 // 知识图谱可视化组件 — 整合双向链接图谱数据源
 // 增强功能：节点点击跳转卡片、按专题过滤、链接类型可视化
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as echarts from 'echarts';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -96,6 +96,36 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   const [projects, setProjects] = useState<Array<{id: number; name: string; color: string}>>([]);
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | null>(filterProjectId || null);
   const [isFreeDragMode, setIsFreeDragMode] = useState(false);  // 自由拖拽模式
+
+  // 按专题过滤 + 移除孤立节点（共享给渲染和空状态判断）
+  const filteredGraph = useMemo(() => {
+    if (!graphData || !graphData.nodes) return { nodes: [], edges: [] };
+
+    if (graphData.nodes.length === 0) return { nodes: [], edges: [] };
+
+    let filteredNodes = graphData.nodes;
+    let filteredEdges = graphData.edges;
+
+    if (selectedProjectFilter) {
+      filteredNodes = graphData.nodes.filter(node =>
+        node.project_id === selectedProjectFilter
+      );
+
+      const nodeIdsWithEdges = new Set<string>();
+      filteredEdges = graphData.edges.filter(e => {
+        const hasValidNodes = filteredNodes.some(n => n.id === e.source) && filteredNodes.some(n => n.id === e.target);
+        if (hasValidNodes) {
+          nodeIdsWithEdges.add(e.source);
+          nodeIdsWithEdges.add(e.target);
+        }
+        return hasValidNodes;
+      });
+
+      filteredNodes = filteredNodes.filter(n => nodeIdsWithEdges.has(n.id));
+    }
+
+    return { nodes: filteredNodes, edges: filteredEdges };
+  }, [graphData, selectedProjectFilter]);
 
   // 卡片类型颜色映射
   const typeColors = {
@@ -224,32 +254,11 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   const renderKnowledgeGraph = () => {
     if (!chartInstance.current || !graphData) return;
 
-    // 按专题过滤
-    let filteredNodes = graphData.nodes;
-    let filteredEdges = graphData.edges;
+    const graph = filteredGraph!;
+    const displayNodes = graph.nodes;
+    const displayEdges = graph.edges;
 
-    if (selectedProjectFilter) {
-      // 只包含属于该专题的节点，不包含无专题的节点（会导致图谱散乱）
-      filteredNodes = graphData.nodes.filter(node => 
-        node.project_id === selectedProjectFilter
-      );
-      
-      // 进一步过滤：只保留有关联边的节点（避免孤立节点）
-      const nodeIdsWithEdges = new Set<string>();
-      filteredEdges = graphData.edges.filter(e => {
-        const hasValidNodes = filteredNodes.some(n => n.id === e.source) && filteredNodes.some(n => n.id === e.target);
-        if (hasValidNodes) {
-          nodeIdsWithEdges.add(e.source);
-          nodeIdsWithEdges.add(e.target);
-        }
-        return hasValidNodes;
-      });
-      
-      // 只保留有关联边的节点
-      filteredNodes = filteredNodes.filter(n => nodeIdsWithEdges.has(n.id));
-    }
-
-    const nodes = filteredNodes.map(node => {
+    const nodes = displayNodes.map(node => {
       const isHighlighted = highlightedNodes.size === 0 || highlightedNodes.has(node.id);
       return {
         id: node.id,
@@ -270,7 +279,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
       };
     });
 
-    const links = filteredEdges.map(edge => {
+    const links = displayEdges.map(edge => {
       const linkTypeKey = edge.link_type || edge.type || 'manual';
       return {
         source: edge.source,
@@ -294,7 +303,7 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         text: selectedProjectFilter 
           ? `知识图谱 — ${projects.find(p => p.id === selectedProjectFilter)?.name || '专题过滤'}`
           : '知识图谱',
-        subtext: `${filteredNodes.length} 个节点, ${filteredEdges.length} 条边`,
+        subtext: `${displayNodes.length} 个节点, ${displayEdges.length} 条边`,
         left: 'center',
         top: 10
       },
@@ -335,11 +344,12 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         lineStyle: { color: 'source', curveness: 0.3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
         force: isFreeDragMode ? undefined : {
-          // 自适应力导向布局参数：节点少时降低排斥力，避免散开
-          repulsion: Math.max(200, Math.min(800, nodes.length * 50)),
-          gravity: nodes.length > 10 ? 0.02 : 0.1,  // 节点少时增加中心引力
-          edgeLength: [80, 200],
-          layoutAnimation: true
+          // 自适应力导向布局：节点少时降低排斥力 + 增强引力，避免散开
+          repulsion: Math.max(100, Math.min(600, displayNodes.length * 30)),
+          gravity: displayNodes.length > 15 ? 0.03 : displayNodes.length > 5 ? 0.08 : 0.2,
+          edgeLength: [60, 150],
+          layoutAnimation: true,
+          friction: 0.1
         }
       }]
     };
@@ -647,7 +657,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
             </div>
           )}
           {/* 过滤后无数据状态 */}
-          {!loading && (graphData || backlinkGraphData) && ((dataSource === 'knowledge' && (!graphData?.nodes || graphData.nodes.length === 0)) || (dataSource === 'backlinks' && (!backlinkGraphData?.nodes || backlinkGraphData.nodes.length === 0))) && (
+          {!loading && (graphData || backlinkGraphData) && (
+            (dataSource === 'knowledge' && (!filteredGraph || filteredGraph.nodes.length === 0)) ||
+            (dataSource === 'backlinks' && (!backlinkGraphData?.nodes || backlinkGraphData.nodes.length === 0))
+          ) && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white dark:bg-gray-800 rounded-lg">
               <Network className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
               <p className="text-base font-medium text-gray-500 dark:text-gray-400 mb-1">

@@ -1261,7 +1261,11 @@ async def get_project_tasks(project_id: int):
                 "priority": row["priority"],
                 "due_date": row["due_date"],
                 "created_at": row["created_at"],
-                "updated_at": row["updated_at"]
+                "updated_at": row["updated_at"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"],
+                "project_id": row["project_id"]
             })
         return tasks
     except HTTPException:
@@ -1291,9 +1295,9 @@ async def add_task_to_project(project_id: int, task_id: int):
         
         cursor.execute("""
             UPDATE gtd_tasks 
-            SET source_type = 'project', source_id = ?
+            SET source_type = 'project', source_id = ?, project_id = ?
             WHERE id = ?
-        """, (project_id, task_id))
+        """, (project_id, project_id, task_id))
         conn.commit()
         conn.close()
         
@@ -1425,6 +1429,16 @@ async def convert_card_to_task(card_id: int):
             now
         ))
         task_id = cursor.lastrowid
+        
+        # 创建卡片-任务关联（与 integration_routes 保持一致，使 CardDetailModal 的任务面板可查出）
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO card_task_relations (card_id, task_id, relation_type)
+                VALUES (?, ?, 'extracted_from')
+            """, (card_id, task_id))
+        except Exception:
+            pass  # 关联失败不影响任务创建
+        
         conn.commit()
         conn.close()
         

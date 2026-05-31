@@ -8,6 +8,7 @@
 import os
 import sys
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # ============================================================
 # 1. 路径设置（必须在导入之前）
@@ -64,10 +65,31 @@ from conf.app import AppConfig
 
 app_config = AppConfig()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI 生命周期管理（替代已弃用的 on_event）"""
+    # 启动时
+    try:
+        from services.reminder_service import start_reminder_service
+        start_reminder_service()
+        print("[OK] 提醒服务已启动")
+    except Exception as e:
+        print(f"[WARN] 提醒服务启动失败: {e}")
+    yield
+    # 关闭时
+    try:
+        from services.reminder_service import stop_reminder_service
+        stop_reminder_service()
+        print("[OK] 提醒服务已停止")
+    except Exception as e:
+        print(f"[WARN] 提醒服务停止失败: {e}")
+
 app = FastAPI(
     title=app_config.APP_NAME,
     version=app_config.APP_VERSION,
     description=app_config.APP_DESCRIPTION,
+    lifespan=lifespan,
+    max_form_memory_size=app_config.MAX_UPLOAD_SIZE,
 )
 
 # ============================================================
@@ -104,28 +126,8 @@ print("[OK] AI 服务工厂已初始化")
 # ============================================================
 
 # ============================================================
-# 7. FastAPI 启动/关闭事件（需要在事件循环启动后才能执行的任务）
+# 7. 提醒服务已通过 lifespan 事件管理（见上方 app = FastAPI(lifespan=...) 定义）
 # ============================================================
-@app.on_event("startup")
-async def on_startup():
-    """FastAPI 启动时执行（此时事件循环已存在）"""
-    # 启动提醒服务（AsyncIOScheduler 需要事件循环）
-    try:
-        from services.reminder_service import start_reminder_service
-        start_reminder_service()
-        print("[OK] 提醒服务已启动")
-    except Exception as e:
-        print(f"[WARN] 提醒服务启动失败: {e}")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    """FastAPI 关闭时执行"""
-    try:
-        from services.reminder_service import stop_reminder_service
-        stop_reminder_service()
-        print("[OK] 提醒服务已停止")
-    except Exception as e:
-        print(f"[WARN] 提醒服务停止失败: {e}")
 
 # ============================================================
 # 8. 路由注册（简化版）
@@ -172,10 +174,12 @@ register_router("routes.backlink_routes")
 register_router("routes.integration_routes")
 register_router("routes.moc_routes")
 register_router("routes.vision_routes")
+register_router("routes.invoice_routes")
 
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
 register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同
+register_router("routes.evolving_chat_routes")  # 自进化聊天
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
 register_router("routes.card_pdf_routes")
@@ -193,6 +197,10 @@ register_router("routes.report_routes")
 register_router("routes.collaboration_routes")  # 实时协作 (WebSocket + REST)
 register_router("routes.mindmap_routes")  # 思维导图
 register_router("routes.remotion_routes")  # Remotion 动态演示
+register_router("routes.pdf_edit_routes")  # PDF 文本编辑
+register_router("routes.design_system_routes")  # 统一设计系统
+register_router("routes.ppt_preview_routes")  # PPT 预览（增强版）
+register_router("routes.ppt_native_routes")  # PPT 原生形状生成（SVG→DrawingML）
 
 # ============================================================
 # 9. 初始化各模块的数据库连接
@@ -256,6 +264,13 @@ except Exception as e:
     print(f"[WARN] ppt_routes: {e}")
 
 try:
+    from routes import invoice_routes
+    invoice_routes.set_db_manager(db_manager)
+    print("[OK] invoice_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] invoice_routes: {e}")
+
+try:
     from routes import vector_search
     vector_search.set_db_manager(db_manager)
     vector_search.init_on_startup()
@@ -263,13 +278,6 @@ try:
     print("[OK] vector_search 数据库已连接，embedding 已初始化")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
-
-try:
-    from routes import ppt_routes
-    ppt_routes.set_db_manager(db_manager)
-    print("[OK] ppt_routes 数据库已连接")
-except Exception as e:
-    print(f"[WARN] ppt_routes: {e}")
 
 try:
     from routes import collaboration_routes

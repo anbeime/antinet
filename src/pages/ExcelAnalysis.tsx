@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus, History } from 'lucide-react';
+import { FileSpreadsheet, Upload, BarChart3, Table, Download, Calculator, TrendingUp, Loader, FileText, Presentation, Edit3, Save, Plus, History, Receipt } from 'lucide-react';
+import InvoiceManager from '@/components/InvoiceManager';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -32,13 +33,33 @@ const ExcelAnalysis: React.FC = () => {
   const [columns, setColumns] = useState<Column[]>([]);
   const [stats, setStats] = useState<AnalysisStats | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor'>('analysis');
+  const [activeFeature, setActiveFeature] = useState<'analysis' | 'editor' | 'invoice'>('analysis');
+  const [invoiceTabKey] = useState(0);
 
-  // 检查是否需要直接打开编辑器
+  // 检查是否需要直接打开编辑器或发票管理
   useEffect(() => {
+    const savedData = localStorage.getItem('excelEditorData');
     if (localStorage.getItem('openExcelEditor') === 'true') {
       localStorage.removeItem('openExcelEditor');
       setActiveFeature('editor');
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setEditData(parsed);
+          }
+        } catch {}
+        localStorage.removeItem('excelEditorData');
+      }
+    }
+    if (localStorage.getItem('openInvoiceManager') === 'true') {
+      localStorage.removeItem('openInvoiceManager');
+      setActiveFeature('invoice');
+    }
+    // URL hash detection: ?tab=invoice
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'invoice') {
+      setActiveFeature('invoice');
     }
   }, []);
 
@@ -244,10 +265,23 @@ const ExcelAnalysis: React.FC = () => {
             <Edit3 className="w-4 h-4 inline mr-2" />
             在线编辑
           </button>
+          <button
+            onClick={() => setActiveFeature('invoice')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeFeature === 'invoice' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+            }`}
+          >
+            <Receipt className="w-4 h-4 inline mr-2" />
+            发票管理
+          </button>
         </div>
 
         {/* 功能内容 */}
-        {activeFeature === 'analysis' ? (
+        {activeFeature === 'invoice' ? (
+          <InvoiceManager key={invoiceTabKey} />
+        ) : activeFeature === 'analysis' ? (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Left Panel */}
           <motion.div 
@@ -336,28 +370,28 @@ const ExcelAnalysis: React.FC = () => {
               </h3>
               <div className="space-y-2">
 <button 
-                  onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+                  onClick={() => window.open('/knowledge-graph', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <History className="w-4 h-4 text-green-500" />
                   <span>知识库图谱工作台</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+                  onClick={() => window.open('/pdf-viewer', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <FileText className="w-4 h-4 text-red-500" />
                   <span>PDF查看器</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+                  onClick={() => window.open('/ppt-viewer', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <Presentation className="w-4 h-4 text-orange-500" />
                   <span>PPT演示</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+                  onClick={() => window.open('/knowledge-graph', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="currentColor">
@@ -366,7 +400,7 @@ const ExcelAnalysis: React.FC = () => {
                   <span>知识图谱</span>
                 </button>
                 <button 
-                  onClick={() => window.open('http://localhost:3000/mindmap', '_blank')}
+                  onClick={() => window.open('/mindmap', '_blank')}
                   className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="currentColor">

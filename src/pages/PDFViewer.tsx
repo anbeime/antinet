@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Upload, Download, ZoomIn, ZoomOut,
-  ChevronLeft, ChevronRight, Hash, Edit3, Eye, X
+  ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
+  Maximize2, Minimize2, AlertCircle, Bookmark, Plus, Save, Trash2
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';
@@ -9,455 +10,579 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 import * as pdfjsLib from 'pdfjs-dist';
 
 const API_BASE = getApiBaseUrl();
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
 
-// 使用本地安装的 pdfjs-dist（支持离线使用）
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
-).toString();
+const CARD_COLORS: Record<string, string> = {
+  blue: 'border-l-blue-500 bg-blue-50 dark:bg-blue-900/20',
+  green: 'border-l-green-500 bg-green-50 dark:bg-green-900/20',
+  yellow: 'border-l-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
+  red: 'border-l-red-500 bg-red-50 dark:bg-red-900/20',
+};
+const CARD_TYPE_LABELS: Record<string, string> = { blue: '📋 事实', green: '🔗 关联', yellow: '⚠️ 风险', red: '🎯 行动' };
 
-interface PDFViewerProps {
-  fileUrl?: string;
-}
-
-const PDFViewer: React.FC<PDFViewerProps> = ({ fileUrl: propFileUrl }) => {
+const PDFViewer: React.FC = () => {
   useTheme();
   const [searchParams] = useSearchParams();
-  const urlParam = searchParams.get('url');
-  const fileUrl = propFileUrl || urlParam || undefined;
+
+  // PDF 原生渲染
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [fileName, setFileName] = useState('');
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [fileName, setFileName] = useState('');
-  const [loadError, setLoadError] = useState<string>('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfjsRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
-  const [showMdEditor, setShowMdEditor] = useState(false);
-  const [mdInput, setMdInput] = useState('# 文档标题\n\n在此输入 Markdown 内容...');
-  const [exportTheme, setExportTheme] = useState('chinese-red');
-  const [converting, setConverting] = useState(false);
-  const [previewHtml, setPreviewHtml] = useState('');
-  const [previewTitle, setPreviewTitle] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
 
-  // 使用本地安装的 pdfjs-dist（离线可用）
-  const loadPDFJS = async (): Promise<any> => {
+  // 文本项位置存储（用于导出编辑后的 PDF）
+  const textItemsByPageRef = useRef<Map<number, any[]>>(new Map());
+  const originalPageTextsRef = useRef<string[]>([]);
+
+  // 源文件查看器（跟 CardDetailModal 一致）
+  const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');
+  const [sourcePdfUrl, setSourcePdfUrl] = useState('');
+  const [sourcePdfGenerating, setSourcePdfGenerating] = useState(false);
+  const [sourcePdfError, setSourcePdfError] = useState('');
+  const [sourceFullscreen, setSourceFullscreen] = useState(false);
+
+  // 卡片编辑
+  const [cardTitle, setCardTitle] = useState('');
+  const [cardContent, setCardContent] = useState('');
+  const [cardType, setCardType] = useState('blue');
+  const [exportTheme, setExportTheme] = useState('chinese-red');
+
+  // 卡片侧边栏
+  const [showCardPanel, setShowCardPanel] = useState(false);
+  const [cards, setCards] = useState<any[]>([]);
+  const [cardsLoading, setCardsLoading] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<any | null>(null);
+  const [isNewCard, setIsNewCard] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [cardFilter, setCardFilter] = useState('');
+
+  // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
+  const [activeView, setActiveView] = useState<'pdf' | 'source'>('pdf');
+
+  const loadPDFJS = async () => {
     if (pdfjsRef.current) return pdfjsRef.current;
     pdfjsRef.current = pdfjsLib;
     return pdfjsLib;
   };
 
-  // Load PDF from URL if provided
+  // ========== PDF 加载 ==========
   useEffect(() => {
-    if (fileUrl) {
-      loadPDFFromURL(fileUrl);
-    }
-  }, [fileUrl]);
+    const urlParam = searchParams.get('url');
+    if (urlParam) loadPDFFromURL(urlParam);
+  }, []);
 
   const loadPDFFromURL = async (url: string) => {
-    setIsLoading(true);
-    setLoadError('');
+    setPdfLoading(true);
+    setPdfError('');
+    setPdfUrl(url);
     try {
-      // 从 URL 提取文件名
       try {
         const urlObj = new URL(url, window.location.origin);
         const pathParts = urlObj.pathname.split('/');
         const rawName = decodeURIComponent(pathParts[pathParts.length - 1] || '');
         setFileName(rawName.replace(/^[\w-]+-/, '') || 'PDF文档');
-      } catch { /* ignore */ }
-
-      const pdfjsLib = await loadPDFJS();
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}: 无法获取文件`);
-      const arrayBuffer = await response.arrayBuffer();
-      const data = new Uint8Array(arrayBuffer);
-      
-      // PDF.js 3.x: getDocument 返回 PDFDocumentLoadingTask，需通过 .promise 获取 PDFDocumentProxy
-      const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
-      const pdf = await loadingTask.promise;
-
-      if (!pdf || typeof pdf.getPage !== 'function') {
-        throw new Error('PDF 文档解析失败：返回了无效的文档对象');
-      }
-
+      } catch {}
+      const pjs = await loadPDFJS();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ab = await res.arrayBuffer();
+      const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
-    } catch (error: any) {
-      console.error('加载PDF失败:', error);
-      setLoadError(error.message || '加载PDF失败');
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e: any) {
+      setPdfError(e.message || '加载PDF失败');
+    } finally { setPdfLoading(false); }
   };
+
+  const switchToEditorWithExtractedText = async () => {
+    if (!pdfDoc) return;
+    setIsNewCard(true); setCardType('blue'); setActiveView('source'); setSourceViewMode('pdf');
+    setCardTitle(fileName.replace(/\.pdf$/i, '') || '导入文档');
+    const itemsByPage = new Map<number, any[]>();
+    const pageTexts: string[] = [];
+    let text = '';
+    for (let i = 1; i <= Math.min(pdfDoc.numPages, 50); i++) {
+      try {
+        const p = await pdfDoc.getPage(i);
+        const tc = await p.getTextContent();
+        itemsByPage.set(i, tc.items);
+        const pageText = tc.items.map((t: any) => t.str).join(' ');
+        pageTexts.push(pageText);
+        text += pageText + '\n\n';
+      } catch {}
+    }
+    textItemsByPageRef.current = itemsByPage;
+    originalPageTextsRef.current = pageTexts;
+    setCardContent(text.trim() || '');
+    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+  };
+
+  useEffect(() => { if (pdfDoc && currentPage > 0) renderPage(currentPage); }, [pdfDoc, currentPage, scale]);
 
   useEffect(() => {
-    if (pdfDoc && currentPage > 0) {
-      renderPage(currentPage);
+    if (pdfDoc && !pdfLoading && fileName && activeView !== 'source') {
+      switchToEditorWithExtractedText();
     }
-  }, [pdfDoc, currentPage, scale]);
+  }, [pdfDoc, pdfLoading]);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !file.type.includes('pdf')) {
-      setLoadError('请选择有效的PDF文件');
-      return;
+  useEffect(() => {
+    if (sourceViewMode === 'pdf' && selectedCard?.id && cardContent && !sourcePdfUrl) {
+      generateSourcePdf();
     }
-
-    setIsLoading(true);
-    setFileName(file.name);
-    setLoadError('');
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer);
-
-      try {
-        const pdfjsLib = await loadPDFJS();
-        
-        // PDF.js 3.x: getDocument 返回 PDFDocumentLoadingTask，需通过 .promise 获取 PDFDocumentProxy
-        const loadingTask = pdfjsLib.getDocument({ data, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true });
-        const pdf = await loadingTask.promise;
-
-        if (!pdf || typeof pdf.getPage !== 'function') {
-          throw new Error('PDF 文档解析失败：返回了无效的文档对象');
-        }
-
-        setPdfDoc(pdf);
-        setTotalPages(pdf.numPages);
-        setCurrentPage(1);
-      } catch (error: any) {
-        console.error('加载PDF失败:', error);
-        setLoadError(error.message || '加载PDF失败，文件可能已损坏');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-
-    // 重置 input 以允许重复选择同一文件
-    event.target.value = '';
-  };
+  }, [sourceViewMode, selectedCard?.id]);
 
   const renderPage = async (pageNum: number) => {
     if (!pdfDoc || !canvasRef.current) return;
-
-    const doc = pdfDoc;
-    if (!doc || typeof doc.getPage !== 'function') {
-      console.error('pdfDoc 不是有效的 PDFDocumentProxy:', typeof doc, doc);
-      setLoadError('PDF 文档加载异常，请重试');
-      return;
-    }
-
-    if (renderTaskRef.current) {
-      try { renderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
-      renderTaskRef.current = null;
-    }
-
+    if (renderTaskRef.current) { try { renderTaskRef.current.cancel(); } catch {} }
     try {
-      const page = await doc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      if (context) {
-        const renderTask = page.render({ canvasContext: context, viewport });
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
-        renderTaskRef.current = null;
-      }
-    } catch (error: any) {
-      if (error?.name === 'RenderingCancelledException') return;
-      console.error('渲染页面失败:', error);
-    }
+      const page = await pdfDoc.getPage(pageNum);
+      const vp = page.getViewport({ scale });
+      const c = canvasRef.current;
+      c.height = vp.height; c.width = vp.width;
+      const ctx = c.getContext('2d');
+      if (ctx) { const t = page.render({ canvasContext: ctx, viewport: vp }); renderTaskRef.current = t; await t.promise; renderTaskRef.current = null; }
+    } catch (e: any) { if (e?.name === 'RenderingCancelledException') return; }
   };
 
-  const handlePrevPage = () => {
-    if (currentPage > 1) setCurrentPage(currentPage - 1);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.includes('pdf')) { setPdfError('请选择有效的PDF文件'); return; }
+    setPdfLoading(true); setPdfError(''); setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const ab = ev.target?.result as ArrayBuffer;
+      setPdfUrl(URL.createObjectURL(new Blob([ab], { type: 'application/pdf' })));
+      try {
+        const pjs = await loadPDFJS();
+        const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+        setPdfDoc(pdf); setTotalPages(pdf.numPages); setCurrentPage(1);
+      } catch (err: any) { setPdfError(err.message || '加载PDF失败'); } finally { setPdfLoading(false); }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
   };
 
-  const handleNextPage = () => {
-    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
-  };
-
-  const handleZoomIn = () => setScale(Math.min(scale + 0.25, 3));
-  const handleZoomOut = () => setScale(Math.max(scale - 0.25, 0.5));
-
-  const downloadPDF = () => {
-    if (!fileName) return;
-    const link = document.createElement('a');
-    link.href = fileUrl || '';
-    link.download = fileName;
-    link.click();
-  };
-
-  // ========== Markdown → PDF/DOCX/HTML 转换 ==========
-  const handleConvertToPdf = async () => {
-    if (!mdInput.trim()) return;
-    setConverting(true);
+  // ========== 源文件 PDF 生成（跟 CardDetailModal 完全一致） ==========
+  const generateSourcePdf = async (theme?: string) => {
+    const effectiveTheme = theme || exportTheme;
+    const md = `# ${cardTitle}\n\n${cardContent}`;
+    if (!md.trim()) return;
+    setSourcePdfGenerating(true);
+    setSourcePdfError('');
     try {
-      const formData = new FormData();
-      formData.append('file', new Blob([mdInput], { type: 'text/markdown' }), 'doc.md');
-      formData.append('title', '文档');
-      formData.append('author', 'PDFViewer');
-      formData.append('theme', exportTheme);
-      const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: formData });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '转换失败'); }
+      const fd = new FormData();
+      fd.append('file', new Blob([md], { type: 'text/markdown' }), 'card.md');
+      fd.append('title', cardTitle || '知识卡片');
+      fd.append('author', 'PDFViewer');
+      fd.append('theme', effectiveTheme);
+      const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'PDF 生成失败'); }
       const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      setFileName(`主题-${exportTheme}.pdf`);
-      await loadPDFFromURL(blobUrl);
-    } catch (e: any) {
-      setLoadError(e.message || '转换PDF失败');
-    } finally {
-      setConverting(false);
-    }
+      if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
+      setSourcePdfUrl(URL.createObjectURL(blob));
+    } catch (e: any) { setSourcePdfError(e.message || 'PDF 生成失败'); } finally { setSourcePdfGenerating(false); }
   };
 
-  const handleConvertAndPreview = async (format: 'docx' | 'html') => {
-    if (!mdInput.trim()) return;
-    setConverting(true);
+  // ========== 知识卡片 CRUD ==========
+  const loadCards = async () => {
+    setCardsLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', new Blob([mdInput], { type: 'text/markdown' }), 'doc.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
-        method: 'POST', body: formData,
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '转换失败'); }
+      const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=500`);
+      if (res.ok) { const d = await res.json(); setCards(d.cards || d || []); }
+    } catch {} finally { setCardsLoading(false); }
+  };
 
-      if (format === 'html') {
-        const html = await res.text();
-        setPreviewTitle('HTML 预览');
-        setPreviewHtml(html);
-        setShowPreview(true);
-      } else {
-        const arrayBuffer = await res.arrayBuffer();
-        if (typeof (window as any).mammoth === 'undefined') {
-          const script = document.createElement('script');
-          script.src = '/mammoth.min.js';
-          await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
-        }
-        const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
-        setPreviewTitle('DOCX 预览');
-        setPreviewHtml(result.value);
-        setShowPreview(true);
+  useEffect(() => { if (showCardPanel) loadCards(); }, [showCardPanel]);
+
+  const selectCard = (card: any) => {
+    setSelectedCard(card);
+    setIsNewCard(false);
+    setActiveView('source');
+    setSourceViewMode('pdf');
+    setCardTitle(card.title || '');
+    setCardContent(card.content || '');
+    setCardType(card.card_type || card.type || 'blue');
+    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+  };
+
+  const handleNewCard = () => {
+    setSelectedCard(null); setIsNewCard(true); setActiveView('source'); setSourceViewMode('markdown');
+    setCardTitle(''); setCardContent(''); setCardType('blue');
+    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+  };
+
+  const handleSaveCard = async () => {
+    if (!cardContent.trim() && !cardTitle.trim()) return;
+    setSaving(true);
+    try {
+      const body = { title: cardTitle || '无标题', content: cardContent, type: cardType };
+      if (isNewCard) {
+        const res = await fetch(`${API_BASE}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (res.ok) { const saved = await res.json(); setSelectedCard(saved); setIsNewCard(false); loadCards(); }
+      } else if (selectedCard?.id) {
+        const res = await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (res.ok) { const updated = await res.json(); setSelectedCard(updated); loadCards(); }
       }
-    } catch (e: any) {
-      setLoadError(e.message || '转换失败');
-    } finally {
-      setConverting(false);
-    }
+    } catch {} finally { setSaving(false); }
   };
 
-  const handleDownloadDocxHtml = async (format: 'docx' | 'html') => {
-    if (!mdInput.trim()) return;
+  const handleDeleteCard = async () => {
+    if (!selectedCard?.id || isNewCard) return;
+    if (!window.confirm(`确定删除卡片「${selectedCard.title}」？`)) return;
     try {
-      const formData = new FormData();
-      formData.append('file', new Blob([mdInput], { type: 'text/markdown' }), 'doc.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
-        method: 'POST', body: formData,
-      });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
-      const outBlob = await res.blob();
-      const url = window.URL.createObjectURL(outBlob);
+      await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
+      setSelectedCard(null); setIsNewCard(false); setActiveView(pdfUrl ? 'pdf' : 'source');
+      loadCards();
+    } catch {}
+  };
+
+  const filteredCards = cards.filter((c: any) => {
+    if (!cardFilter) return true;
+    const q = cardFilter.toLowerCase();
+    return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
+  });
+
+  // ========== 导出编辑后的 PDF（保留原样式 + 文字编辑） ==========
+  const exportEditedPdf = async () => {
+    if (!pdfDoc) { setSourcePdfError('没有可导出的 PDF'); return; }
+    setSourcePdfGenerating(true);
+    setSourcePdfError('');
+    try {
+      const editedPages = cardContent.split('\n\n');
+      const pagesData: any[] = [];
+
+      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const vp = page.getViewport({ scale: 1 });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+        const textItems = textItemsByPageRef.current.get(pageNum) || [];
+        const originalPageText = originalPageTextsRef.current[pageNum - 1] || '';
+        const editedPageText = editedPages[pageNum - 1] || '';
+
+        const edits: any[] = [];
+        if (editedPageText && editedPageText !== originalPageText) {
+          const origWords = originalPageText.split(/\s+/);
+          const editWords = editedPageText.split(/\s+/);
+          if (origWords.length === editWords.length && textItems.length === origWords.length) {
+            for (let j = 0; j < textItems.length; j++) {
+              const item = textItems[j];
+              if ((item.str || '') !== (editWords[j] || '')) {
+                edits.push({
+                  x: item.transform[4],
+                  y: item.transform[5],
+                  width: item.width || 100,
+                  height: item.height || Math.abs(item.transform[3]) || 12,
+                  fontSize: item.fontSize || Math.abs(item.transform[3]) || 12,
+                  text: editWords[j] || '',
+                });
+              }
+            }
+          }
+        }
+
+        pagesData.push({
+          page: pageNum,
+          width: vp.width,
+          height: vp.height,
+          data: dataUrl,
+          edits,
+        });
+      }
+
+      const fd = new FormData();
+      fd.append('images', JSON.stringify(pagesData));
+      fd.append('title', cardTitle || '文档');
+      fd.append('author', 'PDFViewer');
+
+      const res = await fetch(`${API_BASE}/api/pdf/edit-text`, { method: 'POST', body: fd });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || '导出失败'); }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `文档.${format}`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      a.download = `${cardTitle || 'export'}-edited.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e: any) {
-      setLoadError(e.message || '下载失败');
+      setSourcePdfError(e.message || '导出编辑 PDF 失败');
+    } finally {
+      setSourcePdfGenerating(false);
     }
   };
+
+  // ========== 渲染源文件查看器（跟 CardDetailModal 完全一致） ==========
+  const renderSourceViewer = () => (
+    <div className={`flex flex-col h-full ${sourceFullscreen ? 'fixed inset-0 z-50 bg-white dark:bg-gray-900' : ''}`}>
+      {/* 头部 */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40">
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5 text-purple-600" />
+            <div>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">{cardTitle || (selectedCard?.title || '新建文档')}</h3>
+            <p className="text-xs text-gray-500">{isNewCard ? '新卡片' : selectedCard?.id ? `卡片 #${selectedCard.id}` : '临时编辑'}</p>
+          </div>
+          {/* Markdown/PDF 视图切换 */}
+          <div className="flex items-center bg-white/60 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700 ml-4">
+            <button onClick={() => { setSourceViewMode('markdown'); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-l-lg transition-colors ${sourceViewMode === 'markdown' ? 'bg-purple-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+              <Edit3 size={12} className="inline mr-1" />Markdown 文本
+            </button>
+            <button onClick={() => setSourceViewMode('pdf')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-r-lg transition-colors ${sourceViewMode === 'pdf' ? 'bg-red-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+              <FileText size={12} className="inline mr-1" />PDF 预览
+            </button>
+          </div>
+          {/* PDF 主题选择 */}
+          {sourceViewMode === 'pdf' && (
+            <select value={exportTheme} onChange={e => { setExportTheme(e.target.value); if (cardContent) generateSourcePdf(e.target.value); }}
+              className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer ml-2">
+              <option value="warm-academic">暖学术</option>
+              <option value="classic-thesis">经典论文</option>
+              <option value="tufte">Tufte</option>
+              <option value="ieee-journal">期刊蓝</option>
+              <option value="elegant-book">精装书</option>
+              <option value="chinese-red">中国红</option>
+              <option value="ink-wash">水墨</option>
+              <option value="github-light">GitHub</option>
+              <option value="nord-frost">Nord冰霜</option>
+              <option value="ocean-breeze">海洋</option>
+            </select>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setSourceFullscreen(!sourceFullscreen)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700" title={sourceFullscreen ? '退出全屏' : '全屏查看'}>
+            {sourceFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+        </div>
+      </div>
+
+      {/* 内容区 */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {sourceViewMode === 'pdf' ? (
+          sourcePdfGenerating ? (
+            <div className="flex items-center justify-center py-20"><Loader size={24} className="animate-spin text-red-500 mr-3" /><span className="text-gray-500">生成 PDF 中...</span></div>
+          ) : sourcePdfError ? (
+            <div className="flex flex-col items-center justify-center py-20 text-red-500">
+              <AlertCircle size={48} strokeWidth={1} className="mb-4 opacity-30" />
+              <p className="text-sm">{sourcePdfError}</p>
+              <button onClick={() => generateSourcePdf()} className="mt-4 px-4 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600">重试</button>
+            </div>
+          ) : (() => {
+            const displayUrl = sourcePdfUrl || (activeView === 'source' && !selectedCard && pdfUrl ? pdfUrl : null);
+            const isOriginal = !sourcePdfUrl && displayUrl === pdfUrl;
+            return displayUrl ? (
+              <div className="-m-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
+                <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
+                  {isOriginal ? (
+                    <>
+                      <button onClick={() => setSourceViewMode('markdown')}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500">
+                        ✎ 编辑文本
+                      </button>
+                      <a href={displayUrl} download={`${cardTitle || 'export'}.pdf`}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        <Download size={12} />下载 PDF
+                      </a>
+                      <span className="text-xs text-gray-400">原始文件</span>
+                    </>
+                  ) : (
+                    <>
+                      <a href={displayUrl} download={`${cardTitle || 'export'}.pdf`}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                        <Download size={12} />下载 PDF
+                      </a>
+                      <span className="text-xs text-gray-400">主题: {exportTheme}</span>
+                    </>
+                  )}
+                  <div className="flex-1" />
+                  {isOriginal && cardContent && (
+                    <>
+                      <button onClick={exportEditedPdf} disabled={sourcePdfGenerating}
+                        className="flex items-center gap-1 px-3 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+                        {sourcePdfGenerating ? <Loader size={12} className="animate-spin" /> : <FileText size={12} />}导出编辑 PDF
+                      </button>
+                      <button onClick={async () => { if (cardContent) { const md = `# ${cardTitle}\n\n${cardContent}`; const fd = new FormData(); fd.append('file', new Blob([md], { type: 'text/markdown' }), 'doc.md'); fd.append('title', cardTitle); fd.append('author', 'PDFViewer'); fd.append('theme', exportTheme); const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (res.ok) { const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${cardTitle}-${exportTheme}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } } }}
+                        className="text-xs px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600">生成主题 PDF</button>
+                    </>
+                  )}
+                </div>
+                <div className="flex-1 min-h-0">
+                  <object data={displayUrl} type="application/pdf" className="w-full h-full">
+                    <embed src={displayUrl} type="application/pdf" className="w-full h-full" />
+                  </object>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                <FileText size={48} strokeWidth={1} className="mb-4 opacity-30" />
+                <p className="text-sm mb-4">暂无 PDF</p>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <input value={cardTitle} onChange={e => setCardTitle(e.target.value)}
+                className="flex-1 text-lg font-bold px-3 py-2 border rounded-lg bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-purple-400"
+                placeholder="卡片标题" />
+              <select value={cardType} onChange={e => setCardType(e.target.value)}
+                className="text-xs border rounded px-2 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
+                <option value="blue">📋 事实</option>
+                <option value="green">🔗 关联</option>
+                <option value="yellow">⚠️ 风险</option>
+                <option value="red">🎯 行动</option>
+              </select>
+              <button onClick={handleSaveCard} disabled={saving}
+                className="flex items-center gap-1 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
+                {saving ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}保存
+              </button>
+              {!isNewCard && selectedCard?.id && (
+                <button onClick={handleDeleteCard} className="flex items-center gap-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm">
+                  <Trash2 size={14} />删除
+                </button>
+              )}
+            </div>
+            <textarea value={cardContent} onChange={e => setCardContent(e.target.value)}
+              className="w-full h-[400px] p-4 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-purple-400"
+              placeholder="# 标题&#10;&#10;在此输入 Markdown 内容..." />
+            <div className="flex items-center gap-2">
+              <select value={exportTheme} onChange={e => setExportTheme(e.target.value)}
+                className="text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
+                <option value="warm-academic">暖学术</option>
+                <option value="classic-thesis">经典论文</option>
+                <option value="tufte">Tufte</option>
+                <option value="ieee-journal">期刊蓝</option>
+                <option value="elegant-book">精装书</option>
+                <option value="chinese-red">中国红</option>
+                <option value="ink-wash">水墨</option>
+                <option value="github-light">GitHub</option>
+                <option value="nord-frost">Nord冰霜</option>
+                <option value="ocean-breeze">海洋</option>
+              </select>
+              <button onClick={() => generateSourcePdf()}
+                className="flex items-center gap-1 px-3 py-1.5 bg-purple-500 text-white text-xs rounded-lg hover:bg-purple-600">
+                <FileText size={12} />生成 PDF
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 dark:bg-gray-900">
-      {/* ========== 顶部工具栏 ========== */}
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="px-3 md:px-4 py-2 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center space-x-4">
-            <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600">
-              <Upload className="w-4 h-4" />
-              <span className="text-sm">打开PDF</span>
+          <div className="flex items-center space-x-3">
+            <label className="cursor-pointer flex items-center space-x-1.5 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+              <Upload className="w-4 h-4" /><span>打开PDF</span>
               <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
             </label>
-
-            <button onClick={() => setShowMdEditor(!showMdEditor)}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded text-sm ${showMdEditor ? 'bg-purple-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
-              <Edit3 className="w-4 h-4" />
-              <span>Markdown</span>
-            </button>
-
-            {fileName && (
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                {fileName} - {totalPages}页
-              </span>
+            {activeView === 'pdf' && pdfDoc && (
+              <>
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronLeft size={16} /></button>
+                <span className="text-xs text-gray-500">{currentPage}/{totalPages}</span>
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronRight size={16} /></button>
+                <button onClick={() => setScale(s => Math.max(0.5, s - 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs">-</button>
+                <span className="text-xs text-gray-500 w-10 text-center">{Math.round(scale * 100)}%</span>
+                <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs">+</button>
+              </>
             )}
+            {fileName && <span className="text-xs text-gray-400 truncate max-w-[200px]">{fileName}</span>}
           </div>
-
-          <div className="flex items-center space-x-2">
-            <button onClick={handleZoomOut} disabled={scale <= 0.5}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50" title="缩小">
-              <ZoomOut className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            <button onClick={() => setActiveView(activeView === 'source' ? 'pdf' : 'source')}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${activeView === 'source' ? 'bg-purple-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
+              <Edit3 size={14} />编辑
             </button>
-            <span className="text-sm w-16 text-center">{Math.round(scale * 100)}%</span>
-            <button onClick={handleZoomIn} disabled={scale >= 3}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50" title="放大">
-              <ZoomIn className="w-4 h-4" />
-            </button>
-
-            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-2" />
-
-            <button onClick={handlePrevPage} disabled={currentPage <= 1}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50" title="上一页">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center space-x-1">
-              <Hash className="w-4 h-4 text-gray-500" />
-              <input type="number" min={1} max={totalPages} value={currentPage}
-                onChange={(e) => { const p = parseInt(e.target.value); if (p >= 1 && p <= totalPages) setCurrentPage(p); }}
-                className="w-12 px-2 py-1 text-center border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm" />
-              <span className="text-gray-500">/ {totalPages}</span>
-            </div>
-
-            <button onClick={handleNextPage} disabled={currentPage >= totalPages}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50" title="下一页">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-
-            <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-2" />
-
-            <button onClick={downloadPDF} disabled={!fileName}
-              className="flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">
-              <Download className="w-4 h-4" />
-              <span className="text-sm">下载</span>
+            <button onClick={() => { setShowCardPanel(!showCardPanel); if (!showCardPanel) loadCards(); }}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${showCardPanel ? 'bg-green-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
+              <Bookmark size={14} />卡片
             </button>
           </div>
         </div>
-
-        {/* ========== Markdown 编辑面板 ========== */}
-        {showMdEditor && (
-          <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-850">
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <textarea value={mdInput} onChange={e => setMdInput(e.target.value)}
-                  className="w-full h-[200px] p-3 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-purple-400"
-                  placeholder="# 标题&#10;&#10;在此输入 Markdown 内容..." />
-              </div>
-              <div className="w-48 flex flex-col gap-2 shrink-0">
-                <select value={exportTheme} onChange={e => setExportTheme(e.target.value)}
-                  className="text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
-                  <option value="warm-academic">暖学术</option>
-                  <option value="classic-thesis">经典论文</option>
-                  <option value="tufte">Tufte</option>
-                  <option value="ieee-journal">期刊蓝</option>
-                  <option value="elegant-book">精装书</option>
-                  <option value="chinese-red">中国红</option>
-                  <option value="ink-wash">水墨</option>
-                  <option value="github-light">GitHub</option>
-                  <option value="nord-frost">Nord冰霜</option>
-                  <option value="ocean-breeze">海洋</option>
-                </select>
-                <button onClick={handleConvertToPdf} disabled={converting}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 text-sm">
-                  {converting ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <FileText className="w-4 h-4" />}
-                  生成 PDF
-                </button>
-                <button onClick={() => handleConvertAndPreview('html')} disabled={converting}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 text-sm">
-                  <Eye className="w-4 h-4" />预览 HTML
-                </button>
-                <button onClick={() => handleConvertAndPreview('docx')} disabled={converting}
-                  className="flex items-center justify-center gap-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 text-sm">
-                  <Eye className="w-4 h-4" />预览 DOCX
-                </button>
-                <div className="flex gap-2">
-                  <button onClick={() => handleDownloadDocxHtml('docx')}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <Download className="w-3 h-3" />DOCX
-                  </button>
-                  <button onClick={() => handleDownloadDocxHtml('html')}
-                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <Download className="w-3 h-3" />HTML
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </header>
 
-      <main className="flex-1 overflow-auto flex justify-center p-4 bg-gray-600">
-        {isLoading ? (
-          <div className="flex items-center justify-center">
-            <div className="text-white text-center">
-              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p>正在加载PDF...</p>
+      <div className="flex flex-1 overflow-hidden">
+        {/* 主内容 */}
+        <main className="flex-1 overflow-auto bg-gray-600">
+          {activeView === 'pdf' ? (
+            pdfLoading ? (
+              <div className="flex items-center justify-center h-full text-white"><Loader size={24} className="animate-spin mr-2" />加载中...</div>
+            ) : pdfError ? (
+              <div className="flex flex-col items-center justify-center h-full text-red-300"><AlertCircle size={48} className="mb-4 opacity-30" /><p>{pdfError}</p></div>
+            ) : pdfDoc ? (
+              <div className="flex justify-center p-4">
+                <div className="bg-white shadow-lg"><canvas ref={canvasRef} className="max-w-full" /></div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-300">
+                <FileText size={64} className="mb-4 opacity-30" />
+                <p className="text-sm mb-2">PDF 查看器</p>
+                <p className="text-xs mb-4">上传 PDF 或点击「卡片」管理知识卡片</p>
+                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+                  <Upload size={14} />选择文件
+                  <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+                </label>
+              </div>
+            )
+          ) : renderSourceViewer()}
+        </main>
+
+        {/* 卡片侧边栏 */}
+        {showCardPanel && (
+          <aside className="w-72 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold flex items-center gap-1"><Bookmark className="w-4 h-4 text-green-500" />知识卡片</h3>
+                <button onClick={handleNewCard} className="flex items-center gap-1 px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"><Plus className="w-3 h-3" />新建</button>
+              </div>
+              <input value={cardFilter} onChange={e => setCardFilter(e.target.value)}
+                className="w-full px-2 py-1 text-xs border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-1 focus:ring-green-400" placeholder="搜索卡片..." />
             </div>
-          </div>
-        ) : pdfDoc ? (
-          <div className="bg-white shadow-lg">
-            <canvas ref={canvasRef} className="max-w-full" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center">
-            <div className="text-center text-gray-300">
-              <FileText className="w-24 h-24 mx-auto mb-4" />
-              <p className="text-lg mb-2">PDF 查看器</p>
-              <p className="text-sm mb-4">请上传PDF文件或拖放到此处</p>
-              {loadError && (
-                <div className="mb-4 px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-300 text-sm max-w-md">
-                  {loadError}
+            <div className="flex-1 overflow-y-auto">
+              {cardsLoading ? (
+                <div className="flex justify-center py-8"><Loader size={20} className="animate-spin text-green-500" /></div>
+              ) : filteredCards.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-8">{cardFilter ? '无匹配卡片' : '暂无卡片，点击"新建"创建'}</p>
+              ) : (
+                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {filteredCards.map((card: any) => (
+                    <div key={card.id} onClick={() => selectCard(card)}
+                      className={`px-3 py-2 cursor-pointer border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${CARD_COLORS[card.card_type || card.type || 'blue']} ${selectedCard?.id === card.id ? 'ring-1 ring-green-400' : ''}`}>
+                      <div className="text-xs font-medium truncate">{card.title || '无标题'}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5 line-clamp-2">{card.content || ''}</div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">{CARD_TYPE_LABELS[card.card_type || card.type || 'blue']}</div>
+                    </div>
+                  ))}
                 </div>
               )}
-              <label className="cursor-pointer inline-flex items-center space-x-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                <Upload className="w-4 h-4" />
-                <span>选择文件</span>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </label>
             </div>
-          </div>
+          </aside>
         )}
-      </main>
-
-      <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-2 flex items-center justify-between text-sm text-gray-500">
-        <div>
-          页面 {currentPage} / {totalPages}
-        </div>
-        <div className="flex items-center space-x-4">
-          <span>缩放: {Math.round(scale * 100)}%</span>
-          <span>{fileName || '未加载文件'}</span>
-        </div>
-      </footer>
-
-      {/* 预览弹窗（DOCX/HTML） */}
-      {showPreview && (
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowPreview(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
-              <h3 className="font-semibold truncate">{previewTitle}</h3>
-              <button onClick={() => setShowPreview(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="flex-1 bg-white dark:bg-gray-900 min-h-0">
-              <iframe srcDoc={previewHtml} className="w-full h-full border-0" title="文档预览" sandbox="allow-same-origin" />
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 };

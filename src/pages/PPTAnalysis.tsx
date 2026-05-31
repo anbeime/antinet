@@ -62,6 +62,7 @@ const PPTAnalysis: React.FC = () => {
 感谢大家的支持！`);
   const [pptTitle, setPptTitle] = useState('我的演示文稿');
   const [selectedTheme, setSelectedTheme] = useState<ThemeType>('professional');
+  const [useNativePPT, setUseNativePPT] = useState(true);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<number | null>(null);
   const [narrativeTemplate, setNarrativeTemplate] = useState<string>('problem-analysis-solution');
@@ -171,33 +172,55 @@ const PPTAnalysis: React.FC = () => {
     
     setIsExporting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/ppt/export/collection`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: selectedProject,
-          narrative_template: narrativeTemplate,
-          title: projects.find(p => p.id === selectedProject)?.name || '专题报告'
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.filename) {
-          // 保存文件名
-          sessionStorage.setItem('lastPPTFileName', data.filename);
-          
-          toast.success('PPT生成成功！');
-          
-// 跳转到预览页面
-          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
+      let filename: string | null = null;
+
+      if (useNativePPT) {
+        // SVG→DrawingML 原生形状模式
+        const topic = projects.find(p => p.id === selectedProject)?.name || '专题报告';
+        const typeMap: Record<string, string> = { '事实': 'blue', '解释': 'green', '风险': 'yellow', '行动': 'red' };
+        const cardList = projectCards.map((c: any) => ({
+          type: typeMap[c.category] || c.type || 'blue',
+          title: c.title,
+          content: c.content,
+        }));
+        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, cards: cardList, theme: selectedTheme }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.filename) {
+          filename = data.filename;
+          toast.success(`原生形状PPT已生成（${data.slide_count}页）`);
         } else {
           toast.error(`生成失败: ${data.detail || '未知错误'}`);
+          return;
         }
       } else {
-        const error = await response.json();
-        toast.error(`生成失败: ${error.detail || '未知错误'}`);
+        const resp = await fetch(`${API_BASE}/api/ppt/export/collection`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: selectedProject,
+            narrative_template: narrativeTemplate,
+            title: projects.find(p => p.id === selectedProject)?.name || '专题报告',
+          }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.success && data.filename) {
+            filename = data.filename;
+            toast.success('PPT生成成功！');
+          } else {
+            toast.error(`生成失败: ${data.detail || '未知错误'}`);
+            return;
+          }
+        }
+      }
+
+      if (filename) {
+        sessionStorage.setItem('lastPPTFileName', filename);
+        navigate(`/ppt-viewer?file=${encodeURIComponent(filename)}`);
       }
     } catch (error) {
       console.error('生成PPT失败:', error);
@@ -214,40 +237,52 @@ const PPTAnalysis: React.FC = () => {
       return;
     }
 
-    if (pptAvailable === false) {
+    if (pptAvailable === false && !useNativePPT) {
       toast.error('PPT服务不可用，请先安装依赖');
       return;
     }
 
-    // 清除旧的sessionStorage
     sessionStorage.removeItem('lastPPTFileName');
     
     setIsExporting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/ppt/generate/from-text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: textContent,
-          title: pptTitle,
-          theme: selectedTheme
-        }),
-      });
+      let filename: string | null = null;
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.filename) {
-          // 保存文件名到 sessionStorage，跳转到预览页时读取
-          console.log('[PPTAnalysis] 生成成功，文件名:', data.filename);
-          sessionStorage.setItem('lastPPTFileName', data.filename);
-          
-// 跳转到预览页面
-          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
+      if (useNativePPT) {
+        // SVG→DrawingML 原生形状模式
+        const resp = await fetch(`${API_BASE}/api/ppt-native/generate-from-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: pptTitle, content: textContent, theme: selectedTheme }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.filename) {
+          filename = data.filename;
+          toast.success(`原生形状PPT已生成（${data.slide_count}页）`);
         } else {
-          const error = await response.json();
-          toast.error(`生成失败: ${error.detail || '未知错误'}`);
+          toast.error(`生成失败: ${data.detail || '未知错误'}`);
+          return;
         }
+      } else {
+        // 传统 python-pptx 模式
+        const resp = await fetch(`${API_BASE}/api/ppt/generate/from-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: textContent, title: pptTitle, theme: selectedTheme }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.success && data.filename) {
+          filename = data.filename;
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          toast.error(`生成失败: ${err.detail || '未知错误'}`);
+          return;
+        }
+      }
+
+      if (filename) {
+        sessionStorage.setItem('lastPPTFileName', filename);
+        navigate(`/ppt-viewer?file=${encodeURIComponent(filename)}`);
       }
     } catch (error) {
       console.error('生成PPT失败:', error);
@@ -264,7 +299,7 @@ const PPTAnalysis: React.FC = () => {
       return;
     }
 
-    if (pptAvailable === false) {
+    if (pptAvailable === false && !useNativePPT) {
       toast.error('PPT服务不可用，请先安装依赖');
       return;
     }
@@ -272,46 +307,59 @@ const PPTAnalysis: React.FC = () => {
     setIsExporting(true);
     try {
       const selectedCardData = cards.filter(c => selectedCards.has(c.id));
+      let filename: string | null = null;
 
-      const exportData = {
-        cards: selectedCardData.map(card => ({
-          type: card.type || (card.category === '事实' ? 'fact' : card.category === '解释' ? 'interpret' : card.category === '风险' ? 'risk' : 'action'),
-          title: card.title,
-          content: card.content,
-          tags: card.tags ? card.tags.split(',') : [],
-          created_at: card.created_at
-        })),
-        title: 'Antinet 四色卡片分析报告',
-        include_summary: true
-      };
-
-      const response = await fetch(`${API_BASE}/api/ppt/export/cards`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(exportData),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (data.success && data.filename) {
-          // 保存文件名
-          sessionStorage.setItem('lastPPTFileName', data.filename);
-          
-          // 提示下载（通过API获取文件）
-          toast.success('PPT导出成功！', {
-            action: {
-              label: '下载',
-              onClick: () => window.open(`${API_BASE}/api/ppt/file?filename=${data.filename}`, '_blank')
-            }
-          });
-          
-// 跳转到预览页面
-          navigate(`/ppt-viewer?file=${encodeURIComponent(data.filename)}`);
+      if (useNativePPT) {
+        // SVG→DrawingML 原生形状模式
+        const typeMap: Record<string, string> = { '事实': 'blue', '解释': 'green', '风险': 'yellow', '行动': 'red' };
+        const cardList = selectedCardData.map(c => ({
+          type: typeMap[c.category] || c.type || 'blue',
+          title: c.title,
+          content: c.content,
+        }));
+        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic: '四色卡片分析报告', cards: cardList, theme: selectedTheme }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.filename) {
+          filename = data.filename;
+          toast.success(`原生形状PPT已生成（${data.slide_count}页）`);
         } else {
-          const error = await response.json();
-          toast.error(`导出失败: ${error.detail || '未知错误'}`);
+          toast.error(`导出失败: ${data.detail || '未知错误'}`);
+          return;
         }
+      } else {
+        // 传统 python-pptx 模式
+        const exportData = {
+          cards: selectedCardData.map(card => ({
+            type: card.type || (card.category === '事实' ? 'fact' : card.category === '解释' ? 'interpret' : card.category === '风险' ? 'risk' : 'action'),
+            title: card.title,
+            content: card.content,
+            tags: card.tags ? card.tags.split(',') : [],
+            created_at: card.created_at,
+          })),
+          title: 'Antinet 四色卡片分析报告',
+          include_summary: true,
+        };
+        const resp = await fetch(`${API_BASE}/api/ppt/export/cards`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exportData),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.success && data.filename) {
+            filename = data.filename;
+            toast.success('PPT导出成功！', {
+              action: { label: '下载', onClick: () => window.open(`${API_BASE}/api/ppt/file?filename=${data.filename}`, '_blank') },
+            });
+          } else { toast.error(`导出失败: ${data.detail || '未知错误'}`); return; }
+        }
+      }
+
+      if (filename) {
+        sessionStorage.setItem('lastPPTFileName', filename);
+        navigate(`/ppt-viewer?file=${encodeURIComponent(filename)}`);
       }
     } catch (error) {
       console.error('导出PPT失败:', error);
@@ -341,11 +389,30 @@ const PPTAnalysis: React.FC = () => {
     }
   };
 
-  const themes = [
+  const [themes, setThemes] = useState([
     { id: 'professional', name: 'Professional', icon: '💼', desc: '专业商务', colors: ['#1C2833', '#3498DB', '#F1C40F'] },
     { id: 'creative', name: 'Creative', icon: '🎨', desc: '创意活泼', colors: ['#9B59B6', '#3498DB', '#E67E22'] },
     { id: 'minimal', name: 'Minimal', icon: '✨', desc: '简约现代', colors: ['#2C3E50', '#95A5A6', '#3498DB'] },
-  ];
+    { id: 'tech', name: 'Tech', icon: '🚀', desc: '科技创新', colors: ['#1E3A8A', '#3B82F6', '#10B981'] },
+    { id: 'business', name: 'Business', icon: '📊', desc: '高端商务', colors: ['#DC2626', '#F59E0B', '#1F2937'] },
+  ]);
+
+  useEffect(() => {
+    fetch(`${getApiBaseUrl()}/api/design-system/themes`)
+      .then(r => r.ok ? r.json() : [])
+      .then(list => {
+        if (list.length > 0) {
+          setThemes(list.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            icon: t.id === 'tech' ? '🚀' : t.id === 'business' ? '📊' : t.id === 'creative' ? '🎨' : t.id === 'minimal' ? '✨' : '💼',
+            desc: t.description,
+            colors: [t.colors.primary, t.colors.secondary, t.colors.accent],
+          })));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
@@ -436,6 +503,22 @@ const PPTAnalysis: React.FC = () => {
                   selectedTheme={selectedTheme}
                   onThemeSelect={(themeId) => setSelectedTheme(themeId as ThemeType)}
                 />
+              </div>
+
+              {/* Output Mode Toggle */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <span className="font-medium">原生形状 PPT</span>
+                    <p className="text-sm text-gray-500 mt-1">SVG→DrawingML 模式，每张幻灯片元素在 PowerPoint 中均可直接编辑</p>
+                  </div>
+                  <div className="relative">
+                    <input type="checkbox" className="sr-only" checked={useNativePPT} onChange={e => setUseNativePPT(e.target.checked)} />
+                    <div className={`w-12 h-6 rounded-full transition-colors ${useNativePPT ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                      <div className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${useNativePPT ? 'translate-x-6' : 'translate-x-0.5'} mt-0.5`} />
+                    </div>
+                  </div>
+                </label>
               </div>
 
               {/* Content Input */}
@@ -545,6 +628,19 @@ const PPTAnalysis: React.FC = () => {
                   ))}
                 </div>
               </div>
+              <label className="flex items-center justify-between px-1 py-2">
+                <div>
+                  <span className="text-sm font-medium">原生形状 PPT</span>
+                  <p className="text-xs text-gray-500">元素在 PowerPoint 中可编辑</p>
+                </div>
+                <div className="relative">
+                  <input type="checkbox" className="sr-only" checked={useNativePPT} onChange={e => setUseNativePPT(e.target.checked)} />
+                  <div className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${useNativePPT ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${useNativePPT ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+                  </div>
+                </div>
+              </label>
+
               <button onClick={generatePPTFromProject} disabled={!selectedProject || isExporting} className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 rounded-lg disabled:opacity-50">
                 {isExporting ? <Loader className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
                 <span>{isExporting ? '生成中...' : '从专题生成PPT'}</span>
@@ -648,9 +744,22 @@ const PPTAnalysis: React.FC = () => {
                 </div>
               </div>
 
+              <label className="flex items-center justify-between px-1 py-2 mb-2">
+                <div>
+                  <span className="text-sm font-medium">原生形状 PPT</span>
+                  <p className="text-xs text-gray-500">元素在 PowerPoint 中可编辑</p>
+                </div>
+                <div className="relative">
+                  <input type="checkbox" className="sr-only" checked={useNativePPT} onChange={e => setUseNativePPT(e.target.checked)} />
+                  <div className={`w-10 h-5 rounded-full transition-colors cursor-pointer ${useNativePPT ? 'bg-purple-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                    <div className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${useNativePPT ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+                  </div>
+                </div>
+              </label>
+
               <button
                 onClick={exportCardsToPPT}
-                disabled={selectedCards.size === 0 || isExporting || pptAvailable === false}
+                disabled={selectedCards.size === 0 || isExporting || (pptAvailable === false && !useNativePPT)}
                 className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 px-4 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               >
                 {isExporting ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
@@ -750,28 +859,28 @@ const PPTAnalysis: React.FC = () => {
           <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-3">其他在线查看</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button
-              onClick={() => window.open('http://localhost:3000/knowledge-graph', '_blank')}
+              onClick={() => window.open('/knowledge-graph', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors text-sm"
             >
               <History className="w-4 h-4 text-green-600" />
               <span className="text-green-700 dark:text-green-400">知识库图谱工作台</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/pdf-viewer', '_blank')}
+              onClick={() => window.open('/pdf-viewer', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-sm"
             >
               <FileText className="w-4 h-4 text-red-600" />
               <span className="text-red-700 dark:text-red-400">PDF查看器</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/ppt-viewer', '_blank')}
+              onClick={() => window.open('/ppt-viewer', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors text-sm"
             >
               <Presentation className="w-4 h-4 text-orange-600" />
               <span className="text-orange-700 dark:text-orange-400">PPT演示</span>
             </button>
             <button
-              onClick={() => window.open('http://localhost:3000/excel-analysis', '_blank')}
+              onClick={() => window.open('/excel-analysis', '_blank')}
               className="flex items-center space-x-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm"
             >
               <Sparkles className="w-4 h-4 text-blue-600" />

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="{{BG}}"/>
+  <rect x="0" y="0" width="1280" height="4" fill="{{ACCENT}}"/>
+  <rect x="60" y="60" width="6" height="36" fill="{{SECTION_COLOR}}" rx="3"/>
+  <text x="80" y="88" font-family="{{TITLE_FONT}}" font-size="32" font-weight="bold" fill="{{PRIMARY}}">{{SECTION_TITLE}}</text>
+  <rect x="80" y="100" width="120" height="3" fill="{{SECTION_COLOR}}" opacity="0.5"/>
+  {{CARDS}}
+</svg>

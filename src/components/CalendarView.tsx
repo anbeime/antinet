@@ -70,17 +70,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 并行获取 GTD 任务、日历事件和知识卡片
-        const [taskRes, eventRes, cardRes] = await Promise.all([
-          fetch(getApiBaseUrl() + '/api/data/gtd/tasks'),
+        const [eventRes, cardRes] = await Promise.all([
           fetch(getApiBaseUrl() + '/api/integration/calendar/events/all'),
           fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000'),
         ]);
 
+        const taskRes = await fetch(getApiBaseUrl() + '/api/data/gtd/tasks');
         if (taskRes.ok) {
           const data = await taskRes.json();
           setTasks(Array.isArray(data) ? data : []);
         }
+
         if (eventRes.ok) {
           const data = await eventRes.json();
           setEvents(Array.isArray(data) ? data : []);
@@ -283,7 +283,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
 
   const days = [];
   for (let i = 0; i < firstDay; i++) {
-    days.push(<div key={`empty-${i}`} className="h-28 border" style={{ backgroundColor: '#faf8f5', borderColor: '#e8ddd0' }}></div>);
+    days.push(<div key={`empty-${i}`} className="h-20 md:h-28 border" style={{ backgroundColor: '#faf8f5', borderColor: '#e8ddd0' }}></div>);
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const dayItems = getItemsForDate(day);
@@ -297,7 +297,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
     days.push(
       <div
         key={day}
-        className={`h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'border-amber-400' : ''}`}
+        className={`h-20 md:h-28 border p-1 cursor-pointer transition-colors ${isToday(day) ? 'border-amber-400' : ''}`}
         style={{
           backgroundColor: isToday(day) ? '#fef3e2' : '#fffdf9',
           borderColor: isToday(day) ? '#d4a574' : '#e8ddd0'
@@ -379,7 +379,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
           >
             今天
           </button>
-          <div className="flex space-x-3" style={{ color: '#8b7355' }}>
+          <div className="hidden md:flex space-x-3" style={{ color: '#8b7355' }}>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-red-500 rounded mr-1"></span>高</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-yellow-500 rounded mr-1"></span>中</span>
             <span className="flex items-center text-sm"><span className="w-3 h-3 bg-green-500 rounded mr-1"></span>低</span>
@@ -391,7 +391,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="grid grid-cols-7 border-b" style={{ backgroundColor: '#d4a574' }}>
           {dayNames.map(day => (
-            <div key={day} className="p-2 text-center font-medium text-white text-sm">
+            <div key={day} className="p-2 text-center font-medium text-white text-xs md:text-sm">
               {day}
             </div>
           ))}
@@ -406,9 +406,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
           initial={{ x: 520 }}
           animate={{ x: 0 }}
           exit={{ x: 520 }}
-          className="absolute inset-y-0 right-0 shadow-2xl flex flex-col z-10" 
+          className="inset-y-0 right-0 shadow-2xl flex flex-col z-10 overflow-y-auto"
           style={{ 
-            width: panelFullscreen ? '100vw' : '520px', 
+            position: panelFullscreen ? 'fixed' : 'absolute',
+            width: panelFullscreen ? '100vw' : 'calc(100vw - 16px)',
+            maxWidth: panelFullscreen ? '100vw' : '520px', 
             backgroundColor: '#fff9f3', 
             borderLeft: panelFullscreen ? 'none' : '2px solid #d4a574',
             left: panelFullscreen ? 0 : undefined,
@@ -530,8 +532,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
       )}
 
       {showCreateEvent && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-20" onClick={() => setShowCreateEvent(false)}>
-          <div className="w-[400px] bg-white rounded-xl shadow-2xl p-6" onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fffdf9' }}>
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-20 p-4" onClick={() => setShowCreateEvent(false)}>
+          <div className="w-full max-w-[400px] bg-white rounded-xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ backgroundColor: '#fffdf9' }}>
             <h3 className="text-lg font-bold mb-4 flex items-center gap-2" style={{ color: '#8b4513' }}>
               <Calendar size={18} className="text-blue-500" />创建日程事件
             </h3>

@@ -397,14 +397,15 @@ const VirtualOfficeMeeting: React.FC = () => {
           }, 500);
           
           // 将查询返回的卡片追加到会议卡片列表
-          if (data.cards && data.cards.length > 0) {
+          if (data.cards && Array.isArray(data.cards) && data.cards.length > 0) {
             const newCards: MeetingCard[] = data.cards.map((c: any) => ({
               card_type: c.card_type || 'blue',
               title: c.title || '',
               content: c.content || '',
               source: 'human_query' as const,
-              match_score: c.similarity,
+              agent_name: c.agent_name || '太史阁',
               saved: false,
+              match_score: c.similarity || 0,
               timestamp: new Date().toISOString()
             }));
             setMeetingCards(prev => [...prev, ...newCards]);
@@ -549,8 +550,8 @@ useEffect(() => {
     } else if (activeTab === 'tasks') {
       fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
       // 同时加载协作历史消息（REST 回退）
-      const collabProtocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-      fetch(`${collabProtocol}//${getApiBaseUrl().replace(/^https?:\/\//, '')}/api/activities?limit=30`)
+      const collabHost = import.meta.env.DEV ? 'localhost:8000' : window.location.host;
+      fetch(`http://${collabHost}/api/activities?limit=30`)
         .then(r => r.json())
         .then(activities => {
           if (Array.isArray(activities) && activities.length > 0) {
@@ -913,6 +914,39 @@ useEffect(() => {
     toast.info('会议已停止');
   };
 
+  // 保存会议中提取的卡片到知识库
+  const handleSaveMeetingCard = async (card: { type: string; title: string; content: string }) => {
+    if (!card.title || !card.content) {
+      toast.error('卡片内容不完整');
+      return;
+    }
+    try {
+      const response = await fetch(`${BACKEND_URL}/cards/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: card.type || 'blue',
+          title: card.title,
+          content: card.content,
+          category: card.type === 'red' ? '行动' : card.type === 'yellow' ? '风险' : card.type === 'green' ? '解释' : '事实'
+        })
+      });
+      if (response.ok) {
+        const savedCard = await response.json();
+        toast.success(`卡片「${card.title}」已保存到知识库`);
+        // 将卡片标记为已保存
+        setMeetingCards(prev => prev.map(c => 
+          c.title === card.title && c.content === card.content ? { ...c, saved: true } : c
+        ));
+      } else {
+        toast.error('保存失败');
+      }
+    } catch (err) {
+      console.error('保存卡片失败:', err);
+      toast.error('保存失败');
+    }
+  };
+
   // 重置会议
   const resetMeeting = () => {
     if (abortControllerRef.current) {
@@ -1011,20 +1045,21 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
       if (abortControllerRef.current) abortControllerRef.current.abort();
       stopPolling();
     };
-  }, []);
+}, []);
 
   // 协作聊天 WebSocket 连接
   useEffect(() => {
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiBase = getApiBaseUrl().replace(/^https?:\/\//, ''); // 去掉协议前缀 http:// 或 https://
-    const url = `${protocol}//${apiBase}/api/ws/collaboration/${userId}`;
+    // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
+    const wsUrl = import.meta.env.DEV
+      ? `ws://localhost:8000/api/ws/collaboration/${userId}`
+      : `ws://${window.location.host}/api/ws/collaboration/${userId}`;
     
-    console.log('[Collab] 连接 WebSocket:', url);
+    console.log('[Collab] 连接 WebSocket:', wsUrl);
     setCollabStatus('connecting');
     
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(wsUrl);
     collabWsRef.current = ws;
     
     ws.onopen = () => {
@@ -1828,32 +1863,37 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                               <div className="p-4 space-y-3">
                                 {(round.discussions || []).map((disc: any, idx: number) => (
                                  <div key={idx} className="flex gap-3">
-                                   <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent.color} flex items-center justify-center text-lg flex-shrink-0`}>
-                                     {disc.agent.avatar}
-                                   </div>
-                                   <div className="flex-1 min-w-0">
-                                     <div className="flex items-center gap-2 mb-1">
-                                       <span className="text-white text-sm font-medium">{disc.agent.name}</span>
-                                       <span className="text-gray-500 text-xs">{disc.agent.title}</span>
-                                     </div>
-                                     {disc.agent.systemPrompt && (
-                                       <div className="text-gray-500 text-[10px] mb-0.5 truncate">
-                                         {disc.agent.systemPrompt}
-                                       </div>
-                                     )}
-                                     <p className="text-gray-300 text-sm leading-relaxed">{disc.message}</p>
-                                   </div>
-                                 </div>
+                                    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${disc.agent?.color || 'from-gray-500 to-gray-600'} flex items-center justify-center text-lg flex-shrink-0`}>
+                                      {disc.agent?.avatar || '💬'}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-white text-sm font-medium">{disc.agent?.name || '未知'}</span>
+                                        <span className="text-gray-500 text-xs">{disc.agent?.title || ''}</span>
+                                      </div>
+                                      {disc.agent?.systemPrompt && (
+                                        <div className="text-gray-500 text-[10px] mb-0.5 truncate">
+                                          {disc.agent.systemPrompt}
+                                        </div>
+                                      )}
+                                      <p className="text-gray-300 text-sm leading-relaxed">{disc.message || ''}</p>
+                                    </div>
+                                  </div>
                                ))}
                             </div>
 
-                            {/* 卡片 */}
+                            {/* 卡片 - 可点击保存 */}
                             {round.cards && round.cards.length > 0 && (
                               <div className="grid grid-cols-2 gap-2.5 px-4 pb-4 pt-2 border-t border-gray-700/30 mx-4">
                                 {round.cards.map((card: any, idx: number) => {
                                   const cardType = CARD_TYPE_MAP[card.type as keyof typeof CARD_TYPE_MAP];
                                   return (
-                                    <div key={idx} className={`p-3 rounded-lg ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                                    <div 
+                                      key={idx} 
+                                      onClick={() => handleSaveMeetingCard(card)}
+                                      className={`p-3 rounded-lg cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
+                                      title="点击保存到知识库"
+                                    >
                                       <div className="flex items-center gap-1.5 mb-1">
                                         {cardType?.icon}
                                         <span className="text-white font-medium text-xs">{card.title}</span>
@@ -1918,18 +1958,24 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                       </div>
                     )}
 
-                    {/* 核心卡片 */}
+                    {/* 核心卡片 - 可点击保存 */}
                     {meetingCards.length > 0 && (
                       <div className="rounded-lg border border-purple-700/50 p-4" style={{ background: '#0f1729' }}>
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-purple-400">📋</span>
                           <span className="text-purple-400 text-sm font-medium">核心知识卡片</span>
+                          <span className="text-gray-500 text-xs ml-auto">点击保存</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                           {meetingCards.slice(0, 4).map((card: MeetingCard, idx: number) => {
                             const cardType = CARD_TYPE_MAP[card.card_type as keyof typeof CARD_TYPE_MAP];
                             return (
-                              <div key={idx} className={`p-2 rounded ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}>
+                              <div 
+                                key={idx} 
+                                onClick={() => handleSaveMeetingCard({ type: card.card_type, title: card.title, content: card.content })}
+                                className={`p-2 rounded cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
+                                title="点击保存到知识库"
+                              >
                                 <div className="text-white text-xs font-medium truncate">{card.title}</div>
                                 <div className="text-gray-400 text-[10px] truncate mt-0.5">{card.content}</div>
                               </div>

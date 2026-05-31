@@ -72,6 +72,32 @@ _agent_messages: List[Dict[str, Any]] = []
 # 用户干预队列 - meeting_id → List[intervention]
 _user_interventions: Dict[str, List[Dict[str, Any]]] = {}
 
+# GPU 显存清理状态
+_last_gpu_cleanup = 0
+_GPU_CLEANUP_INTERVAL = 30  # 每30秒最多清理一次
+
+
+def _try_cleanup_gpu_memory():
+    """尝试清理 GPU 显存，减少 context 冲突"""
+    global _last_gpu_cleanup
+    import time
+    now = time.time()
+    
+    if now - _last_gpu_cleanup < _GPU_CLEANUP_INTERVAL:
+        return
+    
+    _last_gpu_cleanup = now
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            logger.info("[GPU] CUDA 缓存已清理")
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.warning(f"[GPU] 清理缓存失败: {e}")
+
 
 @router.post("/delegate")
 async def delegate_task(request: AgentDelegateRequest):
@@ -461,8 +487,15 @@ async def _extract_color_cards(agent_id: str, agent_name: str, speech: str, topi
             card_content = card.get('content') or card.get('description') or card.get('text', '')
 
             if not card_type:
-                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color字段: {list(card.keys())}")
-                continue
+                # 根据 Agent 角色推断默认类型
+                _AGENT_TYPE_FALLBACK = {
+                    'mijuanfang': 'blue', 'taishige': 'blue',
+                    'tongzhengsi': 'blue',
+                    'jinjiyu': 'yellow', 'jianchayuan': 'yellow',
+                    'chengxiangfu': 'red', 'junjichu': 'red', 'zhihuishi': 'red',
+                }
+                card_type = _AGENT_TYPE_FALLBACK.get(agent_id, 'blue')
+                logger.warning(f"[_extract_color_cards] 第{i+1}个卡片缺少type/color，使用Agent默认类型: {card_type}")
 
             if card_type not in ('blue', 'green', 'yellow', 'red'):
                 logger.warning(f"[_extract_color_cards] 第{i+1}个卡片type无效: {card_type}")
@@ -790,27 +823,179 @@ async def _analyze_image_for_meeting(image_base64: str, topic: str) -> Optional[
 
 # 全局降级状态：如果某层失败，标记时间戳，短时间内不再尝试
 _degrade_state = {
-    "npu_last_fail": 0,        # NPU 上次失败时间
-    "vision_last_fail": 0,     # 视觉模型(8910)上次失败时间
-    "skip_npu_until": 0,       # 跳过 NPU 直到该时间
-    "skip_vision_until": 0,    # 跳过视觉模型直到该时间
+    "vision_last_fail": 0,     # Genie 上次失败时间
+    "skip_vision_until": 0,    # 跳过 Genie 直到该时间
 }
-_DEGRADE_COOLDOWN = 30  # 降级冷却时间（秒），失败后跳过该层这么久
+_DEGRADE_COOLDOWN = 10  # 降级冷却时间（秒），失败后跳过该层这么久
+
+# NPU 串行锁：Genie 服务一次只能处理一个请求
+_GENIE_LOCK = asyncio.Lock()
+
+
+def _is_valid_genie_content(content: str) -> bool:
+    """验证Genie返回内容是否有效（排除错误响应）"""
+    if not content or len(content) <= 5:
+        return False
+    _error_markers = ['[E]', '[ERROR]', '[error]', 'connection has been broken',
+                      'ConnectionError', 'connection refused', 'Connection refused',
+                      'Internal Server Error', '500', 'Bad Gateway', '502',
+                      'Service Unavailable', '503']
+    for marker in _error_markers:
+        if marker in content:
+            logger.warning(f"[Meeting] Genie内容包含错误标记'{marker}'，视为失败: {content[:100]}")
+            return False
+    return True
+
+
+async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
+                       system_prompt: str, user_prompt: str, max_tokens: int,
+                       degrade_state: dict, scheduler, inference_start: float,
+                       agent_id: str, layer: str) -> Optional[str]:
+    """调用 Genie HTTP（端口 8910），NPU 串行锁 + 冷却"""
+    now = time.time()
+    if not (now > degrade_state.get("skip_vision_until", 0)):
+        logger.info(f"[Meeting] 层{layer} Genie({model_name}) 跳过（冷却中）")
+        return None
+
+    # NPU 串行锁：Genie 一次只能处理一个请求，排队等待而非并发导致429
+    async with _GENIE_LOCK:
+        return await _do_call_genie(
+            model_name=model_name, timeout_sec=timeout_sec, max_chars=max_chars,
+            system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=max_tokens,
+            degrade_state=degrade_state, scheduler=scheduler, inference_start=inference_start,
+            agent_id=agent_id, layer=layer
+        )
+
+
+async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
+                          system_prompt: str, user_prompt: str, max_tokens: int,
+                          degrade_state: dict, scheduler, inference_start: float,
+                          agent_id: str, layer: str) -> Optional[str]:
+    """实际的 Genie HTTP 调用（受 _GENIE_LOCK 保护，不会并发）"""
+
+    # 连续失败计数器
+    _consecutive_fails = getattr(_call_genie, '_consecutive_fails', 0)
+
+    # 截断输入 - 保留更多内容让回复更丰富
+    truncated_system = system_prompt[:500] if len(system_prompt) > 500 else system_prompt
+    remaining = max_chars - len(truncated_system)
+    truncated_user = user_prompt[:remaining] if len(user_prompt) > remaining else user_prompt
+    if len(user_prompt) > remaining:
+        logger.info(f"[Meeting] 层{layer} Genie输入截断({len(user_prompt)}→{remaining}字)")
+
+    async def _do_call() -> Optional[str]:
+        async with httpx.AsyncClient(timeout=timeout_sec, limits=httpx.Limits(max_keepalive_connections=2, max_connections=4)) as client:
+            response = await client.post(
+                "http://127.0.0.1:8910/v1/chat/completions",
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": truncated_system},
+                        {"role": "user", "content": truncated_user}
+                    ],
+                    "max_tokens": max_tokens,
+                    "temperature": 0.3,
+                    "top_k": 40,
+                    "top_p": 0.9
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if _is_valid_genie_content(content):
+                return content
+            logger.warning(f"[Meeting] 层{layer} Genie响应无效: {repr(content[:80])}")
+            return None
+
+    # 首次请求
+    genie_start = time.time()
+    logger.info(f"[Meeting] 层{layer} Genie请求(model={model_name}, timeout={timeout_sec}s)")
+    try:
+        result = await _do_call()
+        if result:
+            elapsed = time.time() - genie_start
+            logger.info(f"[Meeting] 层{layer} Genie({model_name}) 成功: {len(result)}字, 耗时{elapsed:.1f}s")
+            _call_genie._consecutive_fails = 0  # 重置连续失败计数
+            if scheduler:
+                scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
+            return result
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400:
+            logger.warning(f"[Meeting] 层{layer} Genie 拒绝请求")
+        elif e.response.status_code == 429:
+            logger.warning(f"[Meeting] 层{layer} Genie 429限流，等待3秒重试...")
+            await asyncio.sleep(3)
+            try:
+                result = await _do_call()
+                if result:
+                    elapsed = time.time() - genie_start
+                    logger.info(f"[Meeting] 层{layer} Genie 重试成功: {len(result)}字, 耗时{elapsed:.1f}s")
+                    if scheduler:
+                        scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
+                    return result
+            except Exception:
+                pass
+        else:
+            logger.warning(f"[Meeting] 层{layer} Genie HTTP{e.response.status_code}: {e.response.text[:200]}")
+    except httpx.ReadTimeout:
+        logger.warning(f"[Meeting] 层{layer} Genie ReadTimeout(timeout={timeout_sec}s)，等待8秒重试...")
+        await asyncio.sleep(8)
+        try:
+            result = await _do_call()
+            if result:
+                elapsed = time.time() - genie_start
+                logger.info(f"[Meeting] 层{layer} Genie 超时重试成功: {len(result)}字, 耗时{elapsed:.1f}s")
+                if scheduler:
+                    scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
+                return result
+        except httpx.HTTPStatusError as retry_e:
+            if retry_e.response.status_code == 429:
+                logger.warning(f"[Meeting] 层{layer} Genie 超时重试仍429，再等5秒最后尝试...")
+                await asyncio.sleep(5)
+                try:
+                    result = await _do_call()
+                    if result:
+                        elapsed = time.time() - genie_start
+                        logger.info(f"[Meeting] 层{layer} Genie 二次重试成功: {len(result)}字")
+                        if scheduler:
+                            scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
+                        return result
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"[Meeting] 层{layer} Genie 不可用({type(e).__name__}): {e}")
+
+    # 记录失败 + 连续失败冷却
+    _consecutive_fails += 1
+    _call_genie._consecutive_fails = _consecutive_fails
+    degrade_state["vision_last_fail"] = time.time()
+    if _consecutive_fails >= 3:
+        degrade_state["skip_vision_until"] = time.time() + _DEGRADE_COOLDOWN
+        logger.warning(f"[Meeting] 层{layer} Genie({model_name}) 连续失败{_consecutive_fails}次，进入冷却{_DEGRADE_COOLDOWN}s")
+        # 连续失败时尝试清理 GPU 显存
+        _try_cleanup_gpu_memory()
+    if scheduler:
+        scheduler.record_inference(model_name, time.time() - inference_start, False, agent_id=agent_id)
+    return None
 
 
 async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0, 
  agent_id: str = None, task_type: str = "analysis", max_tokens: int = 80, temperature: float = 0.7) -> str:
     """
     调用LLM生成回复，降级策略（按优先级排序）：
-    层1: NPU qwen2.0-7b（中文最强）
-    层2: NPU llama3.2-3b（快速备用）
-    层3: 视觉模型（兜底）
+    层1: Genie HTTP qwen2.0-7b（中文最强）
+    层2: Genie HTTP llama3.2-3b（快速备用）
     
     闭环三增强：集成智能资源调度器
     """
     _max_tokens = max_tokens  # 避免闭包捕获问题
     import time as _time
     now = _time.time()
+    
+    # 每次 LLM 调用前尝试清理 GPU 显存
+    _try_cleanup_gpu_memory()
     
     # 闭环三：尝试使用智能调度器选择模型
     scheduler = None
@@ -823,302 +1008,39 @@ async def call_llm(system_prompt: str, user_prompt: str, timeout: float = 60.0,
     # 记录推理开始
     inference_start = _time.time()
 
-    # ============ 层1: NPU qwen2.0-7b（中文最强） ============
-    if now < _degrade_state["skip_npu_until"]:
-        try:
-            from models.model_loader import get_model_loader
-            import asyncio as _asyncio
+    # ============ 层1: Genie HTTP qwen2.0-7b ============
+    _genie_result = await _call_genie(
+        model_name="qwen2.0-7b-ssd-8380-2.34",
+        timeout_sec=120.0,
+        max_chars=2000,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_tokens=_max_tokens,
+        degrade_state=_degrade_state,
+        scheduler=scheduler,
+        inference_start=inference_start,
+        agent_id=agent_id,
+        layer="1"
+    )
+    if _genie_result is not None:
+        return _genie_result
 
-            # 直接用 qwen2.0-7b，中文优化，能力最强
-            model_key = "qwen2.0-7b"
-            logger.info(f"[Meeting] 层1使用模型: {model_key}")
-            loader = get_model_loader(model_key)
-
-            # 检查是否已加载
-            if not loader.is_loaded:
-                logger.info(f"[Meeting] 模型未加载，正在加载...")
-                loader.load()
-                logger.info(f"[Meeting] 模型加载完成，is_loaded={loader.is_loaded}")
-
-            # NPU推理是同步阻塞调用，放到线程池+超时保护
-            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
-            logger.info(f"[Meeting] 层1准备推理: combined_prompt前100字={repr(combined_prompt[:100])}")
-            
-            loop = _asyncio.get_event_loop()
-            raw_output = await _asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
-                ),
-                timeout=timeout
-            )
-            
-            logger.info(f"[Meeting] 层1推理完成: raw_output长度={len(raw_output) if raw_output else 0}, 内容前100字={repr(raw_output[:100]) if raw_output else 'None'}")
-
-            # 清理特殊 token
-            if raw_output:
-                for tok in ['<|im_end|>', '<|im_start|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
-                    raw_output = raw_output.replace(tok, '')
-                raw_output = raw_output.strip()
-
-            if raw_output and len(raw_output) > 5:
-                logger.info(f"[Meeting] NPU进程内调用生成成功: {len(raw_output)}字")
-                # 闭环三：记录成功推理
-                if scheduler:
-                    latency = _time.time() - inference_start
-                    scheduler.record_inference("qwen2.0-7b", latency, True, agent_id=agent_id)
-                return raw_output
-            else:
-                logger.warning(f"[Meeting] NPU推理返回空或过短: '{raw_output}'")
-        except Exception as e:
-            logger.warning(f"[Meeting] NPU qwen2.0-7b失败: {type(e).__name__}: {e}")
-            _degrade_state["npu_last_fail"] = now
-            _degrade_state["skip_npu_until"] = now + _DEGRADE_COOLDOWN
-            # 闭环三：记录推理失败
-            if scheduler:
-                latency = _time.time() - inference_start
-                scheduler.record_inference("qwen2.0-7b", latency, False, agent_id=agent_id)
-
-    # ============ 层2: NPU llama3.2-3b（快速备用） ============
-    if now < _degrade_state["skip_npu_until"]:
-        try:
-            from models.model_loader import get_model_loader
-            import asyncio as _asyncio
-
-            model_key = "llama3.2-3b"
-            logger.info(f"[Meeting] 层2使用模型: {model_key}, max_tokens={_max_tokens}")
-            loader = get_model_loader(model_key)
-
-            if not loader.is_loaded:
-                logger.info(f"[Meeting] 层2模型未加载正在加载...")
-                loader.load()
-                logger.info(f"[Meeting] 层2模型加载完成")
-
-            combined_prompt = f"{system_prompt}\n\n{user_prompt}"
-            logger.info(f"[Meeting] 层2准备推理")
-
-            loop = _asyncio.get_event_loop()
-            raw_output = await _asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda p=combined_prompt, sp=system_prompt, t=temperature: loader.infer(prompt=p, max_new_tokens=_max_tokens, temperature=t, system_prompt=sp)
-                ),
-                timeout=timeout
-            )
-
-            logger.info(f"[Meeting] 层2推理完成: {len(raw_output) if raw_output else 0}字")
-
-            if raw_output:
-                for tok in ['<|im_end|>', '<|im_start|>', '</s>', '<|end|>', '<|bos|>', '<|eos|>']:
-                    raw_output = raw_output.replace(tok, '')
-                raw_output = raw_output.strip()
-
-            if raw_output and len(raw_output) > 5:
-                logger.info(f"[Meeting] NPU llama3.2-3b生成成功: {len(raw_output)}字")
-                # 闭环三：记录成功推理
-                if scheduler:
-                    latency = _time.time() - inference_start
-                    scheduler.record_inference("llama3.2-3b", latency, True, agent_id=agent_id)
-                return raw_output
-        except Exception as e:
-            logger.warning(f"[Meeting] NPU llama3.2-3b失败: {type(e).__name__}: {e}")
-            # 闭环三：记录推理失败
-            if scheduler:
-                latency = _time.time() - inference_start
-                scheduler.record_inference("llama3.2-3b", latency, False, agent_id=agent_id)
-
-    # ============ 层3: Genie HTTP（兜底，先查当前加载的模型） ============
-    # Genie 连续失败计数器：单次失败不设冷却，累积2次才跳过
-    _genie_consecutive_fails = getattr(call_llm, '_genie_consecutive_fails', 0)
-    
-    if now > _degrade_state["skip_vision_until"]:
-        try:
-            # 简单速率控制：确保两次 Genie 调用之间至少间隔 1.2 秒，避免 429
-            _genie_last = getattr(call_llm, '_last_genie_call', 0.0)
-            _elapsed = now - _genie_last
-            if _elapsed < 1.2:
-                await asyncio.sleep(1.2 - _elapsed)
-            call_llm._last_genie_call = _time.time()
-            
-            # 截断过长的输入：3B模型有效上下文约1000中文字，超过会导致>45s超时
-            _MAX_8910_CHARS = 1000
-            _truncated_system = system_prompt[:300] if len(system_prompt) > 300 else system_prompt
-            _remaining_chars = _MAX_8910_CHARS - len(_truncated_system)
-            _truncated_user = user_prompt[:_remaining_chars] if len(user_prompt) > _remaining_chars else user_prompt
-            if len(user_prompt) > _remaining_chars:
-                logger.info(f"[Meeting] Genie输入截断({len(user_prompt)}→{_remaining_chars}字)")
-
-            _genie_model = "llama3.2-3b-8380-qnn2.37"  # 默认
-            _genie_timeout = 90.0  # Genie 3B模型+1000字输入上限，90s充足
-            
-            async with httpx.AsyncClient(timeout=_genie_timeout, limits=httpx.Limits(max_keepalive_connections=2, max_connections=4)) as client:
-                logger.info(f"[Meeting] Genie 请求中(model={_genie_model}, timeout={_genie_timeout}s, input={len(_truncated_user)}字)...")
-                _genie_start = _time.time()
-                response = await client.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": _genie_model,
-                        "messages": [
-                            {"role": "system", "content": _truncated_system},
-                            {"role": "user", "content": _truncated_user}
-                        ],
-                        "max_tokens": _max_tokens,
-                                         "temperature": 0.3,
-                        "top_k": 40,
-                        "top_p": 0.9
-                    }
-                )
-                _genie_elapsed = _time.time() - _genie_start
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if content:
-                    logger.info(f"[Meeting] Genie({_genie_model}) 生成成功: {len(content)}字, 耗时{_genie_elapsed:.1f}s")
-                    call_llm._genie_consecutive_fails = 0
-                    return content
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400:
-                logger.warning(f"[Meeting] Genie 拒绝请求(输入过长或格式问题)")
-            elif e.response.status_code == 429:
-                call_llm._genie_consecutive_fails += 1
-                logger.warning(f"[Meeting] Genie 429限流(连续失败{call_llm._genie_consecutive_fails}次)，等待3秒后重试...")
-                await asyncio.sleep(3)
-                try:
-                    async with httpx.AsyncClient(timeout=_genie_timeout) as client:
-                        response = await client.post(
-                            "http://127.0.0.1:8910/v1/chat/completions",
-                            json={
-                                "model": _genie_model,
-                                "messages": [
-                                    {"role": "system", "content": _truncated_system},
-                                    {"role": "user", "content": _truncated_user}
-                                ],
-                                "max_tokens": _max_tokens,
-                                                 "temperature": 0.3,
-                                "top_k": 40,
-                                "top_p": 0.9
-                            }
-                        )
-                        response.raise_for_status()
-                        result = response.json()
-                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                        if content:
-                            logger.info(f"[Meeting] Genie 重试成功: {len(content)}字")
-                            call_llm._genie_consecutive_fails = 0
-                            return content
-                except Exception:
-                    pass
-                _degrade_state["vision_last_fail"] = now
-            else:
-                call_llm._genie_consecutive_fails += 1
-                logger.warning(f"[Meeting] Genie HTTP{e.response.status_code}(连续失败{call_llm._genie_consecutive_fails}次): {e.response.text[:200]}")
-                _degrade_state["vision_last_fail"] = now
-        except httpx.ReadTimeout as e:
-            call_llm._genie_consecutive_fails += 1
-            logger.warning(f"[Meeting] Genie ReadTimeout(连续失败{call_llm._genie_consecutive_fails}次, timeout={_genie_timeout}s, input={len(_truncated_user)}字)")
-            # ReadTimeout 后必须等足够久：Genie 可能仍忙于旧请求，重试过快=429
-            logger.warning(f"[Meeting] Genie 超时，等待8秒让 Genie 释放资源后重试...")
-            await asyncio.sleep(8)
-            try:
-                async with httpx.AsyncClient(timeout=_genie_timeout) as client:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": _genie_model,
-                            "messages": [
-                                {"role": "system", "content": _truncated_system},
-                                {"role": "user", "content": _truncated_user}
-                            ],
-                            "max_tokens": _max_tokens,
-                                             "temperature": 0.3,
-                            "top_k": 40,
-                            "top_p": 0.9
-                        }
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        logger.info(f"[Meeting] Genie 超时重试成功: {len(content)}字")
-                        call_llm._genie_consecutive_fails = 0
-                        return content
-            except httpx.HTTPStatusError as retry_e:
-                if retry_e.response.status_code == 429:
-                    logger.warning(f"[Meeting] Genie 超时重试仍429(Genie尚未释放)，再等5秒最后尝试...")
-                    await asyncio.sleep(5)
-                    try:
-                        async with httpx.AsyncClient(timeout=_genie_timeout) as client:
-                            response = await client.post(
-                                "http://127.0.0.1:8910/v1/chat/completions",
-                                json={
-                                    "model": _genie_model,
-                                    "messages": [
-                                        {"role": "system", "content": _truncated_system},
-                                        {"role": "user", "content": _truncated_user}
-                                    ],
-                                    "max_tokens": _max_tokens,
-                                                     "temperature": 0.3,
-                                    "top_k": 40,
-"top_p": 0.9
-                                }
-                            )
-                            response.raise_for_status()
-                            result = response.json()
-                            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                            if content:
-                                logger.info(f"[Meeting] Genie 超时二次重试成功: {len(content)}字")
-                                call_llm._genie_consecutive_fails = 0
-                                return content
-                    except (httpx.ReadTimeout, httpx.TimeoutException):
-                        # 重试也超时：真正的不可用，记录并放弃
-                        call_llm._genie_consecutive_fails += 1
-                        logger.warning(f"[Meeting] Genie 重试超时(连续失败{call_llm._genie_consecutive_fails}次)，放弃")
-                    except httpx.HTTPStatusError as e2:
-                        # 429 或其他 HTTP 错误：Genie 还在忙，不算失败，等更久再试
-                        logger.warning(f"[Meeting] Genie 重试HTTP{e2.response.status_code}，等15秒最后一次尝试...")
-                        await asyncio.sleep(15)
-                        try:
-                            async with httpx.AsyncClient(timeout=_genie_timeout) as client:
-                                response = await client.post(
-                                    "http://127.0.0.1:8910/v1/chat/completions",
-                                    json={
-                                        "model": _genie_model,
-                                        "messages": [
-                                            {"role": "system", "content": _truncated_system},
-                                            {"role": "user", "content": _truncated_user}
-                                        ],
-                                        "max_tokens": _max_tokens,
-                                        "temperature": 0.3,
-                                        "top_k": 40,
-                                        "top_p": 0.9
-                                    }
-                                )
-                                result = response.json()
-                                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                                if content:
-                                    logger.info(f"[Meeting] Genie 第三次重试成功: {len(content)}字")
-                                    call_llm._genie_consecutive_fails = 0
-                                    return content
-                                logger.warning(f"[Meeting] Genie 第三次重试无内容(HTTP{response.status_code})")
-                        except Exception:
-                            pass
-                    except Exception:
-                        # 其他未知异常，静默放弃
-                        pass
-                else:
-                    logger.warning(f"[Meeting] Genie 超时重试HTTP{retry_e.response.status_code}")
-            except Exception:
-                pass
-            _degrade_state["vision_last_fail"] = now
-        except Exception as e:
-            call_llm._genie_consecutive_fails += 1
-            logger.warning(f"[Meeting] Genie 不可用(连续失败{call_llm._genie_consecutive_fails}次, {type(e).__name__}): {e}")
-            _degrade_state["vision_last_fail"] = now
-        
-        # 只有连续失败 >= 2 次才开启冷却，避免单次偶发超时就阻塞全部后续 Agent
-        if call_llm._genie_consecutive_fails >= 2:
-            _degrade_state["skip_vision_until"] = _time.time() + _DEGRADE_COOLDOWN
-            logger.warning(f"[Meeting] Genie 连续失败{call_llm._genie_consecutive_fails}次，进入冷却{_DEGRADE_COOLDOWN}s")
+    # ============ 层2: Genie HTTP llama3.2-3b ============
+    _genie_result = await _call_genie(
+        model_name="llama3.2-3b-8380-qnn2.37",
+        timeout_sec=90.0,
+        max_chars=1000,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        max_tokens=_max_tokens,
+        degrade_state=_degrade_state,
+        scheduler=scheduler,
+        inference_start=inference_start,
+        agent_id=agent_id,
+        layer="2"
+    )
+    if _genie_result is not None:
+        return _genie_result
 
     logger.info("[Meeting] 所有LLM不可用，使用角色降级回复")
     
@@ -1823,6 +1745,11 @@ async def create_meeting_stream(request: MeetingRequest):
         for round_num in range(1, request.rounds + 1):
             theme = themes[min(round_num - 1, len(themes) - 1)]
 
+            # 每轮开始前：如果是第2轮及之后，先让GPU休息一下
+            if round_num > 1:
+                await asyncio.sleep(0.5)  # 轮次间短暂休息
+                _try_cleanup_gpu_memory()  # 尝试清理GPU显存
+
             yield _sse_event("round_start", {
                 "round": round_num,
                 "theme": theme,
@@ -1868,8 +1795,7 @@ async def create_meeting_stream(request: MeetingRequest):
                  })
                  await asyncio.sleep(0.1)
 
-                 # 构建上下文 — 极简化 prompt，适配 3B 小模型
-                 # 小模型对"你是XX"类指令会本能复读，改用角色代号+直接提问
+                # 构建上下文 — 使用完整人设提示词
                  role_question = {
                      "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
                      "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
@@ -1937,9 +1863,9 @@ async def create_meeting_stream(request: MeetingRequest):
                      except Exception as e:
                          logger.warning(f"密卷房视觉分析失败: {e}")
 
-                 # 调用LLM — 人设已嵌入 user_prompt 头部，不再依赖 system role
-                 # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                 llm_task = asyncio.create_task(call_llm("你是一位古代朝廷官员，简洁回答问题，不要自我介绍。", user_prompt, max_tokens=150))
+                  # 使用完整人设调用LLM
+                  # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
+                 llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
                  speech_content = None
                  try:
                      while not llm_task.done():
@@ -2118,13 +2044,38 @@ async def create_meeting_stream(request: MeetingRequest):
                 saved_agent_cards = []
                 with db.get_connection() as conn:
                     cursor = conn.cursor()
-                    # 去重（根据 title 和 content）
-                    seen = set()
+                    # 智能去重：精确匹配 + 相似内容匹配
+                    seen_titles = set()
+                    seen_contents = set()
                     for card in extracted_cards:
-                        key = f"{card.get('title', '')}|{card.get('content', '')}"
-                        if key in seen:
+                        title = card.get('title', '')[:50]
+                        content = card.get('content', '')[:200]
+                        
+                        # 跳过完全相同的卡片
+                        key = f"{title}|{content}"
+                        if key in seen_titles:
                             continue
-                        seen.add(key)
+                        
+                        # 跳过标题相同或内容相似度>70%的卡片
+                        title_normalized = title.lower().strip()
+                        content_normalized = content.lower().strip()
+                        
+                        is_duplicate = False
+                        for seen_title in seen_titles:
+                            # 标题相似度检查
+                            if len(title_normalized) > 5 and len(seen_title) > 5:
+                                # 简单重叠检查
+                                title_words = set(title_normalized.split())
+                                seen_words = set(seen_title.split())
+                                overlap = len(title_words & seen_words) / max(len(title_words), len(seen_words))
+                                if overlap > 0.7:
+                                    is_duplicate = True
+                                    break
+                        
+                        if is_duplicate:
+                            continue
+                        
+                        seen_titles.add(key)
                         
                         try:
                             cursor.execute("""
