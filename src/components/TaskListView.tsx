@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, CheckCircle2, Circle, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Bell, CheckCircle2, Circle, Trash2, X, Calendar, Clock, Tag } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { toast } from 'sonner';
 
@@ -20,6 +21,7 @@ const TaskListView: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'today' | 'upcoming' | 'completed'>('all');
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -150,11 +152,12 @@ const TaskListView: React.FC = () => {
             {tasks.map((task) => (
               <div
                 key={task.id}
-                className={`flex items-center p-3 border rounded-lg ${task.is_completed ? 'bg-gray-50' : 'bg-white'}`}
+                className={`flex items-center p-3 border rounded-lg cursor-pointer active:scale-[0.98] transition-transform ${task.is_completed ? 'bg-gray-50' : 'bg-white'}`}
+                onClick={() => setSelectedTask(task)}
               >
                 <button
-                  onClick={() => toggleComplete(task.id, task.is_completed)}
-                  className="mr-3 text-gray-400 hover:text-green-500"
+                  onClick={(e) => { e.stopPropagation(); toggleComplete(task.id, task.is_completed); }}
+                  className="mr-3 text-gray-400 hover:text-green-500 flex-shrink-0"
                 >
                   {task.is_completed ? (
                     <CheckCircle2 className="w-5 h-5 text-green-500" />
@@ -163,12 +166,12 @@ const TaskListView: React.FC = () => {
                   )}
                 </button>
                 
-                <div className="flex-1">
-                  <div className={`font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                <div className="flex-1 min-w-0">
+                  <div className={`font-medium truncate ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
                     {task.title}
                   </div>
                   {task.description && (
-                    <div className="text-sm text-gray-500">{task.description}</div>
+                    <div className="text-sm text-gray-500 truncate">{task.description}</div>
                   )}
                   <div className="flex items-center space-x-3 mt-1 text-xs text-gray-400">
                     <span className={getPriorityColor(task.priority)}>
@@ -181,8 +184,8 @@ const TaskListView: React.FC = () => {
                 </div>
                 
                 <button
-                  onClick={() => deleteTask(task.id)}
-                  className="ml-3 text-gray-400 hover:text-red-500"
+                  onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
+                  className="ml-3 text-gray-400 hover:text-red-500 flex-shrink-0"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -191,6 +194,96 @@ const TaskListView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* 任务详情弹窗 */}
+      {selectedTask && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onClick={() => setSelectedTask(null)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <h3 className="text-lg font-bold truncate pr-2">{selectedTask.title}</h3>
+              <button onClick={() => setSelectedTask(null)} className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {selectedTask.description && (
+                <div>
+                  <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">描述</label>
+                  <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{selectedTask.description}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">优先级</label>
+                  <p className="text-sm font-medium mt-1">
+                    <span className={`inline-flex items-center gap-1 ${getPriorityColor(selectedTask.priority)}`}>
+                      <Tag className="w-3.5 h-3.5" />
+                      {selectedTask.priority === 'high' ? '高' : selectedTask.priority === 'medium' ? '中' : '低'}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">分类</label>
+                  <p className="text-sm mt-1 flex items-center gap-1">
+                    <Tag className="w-3.5 h-3.5 text-gray-400" />
+                    {getCategoryLabel(selectedTask.category)}
+                  </p>
+                </div>
+                {selectedTask.due_date && (
+                  <div>
+                    <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">到期日期</label>
+                    <p className="text-sm mt-1 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                      {selectedTask.due_date}
+                    </p>
+                  </div>
+                )}
+                {selectedTask.remind_at && (
+                  <div>
+                    <label className="text-xs text-gray-400 font-medium uppercase tracking-wide">提醒时间</label>
+                    <p className="text-sm mt-1 flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      {selectedTask.remind_at}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-400 pt-2 border-t">
+                <span className={selectedTask.is_completed ? 'text-green-500' : ''}>
+                  {selectedTask.is_completed ? '✓ 已完成' : '○ 未完成'}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2 px-5 py-4 border-t bg-gray-50">
+              <button
+                onClick={() => { toggleComplete(selectedTask.id, selectedTask.is_completed); setSelectedTask(null); }}
+                className="flex-1 py-2 rounded-lg text-sm font-medium text-white transition-opacity hover:opacity-90"
+                style={{ backgroundColor: selectedTask.is_completed ? '#f59e0b' : '#22c55e' }}
+              >
+                {selectedTask.is_completed ? '标记未完成' : '标记完成'}
+              </button>
+              <button
+                onClick={() => { deleteTask(selectedTask.id); setSelectedTask(null); }}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-red-500 border border-red-200 hover:bg-red-50 transition-colors"
+              >
+                删除
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
     </div>
   );
 };
