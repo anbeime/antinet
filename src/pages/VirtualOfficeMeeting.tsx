@@ -998,6 +998,9 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
         category: 'archive',
         priority: 'medium'
       });
+      // 保存归档成功后，清除聊天区的会议卡片和缓存
+      setMeetingCards([]);
+      sessionStorage.removeItem(MEETING_STORAGE_KEY);
       toast.success('会议记录已保存到任务归档');
     } catch (error) {
       console.error('保存归档失败:', error);
