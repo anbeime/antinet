@@ -7,6 +7,7 @@ import { backlinkService, cardTaskService, calendarEventService, sourceFileServi
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
 import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import ReactMarkdown from 'react-markdown';
 
 
 
@@ -1092,10 +1093,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <div
                 ref={contentRef}
                 onMouseUp={handleTextSelect}
-className="text-lg select-text"
-                style={{ whiteSpace: 'pre-wrap' }}
-               >
-{card.content}
+                className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
+              >
+                <ReactMarkdown>{card.content}</ReactMarkdown>
               </div>
             )}
             

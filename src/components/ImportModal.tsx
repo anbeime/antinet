@@ -225,7 +225,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
     const results = paragraphs.map((para) => {
       const { color, confidence } = classifyParagraph(para);
       const title = extractTitle(para);
-      const address = generateAddress(color);
+      const urlMatch = para.match(/https?:\/\/[^\s\n\)\]]+/);
+      const address = urlMatch ? urlMatch[0].replace(/[\)\]]$/, '').slice(0, 120) : generateAddress(color);
       
       return {
         title,

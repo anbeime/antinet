@@ -186,6 +186,7 @@ class SlideShape:
     font_bold: Optional[bool] = None
     font_color: Optional[str] = None
     fill_color: Optional[str] = None
+    fill_opacity: Optional[float] = None
     table: Optional[list[list[str]]] = None
     image_url: Optional[str] = None
     paragraphs: Optional[list] = None

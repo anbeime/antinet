@@ -122,12 +122,28 @@ def _extract_shape_style(shape) -> Dict[str, Any]:
                 try:
                     if first_run.font.size:
                         data["default_font_size"] = round(first_run.font.size.pt, 1)
+                        data["font_size"] = round(first_run.font.size.pt, 1)
                     if first_run.font.color and first_run.font.color.rgb:
-                        data["default_font_color"] = f"#{first_run.font.color.rgb}"
+                        clr = f"#{first_run.font.color.rgb}"
+                        data["default_font_color"] = clr
+                        data["font_color"] = clr
                     if first_run.font.name:
                         data["default_font_name"] = first_run.font.name
                 except:
                     pass
+
+    # Extract fill alpha (opacity) from a:alpha element
+    try:
+        from pptx.oxml.ns import qn
+        alpha_el = shape._element.find('.//' + qn('a:alpha'))
+        if alpha_el is not None:
+            val = alpha_el.get('val')
+            if val:
+                alpha_pct = int(val) / 100000.0
+                if alpha_pct < 1.0:
+                    data["fill_opacity"] = round(alpha_pct, 4)
+    except Exception:
+        pass
 
     if shape.has_table:
         table_data = []

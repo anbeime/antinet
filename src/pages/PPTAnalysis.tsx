@@ -20,7 +20,7 @@ interface KnowledgeCard {
 const API_BASE = getApiBaseUrl() + ''
 
 type TabType = 'text' | 'cards' | 'project';
-type ThemeType = 'professional' | 'creative' | 'minimal';
+type ThemeType = 'professional' | 'creative' | 'minimal' | 'tech' | 'business';
 
 const PPTAnalysis: React.FC = () => {
   const navigate = useNavigate();

@@ -280,7 +280,7 @@ const PPTViewer: React.FC = () => {
                 position: 'absolute', left: pct(shape.left, origW), top: pct(shape.top, origH),
                 width: pct(shape.width, origW), height: pct(shape.height, origH),
                 background: shape.fill_color || 'transparent',
-                overflow: 'hidden',
+                opacity: shape.fill_opacity ?? 1,
                 fontSize: defaultFontSize,
                 color: defaultColor,
                 fontWeight: shape.font_bold ? 'bold' : 'normal',
