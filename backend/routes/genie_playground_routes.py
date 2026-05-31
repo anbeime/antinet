@@ -23,6 +23,17 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
 
+# 429 不再重试（Genie 单请求槽，重试只会叠加压力导致后端崩溃）
+# 遇到 429 立即失败，由各端点走 fallback 降级
+
+
+async def _genie_post_no_retry(url: str, json_data: dict, timeout: float = 120.0) -> dict:
+    """Genie POST 请求（429 立即返回，不重试以免恶性循环）"""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=json_data)
+        resp.raise_for_status()
+        return resp.json()
+
 # ==================== model_loader 直接调用 ====================
 _model_loader = None
 
@@ -363,23 +374,20 @@ async def genie_classify(request: ClassifyRequest):
 
     for model in models_to_try:
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(
-                    f"{GENIE_SERVICE_URL}/v1/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": [
-                            {"role": "system", "content": _JINYIWEI_CLASSIFY_SYSTEM},
-                            {"role": "user", "content": user_prompt}
-                        ],
-                        "max_tokens": 2048,
-                        "temperature": 0.3
-                    }
-                )
-                resp.raise_for_status()
-                result = resp.json()
-                response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if response_text:
+            result = await _genie_post_no_retry(
+                f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                json_data={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": _JINYIWEI_CLASSIFY_SYSTEM},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 2048,
+                    "temperature": 0.3
+                }
+            )
+            response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if response_text:
                     # 尝试解析 Genie 返回的 JSON
                     try:
                         json_match = response_text
@@ -467,21 +475,18 @@ async def genie_analyze(request: AnalyzeRequest):
     last_error = ""
     for model in models_to_try:
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(
-                    f"{GENIE_SERVICE_URL}/v1/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": user_prompt}],
-                        "max_tokens": 1024,
-                        "temperature": 0.5
-                    }
-                )
-                resp.raise_for_status()
-                result = resp.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                if content:
-                    return {"success": True, "response": content}
+            result = await _genie_post_no_retry(
+                f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                json_data={
+                    "model": model,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                    "max_tokens": 1024,
+                    "temperature": 0.5
+                }
+            )
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if content:
+                return {"success": True, "response": content}
         except Exception as e:
             last_error = f"{model}: {str(e)[:100]}"
     raise HTTPException(status_code=502, detail=f"Genie 分析失败: {last_error}")

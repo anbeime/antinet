@@ -851,7 +851,7 @@ _GENIE_LOCK = asyncio.Lock()
 
 
 def _is_valid_genie_content(content: str) -> bool:
-    """验证Genie返回内容是否有效（排除错误响应）"""
+    """验证Genie返回内容是否有效（排除错误响应 + 垃圾输出）"""
     if not content or len(content) <= 5:
         return False
     _error_markers = ['[E]', '[ERROR]', '[error]', 'connection has been broken',
@@ -862,6 +862,30 @@ def _is_valid_genie_content(content: str) -> bool:
         if marker in content:
             logger.warning(f"[Meeting] Genie内容包含错误标记'{marker}'，视为失败: {content[:100]}")
             return False
+
+    # 检测冷启动垃圾输出：模板引擎碎片、HTML/JS泄漏、无意义符号堆叠
+    _garbage_patterns = [
+        r'\.\$_',           # velocity/模板引擎残片
+        r'\$\{',            # JS模板字符串
+        r'elocity',         # velocity引擎
+        r'isLoggedIn',      # JS变量名泄露
+        r'TextNode',        # DOM API泄露
+        r'{/#',             # handlebars残留
+        r'\.\$\w+\.\$_',   # 重复模板变量
+    ]
+    import re as _re
+    for pat in _garbage_patterns:
+        if _re.search(pat, content):
+            logger.warning(f"[Meeting] Genie垃圾输出(模式'{pat}'): {repr(content[:80])}")
+            return False
+
+    # 检测异常短回复（Non-CJK字符占比过高，说明模型在胡说）
+    if len(content) < 15:
+        cjk_count = sum(1 for c in content if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf')
+        if cjk_count == 0:
+            logger.warning(f"[Meeting] Genie非中文短回复: {repr(content[:80])}")
+            return False
+
     return True
 
 
@@ -934,65 +958,31 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
             logger.warning(f"[Meeting] 层{layer} Genie响应无效: {repr(content[:80])}")
             return None
 
-    # 首次请求
+    async def _do_call_one_shot() -> Optional[str]:
+        """单次 Genie 调用（不重试429，失败即回退）"""
+        try:
+            return await _do_call()
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"[Meeting] 层{layer} Genie HTTP {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.warning(f"[Meeting] 层{layer} Genie 异常: {e}")
+            return None
+
+    # 带 429 重试的调用
     genie_start = time.time()
     logger.info(f"[Meeting] 层{layer} Genie请求(model={model_name}, timeout={timeout_sec}s)")
     try:
-        result = await _do_call()
+        result = await _do_call_one_shot()
         if result:
             elapsed = time.time() - genie_start
             logger.info(f"[Meeting] 层{layer} Genie({model_name}) 成功: {len(result)}字, 耗时{elapsed:.1f}s")
-            _call_genie._consecutive_fails = 0  # 重置连续失败计数
+            _call_genie._consecutive_fails = 0
             if scheduler:
                 scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
             return result
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 400:
-            logger.warning(f"[Meeting] 层{layer} Genie 拒绝请求")
-        elif e.response.status_code == 429:
-            logger.warning(f"[Meeting] 层{layer} Genie 429限流，等待3秒重试...")
-            await asyncio.sleep(3)
-            try:
-                result = await _do_call()
-                if result:
-                    elapsed = time.time() - genie_start
-                    logger.info(f"[Meeting] 层{layer} Genie 重试成功: {len(result)}字, 耗时{elapsed:.1f}s")
-                    if scheduler:
-                        scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
-                    return result
-            except Exception:
-                pass
-        else:
-            logger.warning(f"[Meeting] 层{layer} Genie HTTP{e.response.status_code}: {e.response.text[:200]}")
-    except httpx.ReadTimeout:
-        logger.warning(f"[Meeting] 层{layer} Genie ReadTimeout(timeout={timeout_sec}s)，等待8秒重试...")
-        await asyncio.sleep(8)
-        try:
-            result = await _do_call()
-            if result:
-                elapsed = time.time() - genie_start
-                logger.info(f"[Meeting] 层{layer} Genie 超时重试成功: {len(result)}字, 耗时{elapsed:.1f}s")
-                if scheduler:
-                    scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
-                return result
-        except httpx.HTTPStatusError as retry_e:
-            if retry_e.response.status_code == 429:
-                logger.warning(f"[Meeting] 层{layer} Genie 超时重试仍429，再等5秒最后尝试...")
-                await asyncio.sleep(5)
-                try:
-                    result = await _do_call()
-                    if result:
-                        elapsed = time.time() - genie_start
-                        logger.info(f"[Meeting] 层{layer} Genie 二次重试成功: {len(result)}字")
-                        if scheduler:
-                            scheduler.record_inference(model_name, elapsed, True, agent_id=agent_id)
-                        return result
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    except Exception as e:
-        logger.warning(f"[Meeting] 层{layer} Genie 不可用({type(e).__name__}): {e}")
+    except Exception:
+        pass
 
     # 记录失败 + 连续失败冷却
     _consecutive_fails += 1
@@ -2064,6 +2054,29 @@ async def create_meeting_stream(request: MeetingRequest):
             "timestamp": datetime.now().isoformat()
         })
         await asyncio.sleep(0.1)
+
+        # 模型预热：直接 httpx 调用，绕过 _call_genie（避免污染降级冷却状态）
+        try:
+            logger.info("[Meeting] 模型预热中...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "qwen2.0-7b-ssd-8380-2.34",
+                        "messages": [
+                            {"role": "system", "content": "你是一个中文助手。"},
+                            {"role": "user", "content": "你好"}
+                        ],
+                        "max_tokens": 5, "temperature": 0.1
+                    }
+                )
+                # 预热只需触发模型加载，不管返回内容
+                if resp.status_code == 200:
+                    logger.info("[Meeting] 模型预热完成")
+                else:
+                    logger.info(f"[Meeting] 模型预热返回非200: {resp.status_code}")
+        except Exception:
+            logger.info("[Meeting] 模型预热跳过（Genie可能未就绪）")
 
         themes = [
             "问题分析与信息收集",
