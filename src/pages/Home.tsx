@@ -1048,51 +1048,38 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
                 >
                   <h2 className="text-xl font-bold mb-4">企业应用场景</h2>
-                  {statsLoading ? (
-                    <div className="text-center py-8">
-                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
-                    </div>
-                  ) : statsError ? (
-                    <div className="text-center py-8">
-                      <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                      <p className="text-red-600 dark:text-red-400">{statsError}</p>
-                    </div>
-                  ) : applicationScenarios.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Briefcase className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                      <p className="text-gray-500 dark:text-gray-400">暂无应用场景数据</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {applicationScenarios.map((scenario, index) => (
-                        <motion.div
-                          key={index}
-                          whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
-                          whileTap={{ scale: 0.98 }}
-                          className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
-                          onClick={() => {
-                            if (scenario.link.startsWith('tab:')) {
-                              const tabTarget = scenario.link.slice(4);
-                              const [mainTab, subTab] = tabTarget.split('|');
-                              setActiveTab(mainTab as any);
-                              if (subTab) setKnowledgeSubTab(subTab as any);
-                            } else {
-                              navigate(scenario.link);
-                            }
-                          }}
-                        >
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-400 flex items-center justify-center text-white flex-shrink-0">
-                            {scenario.icon}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-sm">{scenario.title}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{scenario.description}</div>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {[
+                      { icon: 'Lo', title: '端侧隐私保护', desc: 'NPU推理<500ms，数据不出域', link: 'tab:data-management' },
+                      { icon: 'Pr', title: '专题项目管理', desc: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
+                      { icon: 'Tm', title: '局域网团队协作', desc: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
+                    ].map((scenario, index) => (
+                      <motion.div
+                        key={index}
+                        whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
+                        whileTap={{ scale: 0.98 }}
+                        className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
+                        onClick={() => {
+                          if (scenario.link.startsWith('tab:')) {
+                            const tabTarget = scenario.link.slice(4);
+                            const [mainTab, subTab] = tabTarget.split('|');
+                            setActiveTab(mainTab as any);
+                            if (subTab) setKnowledgeSubTab(subTab as any);
+                          } else {
+                            navigate(scenario.link);
+                          }
+                        }}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-400 flex items-center justify-center text-white flex-shrink-0 text-sm font-bold">
+                          {scenario.icon}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm">{scenario.title}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{scenario.desc}</div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
                 </motion.div>
 
 

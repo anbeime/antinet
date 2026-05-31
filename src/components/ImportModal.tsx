@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Clipboard,
   Loader2,
+  Sparkles,
   Inbox,
   Clock,
   Calendar,
@@ -77,6 +78,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [errors, setErrors] = useState<string[]>([]);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [syncToGTD, setSyncToGTD] = useState(false);
+  const [isAIClassifying, setIsAIClassifying] = useState(false);
 
   // 智能分析内容 - 使用本地智能分类算法（快速且功能完整）
   const autoClassifyContent = async (content: string): Promise<Array<{
@@ -465,6 +467,75 @@ const ImportModal: React.FC<ImportModalProps> = ({
     onClose();
   };
 
+  // AI 精准分类 - 调用 Genie 模型
+  const handleAIClassify = async () => {
+    const content = importType === 'paste' ? importContent : (selectedFile ? await selectedFile.text() : '');
+    if (!content.trim()) return;
+
+    setIsAIClassifying(true);
+    setErrors([]);
+    try {
+      const prompt = `你是一个四色卡片分类专家。将以下内容按段落分割（空行分隔），为每段判断类型：
+
+- 🔵 核心概念：定义、理论、原理、事实数据
+- 🟢 关联链接：关联、对比、解释、因果关系
+- 🟡 参考来源：URL、引用、出处、文档资料
+- 🔴 索引关键词：关键词、标签、短文本、行动项
+
+请严格按 JSON 格式返回，不要有任何额外说明：
+[
+  {"title": "简短标题", "content": "原文段落", "color": "blue|green|yellow|red"}
+]
+
+内容：
+${content}`;
+
+      const res = await fetch(getApiBaseUrl() + '/api/genie-playground/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'qwen2.5vl3b-8380-2.42',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          max_tokens: 2048
+        })
+      });
+
+      if (!res.ok) throw new Error('AI 分类服务不可用');
+
+      const data = await res.json();
+      const text = data.response || '';
+      const jsonMatch = text.match(/\[[\s\S]*?\]/);
+      if (!jsonMatch) throw new Error('AI 返回格式异常');
+
+      const aiResults = JSON.parse(jsonMatch[0]);
+      const colorCounts: Record<string, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
+      const prefixes: Record<string, string> = { blue: 'A', green: 'B', yellow: 'C', red: 'D' };
+
+      const results = aiResults.map((item: any) => {
+        const color = (item.color || 'blue').toLowerCase() as CardColor;
+        colorCounts[color] = (colorCounts[color] || 0) + 1;
+        const address = `${prefixes[color]}${colorCounts[color]}`;
+        return {
+          title: item.title || item.content.slice(0, 30),
+          content: item.content,
+          color,
+          confidence: 0.9,
+          address
+        };
+      });
+
+      setImportResults(results);
+      setShowResults(true);
+      toast.success('AI 精准分类完成', { className: 'bg-green-50 text-green-800' });
+    } catch (e: any) {
+      console.error('AI 分类失败:', e);
+      setErrors([e.message || 'AI 分类失败，请稍后重试']);
+    } finally {
+      setIsAIClassifying(false);
+    }
+  };
+
   // 重置表单
   const resetForm = () => {
     setImportContent('');
@@ -473,6 +544,8 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setShowResults(false);
     setErrors([]);
     setSyncToGTD(false);
+    setIsAIClassifying(false);
+    setIsProcessing(false);
   };
 
   // 放弃更改并关闭
@@ -722,12 +795,34 @@ https://example.com/knowledge-management
               >
                 取消
               </button>
+              <button
+                type="button"
+                onClick={handleAIClassify}
+                disabled={isAIClassifying || isProcessing || !importContent.trim()}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center text-sm ${
+                  isAIClassifying || isProcessing || !importContent.trim()
+                    ? 'bg-gray-400 cursor-not-allowed text-white'
+                    : 'border border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-600 dark:text-purple-300 dark:hover:bg-purple-900/20'
+                }`}
+              >
+                {isAIClassifying ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin mr-1.5" />
+                    <span>AI 分析中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} className="mr-1.5" />
+                    <span>AI 精准分类</span>
+                  </>
+                )}
+              </button>
               <button 
                 type="button"
                 onClick={importType === 'paste' ? handlePasteImport : handleFileImport}
-                disabled={isProcessing || !importContent.trim()}
+                disabled={isProcessing || isAIClassifying || !importContent.trim()}
                 className={`px-6 py-2 rounded-lg transition-colors flex items-center ${
-                  isProcessing || !importContent.trim()
+                  isProcessing || isAIClassifying || !importContent.trim()
                     ? 'bg-gray-400 cursor-not-allowed text-white' 
                     : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}

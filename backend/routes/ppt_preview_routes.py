@@ -59,6 +59,19 @@ def _extract_shapes_recursive(shape) -> list[Dict[str, Any]]:
     return results
 
 
+def _get_run_font_color(run) -> Optional[str]:
+    """Extract font color from a run via public API."""
+    try:
+        clr = run.font.color
+        if clr is not None:
+            rgb = clr.rgb
+            if rgb is not None:
+                return f"#{rgb}"
+    except Exception:
+        pass
+    return None
+
+
 def _extract_shape_style(shape) -> Dict[str, Any]:
     """提取单个形状的完整样式（不处理 group 嵌套）"""
     data = {
@@ -79,17 +92,31 @@ def _extract_shape_style(shape) -> Dict[str, Any]:
             for run in para.runs:
                 run_info = {"text": run.text}
                 try:
-                    if run.font.size:
-                        run_info["font_size"] = round(run.font.size.pt, 1)
+                    fs = run.font.size
+                    if fs is not None:
+                        run_info["font_size"] = round(fs.pt, 1)
+                except Exception:
+                    pass
+                try:
                     if run.font.bold:
                         run_info["bold"] = True
+                except Exception:
+                    pass
+                try:
                     if run.font.italic:
                         run_info["italic"] = True
-                    if run.font.color and run.font.color.rgb:
-                        run_info["color"] = f"#{run.font.color.rgb}"
+                except Exception:
+                    pass
+                try:
+                    clr = _get_run_font_color(run)
+                    if clr:
+                        run_info["color"] = clr
+                except Exception:
+                    pass
+                try:
                     if run.font.name:
                         run_info["font_name"] = run.font.name
-                except:
+                except Exception:
                     pass
                 runs_data.append(run_info)
                 para_text += run.text
@@ -120,16 +147,23 @@ def _extract_shape_style(shape) -> Dict[str, Any]:
                     break
             if first_run:
                 try:
-                    if first_run.font.size:
-                        data["default_font_size"] = round(first_run.font.size.pt, 1)
-                        data["font_size"] = round(first_run.font.size.pt, 1)
-                    if first_run.font.color and first_run.font.color.rgb:
-                        clr = f"#{first_run.font.color.rgb}"
+                    fs = first_run.font.size
+                    if fs is not None:
+                        data["default_font_size"] = round(fs.pt, 1)
+                        data["font_size"] = round(fs.pt, 1)
+                except Exception:
+                    pass
+                try:
+                    clr = _get_run_font_color(first_run)
+                    if clr:
                         data["default_font_color"] = clr
                         data["font_color"] = clr
+                except Exception:
+                    pass
+                try:
                     if first_run.font.name:
                         data["default_font_name"] = first_run.font.name
-                except:
+                except Exception:
                     pass
 
     # Extract fill alpha (opacity) from a:alpha element
