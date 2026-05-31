@@ -1,0 +1,39 @@
+PPT 模块加载，PPTX可用: True
+INFO:routes.wiki:routes/wiki.py: PROJECT_ROOT=C:\D\zhiyi\backend, WIKI_ROOT=C:\D\zhiyi\backend\data\wiki
+INFO:wiki.semantic:[VectorStore] Loaded 1 vectors
+INFO:wiki.semantic:[SemanticSearch] 使用关键词语义搜索
+INFO:services.report_automation_service:Python path: ['C:\\D\\zhiyi', 'C:\\D\\zhiyi', 'C:\\D\\zhiyi\\backend']
+INFO:services.report_automation_service:python-pptx loaded successfully
+INFO:database:[GraphState] 知识图谱状态表初始化完成
+INFO:database:数据库已有默认数据，跳过初始化
+INFO:collaboration:Collaboration 路由数据库管理器已设置
+INFO:routes.knowledge_graph:[KG] 数据库管理器已设置
+INFO:routes.enhanced_chat_routes:[Chat] 知识图谱模块已连接
+INFO:routes.invoice_routes:[Invoice] Data migration completed
+INFO:routes.auto_card:[AutoCard] 数据库管理器已设置
+INFO:routes.knowledge_graph:[KG] 数据库管理器已设置
+INFO:routes.enhanced_chat_routes:[Chat] 知识图谱模块已连接
+INFO:routes.vector_search:[Vector] 数据库管理器已设置
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建已在后台启动
+INFO:routes.vector_search:[Vector] 向量搜索模块初始化完成（TF-IDF）
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建已在后台启动
+INFO:collaboration:Collaboration 路由数据库管理器已设置
+INFO:     Started server process [78080]
+INFO:     Waiting for application startup.
+INFO:services.reminder_service:[Reminder] 已从数据库加载 1 条已发送提醒记录
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "ReminderService.check_reminders" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:services.reminder_service:[Reminder] 提醒服务已启动 (检查间隔: 1440分钟)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+Building prefix dict from the default dictionary ...
+DEBUG:jieba:Building prefix dict from the default dictionary ...
+Loading model from cache C:\Users\topgo\AppData\Local\Temp\jieba.cache
+DEBUG:jieba:Loading model from cache C:\Users\topgo\AppData\Local\Temp\jieba.cache
+Loading model cost 0.607 seconds.
+DEBUG:jieba:Loading model cost 0.607 seconds.
+Prefix dict has been built successfully.
+DEBUG:jieba:Prefix dict has been built successfully.
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建完成: 2831 个文档, 8192 维特征
+INFO:routes.vector_search:[Vector] TF-IDF 索引构建完成: 2831 个文档, 8192 维特征

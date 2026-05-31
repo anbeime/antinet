@@ -70,17 +70,17 @@ const CalendarView: React.FC<CalendarViewProps> = ({ onRefresh }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 并行获取 GTD 任务、日历事件和知识卡片
-        const [taskRes, eventRes, cardRes] = await Promise.all([
-          fetch(getApiBaseUrl() + '/api/data/gtd/tasks'),
+        const [eventRes, cardRes] = await Promise.all([
           fetch(getApiBaseUrl() + '/api/integration/calendar/events/all'),
           fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000'),
         ]);
 
+        const taskRes = await fetch(getApiBaseUrl() + '/api/data/gtd/tasks');
         if (taskRes.ok) {
           const data = await taskRes.json();
           setTasks(Array.isArray(data) ? data : []);
         }
+
         if (eventRes.ok) {
           const data = await eventRes.json();
           setEvents(Array.isArray(data) ? data : []);

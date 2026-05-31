@@ -33,7 +33,8 @@ import {
   Lightbulb,
   Copy,
   ZoomIn,
-  Menu
+  Menu,
+  Calendar
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -979,43 +980,44 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 </div>
               </motion.div>
 
-              {/* 最近活动卡片 */}
+              {/* 平台功能入口 */}
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
               >
-<div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">最近知识活动</h2>
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold">平台功能</h2>
                   <button 
-                    onClick={() => setShowAllCardsModal(true)}
+                    onClick={() => setMobileMenuOpen(true)}
                     className="text-blue-600 dark:text-blue-400 text-sm flex items-center hover:underline"
                   >
                     查看全部 <ChevronRight size={16} />
                   </button>
                 </div>
-                <div className="space-y-4">
-                  {cards.slice(0, 3).map(card => (
-                    <motion.div 
-                      key={card.id}
-                      whileHover={{ x: 5 }}
-                      className="flex items-start p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {[
+                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: '智能PDF解析与分析', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
+                    { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
+                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
+                    { icon: <ListTodo size={20} />, title: '日历任务', desc: 'GTD任务管理与日程规划', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
+                    { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
+                    { icon: <Users size={20} />, title: '协作会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
+                  ].map((item, i) => (
+                    <motion.div
+                      key={i}
+                      whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
+                      whileTap={{ scale: 0.98 }}
+                      className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
+                      onClick={() => item.link.startsWith('tab:') ? setActiveTab(item.link.slice(4) as any) : navigate(item.link)}
                     >
-                      <div className={`${cardTypeMap[card.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-start">
-                          <h3 className="font-medium cursor-pointer hover:text-blue-600 hover:underline transition-colors" onClick={() => openDetailModal(card)}>{card.title}</h3>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(card.createdAt)}</span>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{card.content}</p>
-                        <div className="mt-2 flex items-center">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.color].bgColor} ${cardTypeMap[card.color].textColor} flex items-center`}>
-                            {cardTypeMap[card.color].icon}
-                            <span className="ml-1">{cardTypeMap[card.color].name}</span>
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-3">地址: {card.address}</span>
-                        </div>
+                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-white flex-shrink-0`}>
+                        {item.icon}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm">{item.title}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{item.desc}</div>
                       </div>
                     </motion.div>
                   ))}

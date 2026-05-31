@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <defs>
+    <linearGradient id="summaryBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ECF0F1"/>
+      <stop offset="100%" stop-color="#ECF0F1" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#summaryBg)"/>
+  <text x="640" y="100" font-family="Arial" font-size="40" font-weight="bold" fill="#1C2833" text-anchor="middle">要点总结</text>
+  <rect x="580" y="116" width="120" height="4" fill="#F1C40F"/>
+  <g transform="translate(200, 180)">
+        <g transform="translate(0, 0)">
+      <rect x="0" y="4" width="8" height="8" rx="2" fill="#F1C40F"/>
+      <text x="24" y="16" font-family="Arial" font-size="20" fill="#2C3E50">全球AI市场规模</text>
+    </g>
+    <g transform="translate(0, 56)">
+      <rect x="0" y="4" width="8" height="8" rx="2" fill="#F1C40F"/>
+      <text x="24" y="16" font-family="Arial" font-size="20" fill="#2C3E50">增长驱动力</text>
+    </g>
+    <g transform="translate(0, 112)">
+      <rect x="0" y="4" width="8" height="8" rx="2" fill="#F1C40F"/>
+      <text x="24" y="16" font-family="Arial" font-size="20" fill="#2C3E50">数据安全风险</text>
+    </g>
+    <g transform="translate(0, 168)">
+      <rect x="0" y="4" width="8" height="8" rx="2" fill="#F1C40F"/>
+      <text x="24" y="16" font-family="Arial" font-size="20" fill="#2C3E50">行动建议</text>
+    </g>
+  </g>
+  <rect x="0" y="714" width="1280" height="6" fill="#F1C40F"/>
+</svg>

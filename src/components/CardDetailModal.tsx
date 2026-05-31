@@ -1570,17 +1570,32 @@ className="text-lg select-text"
                         {cardTasks.map(task => (
                           <div
                             key={task.id}
-                            onClick={() => window.open('/?tab=gtd', '_blank')}
-                            className={`p-3 border rounded-lg transition-colors cursor-pointer hover:shadow-md ${
+                            className={`p-3 border rounded-lg transition-colors ${
                               task.is_completed
                                 ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60'
-                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800 hover:bg-green-100/50 dark:hover:bg-green-900/20'
+                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800'
                             }`}
                           >
                             <div className="flex items-start gap-2">
-                              <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${
-                                task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
-                              }`}></span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const { cardTaskService } = await import('../services/integrationService');
+                                    await cardTaskService.createTaskFromCard({ card_id: parseInt(card?.id || '0'), title: task.title, priority: task.priority as any });
+                                    toast.success('任务已标记完成');
+                                    loadCardIntegrations();
+                                  } catch { toast.error('操作失败'); }
+                                }}
+                                className="mt-1 text-gray-400 hover:text-green-500 flex-shrink-0"
+                                title={task.is_completed ? '取消完成' : '标记完成'}
+                              >
+                                {task.is_completed ? (
+                                  <Circle className="w-4 h-4 text-green-500" />
+                                ) : (
+                                  <Circle className="w-4 h-4" />
+                                )}
+                              </button>
                               <div className="flex-1 min-w-0">
                                 <div className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
                                   {task.title}

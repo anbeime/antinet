@@ -33,8 +33,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ppt", tags=["PPT Preview (Enhanced)"])
 
 
+def _extract_shapes_recursive(shape) -> list[Dict[str, Any]]:
+    """Recursively extract shapes from a shape (handles group shapes).
+
+    python-pptx slide.shapes only returns top-level shapes, not children of
+    group shapes (<p:grpSp>). This function recursively walks into groups
+    and returns a flat list of all leaf shapes with text/table/fill.
+    """
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    results: list[Dict[str, Any]] = []
+
+    # If this is a GROUP shape, recurse into its children
+    if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        try:
+            for child in shape.shapes:
+                results.extend(_extract_shapes_recursive(child))
+        except Exception:
+            pass
+        return results
+
+    data = _extract_shape_style(shape)
+    if data.get("paragraphs") or data.get("table") or data.get("fill_color"):
+        results.append(data)
+    return results
+
+
 def _extract_shape_style(shape) -> Dict[str, Any]:
-    """提取形状的完整样式"""
+    """提取单个形状的完整样式（不处理 group 嵌套）"""
     data = {
         "type": str(shape.shape_type),
         "name": shape.name,
@@ -188,9 +214,7 @@ async def extract_ppt_content(file: UploadFile = File(...)):
 
             shapes = []
             for shape in slide.shapes:
-                shape_data = _extract_shape_style(shape)
-                if shape_data.get("paragraphs") or shape_data.get("table") or shape_data.get("fill_color"):
-                    shapes.append(shape_data)
+                shapes.extend(_extract_shapes_recursive(shape))
 
             slides_data.append(SlideData(
                 index=slide_idx + 1,

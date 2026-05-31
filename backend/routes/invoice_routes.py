@@ -490,6 +490,7 @@ async def export_invoices_advanced(
         "download_url": f"/api/excel/download/{xlsx_path.name}",
         "count": len(rows),
         "pipeline": [],
+        "pipeline_ok": False,
     }
 
     if not add_formulas:
@@ -573,6 +574,9 @@ async def export_invoices_advanced(
         except Exception:
             pass
 
+    result["pipeline_ok"] = all(
+        p.get("exit_code", -1) == 0 for p in result["pipeline"]
+    )
     return result
 
 

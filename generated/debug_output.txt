@@ -1,0 +1,27 @@
+ppt/slides/slide1.xml: 3 text runs
+  [AI趋势]
+  [智能分析报告]
+  [2026-05-31]
+ppt/slides/slide2.xml: 4 text runs
+  [📊 核心事实]
+  [全球AI市场规模]
+  [2026年全球AI市场规模预计达到5000亿美元，年复合增长率3]
+  [6%]
+ppt/slides/slide3.xml: 3 text runs
+  [🔍 深度解读]
+  [增长驱动力]
+  [大语言模型和生成式AI是主要增长动力]
+ppt/slides/slide4.xml: 3 text runs
+  [⚠️ 风险警示]
+  [数据安全风险]
+  [AI部署中的隐私和安全问题成为最大挑战]
+ppt/slides/slide5.xml: 3 text runs
+  [🎯 行动方案]
+  [行动建议]
+  [建议企业建立AI治理框架]
+ppt/slides/slide6.xml: 5 text runs
+  [要点总结]
+  [全球AI市场规模]
+  [增长驱动力]
+  [数据安全风险]
+  [行动建议]

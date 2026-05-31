@@ -1274,14 +1274,6 @@ const ProjectDetailPanel: React.FC<{
                   <div>
                     <div className="flex items-center justify-between mb-6">
                       <h2 className="text-lg font-semibold text-gray-900 dark:text-white">关联任务</h2>
-                      {tasks.length > 0 && (
-                        <button
-                          onClick={() => window.open('/?tab=gtd', '_blank')}
-                          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> 任务管理
-                        </button>
-                      )}
                     </div>
                     {tasks.length === 0 ? (
                       <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
@@ -1297,7 +1289,7 @@ const ProjectDetailPanel: React.FC<{
                             className={`flex items-center p-4 bg-white dark:bg-gray-800 rounded-xl border transition-all hover:shadow-md ${
                               task.is_completed
                                 ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10'
-                                : 'border-gray-200 dark:border-gray-700 cursor-pointer'
+                                : 'border-gray-200 dark:border-gray-700'
                             }`}
                           >
                             {/* 完成状态切换按钮 */}
@@ -1322,11 +1314,8 @@ const ProjectDetailPanel: React.FC<{
                                 <Circle className="w-5 h-5" />
                               )}
                             </button>
-                            <div
-                              className="flex-1 min-w-0 mr-3"
-                              onClick={() => window.open('/?tab=gtd', '_blank')}
-                            >
-                              <h4 className={`font-medium truncate ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                            <div className="flex-1 min-w-0 mr-3">
+                              <h4 className={`font-medium ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
                                 {task.title}
                               </h4>
                               {task.description && (
@@ -1346,6 +1335,25 @@ const ProjectDetailPanel: React.FC<{
                               }`}>
                                 {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                               </span>
+                              {/* 删除/归档按钮 */}
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm('确定要删除这个任务吗？')) return;
+                                  try {
+                                    const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}`, { method: 'DELETE' });
+                                    if (res.ok) {
+                                      setTasks(prev => prev.filter(t => t.id !== task.id));
+                                      loadProjectStats();
+                                      toast.success('任务已删除');
+                                    } else throw new Error();
+                                  } catch { toast.error('删除失败'); }
+                                }}
+                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                title="删除任务"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -1469,20 +1477,22 @@ const ProjectDetailPanel: React.FC<{
 
                 {/* ===== 知识网络 Tab ===== */}
                 {activeTab === 'network' && (
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">专题知识网络</h2>
-                    <div className="h-[600px] rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700">
-                      <KnowledgeGraph
-                        filterProjectId={project.id}
-                        onNodeClick={(cardId) => {
-                          const targetCard = cards.find(c => c.id === cardId);
-                          if (targetCard) {
-                            setSelectedCard(targetCard);
-                            setShowCardDetail(true);
-                          }
-                        }}
+                  <div style={{ height: 'calc(100vh - 160px)' }}>
+                    {cards.length > 0 ? (
+                      <iframe
+                        src={`/knowledge-graph?card=${cards[0].id}`}
+                        className="w-full h-full border-0 rounded-xl"
+                        title="专题知识网络"
                       />
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500">
+                        <div className="text-center">
+                          <Network className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-lg">暂无卡片</p>
+                          <p className="text-sm mt-2">添加卡片后可查看知识网络</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>

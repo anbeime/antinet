@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#ECF0F1"/>
+  <rect x="0" y="0" width="1280" height="4" fill="#F1C40F"/>
+  <rect x="60" y="60" width="6" height="36" fill="#3b82f6" rx="3"/>
+  <text x="80" y="88" font-family="Arial" font-size="32" font-weight="bold" fill="#1C2833">📊 核心事实</text>
+  <rect x="80" y="100" width="120" height="3" fill="#3b82f6" opacity="0.5"/>
+    <g transform="translate(60, 140)">
+    <rect width="560" height="180" rx="12" fill="#3b82f6" opacity="0.08"/>
+    <rect x="0" y="0" width="6" height="180" rx="3" fill="#3b82f6"/>
+    <text x="24" y="32" font-family="Arial" font-size="20" font-weight="bold" fill="#1C2833">全球AI市场规模</text>
+    <text x="24" y="58" font-family="Arial" font-size="14" fill="#2C3E50">
+      <tspan xml:space='preserve'>2026年全球AI市场规模预计达到5000亿美元，年复合增长率3</tspan>
+    <tspan xml:space='preserve'>6%</tspan>
+    </text>
+  </g>
+  <g transform="translate(660, 140)">
+    <rect width="560" height="180" rx="12" fill="#22c55e" opacity="0.08"/>
+    <rect x="0" y="0" width="6" height="180" rx="3" fill="#22c55e"/>
+    <text x="24" y="32" font-family="Arial" font-size="20" font-weight="bold" fill="#1C2833">增长驱动力</text>
+    <text x="24" y="58" font-family="Arial" font-size="14" fill="#2C3E50">
+      <tspan xml:space='preserve'>大语言模型和生成式AI是主要增长动力</tspan>
+    </text>
+  </g>
+</svg>

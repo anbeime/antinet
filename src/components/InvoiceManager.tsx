@@ -173,6 +173,15 @@ const InvoiceManager: React.FC = () => {
       const res = await fetch(api(`${ep}?${params}`));
       if (res.ok) {
         const data = await res.json();
+        if (advanced && !data.pipeline_ok) {
+          const failed = (data.pipeline || [])
+            .filter((p: any) => p.exit_code && p.exit_code !== 0)
+            .map((p: any) => `${p.step} (exit ${p.exit_code})`).join(', ');
+          alert(`管线执行异常: ${failed || '未知错误'}\n文件已导出但不含公式校验列`);
+        } else if (advanced && data.pipeline_ok) {
+          const steps = data.pipeline.map((p: any) => p.step).join(' → ');
+          alert(`高级导出完成\n管线: ${steps}`);
+        }
         const link = document.createElement('a');
         link.href = api(data.download_url);
         link.download = data.filename;
