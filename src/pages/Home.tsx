@@ -1012,9 +1012,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: '智能PDF解析与分析', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
+                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
                     { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
-                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
+                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
                     { icon: <ListTodo size={20} />, title: '日历任务', desc: 'GTD任务管理与日程规划', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
                     { icon: <Users size={20} />, title: '协作会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },

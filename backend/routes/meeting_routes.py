@@ -1827,8 +1827,8 @@ async def create_meeting_stream(request: MeetingRequest):
                      f"[{agent_info['name']}]{role_question}",
                      f"主题：{request.topic}",
                  ]
-                 if request.context:
-                     context_parts.append(f"背景：{request.context[:150]}")
+if request.context:
+                      context_parts.append(f"背景：{request.context[:800]}")
                  context_parts.append(f"第{round_num}轮·{theme}")
 
                  # 注入知识库卡片背景信息
@@ -1926,7 +1926,10 @@ async def create_meeting_stream(request: MeetingRequest):
                  yield _sse_event("agent_speech", speech_data)
                  await asyncio.sleep(0.3)
 
-                 # 提取四色卡片并推送前端（发言 > 30 字才提取）
+                 # Agent 发言后等待一下，给 Genie 恢复时间再提取卡片
+                  await asyncio.sleep(1.5)
+
+                  # 提取四色卡片并推送前端（发言 > 30 字才提取）
                  if len(speech_content) > 30:
                       try:
                           extracted = await _extract_color_cards(
@@ -1951,8 +1954,11 @@ async def create_meeting_stream(request: MeetingRequest):
                                   ]
                               })
                               logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
-                      except Exception as e:
-                          logger.error(f"[Meeting] agent_cards提取失败: {e}")
+                       except Exception as e:
+                           logger.error(f"[Meeting] agent_cards提取失败: {e}")
+
+                  # Agent间间隔，让 Genie 恢复 (Both after speech and after card extraction)
+                  await asyncio.sleep(0.8)
 
             all_rounds.append({
                 "round": round_num,
@@ -2055,13 +2061,19 @@ async def create_meeting_stream(request: MeetingRequest):
             logger.error(f"保存会议记录失败: {e}")
 
         # 闭环零：保存会议过程中提取的卡片（agent_cards）
+        logger.info(f"[Meeting] 准备保存 {len(extracted_cards)} 张提取的卡片")
         if extracted_cards:
             try:
-                saved_agent_cards = []
-                with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    # 智能去重：精确匹配 + 相似内容匹配
-                    seen_titles = set()
+                if not db:
+                    db = get_db_manager()
+                if not db:
+                    logger.warning("[Meeting] db未初始化，跳过保存Agent卡片")
+                else:
+                    saved_agent_cards = []
+                    with db.get_connection() as conn:
+                        cursor = conn.cursor()
+                        # 智能去重：精确匹配 + 相似内容匹配
+                        seen_titles = set()
                     seen_contents = set()
                     for card in extracted_cards:
                         title = card.get('title', '')[:50]
@@ -2094,27 +2106,51 @@ async def create_meeting_stream(request: MeetingRequest):
                         seen_titles.add(key)
                         
                         try:
-                            cursor.execute("""
-                                INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status, created_at)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                card.get('title', '无标题')[:100],
-                                card.get('content', ''),
-                                card.get('type', 'blue'),
-                                '会议提取',
-                                request.card_ids[0] if request.card_ids else None,
-                                json.dumps(['会议', '自动提取', 'Agent生成']),
-                                json.dumps([]),
-                                'pending',
-                                datetime.now().isoformat()
-                            ))
-                            saved_agent_cards.append(cursor.lastrowid)
-                        except Exception as card_err:
-                            logger.warning(f"保存Agent卡片失败: {card_err}")
-                    
-                    if saved_agent_cards:
-                        conn.commit()
-                        logger.info(f"[Meeting] 保存了 {len(saved_agent_cards)} 张Agent提取的卡片")
+                                cursor.execute("""
+                                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    card.get('title', '无标题')[:100],
+                                    card.get('content', ''),
+                                    card.get('type', 'blue'),
+                                    '会议提取',
+                                    request.card_ids[0] if request.card_ids else None,
+                                    json.dumps(['会议', '自动提取', 'Agent生成']),
+                                    json.dumps([]),
+                                    'pending',
+                                    datetime.now().isoformat()
+                                ))
+                                saved_agent_cards.append(cursor.lastrowid)
+                            except Exception as card_err:
+                                logger.warning(f"保存Agent卡片失败: {card_err}")
+                        
+                        # 同会议卡片互相关联
+                        if len(saved_agent_cards) > 1:
+                            all_ids_json = json.dumps([cid for cid in saved_agent_cards])
+                            placeholders = ','.join('?' * len(saved_agent_cards))
+                            try:
+                                cursor.execute(f"""
+                                    UPDATE knowledge_cards
+                                    SET related_cards = ?
+                                    WHERE id IN ({placeholders})
+                                """, [all_ids_json] + saved_agent_cards)
+                                logger.info(f"[Meeting] 已关联 {len(saved_agent_cards)} 张同会议卡片")
+                            except Exception as link_err:
+                                logger.warning(f"[Meeting] 卡片关联失败: {link_err}")
+                        
+                        if saved_agent_cards:
+                            conn.commit()
+                            logger.info(f"[Meeting] 保存了 {len(saved_agent_cards)} 张Agent提取的卡片")
+                            # 将新卡片ID追加到会议记录
+                            all_card_ids = (request.card_ids or []) + saved_agent_cards
+                            try:
+                                cursor.execute("""
+                                    UPDATE meetings SET card_ids = ? WHERE meeting_id = ?
+                                """, (json.dumps(all_card_ids), meeting_id))
+                                conn.commit()
+                                logger.info(f"[Meeting] 会议记录已关联 {len(saved_agent_cards)} 张新卡片")
+                            except Exception as update_err:
+                                logger.warning(f"[Meeting] 更新会议卡片关联失败: {update_err}")
                         
                 if saved_agent_cards:
                     yield _sse_event("meeting_agent_cards_saved", {

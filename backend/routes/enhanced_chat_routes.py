@@ -68,15 +68,15 @@ async def call_genie(messages: list, max_tokens: int = 256, temperature: float =
     models = ["qwen2.0-7b-ssd-8380-2.34", "llama3.2-3b-8380-qnn2.37"]
     for model in models:
         try:
-            resp = httpx.post(
-                "http://127.0.0.1:8910/v1/chat/completions",
-                json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature},
-                timeout=httpx.Timeout(timeout_sec, connect=15.0)
-            )
-            if resp.status_code == 200:
-                text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-                if text:
-                    return clean_model_output(text)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_sec, connect=15.0)) as client:
+                resp = await client.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+                )
+                if resp.status_code == 200:
+                    text = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if text:
+                        return clean_model_output(text)
         except Exception:
             continue
     return None
@@ -1330,7 +1330,7 @@ async def _call_genie_stream(messages: list, max_tokens: int = 256, temperature:
     models = ["qwen2.0-7b-ssd-8380-2.34", "llama3.2-3b-8380-qnn2.37"]
     for model in models:
         try:
-            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_sec, connect=15.0)) as client:
                 async with client.stream(
                     "POST", "http://127.0.0.1:8910/v1/chat/completions",
                     json={"model": model, "messages": messages, "stream": True,
@@ -1345,10 +1345,13 @@ async def _call_genie_stream(messages: list, max_tokens: int = 256, temperature:
                                 return
                             try:
                                 d = json.loads(ds)
-                                c = d.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                choices = d.get("choices")
+                                if not choices:
+                                    continue
+                                c = choices[0].get("delta", {}).get("content", "")
                                 if c:
                                     yield c
-                            except json.JSONDecodeError:
+                            except (json.JSONDecodeError, IndexError, KeyError):
                                 pass
                     return
         except Exception:
@@ -1405,10 +1408,10 @@ async def enhanced_chat_stream(request: ChatRequest):
 
                 elif scene_type == SceneType.CARD_SEARCH:
                     cards = search_cards_semantic(query)
-                    response_data["cards"] = cards
+                    response_data["cards"] = _to_json_safe(cards)
                     text = generate_card_search_response(query, cards)
                     full_text = text
-                    yield _sse_event("meta", {"scene_type": "card_search", "cards": cards})
+                    yield _sse_event("meta", {"scene_type": "card_search", "cards": _to_json_safe(cards)})
                     for ch in text:
                         yield _sse_event("token", {"content": ch})
                         await asyncio.sleep(0.02)
@@ -1461,6 +1464,7 @@ async def enhanced_chat_stream(request: ChatRequest):
                 else:
                     # GENERAL：搜索知识库 + 流式 Genie
                     result = hybrid_search_all(query, limit=5)
+
                     if result and (result.cards or result.kg_entities):
                         response_data["cards"] = _to_json_safe(result.cards[:3])
                         context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])

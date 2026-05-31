@@ -489,7 +489,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
 
       const data = await res.json();
       const text = data.response || '';
-      const jsonMatch = text.match(/\[[\s\S]*?\]/);
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error('AI 返回格式异常');
 
       const aiResults = JSON.parse(jsonMatch[0]);
