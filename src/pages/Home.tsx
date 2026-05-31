@@ -357,7 +357,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         return;
       }
       
-      // 粘贴文本导入：使用新的 /import/text 端点（自动保存源文件实现溯源 + 同批次关联）
+      // 粘贴文本导入：使用增强版 /import/text 端点（锦衣卫全线：安全检查 + 密卷房提取 + 四司分类 + 自动保存源文件 + 同批次关联）
       if (rawText && rawText.trim()) {
         let textSavedCount = 0;
         try {
@@ -369,7 +369,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           if (response.ok) {
             const result = await response.json();
             textSavedCount = result.saved || 0;
-            toast(`成功导入 ${textSavedCount} 张卡片（已保存源文件可溯源）`, {
+
+            // 安全检查提示
+            let toastDesc = `已保存源文件可溯源，四司分类完成`;
+            if (result.security_issues && result.security_issues.length > 0) {
+              toastDesc += ` | 锦衣卫过滤 ${result.security_issues.length} 个安全问题`;
+            }
+
+            toast(`成功导入 ${textSavedCount} 张卡片`, {
+              description: toastDesc,
               className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
             });
           } else {
@@ -412,7 +420,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           try { await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' }); } catch (e) {}
         }
         
-        // 仍继续导入 AI 分类的卡片结果（rawText 路径仅保存源文件，卡片由 importedCards 导入）
+        // import/text 已保存卡片到数据库，不再走逐条 POST /api/knowledge/cards 避免重复
+        return;
       }
       
       let savedCount = 0;

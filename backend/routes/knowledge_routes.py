@@ -1033,6 +1033,7 @@ class ImportAnalyzeRequest(BaseModel):
     """导入分析请求"""
     content: str = Field(..., description="要分析的内容")
     auto_save: bool = Field(default=False, description="是否自动保存")
+    preview_only: bool = Field(default=False, description="仅预览分类结果，不保存到数据库")
 
 
 @router.post("/import/analyze")
@@ -1744,43 +1745,127 @@ async def import_text(request: ImportAnalyzeRequest):
         finally:
             conn.close()
 
-        # ========== 分类提取卡片 ==========
-        paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-        if not paragraphs:
-            paragraphs = [content.strip()]
+        # ========== 锦衣卫全线流水线 ==========
+        # ① 锦衣卫内容安全检查：过滤系统泄露/注入模式 + 敏感内容扫描
+        security_issues = []
+        leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                       'instruction', 'prompt', 'special token', '#### Instruction',
+                       '#### Response', 'system', '<|assistant', '<|end',
+                       'Ignore all previous', '你是', '你是一个']
+        for pat in leak_patterns:
+            if pat.lower() in content.lower():
+                security_issues.append(f"检测到系统注入/泄露模式: {pat}")
+
+        # ② 密卷房关键段落识别：智能切段 + 去噪
+        raw_paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+        if not raw_paragraphs:
+            raw_paragraphs = [content.strip()]
+
+        paragraphs = []
+        for para in raw_paragraphs:
+            if len(para) < 4:  # 过滤极短碎片
+                continue
+            # 过滤泄露/注入段落
+            if any(pat.lower() in para.lower() for pat in leak_patterns):
+                security_issues.append(f"段落包含敏感模式，已过滤: {para[:40]}...")
+                continue
+            # 过滤纯符号/数字行
+            if re.match(r'^[\s\d\W]+$', para):
+                continue
+            paragraphs.append(para)
+
+        # ③ 通政司 / 监察院 / 刑狱司 / 参谋司：四色卡片分类
+        # 使用增强版多维关键词打分，模拟四司分类逻辑
+        def classify_paragraph(text: str) -> dict:
+            """四司联合分类：通政司(蓝·事实)、监察院(绿·解释)、刑狱司(黄·风险)、参谋司(红·行动)"""
+            lower = text.lower()
+            scores = {'blue': 0, 'green': 0, 'yellow': 0, 'red': 0}
+
+            # 通政司（蓝·事实/核心概念）：定义、原理、客观事实
+            blue_kw = ['定义', '概念', '原理', '理论', '什么是', '是指', '含义', '本质',
+                       '事实', '数据', '统计', '研究表明', '结果显示', '根据', '调查',
+                       '特征', '结构', '组成', '分类', '类型', '属性', '功能']
+            for kw in blue_kw:
+                if kw in lower: scores['blue'] += 1
+
+            # 监察院（绿·解释/关联分析）：因果关系、对比分析
+            green_kw = ['关联', '相关', '连接', '对比', '区别', '类似', '参见', '参考',
+                        '因为', '所以', '导致', '由于', '因此', '从而', '关系',
+                        '解释', '原因', '影响', '作用', '与.*相比', '不同于']
+            for kw in green_kw:
+                if kw in lower: scores['green'] += 1
+            if re.search(r'与.*相比|不同于|相较于', text): scores['green'] += 2
+
+            # 刑狱司（黄·风险/参考来源）：风险预警、引用来源
+            yellow_kw = ['来源', '出处', '引用', '参考文献', '资料', '文档',
+                         '风险', '隐患', '注意', '谨慎', '可能', '潜在', '警告',
+                         '威胁', '漏洞', '异常', '偏差', '不确定', '概率']
+            for kw in yellow_kw:
+                if kw in lower: scores['yellow'] += 1
+            if re.search(r'https?://|www\.|\.com|\.org|\.cn', text):
+                scores['yellow'] += 3
+
+            # 参谋司（红·行动/索引）：行动建议、关键词索引
+            red_kw = ['建议', '必须', '需要', '应该', '要去做', '待办', '执行',
+                      '完成', '开始', '继续', '停止', '方案', '措施', '步骤',
+                      '关键词', '标签', '索引', '术语', '行动', '计划', '目标']
+            for kw in red_kw:
+                if kw in lower: scores['red'] += 1
+            # 短文本偏向红（索引关键词）
+            if len(text) < 50: scores['red'] += 2
+            # 行动动词加分
+            action_verbs = ['建议', '应该', '必须', '需要', '要去做', '执行', '完成']
+            if any(v in lower for v in action_verbs): scores['red'] += 2
+
+            # 长文本偏向蓝（概念解释）
+            if len(text) > 200: scores['blue'] += 1
+
+            # 确定最高分类
+            color_map = {'blue': 'blue', 'green': 'green', 'yellow': 'yellow', 'red': 'red'}
+            best_color = max(scores, key=scores.get)
+            max_score = scores[best_color]
+            confidence = min(max_score / 5, 0.95) if max_score > 0 else 0.5
+
+            return {
+                'card_type': best_color,
+                'confidence': round(confidence, 2),
+                'scores': {k: v for k, v in scores.items() if v > 0}
+            }
 
         cards = []
         for idx, para in enumerate(paragraphs):
-            if len(para) < 4:  # 只过滤极短碎片（4字以下），保留前端可能分类的有效短段落
-                continue
-            leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
-                           'instruction', 'prompt', 'special token', '#### Instruction',
-                           '#### Response', 'system', '<|assistant', '<|end']
-            if any(pat.lower() in para.lower() for pat in leak_patterns):
-                continue
+            classification = classify_paragraph(para)
 
-            lower_para = para.lower()
-            card_type = 'blue'
-            if any(kw in lower_para for kw in ['定义', '概念', '原理', '理论', '什么是']):
-                card_type = 'blue'
-            elif any(kw in lower_para for kw in ['关联', '相关', '连接', '对比', '区别']):
-                card_type = 'green'
-            elif any(kw in lower_para for kw in ['来源', '参考', '引用', 'http', 'www']):
-                card_type = 'yellow'
-            elif any(kw in lower_para for kw in ['关键词', '标签', '索引', '注意', '重要']):
-                card_type = 'red'
-
+            # 提取标题
             title = para[:50] + '...' if len(para) > 50 else para
             if '\n' in title:
                 title = title.split('\n')[0]
+            # 去掉markdown标题符号
+            title = re.sub(r'^#+\s*', '', title).strip()
 
             cards.append({
                 'title': title,
                 'content': para,
-                'card_type': card_type,
-                'confidence': 0.8,
-                'address': f"{card_type.upper()}{idx + 1}"
+                'card_type': classification['card_type'],
+                'confidence': classification['confidence'],
+                'address': f"{classification['card_type'].upper()}{idx + 1}",
+                'classification_detail': classification.get('scores', {})
             })
+
+        # preview_only 模式：仅返回分类预览，不写库
+        if request.preview_only:
+            return {
+                'success': True,
+                'preview_only': True,
+                'filename': filename,
+                'content_length': len(content),
+                'cards': cards,
+                'total': len(cards),
+                'security_issues': security_issues if security_issues else None,
+                'paragraphs_total': len(raw_paragraphs),
+                'paragraphs_kept': len(paragraphs),
+                'source_file_id': source_file_id
+            }
 
         saved_count = 0
         card_ids = []
@@ -1846,13 +1931,17 @@ async def import_text(request: ImportAnalyzeRequest):
 
         return {
             'success': True,
+            'preview_only': request.preview_only,
             'filename': filename,
             'file_type': 'md',
             'extracted_length': len(content),
             'cards': cards,
             'total': len(cards),
             'saved': saved_count,
-            'source_file_id': source_file_id
+            'source_file_id': source_file_id,
+            'security_issues': security_issues if security_issues else None,
+            'paragraphs_total': len(raw_paragraphs) if 'raw_paragraphs' in dir() else len(content.split('\n\n')),
+            'paragraphs_kept': len(paragraphs)
         }
     except HTTPException:
         raise

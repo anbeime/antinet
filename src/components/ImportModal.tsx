@@ -385,7 +385,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
-  // 处理粘贴内容导入
+  // 处理粘贴内容导入（调用后端锦衣卫全线：安全检查 + 密卷房提取 + 四司分类）
   const handlePasteImport = async () => {
     if (!importContent.trim()) {
       setErrors(['请输入要导入的内容']);
@@ -395,13 +395,57 @@ const ImportModal: React.FC<ImportModalProps> = ({
     try {
       setIsProcessing(true);
       setErrors([]);
-      
-      const results = await autoClassifyContent(importContent);
+
+      // 调用后端 import/text，preview_only=true 只分类不保存
+      const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: importContent, preview_only: true })
+      });
+
+      if (!res.ok) {
+        let detail = '';
+        try { const err = await res.json(); detail = err.detail || ''; } catch {}
+        throw new Error(`分类失败 (${res.status})${detail ? ': ' + detail : ''}`);
+      }
+
+      const data = await res.json();
+      const cards = data.cards || [];
+
+      if (cards.length === 0) {
+        setErrors(['未识别到有效知识记录，请检查输入内容']);
+        return;
+      }
+
+      // 安全检查提示
+      if (data.security_issues && data.security_issues.length > 0) {
+        toast.warning(`锦衣卫安全检查：${data.security_issues.length} 个问题已过滤`, {
+          description: data.security_issues.slice(0, 3).join('; ')
+        });
+      }
+
+      // 映射到前端格式
+      const colorCounts: Record<string, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
+      const prefixes: Record<string, string> = { blue: 'A', green: 'B', yellow: 'C', red: 'D' };
+
+      const results = cards.map((item: any) => {
+        const color = (item.card_type || 'blue').toLowerCase() as CardColor;
+        colorCounts[color] = (colorCounts[color] || 0) + 1;
+        const address = item.address || `${prefixes[color]}${colorCounts[color]}`;
+        return {
+          title: item.title || item.content.slice(0, 30),
+          content: item.content,
+          color,
+          confidence: item.confidence || 0.85,
+          address
+        };
+      });
+
       setImportResults(results);
       setShowResults(true);
     } catch (error) {
       console.error('导入失败:', error);
-      setErrors(['导入失败，请稍后重试']);
+      setErrors([error instanceof Error ? error.message : '导入失败，请稍后重试']);
     } finally {
       setIsProcessing(false);
     }
@@ -467,7 +511,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     onClose();
   };
 
-  // AI 精准分类 - 调用 Genie 模型
+  // AI 精准分类 - 调用 Genie 8-智能体锦衣卫分类（Genie 优先，关键词降级兜底）
   const handleAIClassify = async () => {
     const content = importType === 'paste' ? importContent : (selectedFile ? await selectedFile.text() : '');
     if (!content.trim()) return;
@@ -475,6 +519,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setIsAIClassifying(true);
     setErrors([]);
     try {
+      // 调用 Genie 8-智能体锦衣卫分类接口（含降级兜底）
       const res = await fetch(getApiBaseUrl() + '/api/genie-playground/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -488,30 +533,45 @@ const ImportModal: React.FC<ImportModalProps> = ({
       }
 
       const data = await res.json();
-      const text = data.response || '';
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error('AI 返回格式异常');
+      const cards = data.cards || [];
 
-      const aiResults = JSON.parse(jsonMatch[0]);
+      if (cards.length === 0) {
+        setErrors(['AI 分类未生成有效卡片，请检查输入内容']);
+        return;
+      }
+
+      // 提示分类来源
+      if (data.source === 'genie') {
+        toast.success('锦衣卫 Genie 智能分类完成', {
+          description: `模型 ${data.model} | 四司联合判定 ${cards.length} 张卡片`,
+          duration: 4000
+        });
+      } else if (data.source === 'fallback') {
+        toast.warning('Genie 不可用，已降级为关键词规则分类', {
+          description: data.fallback_reason ? `原因: ${data.fallback_reason}` : '使用本地规则引擎兜底',
+          duration: 5000
+        });
+      }
+
+      // 映射后端结果到前端格式
       const colorCounts: Record<string, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
       const prefixes: Record<string, string> = { blue: 'A', green: 'B', yellow: 'C', red: 'D' };
 
-      const results = aiResults.map((item: any) => {
-        const color = (item.color || 'blue').toLowerCase() as CardColor;
+      const results = cards.map((item: any) => {
+        const color = (item.card_type || item.color || 'blue').toLowerCase() as CardColor;
         colorCounts[color] = (colorCounts[color] || 0) + 1;
-        const address = `${prefixes[color]}${colorCounts[color]}`;
+        const address = item.address || `${prefixes[color]}${colorCounts[color]}`;
         return {
           title: item.title || item.content.slice(0, 30),
           content: item.content,
           color,
-          confidence: 0.9,
+          confidence: item.confidence || 0.85,
           address
         };
       });
 
       setImportResults(results);
       setShowResults(true);
-      toast.success('AI 精准分类完成', { className: 'bg-green-50 text-green-800' });
     } catch (e: any) {
       console.error('AI 分类失败:', e);
       setErrors([e.message || 'AI 分类失败，请稍后重试']);

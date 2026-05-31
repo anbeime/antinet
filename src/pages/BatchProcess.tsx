@@ -161,23 +161,25 @@ const getFileType = (filename: string): BatchFile['type'] => {
         : f
     ));
 
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const formData = new FormData();
       formData.append('file', batchFile.file);
 
-      // 使用统一的知识导入API
       const apiUrl = `${getApiBaseUrl()}/api/knowledge/import/file`;
 
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setFiles(prev => prev.map(f => 
           f.id === batchFile.id && f.progress < 90
-            ? { ...f, progress: f.progress + 10 }
+            ? { ...f, progress: Math.min(f.progress + 15, 90) }
             : f
         ));
-      }, 500);
+      }, 800);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2分钟超时
+      timeoutId = setTimeout(() => controller.abort(), 180000); // 3分钟超时
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -185,37 +187,36 @@ const getFileType = (filename: string): BatchFile['type'] => {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-      clearInterval(progressInterval);
-
       const result = await response.json();
 
       if (response.ok) {
         const extractedCards: ExtractedCard[] = result.cards || [];
-        
-        // 后端 import/file 接口已自动保存卡片到数据库（saved_count 表示实际保存数）
-        // 前端不再重复 POST，只更新保存计数
         setSavedCardsCount(prev => prev + (result.saved || 0));
-        
         setFiles(prev => prev.map(f => 
           f.id === batchFile.id 
             ? { ...f, status: 'completed', progress: 100, result, extractedCards }
             : f
         ));
       } else {
-        throw new Error(result.detail || '处理失败');
+        throw new Error(result.detail || `处理失败 (HTTP ${response.status})`);
       }
-    } catch (error) {
-      setFiles(prev => prev.map(f => 
-        f.id === batchFile.id 
-          ? { 
-              ...f, 
-              status: 'failed', 
-              progress: 0, 
-              error: error instanceof Error ? error.message : '未知错误'
-            }
-          : f
-      ));
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        setFiles(prev => prev.map(f => 
+          f.id === batchFile.id 
+            ? { ...f, status: 'failed', progress: 0, error: '处理超时（超过3分钟）' }
+            : f
+        ));
+      } else {
+        setFiles(prev => prev.map(f => 
+          f.id === batchFile.id 
+            ? { ...f, status: 'failed', progress: 0, error: error instanceof Error ? error.message : '未知错误' }
+            : f
+        ));
+      }
+    } finally {
+      if (progressInterval) clearInterval(progressInterval);
+      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 
