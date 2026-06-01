@@ -367,12 +367,22 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     if (!card) return;
     if (backlinksLoading) return;
 
+    // 跳过无意义卡片（PDF分页标记、过短内容等），避免浪费 Genie 推理槽
+    const garbagePatterns = [/^---\s*Page\s+\d+\s*---$/i, /^[-\s]{3,}$/, /^\d{1,3}$/];
+    const isGarbage = !card.content || card.content.trim().length < 20 ||
+      garbagePatterns.some(p => p.test(card.title.trim()) || p.test(card.content.trim()));
+    if (isGarbage) {
+      setInsights(null);
+      setInsightsLoading(false);
+      return;
+    }
+
     setInsights(null);
     setInsightsLoading(true);
     
     const controller = new AbortController();
     let retries = 0;
-    const maxRetries = 2;
+    const maxRetries = 4;
     
     const fetchInsights = () => {
       const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
@@ -407,8 +417,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
           
           if (retries < maxRetries) {
             retries++;
-            // 指数退避：2s, 4s
-            const delay = 2000 * retries;
+            // 指数退避：3s, 6s, 9s, 12s
+            const delay = 3000 * retries;
             setTimeout(fetchInsights, delay);
           } else {
             // 3次都失败，静默降级（不阻塞卡片查看）
@@ -565,8 +575,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         throw new Error(err.detail || 'PDF 生成失败');
       }
       const pdfBlob = await res.blob();
-      if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
-      setSourcePdfUrl(URL.createObjectURL(pdfBlob));
+      const newUrl = URL.createObjectURL(pdfBlob);
+      if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(newUrl); setTimeout(() => URL.revokeObjectURL(_old), 100); }
+      else { setSourcePdfUrl(newUrl); }
     } catch (e: any) {
       setSourcePdfError(e.message || 'PDF 生成失败');
     } finally {
@@ -594,16 +605,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card]);
 
-  // 卡片打开时加载数据
+  // 卡片打开时加载数据（分两批避免并发数过高触发 429）
   useEffect(() => {
     if (isOpen && card) {
-      loadBacklinks();
-      loadCardIntegrations();
+      // 第一批：快速请求同时发出
       loadSourceFileInfo();
       loadSiblingCards();
-      setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
+      // 第二批：稍后发出（等第一批响应释放并发槽）
+      const t1 = setTimeout(() => loadBacklinks(), 100);
+      const t2 = setTimeout(() => loadCardIntegrations(), 200);
+      setSourceViewMode('markdown');
       setSourceFullscreen(false);
-      if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+      if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); }
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     }
   }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
 
@@ -2141,7 +2155,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           style={sourceFullscreen ? { padding: 0 } : { padding: '1rem' }}
-          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }}
+          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); setSourceViewMode('markdown'); if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); } }}
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -2223,7 +2237,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 >
                   {sourceFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                 </button>
-                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); } }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                   <X size={20} />
                 </button>
               </div>
