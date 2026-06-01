@@ -363,10 +363,22 @@ async def genie_classify(request: ClassifyRequest):
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="内容不能为空")
 
-    # 构建8智能体用户提示
+    # 英文指令 + 中文内容（Genie 对英文指令遵循更好，避免锦衣卫上下文干扰）
     user_prompt = (
-        "请按锦衣卫四司分工，将以下文本按段落分类为四色知识卡片。\n\n"
-        f"待分类文本：\n{content}"
+        "You are a knowledge card classifier. Classify each paragraph into one of 4 types. "
+        "Return ONLY a valid JSON array, no other text.\n\n"
+        "Types:\n"
+        "- blue: core concepts, definitions, facts\n"
+        "- green: relationships, comparisons, explanations\n"
+        "- yellow: references, sources, URLs\n"
+        "- red: keywords, actions, todo items\n\n"
+        "Rules:\n"
+        "1. Split text by blank lines into paragraphs\n"
+        "2. Assign one color to each paragraph\n"
+        "3. Extract a short title (first line or first 30 chars)\n"
+        "4. confidence 0-1 indicates certainty\n\n"
+        "Format: [{\"title\":\"...\",\"content\":\"...\",\"color\":\"blue\",\"confidence\":0.9}]\n\n"
+        f"Text:\n{content}"
     )
 
     models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
