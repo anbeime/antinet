@@ -28,6 +28,8 @@ import {
   CheckCircle2,
   Eye,
   UserPlus,
+  ListTodo,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -785,6 +787,14 @@ const ProjectDetailPanel: React.FC<{
   const [showCardDetail, setShowCardDetail] = useState(false);
   const [taskRefreshTrigger, setTaskRefreshTrigger] = useState(0);  // 触发 CardDetailModal 刷新任务列表
   const [showCreateCard, setShowCreateCard] = useState(false);
+  // 任务编辑弹窗
+  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskDesc, setEditTaskDesc] = useState('');
+  const [editTaskPriority, setEditTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [editTaskCategory, setEditTaskCategory] = useState('inbox');
+  const [editTaskDueDate, setEditTaskDueDate] = useState('');
+  const [savingTask, setSavingTask] = useState(false);
   const [projectStats, setProjectStats] = useState<{
     cards: Record<string, number>;
     total_cards: number;
@@ -1020,9 +1030,41 @@ const ProjectDetailPanel: React.FC<{
         toast.success('已转换为任务并关联到专题');
         loadData();
         onConvertCardToTask(cardId);
-        setTaskRefreshTrigger(prev => prev + 1);  // 触发 CardDetailModal 刷新任务列表
+        setTaskRefreshTrigger(prev => prev + 1);
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        toast.error(errData.detail || '转换失败，请确认后端已重启');
       }
-    } catch { toast.error('转换失败'); }
+    } catch { toast.error('转换请求失败，请检查后端是否运行'); }
+  };
+
+  // 保存编辑后的任务
+  const handleSaveTask = async () => {
+    if (!editingTask || !editTaskTitle.trim()) return;
+    setSavingTask(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${editingTask.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTaskTitle.trim(),
+          description: editTaskDesc,
+          priority: editTaskPriority,
+          category: editTaskCategory,
+          due_date: editTaskDueDate || null,
+        }),
+      });
+      if (res.ok) {
+        toast.success('任务已更新');
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, title: editTaskTitle, description: editTaskDesc, priority: editTaskPriority, category: editTaskCategory, due_date: editTaskDueDate } : t));
+        setEditingTask(null);
+        loadProjectStats();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || '更新失败');
+      }
+    } catch { toast.error('更新失败'); }
+    finally { setSavingTask(false); }
   };
 
   const cardStats = { blue: 0, green: 0, yellow: 0, red: 0 };
@@ -1286,7 +1328,15 @@ const ProjectDetailPanel: React.FC<{
                         {tasks.map((task) => (
                           <div
                             key={task.id}
-                            className={`flex items-center p-4 bg-white dark:bg-gray-800 rounded-xl border transition-all hover:shadow-md ${
+                            onClick={() => {
+                              setEditingTask(task);
+                              setEditTaskTitle(task.title || '');
+                              setEditTaskDesc(task.description || '');
+                              setEditTaskPriority(task.priority as any || 'medium');
+                              setEditTaskCategory(task.category || 'inbox');
+                              setEditTaskDueDate(task.due_date || '');
+                            }}
+                            className={`flex items-center p-4 bg-white dark:bg-gray-800 rounded-xl border transition-all hover:shadow-md cursor-pointer ${
                               task.is_completed
                                 ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10'
                                 : 'border-gray-200 dark:border-gray-700'
@@ -1561,6 +1611,64 @@ const ProjectDetailPanel: React.FC<{
           projectId={project.id}
           projectName={project.name}
         />
+
+        {/* 任务编辑弹窗 */}
+        {editingTask && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" onClick={() => setEditingTask(null)}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <ListTodo size={18} className="text-green-500" />
+                  编辑任务
+                </h3>
+                <button onClick={() => setEditingTask(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium block mb-1">任务标题 *</label>
+                  <input value={editTaskTitle} onChange={e => setEditTaskTitle(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" autoFocus />
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">任务描述</label>
+                  <textarea value={editTaskDesc} onChange={e => setEditTaskDesc(e.target.value)} rows={4}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm resize-none" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium block mb-1">优先级</label>
+                    <select value={editTaskPriority} onChange={e => setEditTaskPriority(e.target.value as any)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                      <option value="high">高</option><option value="medium">中</option><option value="low">低</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium block mb-1">分类</label>
+                    <select value={editTaskCategory} onChange={e => setEditTaskCategory(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                      <option value="inbox">收集箱</option><option value="today">今日待办</option>
+                      <option value="later">将来可能</option><option value="archive">归档</option><option value="projects">项目</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">截止日期</label>
+                  <input type="date" value={editTaskDueDate} onChange={e => setEditTaskDueDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <button onClick={() => setEditingTask(null)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">取消</button>
+                <button onClick={handleSaveTask} disabled={savingTask || !editTaskTitle.trim()}
+                  className="px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-1">
+                  {savingTask ? <Loader2 size={14} className="animate-spin" /> : null}保存
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Portal>
   );

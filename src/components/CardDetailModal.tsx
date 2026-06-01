@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, History, Eye, FileSearch } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
 import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import ReactMarkdown from 'react-markdown';
 
 
 
@@ -243,6 +244,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 }) => {
   // 原有状态
   const [showMoreInsights, setShowMoreInsights] = useState(false);
+  const [insights, setInsights] = useState<any>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [isEditingRelations, setIsEditingRelations] = useState(false);
   const [editingRelatedCards, setEditingRelatedCards] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,6 +272,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [cardTasks, setCardTasks] = useState<TaskWithRelation[]>([]);
   const [cardEvents, setCardEvents] = useState<CalendarEvent[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());  // 已展开的任务ID
+
+  // 任务编辑弹窗（点击关联任务卡片打开）
+  const [editingTask, setEditingTask] = useState<any>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskDesc, setEditTaskDesc] = useState('');
+  const [editTaskPriority, setEditTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [editTaskCategory, setEditTaskCategory] = useState('inbox');
+  const [editTaskDueDate, setEditTaskDueDate] = useState('');
+  const [savingTask, setSavingTask] = useState(false);
 
   // P0: 创建任务弹窗
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -348,6 +361,35 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setEditContent(card.content);
     }
   }, [card?.relatedCards, card?.title, card?.content]);
+
+  // 加载 AI 知识洞察（等待 forwardlinks 加载完成后再触发）
+  useEffect(() => {
+    if (!card) return;
+    if (backlinksLoading) return;
+
+    setInsights(null);
+    setInsightsLoading(true);
+    const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
+    fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_title: card.title,
+        card_content: card.content.slice(0, 500),
+        related_titles: relatedTitles
+      })
+    })
+      .then(r => r.json())
+      .then(data => {
+        const text = data.response || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          setInsights(JSON.parse(jsonMatch[0]));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setInsightsLoading(false));
+  }, [card?.id, forwardlinks, backlinksLoading]);
 
   // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）
   const mergedRelatedIds = useMemo(() => {
@@ -587,6 +629,34 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     } finally {
       setCreatingTask(false);
     }
+  };
+
+  // 保存编辑后的任务
+  const handleSaveTask = async () => {
+    if (!editingTask || !editTaskTitle.trim()) return;
+    setSavingTask(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${editingTask.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTaskTitle.trim(),
+          description: editTaskDesc,
+          priority: editTaskPriority,
+          category: editTaskCategory,
+          due_date: editTaskDueDate || null,
+        }),
+      });
+      if (res.ok) {
+        toast.success('任务已更新');
+        setEditingTask(null);
+        loadCardIntegrations();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.detail || '更新失败');
+      }
+    } catch { toast.error('更新失败'); }
+    finally { setSavingTask(false); }
   };
 
   // P0: 打开创建日历事件弹窗
@@ -1092,10 +1162,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <div
                 ref={contentRef}
                 onMouseUp={handleTextSelect}
-className="text-lg select-text"
-                style={{ whiteSpace: 'pre-wrap' }}
-               >
-{card.content}
+                className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
+              >
+                <ReactMarkdown>{card.content}</ReactMarkdown>
               </div>
             )}
             
@@ -1570,48 +1639,80 @@ className="text-lg select-text"
                         {cardTasks.map(task => (
                           <div
                             key={task.id}
-                            className={`p-3 border rounded-lg transition-colors ${
+                            onClick={() => {
+                              setEditingTask(task);
+                              setEditTaskTitle(task.title || '');
+                              setEditTaskDesc(task.description || '');
+                              setEditTaskPriority(task.priority as any || 'medium');
+                              setEditTaskCategory(task.category || 'inbox');
+                              setEditTaskDueDate(task.due_date || '');
+                            }}
+                            className={`p-3 border rounded-lg transition-colors cursor-pointer hover:shadow-md ${
                               task.is_completed
-                                ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-60'
-                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800'
+                                ? 'bg-gray-50/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-75'
+                                : 'bg-green-50/30 dark:bg-green-900/10 border-green-100 dark:border-green-800 hover:bg-green-100/50 dark:hover:bg-green-900/20'
                             }`}
                           >
                             <div className="flex items-start gap-2">
+                              {/* 完成切换 */}
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   try {
-                                    const { cardTaskService } = await import('../services/integrationService');
-                                    await cardTaskService.createTaskFromCard({ card_id: parseInt(card?.id || '0'), title: task.title, priority: task.priority as any });
-                                    toast.success('任务已标记完成');
-                                    loadCardIntegrations();
+                                    const res = await fetch(`${getApiBaseUrl()}/api/data/gtd/tasks/${task.id}/complete?is_completed=${!task.is_completed}`, { method: 'PUT' });
+                                    if (res.ok) {
+                                      toast.success(task.is_completed ? '已取消完成' : '已完成 ✓');
+                                      loadCardIntegrations();
+                                    }
                                   } catch { toast.error('操作失败'); }
                                 }}
-                                className="mt-1 text-gray-400 hover:text-green-500 flex-shrink-0"
-                                title={task.is_completed ? '取消完成' : '标记完成'}
+                                className="mt-0.5 text-gray-400 hover:text-green-500 flex-shrink-0"
                               >
                                 {task.is_completed ? (
-                                  <Circle className="w-4 h-4 text-green-500" />
+                                  <CheckCircle2 className="w-4 h-4 text-green-500" />
                                 ) : (
                                   <Circle className="w-4 h-4" />
                                 )}
                               </button>
                               <div className="flex-1 min-w-0">
-                                <div className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
-                                  {task.title}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] text-white ${
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`text-sm font-medium ${task.is_completed ? 'line-through text-gray-400' : ''}`}>
+                                    {task.title}
+                                  </span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded text-white ${
                                     task.priority === 'high' ? 'bg-red-500' : task.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'
                                   }`}>
                                     {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
                                   </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {task.category === 'inbox' ? '收集箱' : task.category === 'today' ? '今日待办' : task.category === 'later' ? '将来可能' : task.category === 'archive' ? '已归档' : task.category || '收集箱'}
+                                  </span>
+                                </div>
+                                {task.description && (
+                                  <div className="mt-1">
+                                    <p className={`text-xs text-gray-500 dark:text-gray-400 ${expandedTasks.has(task.id) ? '' : 'line-clamp-2'}`}>
+                                      {task.description}
+                                    </p>
+                                    {task.description.length > 100 && (
+                                      <span
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setExpandedTasks(prev => {
+                                            const next = new Set(prev);
+                                            next.has(task.id) ? next.delete(task.id) : next.add(task.id);
+                                            return next;
+                                          });
+                                        }}
+                                        className="text-[10px] text-blue-500 hover:underline cursor-pointer mt-0.5 inline-block"
+                                      >
+                                        {expandedTasks.has(task.id) ? '收起' : '展开全部'}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
                                   {task.due_date && <span>截止: {task.due_date}</span>}
-                                  {task.extract_paragraph && (
-                                    <span className="truncate max-w-[200px]" title={task.extract_paragraph}>
-                                      源自: 「{task.extract_paragraph.slice(0, 20)}...」
-                                    </span>
-                                  )}
+                                  {task.created_at && <span>创建于 {new Date(task.created_at).toLocaleDateString()}</span>}
                                 </div>
                               </div>
                             </div>
@@ -1679,25 +1780,30 @@ className="text-lg select-text"
 
           {/* AI分析建议 */}
           <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 rounded-lg p-6 border border-blue-100 dark:border-blue-800">
-            <h3 className="text-lg font-semibold mb-3 text-blue-800 dark:text-blue-300">AI知识洞察</h3>
-            <div className="space-y-3">
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                这张卡片与您知识体系中的多个核心概念相关联，是连接不同知识领域的重要节点。
-              </p>
-              <p className="text-sm text-blue-700 dark:text-blue-400">
-                建议您进一步探索与"{card.title}"相关的最新研究和实践，以丰富这一核心概念的深度和广度。
-              </p>
-              <div className="mt-4 flex justify-end">
-                <button
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
-                  onClick={() => setShowMoreInsights(!showMoreInsights)}
-                >
-                  {showMoreInsights ? '收起洞察' : '查看更多洞察'} <ExternalLink size={14} className="ml-1" />
-                </button>
-              </div>
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="text-lg font-semibold text-blue-800 dark:text-blue-300">AI知识洞察</h3>
+              {insightsLoading && <Loader2 size={16} className="animate-spin text-blue-500" />}
             </div>
+            {insightsLoading ? (
+              <p className="text-sm text-blue-400 animate-pulse">AI 正在分析...</p>
+            ) : insights ? (
+              <div className="space-y-3">
+                <p className="text-sm text-blue-700 dark:text-blue-400">{insights.summary || '暂无分析'}</p>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
+                    onClick={() => setShowMoreInsights(!showMoreInsights)}
+                  >
+                    {showMoreInsights ? '收起洞察' : '查看更多洞察'} <ExternalLink size={14} className="ml-1" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-blue-500">AI 分析暂不可用</p>
+            )}
 
             {/* 更多AI洞察详情 */}
+            {insights && (
             <motion.div
               initial={false}
               animate={{
@@ -1712,26 +1818,26 @@ className="text-lg select-text"
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">知识重要性分析</h4>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs text-blue-700 dark:text-blue-400">在知识体系中的重要性</span>
-                    <span className="text-xs font-medium text-blue-800 dark:text-blue-300">85%</span>
+                    <span className="text-xs font-medium text-blue-800 dark:text-blue-300">{insights.importance || 'N/A'}%</span>
                   </div>
                   <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1.5">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '85%' }}></div>
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min(parseInt(insights.importance) || 50, 100)}%` }}></div>
                   </div>
                 </div>
 
                 <div className="mb-4">
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">关联强度分析</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    {relatedCardsDetails.slice(0, 2).map((related, index) => (
+                    {(relatedCardsDetails.length > 0 ? relatedCardsDetails.slice(0, 2) : []).map((related, index) => (
                       <div key={index} className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg">
                         <div className="flex items-center mb-1">
                           <div className={`${cardTypeMap[related.color].color} w-2 h-2 rounded-full mr-2`}></div>
                           <span className="text-xs font-medium">{related.title}</span>
                         </div>
                         <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1">
-                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${80 - index * 10}%` }}></div>
+                          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.max(60 - index * 10, 30)}%` }}></div>
                         </div>
-                        <span className="text-xs text-blue-600 dark:text-blue-400">{80 - index * 10}% 关联强度</span>
+                        <span className="text-xs text-blue-600 dark:text-blue-400">{Math.max(60 - index * 10, 30)}% 关联强度</span>
                       </div>
                     ))}
                   </div>
@@ -1744,9 +1850,7 @@ className="text-lg select-text"
                       <div className="w-4 h-4 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center text-amber-600 dark:text-amber-400 mr-2 mt-0.5 flex-shrink-0">
                         <Lightbulb size={10} />
                       </div>
-                      <span className="text-xs text-blue-700 dark:text-blue-400">
-                        缺乏与{card.title}相关的最新行业案例研究
-                      </span>
+                      <span className="text-xs text-blue-700 dark:text-blue-400">{insights.gap || '暂无识别'}</span>
                     </li>
                   </ul>
                 </div>
@@ -1754,11 +1858,7 @@ className="text-lg select-text"
                 <div>
                   <h4 className="font-medium text-blue-800 dark:text-blue-300 mb-2">推荐相关卡片</h4>
                   <div className="space-y-2">
-                    {[
-                      { title: "知识管理系统的最佳实践", reason: "补充方法论知识" },
-                      { title: "AI在知识发现中的应用", reason: "拓展技术应用场景" },
-                      { title: "组织学习与知识创新", reason: "增强理论深度" }
-                    ].map((rec, index) => (
+                    {(insights.recommendations || []).map((rec: any, index: number) => (
                       <div key={index} className="flex items-center p-2 bg-white/50 dark:bg-gray-800/50 rounded-lg">
                         <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0">
                           <ChevronRight size={10} />
@@ -1779,6 +1879,7 @@ className="text-lg select-text"
                 </div>
               </div>
             </motion.div>
+            )}
           </div>
         </div>
 
@@ -2243,6 +2344,90 @@ className="text-lg select-text"
             </div>
           </motion.div>
         </motion.div>
+      )}
+
+      {/* 任务编辑弹窗 */}
+      {editingTask && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50" onClick={() => setEditingTask(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <ListTodo size={18} className="text-green-500" />
+                编辑任务
+              </h3>
+              <button onClick={() => setEditingTask(null)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium block mb-1">任务标题 *</label>
+                <input
+                  value={editTaskTitle}
+                  onChange={e => setEditTaskTitle(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">任务描述</label>
+                <textarea
+                  value={editTaskDesc}
+                  onChange={e => setEditTaskDesc(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium block mb-1">优先级</label>
+                  <select value={editTaskPriority} onChange={e => setEditTaskPriority(e.target.value as any)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">分类</label>
+                  <select value={editTaskCategory} onChange={e => setEditTaskCategory(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm">
+                    <option value="inbox">收集箱</option>
+                    <option value="today">今日待办</option>
+                    <option value="later">将来可能</option>
+                    <option value="archive">归档</option>
+                    <option value="projects">项目</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">截止日期</label>
+                <input
+                  type="date"
+                  value={editTaskDueDate}
+                  onChange={e => setEditTaskDueDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setEditingTask(null)}
+                className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveTask}
+                disabled={savingTask || !editTaskTitle.trim()}
+                className="px-4 py-2 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-1"
+              >
+                {savingTask ? <Loader size={14} className="animate-spin" /> : null}
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </motion.div>
   );

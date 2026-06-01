@@ -29,30 +29,33 @@ if project_root not in sys.path:
 # ============================================================
 # 2. NPU 库路径配置（使用新的配置模块）
 # ============================================================
-from conf.npu import NPUConfig
+try:
+    from conf.npu import NPUConfig
 
-npu_config = NPUConfig()
-lib_path = npu_config.get_libs_path()
+    npu_config = NPUConfig()
+    lib_path = npu_config.get_libs_path()
 
-print(f"[SETUP] QAI 库路径: {lib_path}")
+    print(f"[SETUP] QAI 库路径: {lib_path}")
 
-# 设置环境变量
-paths_to_add = [lib_path]
-current_path = os.environ.get('PATH', '')
-for p in paths_to_add:
-    if p not in current_path:
-        current_path = p + ';' + current_path
-os.environ['PATH'] = current_path
-os.environ['QAI_LIBS_PATH'] = lib_path
-os.environ['QNN_LOG_LEVEL'] = npu_config.QNN_LOG_LEVEL
+    # 设置环境变量
+    paths_to_add = [lib_path]
+    current_path = os.environ.get('PATH', '')
+    for p in paths_to_add:
+        if p not in current_path:
+            current_path = p + ';' + current_path
+    os.environ['PATH'] = current_path
+    os.environ['QAI_LIBS_PATH'] = lib_path
+    os.environ['QNN_LOG_LEVEL'] = npu_config.QNN_LOG_LEVEL
 
-# 添加 DLL 目录
-for p in paths_to_add:
-    if os.path.exists(p):
-        os.add_dll_directory(p)
-        print(f"[SETUP] 添加 DLL 目录: {p}")
+    # 添加 DLL 目录
+    for p in paths_to_add:
+        if os.path.exists(p):
+            os.add_dll_directory(p)
+            print(f"[SETUP] 添加 DLL 目录: {p}")
 
-print(f"[SETUP] NPU 配置: backend={npu_config.QNN_BACKEND}, device={npu_config.QNN_DEVICE}")
+    print(f"[SETUP] NPU 配置: backend={npu_config.QNN_BACKEND}, device={npu_config.QNN_DEVICE}")
+except Exception as e:
+    print(f"[WARN] NPU 初始化失败（不影响 Genie HTTP 调用）: {e}")
 
 # ============================================================
 # 3. FastAPI 应用创建

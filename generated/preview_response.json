@@ -1,1 +1,1546 @@
-﻿
+{
+  "filename": "test_full.pptx",
+  "total_slides": 6,
+  "slide_width": 1280.0,
+  "slide_height": 720.0,
+  "slides": [
+    {
+      "index": 1,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 0.0,
+          "width": 6.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 220.0,
+          "width": 80.0,
+          "height": 6.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 174.4,
+          "top": 262.4,
+          "width": 187.16,
+          "height": 89.6,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "AI趋势",
+              "runs": [
+                {
+                  "text": "AI趋势",
+                  "font_size": 42.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 42.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 177.6,
+          "top": 349.6,
+          "width": 156.0,
+          "height": 38.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "智能分析报告",
+              "runs": [
+                {
+                  "text": "智能分析报告",
+                  "font_size": 18.0,
+                  "color": "#3498DB",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 18.0,
+          "default_font_color": "#3498DB",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 180.0,
+          "top": 440.0,
+          "width": 24.0,
+          "height": 24.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#3498DB",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 210.6,
+          "top": 445.1,
+          "width": 79.98,
+          "height": 22.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "2026-05-31",
+              "runs": [
+                {
+                  "text": "2026-05-31",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 10.5,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 714.0,
+          "width": 1280.0,
+          "height": 6.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        }
+      ],
+      "notes": null
+    },
+    {
+      "index": 2,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#ECF0F1",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 4.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 60.0,
+          "width": 6.0,
+          "height": 36.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#3B82F6",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 76.8,
+          "top": 60.8,
+          "width": 177.51,
+          "height": 51.2,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "📊 核心事实",
+              "runs": [
+                {
+                  "text": "📊 核心事实",
+                  "font_size": 24.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 24.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 100.0,
+          "width": 120.0,
+          "height": 3.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#3B82F6",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 560.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#3B82F6",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 6.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#3B82F6",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.0,
+          "top": 155.0,
+          "width": 155.04,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "全球AI市场规模",
+              "runs": [
+                {
+                  "text": "全球AI市场规模",
+                  "font_size": 15.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.6,
+          "top": 186.1,
+          "width": 417.34,
+          "height": 22.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "2026年全球AI市场规模预计达到5000亿美元，年复合增长率3 6%",
+              "runs": [
+                {
+                  "text": "2026年全球AI市场规模预计达到5000亿美元，年复合增长率3",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                },
+                {
+                  "text": " ",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                },
+                {
+                  "text": "6%",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 10.5,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "index": 3,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#ECF0F1",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 4.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 60.0,
+          "width": 6.0,
+          "height": 36.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#22C55E",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 76.8,
+          "top": 60.8,
+          "width": 177.51,
+          "height": 51.2,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "🔍 深度解读",
+              "runs": [
+                {
+                  "text": "🔍 深度解读",
+                  "font_size": 24.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 24.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 100.0,
+          "width": 120.0,
+          "height": 3.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#22C55E",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 560.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#22C55E",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 6.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#22C55E",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.0,
+          "top": 155.0,
+          "width": 114.25,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "增长驱动力",
+              "runs": [
+                {
+                  "text": "增长驱动力",
+                  "font_size": 15.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.6,
+          "top": 186.1,
+          "width": 250.5,
+          "height": 22.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "大语言模型和生成式AI是主要增长动力",
+              "runs": [
+                {
+                  "text": "大语言模型和生成式AI是主要增长动力",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 10.5,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "index": 4,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#ECF0F1",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 4.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 60.0,
+          "width": 6.0,
+          "height": 36.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EAB308",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 76.8,
+          "top": 60.8,
+          "width": 196.91,
+          "height": 51.2,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "⚠️ 风险警示",
+              "runs": [
+                {
+                  "text": "⚠️ 风险警示",
+                  "font_size": 24.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 24.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 100.0,
+          "width": 120.0,
+          "height": 3.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EAB308",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 560.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EAB308",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 6.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EAB308",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.0,
+          "top": 155.0,
+          "width": 136.3,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "数据安全风险",
+              "runs": [
+                {
+                  "text": "数据安全风险",
+                  "font_size": 15.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.6,
+          "top": 186.1,
+          "width": 265.19,
+          "height": 22.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "AI部署中的隐私和安全问题成为最大挑战",
+              "runs": [
+                {
+                  "text": "AI部署中的隐私和安全问题成为最大挑战",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 10.5,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "index": 5,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#ECF0F1",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 4.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 60.0,
+          "width": 6.0,
+          "height": 36.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EF4444",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 76.8,
+          "top": 60.8,
+          "width": 177.51,
+          "height": 51.2,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "🎯 行动方案",
+              "runs": [
+                {
+                  "text": "🎯 行动方案",
+                  "font_size": 24.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 24.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 80.0,
+          "top": 100.0,
+          "width": 120.0,
+          "height": 3.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EF4444",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 560.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EF4444",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 60.0,
+          "top": 140.0,
+          "width": 6.0,
+          "height": 180.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#EF4444",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.0,
+          "top": 155.0,
+          "width": 92.2,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "行动建议",
+              "runs": [
+                {
+                  "text": "行动建议",
+                  "font_size": 15.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 82.6,
+          "top": 186.1,
+          "width": 162.3,
+          "height": 22.4,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "建议企业建立AI治理框架",
+              "runs": [
+                {
+                  "text": "建议企业建立AI治理框架",
+                  "font_size": 10.5,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 10.5,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "index": 6,
+      "background": null,
+      "shapes": [
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 0.0,
+          "width": 1280.0,
+          "height": 720.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 547.8,
+          "top": 66.0,
+          "width": 184.4,
+          "height": 64.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "要点总结",
+              "runs": [
+                {
+                  "text": "要点总结",
+                  "font_size": 30.0,
+                  "bold": true,
+                  "color": "#1C2833",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "center"
+            }
+          ],
+          "default_font_size": 30.0,
+          "default_font_color": "#1C2833",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 580.0,
+          "top": 116.0,
+          "width": 120.0,
+          "height": 4.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 200.0,
+          "top": 184.0,
+          "width": 8.0,
+          "height": 8.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 222.0,
+          "top": 179.0,
+          "width": 147.85,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "全球AI市场规模",
+              "runs": [
+                {
+                  "text": "全球AI市场规模",
+                  "font_size": 15.0,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 200.0,
+          "top": 240.0,
+          "width": 8.0,
+          "height": 8.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 222.0,
+          "top": 235.0,
+          "width": 109.0,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "增长驱动力",
+              "runs": [
+                {
+                  "text": "增长驱动力",
+                  "font_size": 15.0,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 200.0,
+          "top": 296.0,
+          "width": 8.0,
+          "height": 8.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 222.0,
+          "top": 291.0,
+          "width": 130.0,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "数据安全风险",
+              "runs": [
+                {
+                  "text": "数据安全风险",
+                  "font_size": 15.0,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 200.0,
+          "top": 352.0,
+          "width": 8.0,
+          "height": 8.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        },
+        {
+          "type": "TEXT_BOX (17)",
+          "left": 222.0,
+          "top": 347.0,
+          "width": 88.0,
+          "height": 32.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": null,
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "行动建议",
+              "runs": [
+                {
+                  "text": "行动建议",
+                  "font_size": 15.0,
+                  "color": "#2C3E50",
+                  "font_name": "Arial"
+                }
+              ],
+              "align": "left"
+            }
+          ],
+          "default_font_size": 15.0,
+          "default_font_color": "#2C3E50",
+          "default_font_name": "Arial"
+        },
+        {
+          "type": "AUTO_SHAPE (1)",
+          "left": 0.0,
+          "top": 714.0,
+          "width": 1280.0,
+          "height": 6.0,
+          "text": null,
+          "font_size": null,
+          "font_bold": null,
+          "font_color": null,
+          "fill_color": "#F1C40F",
+          "table": null,
+          "image_url": null,
+          "paragraphs": [
+            {
+              "text": "",
+              "runs": []
+            }
+          ],
+          "default_font_size": null,
+          "default_font_color": null,
+          "default_font_name": null
+        }
+      ],
+      "notes": null
+    }
+  ],
+  "design_system": {
+    "theme": {
+      "name": "professional",
+      "label": "Professional",
+      "description": "专业商务风格，适合正式场合",
+      "colors": {
+        "primary": "#1C2833",
+        "secondary": "#3498DB",
+        "accent": "#F1C40F",
+        "background": "#ECF0F1",
+        "text": "#2C3E50"
+      },
+      "fonts": {
+        "title": "Arial",
+        "body": "Arial"
+      },
+      "layout_style": "professional"
+    },
+    "card_colors": {
+      "blue": "#3b82f6",
+      "green": "#22c55e",
+      "yellow": "#eab308",
+      "red": "#ef4444"
+    },
+    "logo_url": null
+  }
+}

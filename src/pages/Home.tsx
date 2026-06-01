@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import ReactMarkdown from 'react-markdown';
 import {
   Brain,
   ChevronDown,
@@ -160,6 +161,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const urlTab = searchParams.get('tab');
   
   const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>('cards');
+  const [cardViewMode, setCardViewMode] = useState<'grid' | 'timeline'>('grid');
   const [activeTab, setActiveTab] = useState<string>(() => {
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
@@ -177,6 +179,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAllCardsModal, setShowAllCardsModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
+  
+  const toggleExpandCard = (id: string) => {
+    setExpandedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   
   // 同步activeTab到URL参数
   useEffect(() => {
@@ -209,6 +220,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+
+  // 提取内容摘要（首句或前60字）
+  const extractSummary = (content: string, maxLen = 60): string => {
+    const cleaned = content.replace(/!\[.*?\]\(.*?\)/g, '').replace(/[#*>\-\[\]]/g, '').trim();
+    const match = cleaned.match(/^.*?[。！？.!?]/);
+    if (match && match[0].length <= maxLen) return match[0].trim();
+    return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned;
+  };
 
   // 格式化日期时间
   const formatDate = (dateString: string) => {
@@ -338,7 +357,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         return;
       }
       
-      // 粘贴文本导入：使用新的 /import/text 端点（自动保存源文件实现溯源 + 同批次关联）
+      // 粘贴文本导入：使用增强版 /import/text 端点（锦衣卫全线：安全检查 + 密卷房提取 + 四司分类 + 自动保存源文件 + 同批次关联）
       if (rawText && rawText.trim()) {
         let textSavedCount = 0;
         try {
@@ -350,7 +369,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           if (response.ok) {
             const result = await response.json();
             textSavedCount = result.saved || 0;
-            toast(`成功导入 ${textSavedCount} 张卡片（已保存源文件可溯源）`, {
+
+            // 安全检查提示
+            let toastDesc = `已保存源文件可溯源，四司分类完成`;
+            if (result.security_issues && result.security_issues.length > 0) {
+              toastDesc += ` | 锦衣卫过滤 ${result.security_issues.length} 个安全问题`;
+            }
+
+            toast(`成功导入 ${textSavedCount} 张卡片`, {
+              description: toastDesc,
               className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
             });
           } else {
@@ -392,6 +419,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         if (syncToGTD && textSavedCount > 0) {
           try { await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' }); } catch (e) {}
         }
+        
+        // import/text 已保存卡片到数据库，不再走逐条 POST /api/knowledge/cards 避免重复
         return;
       }
       
@@ -642,7 +671,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         
         // 设置应用场景
         setApplicationScenarios([
-          { icon: 'Lo', title: '端侧隐私保护', description: '数据完全本地处理，不出域', link: 'tab:data-management' },
+          { icon: 'Lo', title: '端侧隐私保护', description: 'NPU推理<500ms，数据不出域', link: 'tab:data-management' },
           { icon: 'Pr', title: '专题项目管理', description: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
           { icon: 'Tm', title: '局域网团队协作', description: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
         ]);
@@ -989,21 +1018,18 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               >
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold">平台功能</h2>
-                  <button 
-                    onClick={() => setMobileMenuOpen(true)}
-                    className="text-blue-600 dark:text-blue-400 text-sm flex items-center hover:underline"
-                  >
-                    查看全部 <ChevronRight size={16} />
-                  </button>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: '智能PDF解析与分析', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
+                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
                     { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
-                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
+                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
                     { icon: <ListTodo size={20} />, title: '日历任务', desc: 'GTD任务管理与日程规划', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
                     { icon: <Users size={20} />, title: '协作会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
+                    { icon: <GitBranch size={20} />, title: '知识库图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
+                    { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-amber-500 to-yellow-400' },
+                    { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-pink-500 to-rose-400' },
                   ].map((item, i) => (
                     <motion.div
                       key={i}
@@ -1022,52 +1048,51 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     </motion.div>
                   ))}
                 </div>
-              </motion.div>
-
-               {/* 特性亮点 */}
-               <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 animate={{ opacity: 1, y: 0 }}
-                 transition={{ duration: 0.5, delay: 0.4 }}
-                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-               >
-                 <h2 className="text-xl font-bold mb-4">特性亮点</h2>
-                 {statsLoading ? (
-                   <div className="text-center py-8">
-                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
-                   </div>
-                 ) : statsError ? (
-                   <div className="text-center py-8">
-                     <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                     <p className="text-red-600 dark:text-red-400">{statsError}</p>
-                   </div>
-                 ) : featureHighlights.length === 0 ? (
-                   <div className="text-center py-8">
-                     <Lightbulb className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                     <p className="text-gray-500 dark:text-gray-400">暂无特性亮点数据</p>
-                   </div>
-                 ) : (
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     {featureHighlights.map((feature, index) => (
-                       <motion.div
-                         key={index}
-                         whileHover={{ x: 5 }}
-                         className="flex items-start p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
-                        onClick={() => feature.link.startsWith('tab:') ? setActiveTab(feature.link.slice(4) as any) : navigate(feature.link)}
-                      >
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center text-white mr-3 flex-shrink-0">
-                          {feature.icon}
-                         </div>
-                         <div>
-                           <h3 className="font-medium">{feature.title}</h3>
-                           <p className="text-sm text-gray-600 dark:text-gray-300">{feature.description}</p>
-                         </div>
-                       </motion.div>
-                     ))}
-                   </div>
-                 )}
                </motion.div>
+
+                {/* 企业应用场景 */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.3 }}
+                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+                >
+                  <h2 className="text-xl font-bold mb-4">企业应用场景</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {[
+                      { icon: 'Lo', title: '端侧隐私保护', desc: 'NPU推理<500ms，数据不出域', link: 'tab:data-management' },
+                      { icon: 'Pr', title: '专题项目管理', desc: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
+                      { icon: 'Tm', title: '局域网团队协作', desc: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
+                    ].map((scenario, index) => (
+                      <motion.div
+                        key={index}
+                        whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
+                        whileTap={{ scale: 0.98 }}
+                        className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
+                        onClick={() => {
+                          if (scenario.link.startsWith('tab:')) {
+                            const tabTarget = scenario.link.slice(4);
+                            const [mainTab, subTab] = tabTarget.split('|');
+                            setActiveTab(mainTab as any);
+                            if (subTab) setKnowledgeSubTab(subTab as any);
+                          } else {
+                            navigate(scenario.link);
+                          }
+                        }}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-400 flex items-center justify-center text-white flex-shrink-0 text-sm font-bold">
+                          {scenario.icon}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm">{scenario.title}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{scenario.desc}</div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+
+
             </div>
 
              {/* 右侧区域：统计图表和特性 */}
@@ -1175,59 +1200,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   </div>
                </motion.div>
 
-               {/* 企业应用场景 */}
-               <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 animate={{ opacity: 1, y: 0 }}
-                 transition={{ duration: 0.5, delay: 0.7 }}
-                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-               >
-                 <h2 className="text-xl font-bold mb-4">企业应用场景</h2>
-                 {statsLoading ? (
-                   <div className="text-center py-8">
-                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
-                   </div>
-                 ) : statsError ? (
-                   <div className="text-center py-8">
-                     <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                     <p className="text-red-600 dark:text-red-400">{statsError}</p>
-                   </div>
-                 ) : applicationScenarios.length === 0 ? (
-                   <div className="text-center py-8">
-                     <Briefcase className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                     <p className="text-gray-500 dark:text-gray-400">暂无应用场景数据</p>
-                   </div>
-                 ) : (
-                   <div className="space-y-4">
-                     {applicationScenarios.map((scenario, index) => (
-                       <motion.div
-                         key={index}
-                         whileHover={{ x: 5 }}
-                         className="flex items-start cursor-pointer"
-                         onClick={() => {
-                           if (scenario.link.startsWith('tab:')) {
-                             const tabTarget = scenario.link.slice(4);
-                             const [mainTab, subTab] = tabTarget.split('|');
-                             setActiveTab(mainTab as any);
-                             if (subTab) setKnowledgeSubTab(subTab as any);
-                           } else {
-                             navigate(scenario.link);
-                           }
-                         }}
-                       >
-                         <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3 flex-shrink-0">
-                           {scenario.icon}
-                         </div>
-                         <div>
-                           <h3 className="font-medium">{scenario.title}</h3>
-                           <p className="text-sm text-gray-600 dark:text-gray-300">{scenario.description}</p>
-                         </div>
-                       </motion.div>
-                     ))}
-                   </div>
-                 )}
-               </motion.div>
+
              </div>
           </div>
 )}
@@ -1356,6 +1329,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <option value="week">本周</option>
                 <option value="year">本年</option>
               </select>
+              <button
+                onClick={() => setCardViewMode(prev => prev === 'grid' ? 'timeline' : 'grid')}
+                className={`px-3 py-1.5 text-sm border rounded-lg flex items-center gap-1 transition-colors ${cardViewMode === 'timeline' ? 'bg-blue-50 border-blue-300 text-blue-600' : 'hover:bg-gray-50'}`}
+                title={cardViewMode === 'timeline' ? '切换网格视图' : '切换时间线视图'}
+              >
+                <Calendar size={14} />
+                {cardViewMode === 'timeline' ? '网格' : '时间线'}
+              </button>
             </div>
 
             {/* 批量操作 */}
@@ -1382,80 +1363,113 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </div>
             )}
 
-            {/* 卡片列表 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(card => (
-                <motion.div
-                  key={card.id}
-                  whileHover={{ y: -5 }}
-                  className={`border rounded-xl overflow-hidden ${cardTypeMap[card.color].borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
-                >
-                  <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center flex-1 min-w-0">
-                        <input
-                          type="checkbox"
-                          checked={selectedCardIds.has(card.id)}
-                          onChange={(e) => {
-                            const newSelected = new Set(selectedCardIds);
-                            if (e.target.checked) {
-                              newSelected.add(card.id);
-                            } else {
-                              newSelected.delete(card.id);
-                            }
-                            setSelectedCardIds(newSelected);
-                          }}
-                          className="mr-2 w-4 h-4"
-                        />
-                        <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
-                          {cardTypeMap[card.color].icon}
+            {/* 卡片列表：网格模式 */}
+            {cardViewMode === 'grid' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).map(card => (
+                  <motion.div
+                    key={card.id}
+                    whileHover={{ y: -5 }}
+                    className={`border rounded-xl overflow-hidden ${cardTypeMap[card.color].borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
+                  >
+                    <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedCardIds.has(card.id)}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedCardIds);
+                              if (e.target.checked) { newSelected.add(card.id); } else { newSelected.delete(card.id); }
+                              setSelectedCardIds(newSelected);
+                            }}
+                            className="mr-2 w-4 h-4"
+                          />
+                          <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
+                            {cardTypeMap[card.color].icon}
+                          </div>
+                          <h3 className="font-semibold truncate cursor-pointer hover:text-blue-600" onClick={() => openDetailModal(card)}>
+                            {card.title}
+                          </h3>
                         </div>
-                        <h3 
-                          className="font-semibold truncate cursor-pointer hover:text-blue-600"
-                          onClick={() => openDetailModal(card)}
-                        >
-                          {card.title}
-                        </h3>
                       </div>
                     </div>
-                  </div>
-                  <div className="p-3 bg-white dark:bg-gray-800">
-                    <p className="text-sm text-gray-600 line-clamp-2 mb-2">{card.content}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">{formatDate(card.createdAt)}</span>
-                      <div className="flex gap-1">
-                        <button
-                          onClick={(e) => handleCopyCard(card, e)}
-                          className="text-gray-500 hover:text-blue-600 p-1"
-                          title="复制内容"
-                        >
-                          <Copy size={14} />
-                        </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }}
-                          className="text-gray-500 hover:text-purple-600 p-1"
-                          title="放大查看"
-                        >
-                          <ZoomIn size={14} />
-                        </button>
-                        <button
-                          onClick={() => openDetailModal(card)}
-                          className="text-blue-600 text-sm hover:underline"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCard(card.id)}
-                          className="text-red-500 text-sm hover:underline ml-2"
-                        >
-                          删除
-                        </button>
+                    <div className="p-3 bg-white dark:bg-gray-800">
+                      {(() => {
+                        const summary = extractSummary(card.content);
+                        const isLong = card.content.length > 120;
+                        if (isLong && !expandedCardIds.has(card.id)) {
+                          return (
+                            <div>
+                              <p className="text-sm text-gray-600 mb-1">{summary}</p>
+                              <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">展开全文</button>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div>
+                            <p className="text-sm text-gray-600 whitespace-pre-wrap mb-1">{card.content}</p>
+                            {isLong && <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">收起</button>}
+                          </div>
+                        );
+                      })()}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">{formatDate(card.createdAt)}</span>
+                        <div className="flex gap-1">
+                          <button onClick={(e) => handleCopyCard(card, e)} className="text-gray-500 hover:text-blue-600 p-1" title="复制内容"><Copy size={14} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }} className="text-gray-500 hover:text-purple-600 p-1" title="放大查看"><ZoomIn size={14} /></button>
+                          <button onClick={() => openDetailModal(card)} className="text-blue-600 text-sm hover:underline">编辑</button>
+                          <button onClick={() => handleDeleteCard(card.id)} className="text-red-500 text-sm hover:underline ml-2">删除</button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+
+            {/* 卡片列表：时间线模式 */}
+            {cardViewMode === 'timeline' && (
+              <div className="space-y-6">
+                {(() => {
+                  const grouped: Record<string, typeof filteredCards> = {};
+                  const pageCards = filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+                  pageCards.forEach(card => {
+                    const day = new Date(card.createdAt).toLocaleDateString('zh-CN');
+                    if (!grouped[day]) grouped[day] = [];
+                    grouped[day].push(card);
+                  });
+                  return Object.entries(grouped).map(([day, dayCards]) => (
+                    <div key={day}>
+                      <div className="flex items-center gap-3 mb-3 sticky top-0 bg-gray-50 dark:bg-gray-900 py-2 z-10">
+                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{day}</span>
+                        <span className="text-xs text-gray-400">({dayCards.length} 条)</span>
+                        <div className="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        {dayCards.map(card => (
+                          <motion.div
+                            key={card.id}
+                            whileHover={{ y: -3 }}
+                            className={`border rounded-lg overflow-hidden cursor-pointer ${cardTypeMap[card.color].borderColor} bg-white dark:bg-gray-800`}
+                            onClick={() => openDetailModal(card)}
+                          >
+                            <div className={`${cardTypeMap[card.color].bgColor} px-3 py-2 flex items-center gap-2`}>
+                              <div className={`${cardTypeMap[card.color].color} p-1 rounded`}>{cardTypeMap[card.color].icon}</div>
+                              <span className="font-medium text-sm truncate">{card.title}</span>
+                            </div>
+                            <div className="p-3">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{extractSummary(card.content, 80)}</p>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
 
             {filteredCards.length === 0 && (
               <div className="text-center py-12 text-gray-500">
@@ -1719,7 +1733,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
          onClose={() => setShowCreateModal(false)}
          onSave={handleCreateCard}
          initialColor={createModalColor}
-         existingCards={cards.map(card => ({ id: card.id, title: card.title }))}
+         existingCards={cards.map(card => ({ id: card.id, title: card.title, content: card.content }))}
        />
 
          {/* 卡片详情模态框 */}
@@ -1880,8 +1894,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 {/* 放大后的卡片内容 */}
                 <div className="flex-1 overflow-y-auto p-8">
                   <div className={`${cardTypeMap[zoomedCard.color].bgColor} border ${cardTypeMap[zoomedCard.color].borderColor} rounded-xl p-6`}>
-                    <div className="text-lg leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
-                      {zoomedCard.content}
+                    <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
+                      <ReactMarkdown>{zoomedCard.content}</ReactMarkdown>
                     </div>
                   </div>
                   

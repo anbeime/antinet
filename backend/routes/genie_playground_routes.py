@@ -14,6 +14,7 @@ import json
 import subprocess
 import time
 import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,17 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
+
+# 429 不再重试（Genie 单请求槽，重试只会叠加压力导致后端崩溃）
+# 遇到 429 立即失败，由各端点走 fallback 降级
+
+
+async def _genie_post_no_retry(url: str, json_data: dict, timeout: float = 120.0) -> dict:
+    """Genie POST 请求（429 立即返回，不重试以免恶性循环）"""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=json_data)
+        resp.raise_for_status()
+        return resp.json()
 
 # ==================== model_loader 直接调用 ====================
 _model_loader = None
@@ -241,6 +253,243 @@ async def get_loaded_model_name() -> str | None:
         pass
     return None
 
+
+class ClassifyRequest(BaseModel):
+    content: str = Field(..., description="待分类的文本内容")
+
+# ========== 降级兜底：关键词规则分类 ==========
+
+def _fallback_classify(content: str) -> list:
+    """锦衣卫降级模式：当 Genie 不可用时，使用关键词规则分类兜底"""
+    import re as _re
+
+    paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
+    if not paragraphs:
+        paragraphs = [content.strip()]
+
+    leak_patterns = ['System Information', 'Template', 'DeepSeek', 'You are a helpful',
+                     'instruction', 'prompt', 'special token', '#### Instruction',
+                     '#### Response', 'system', '<|assistant', '<|end',
+                     'Ignore all previous']
+    cards = []
+    for idx, para in enumerate(paragraphs):
+        if len(para) < 4:
+            continue
+        if any(pat.lower() in para.lower() for pat in leak_patterns):
+            continue
+
+        lower = para.lower()
+        scores = {'blue': 0, 'green': 0, 'yellow': 0, 'red': 0}
+
+        # 通政司（蓝·事实/核心概念）
+        for kw in ['定义', '概念', '原理', '理论', '什么是', '是指', '含义', '本质',
+                     '事实', '数据', '统计', '研究表明', '根据', '调查', '特征', '结构', '组成']:
+            if kw in lower: scores['blue'] += 1
+
+        # 监察院（绿·解释/关联分析）
+        for kw in ['关联', '相关', '连接', '对比', '区别', '因为', '所以', '导致', '由于',
+                     '因此', '从而', '关系', '解释', '原因', '影响', '作用']:
+            if kw in lower: scores['green'] += 1
+        if _re.search(r'与.*相比|不同于|相较于', para): scores['green'] += 2
+
+        # 刑狱司（黄·风险/参考来源）
+        for kw in ['来源', '出处', '引用', '参考文献', '风险', '隐患', '注意', '谨慎',
+                     '可能', '潜在', '警告', '威胁', '漏洞']:
+            if kw in lower: scores['yellow'] += 1
+        if _re.search(r'https?://|www\.|\.com|\.org|\.cn', para):
+            scores['yellow'] += 3
+
+        # 参谋司（红·行动/索引）
+        for kw in ['建议', '必须', '需要', '应该', '执行', '完成', '开始', '措施', '步骤',
+                     '关键词', '标签', '索引', '行动', '计划', '目标', '方案']:
+            if kw in lower: scores['red'] += 1
+        if len(para) < 50: scores['red'] += 2
+        if any(v in lower for v in ['建议', '应该', '必须', '需要', '执行']): scores['red'] += 2
+        if len(para) > 200: scores['blue'] += 1
+
+        best_color = max(scores, key=scores.get)
+        max_score = scores[best_color]
+        confidence = min(max_score / 5, 0.85) if max_score > 0 else 0.5
+
+        title = para[:50] + '...' if len(para) > 50 else para
+        if '\n' in title:
+            title = title.split('\n')[0]
+        title = _re.sub(r'^#+\s*', '', title).strip()
+
+        cards.append({
+            'title': title,
+            'content': para,
+            'card_type': best_color,
+            'confidence': round(confidence, 2),
+            'address': f"{best_color.upper()}{idx + 1}"
+        })
+
+    return cards
+
+
+# ========== 8-智能体锦衣卫分类提示词 ==========
+
+_JINYIWEI_CLASSIFY_SYSTEM = """你是「锦衣卫总指挥使」，统领四司进行知识卡片分类。你必须以JSON格式响应，不得输出任何其他文字。
+
+## 四司分工
+
+| 衙门 | 颜色 | 职责 | 适用内容特征 |
+|------|------|------|-------------|
+| 通政司 | blue | 事实/核心概念 | 定义、原理、数据事实、客观描述、结构组成 |
+| 监察院 | green | 解释/关联分析 | 因果关系、对比分析、关联关系、影响作用 |
+| 刑狱司 | yellow | 风险/参考来源 | 风险预警、引用出处、URL链接、安全隐患 |
+| 参谋司 | red | 行动/索引关键词 | 行动建议、待办事项、关键词索引、行动指令 |
+
+## 分类规则
+
+1. 将输入文本按空行切分为段落
+2. 每个段落判定一个最匹配的颜色
+3. 提取段落的标题（取首行或前30字）
+4. 置信度 0-1，表示分类确定性
+
+## 响应格式
+
+严格按以下JSON数组返回，不要添加任何前缀或后缀：
+
+```json
+[{"title":"段落标题","content":"原文段落","color":"blue|green|yellow|red","confidence":0.9}]
+```"""
+
+
+@router.post("/classify")
+async def genie_classify(request: ClassifyRequest):
+    """AI 精准分类：8-智能体锦衣卫全线 → Genie LLM → 降级兜底关键词规则"""
+    content = request.content
+    if not content or not content.strip():
+        raise HTTPException(status_code=400, detail="内容不能为空")
+
+    # 构建8智能体用户提示
+    user_prompt = (
+        "请按锦衣卫四司分工，将以下文本按段落分类为四色知识卡片。\n\n"
+        f"待分类文本：\n{content}"
+    )
+
+    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    last_error = ""
+
+    for model in models_to_try:
+        try:
+            result = await _genie_post_no_retry(
+                f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                json_data={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": _JINYIWEI_CLASSIFY_SYSTEM},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "max_tokens": 2048,
+                    "temperature": 0.3
+                }
+            )
+            response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if response_text:
+                    # 尝试解析 Genie 返回的 JSON
+                    try:
+                        json_match = response_text
+                        # 清理可能的 markdown 代码块包装
+                        if '```' in json_match:
+                            json_match = json_match.split('```')[1]
+                            if json_match.startswith('json'):
+                                json_match = json_match[4:]
+                        genie_cards = json.loads(json_match.strip())
+                        if isinstance(genie_cards, list) and len(genie_cards) > 0:
+                            # 规范化输出
+                            normalized = []
+                            for i, card in enumerate(genie_cards):
+                                normalized.append({
+                                    'title': card.get('title', card.get('content', '')[:30]),
+                                    'content': card.get('content', ''),
+                                    'card_type': card.get('color', card.get('card_type', 'blue')),
+                                    'confidence': card.get('confidence', 0.9),
+                                    'address': f"{card.get('color', card.get('card_type', 'blue')).upper()}{i + 1}"
+                                })
+                            return {
+                                "success": True,
+                                "source": "genie",
+                                "model": model,
+                                "cards": normalized,
+                                "total": len(normalized)
+                            }
+                    except json.JSONDecodeError:
+                        logger.warning(f"Genie 返回非标准JSON，回退到原文本: {response_text[:200]}")
+                        return {
+                            "success": True,
+                            "source": "genie",
+                            "model": model,
+                            "response": response_text
+                        }
+        except httpx.HTTPStatusError as e:
+            last_error = f"{model} HTTP {e.response.status_code}"
+            try: last_error += ": " + e.response.text[:100]
+            except: pass
+        except Exception as e:
+            last_error = f"{model}: {str(e)[:100]}"
+
+    # ========== 降级兜底：Genie 全部失败 → 关键词规则分类 ==========
+    logger.warning(f"Genie 分类全部失败 ({last_error})，降级为关键词规则分类")
+    try:
+        fallback_cards = _fallback_classify(content)
+        if fallback_cards:
+            return {
+                "success": True,
+                "source": "fallback",
+                "fallback_reason": last_error,
+                "cards": fallback_cards,
+                "total": len(fallback_cards)
+            }
+    except Exception as fb_err:
+        logger.error(f"降级分类也失败: {fb_err}")
+
+    raise HTTPException(status_code=502, detail=f"Genie 分类失败（含降级）: {last_error}")
+
+class AnalyzeRequest(BaseModel):
+    card_title: str = Field(..., description="卡片标题")
+    card_content: str = Field(..., description="卡片内容")
+    related_titles: Optional[str] = Field("", description="关联卡片标题列表")
+
+@router.post("/analyze")
+async def genie_analyze(request: AnalyzeRequest):
+    """AI 知识洞察：分析卡片并生成洞察"""
+    related_part = f"\n关联卡片：{request.related_titles}" if request.related_titles else ""
+    user_prompt = (
+        f"你是一个知识管理专家。分析以下知识卡片，给出3个方面的洞察：\n\n"
+        f"卡片标题：{request.card_title}\n"
+        f"卡片内容：{request.card_content}{related_part}\n\n"
+        f"请严格按照JSON格式返回，不要其他文字：\n"
+        f"{{\n"
+        f'  "summary": "一句话总结这张卡片在知识体系中的角色（30字内）",\n'
+        f'  "importance": "重要性评分 0-100 的数字",\n'
+        f'  "gap": "一个知识空白点（20字内）",\n'
+        f'  "recommendations": [\n'
+        f'    {{"title": "推荐主题", "reason": "推荐原因（10字内）"}}\n'
+        f'  ]\n'
+        f"}}"
+    )
+
+    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    last_error = ""
+    for model in models_to_try:
+        try:
+            result = await _genie_post_no_retry(
+                f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                json_data={
+                    "model": model,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                    "max_tokens": 1024,
+                    "temperature": 0.5
+                }
+            )
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if content:
+                return {"success": True, "response": content}
+        except Exception as e:
+            last_error = f"{model}: {str(e)[:100]}"
+    raise HTTPException(status_code=502, detail=f"Genie 分析失败: {last_error}")
 
 @router.post("/chat")
 async def genie_chat(request: GenieChatRequest):

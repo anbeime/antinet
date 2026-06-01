@@ -914,37 +914,22 @@ useEffect(() => {
     toast.info('会议已停止');
   };
 
-  // 保存会议中提取的卡片到知识库
-  const handleSaveMeetingCard = async (card: { type: string; title: string; content: string }) => {
+  // 点击卡片查看详情并保存
+  const handleCardClick = (card: { type: string; title: string; content: string }) => {
     if (!card.title || !card.content) {
       toast.error('卡片内容不完整');
       return;
     }
-    try {
-      const response = await fetch(`${BACKEND_URL}/cards/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: card.type || 'blue',
-          title: card.title,
-          content: card.content,
-          category: card.type === 'red' ? '行动' : card.type === 'yellow' ? '风险' : card.type === 'green' ? '解释' : '事实'
-        })
-      });
-      if (response.ok) {
-        const savedCard = await response.json();
-        toast.success(`卡片「${card.title}」已保存到知识库`);
-        // 将卡片标记为已保存
-        setMeetingCards(prev => prev.map(c => 
-          c.title === card.title && c.content === card.content ? { ...c, saved: true } : c
-        ));
-      } else {
-        toast.error('保存失败');
-      }
-    } catch (err) {
-      console.error('保存卡片失败:', err);
-      toast.error('保存失败');
-    }
+    setSaveTargetCard({
+      card_type: card.type as any || 'blue',
+      title: card.title,
+      content: card.content,
+      source: 'agent_extracted',
+      agent_name: '',
+      saved: false,
+      timestamp: new Date().toISOString()
+    });
+    setSaveModalOpen(true);
   };
 
   // 重置会议
@@ -1013,6 +998,9 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
         category: 'archive',
         priority: 'medium'
       });
+      // 保存归档成功后，清除聊天区的会议卡片和缓存
+      setMeetingCards([]);
+      sessionStorage.removeItem(MEETING_STORAGE_KEY);
       toast.success('会议记录已保存到任务归档');
     } catch (error) {
       console.error('保存归档失败:', error);
@@ -1890,9 +1878,9 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                                   return (
                                     <div 
                                       key={idx} 
-                                      onClick={() => handleSaveMeetingCard(card)}
+                                      onClick={() => handleCardClick(card)}
                                       className={`p-3 rounded-lg cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
-                                      title="点击保存到知识库"
+                                      title="点击查看详情"
                                     >
                                       <div className="flex items-center gap-1.5 mb-1">
                                         {cardType?.icon}
@@ -1972,9 +1960,9 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                             return (
                               <div 
                                 key={idx} 
-                                onClick={() => handleSaveMeetingCard({ type: card.card_type, title: card.title, content: card.content })}
+                                onClick={() => handleCardClick({ type: card.card_type, title: card.title, content: card.content })}
                                 className={`p-2 rounded cursor-pointer hover:opacity-80 ${cardType?.color || 'bg-gray-800 border border-gray-700'}`}
-                                title="点击保存到知识库"
+                                title="点击查看详情"
                               >
                                 <div className="text-white text-xs font-medium truncate">{card.title}</div>
                                 <div className="text-gray-400 text-[10px] truncate mt-0.5">{card.content}</div>

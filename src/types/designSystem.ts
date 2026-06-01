@@ -47,6 +47,7 @@ export interface SlideShape {
   font_bold?: boolean;
   font_color?: string;
   fill_color?: string;
+  fill_opacity?: number;
   table?: string[][];
   image_url?: string;
   paragraphs?: Array<{ text: string; align?: string; runs?: Array<{ text: string; font_size?: number; bold?: boolean; color?: string }> }>;
