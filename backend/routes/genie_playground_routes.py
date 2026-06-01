@@ -23,16 +23,33 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
 
-# 429 不再重试（Genie 单请求槽，重试只会叠加压力导致后端崩溃）
-# 遇到 429 立即失败，由各端点走 fallback 降级
+# Genie 全局锁：同一时间只能处理一个请求（单请求槽）
+_GENIE_LOCK = asyncio.Lock()
 
 
-async def _genie_post_no_retry(url: str, json_data: dict, timeout: float = 120.0) -> dict:
-    """Genie POST 请求（429 立即返回，不重试以免恶性循环）"""
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json=json_data)
-        resp.raise_for_status()
-        return resp.json()
+async def _genie_post(url: str, json_data: dict, timeout: float = 120.0, max_retries: int = 5) -> dict:
+    """Genie POST 请求（带锁 + 重试，避免单请求槽并发冲突）"""
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with _GENIE_LOCK:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(url, json=json_data)
+                    if resp.status_code in (429, 502, 503):
+                        raise httpx.HTTPStatusError(
+                            f"Genie busy ({resp.status_code})", request=resp.request, response=resp
+                        )
+                    resp.raise_for_status()
+                    return resp.json()
+        except httpx.HTTPStatusError as e:
+            if attempt < max_retries:
+                wait = attempt * 3.0
+                logger.info(f"[Genie] 请求失败 ({e.response.status_code}), {wait}s 后重试 ({attempt}/{max_retries})")
+                await asyncio.sleep(wait)
+                continue
+            raise
+    raise httpx.HTTPStatusError(
+        f"Genie 请求失败 ({max_retries}次重试)", request=None, response=None
+    )
 
 # ==================== model_loader 直接调用 ====================
 _model_loader = None
@@ -386,7 +403,7 @@ async def genie_classify(request: ClassifyRequest):
 
     for model in models_to_try:
         try:
-            result = await _genie_post_no_retry(
+            result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",
                 json_data={
                     "model": model,
@@ -486,7 +503,7 @@ async def genie_analyze(request: AnalyzeRequest):
     last_error = ""
     for model in models_to_try:
         try:
-            result = await _genie_post_no_retry(
+            result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",
                 json_data={
                     "model": model,
@@ -556,14 +573,21 @@ async def genie_chat(request: GenieChatRequest):
         "top_p": request.top_p,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{GENIE_SERVICE_URL}/v1/chat/completions",
-                json=request_data,
-            )
-            response.raise_for_status()
-            result = response.json()
+    # 使用带锁 + 重试的 Genie 调用
+    for attempt in range(1, 4):
+        try:
+            async with _GENIE_LOCK:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                        json=request_data,
+                    )
+                    if response.status_code in (429, 502, 503):
+                        raise httpx.HTTPStatusError(
+                            f"Genie busy ({response.status_code})", request=response.request, response=response
+                        )
+                    response.raise_for_status()
+                    result = response.json()
 
             if "choices" in result and len(result["choices"]) > 0:
                 content = result["choices"][0].get("message", {}).get("content", "")
@@ -573,13 +597,17 @@ async def genie_chat(request: GenieChatRequest):
                     "response": content,
                 }
             return {"success": True, "model": request.model, "response": str(result), "raw": result}
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="GenieAPIService 超时")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="GenieAPIService 超时")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503) and attempt < 3:
+                wait = attempt * 2.0
+                logger.info(f"[Genie] chat 请求繁忙 ({e.response.status_code}), {wait}s 后重试 ({attempt}/3)")
+                await asyncio.sleep(wait)
+                continue
+            raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
 
 @router.post("/chat/stream")

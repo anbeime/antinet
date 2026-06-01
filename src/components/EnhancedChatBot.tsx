@@ -818,7 +818,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       // 工作流模式：先检测意图
       if (workflowMode && query.length > 3) {
         try {
-          const intentResult = await enhancedChatService.detectIntent(query, true);
+          const intentResult = await enhancedChatService.detectIntent(query, false);  // 正则匹配，不走LLM
           if (intentResult.success && intentResult.intent) {
             setDetectedIntent({
               primary: intentResult.intent.primary,

@@ -36,27 +36,6 @@ try:
 except ImportError:
     FOUR_COLOR_AVAILABLE = False
 
-# NPU推理核心
-_npu_core = None
-NPU_AVAILABLE = False
-
-def _get_npu_core():
-    """获取或初始化 NPU 推理核心"""
-    global _npu_core, NPU_AVAILABLE
-    if _npu_core is not None:
-        return _npu_core
-    
-    try:
-        from npu_core import NPUInferenceCore
-        _npu_core = NPUInferenceCore()
-        _npu_core.load_model()
-        NPU_AVAILABLE = True
-        logger.info("[PDF] NPU 模型加载成功")
-        return _npu_core
-    except Exception as e:
-        logger.warning(f"[PDF] NPU 不可用: {e}")
-        return None
-
 router = APIRouter(prefix="/api/pdf", tags=["PDF处理"])
 
 # 初始化 PDF 处理器
@@ -73,6 +52,9 @@ def _sse_event(event_type: str, data: dict) -> str:
 @router.get("/status")
 async def get_pdf_status():
     """获取 PDF 功能状态（含高级解析能力）"""
+    # 每次查询都尝试重新加载（pypdf 可能在运行时安装）
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
     pdf_available = pdf_processor.available
     
     # 检查高级功能
@@ -98,8 +80,12 @@ async def extract_text(
     preserve_layout: bool = Form(True)
 ):
     """从 PDF 提取文本"""
+    # 每次请求尝试重新加载（pypdf 可能在运行时安装）
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
+    
     if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
@@ -241,8 +227,10 @@ async def full_extract(file: UploadFile = File(...)):
 @router.post("/split")
 async def split_pdf(file: UploadFile = File(...)):
     """将 PDF 拆分为单页"""
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
     if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
@@ -269,8 +257,10 @@ async def split_pdf(file: UploadFile = File(...)):
 @router.post("/merge")
 async def merge_pdfs(files: List[UploadFile] = File(...)):
     """合并多个 PDF 文件"""
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
     if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
     
     temp_files = []
     try:
@@ -302,8 +292,10 @@ async def generate_knowledge_cards(
     generate_all: bool = Form(False)
 ):
     """从 PDF 生成四色知识卡片"""
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
     if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
     
     # 检查文件类型
     if not file.filename.lower().endswith('.pdf'):
@@ -348,8 +340,10 @@ async def generate_knowledge_cards(
 @router.post("/extract/images")
 async def extract_images(file: UploadFile = File(...)):
     """从 PDF 提取图片"""
+    if not pdf_processor.available and _lazy_load_pypdf:
+        _lazy_load_pypdf()
     if not pdf_processor.available:
-        raise HTTPException(status_code=503, detail="PDF 功能未安装")
+        raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
     
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
@@ -435,8 +429,10 @@ if PDF_TOOLKIT_AVAILABLE:
     @router.post("/toolkit/merge")
     async def toolkit_merge(files: List[UploadFile] = File(...)):
         """工具包：合并 PDF（前端兼容别名）"""
+        if not pdf_processor.available and _lazy_load_pypdf:
+            _lazy_load_pypdf()
         if not pdf_processor.available:
-            raise HTTPException(status_code=503, detail="PDF 功能未安装")
+            raise HTTPException(status_code=503, detail="PDF 功能未安装，请运行: pip install pypdf")
         
         temp_files = []
         try:
@@ -684,18 +680,16 @@ async def generate_ai_cards(
         if not full_text.strip():
             raise HTTPException(status_code=400, detail="无法从 PDF 提取文本")
         
-        # 尝试使用 NPU 模型
-        npu = _get_npu_core()
-        
-        if npu and NPU_AVAILABLE:
-            # 使用 NPU 生成智能卡片
-            prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
+        # 通过 Genie API（端口 8910）推理，避免 NPU 硬件冲突
+        if _GENIE_CALL_AVAILABLE:
+            try:
+                prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
 
 文档内容：
-{full_text[:8000]}
+{full_text[:6000]}
 
 请按以下格式生成{ max_cards}张知识卡片，每张卡片一行，用 | 分隔：
-类型 | 标题(不超过30字) | 内容(不超过100字)
+类型(小写) | 标题(不超过30字) | 内容(不超过100字)
 
 类型说明：
 - fact: 客观事实和数据
@@ -703,34 +697,45 @@ async def generate_ai_cards(
 - risk: 潜在风险和问题
 - action: 行动建议
 
-只输出卡片内容，不要其他说明。"""
+只输出卡片，不要其他内容。"""
 
-            result_text, infer_time = npu.infer(prompt)
-            
-            cards = []
-            for i, line in enumerate(result_text.strip().split('\n')):
-                if '|' in line:
-                    parts = line.split('|', 2)
-                    if len(parts) >= 3:
-                        card_type = parts[0].strip().lower()
-                        if card_type not in ['fact', 'explanation', 'risk', 'action']:
-                            card_type = 'explanation'
-                        cards.append({
-                            "id": f"ai-card-{i+1}",
-                            "type": card_type,
-                            "title": parts[1].strip()[:30],
-                            "content": parts[2].strip()[:100],
-                            "source": "AI生成"
-                        })
-            
-            return {
-                "success": True,
-                "cards": cards[:max_cards],
-                "count": len(cards),
-                "mode": "npu",
-                "infer_time_ms": infer_time
-            }
-        else:
+                result_text = await call_llm(
+                    system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
+                    user_prompt=prompt,
+                    max_tokens=1000,
+                    agent_id="pdf-ai-cards",
+                    temperature=0.4
+                )
+
+                if result_text:
+                    cards = []
+                    for i, line in enumerate(result_text.strip().split('\n')):
+                        if '|' not in line:
+                            continue
+                        parts = line.split('|', 2)
+                        if len(parts) >= 3:
+                            card_type = parts[0].strip().lower()
+                            if card_type not in ['fact', 'explanation', 'risk', 'action']:
+                                continue
+                            cards.append({
+                                "id": f"ai-card-{i+1}",
+                                "type": card_type,
+                                "title": parts[1].strip()[:30],
+                                "content": parts[2].strip()[:100],
+                                "source": "AI生成"
+                            })
+                    if cards:
+                        return {
+                            "success": True,
+                            "cards": cards[:max_cards],
+                            "count": len(cards),
+                            "mode": "genie",
+                            "infer_time_ms": 0
+                        }
+            except Exception as e:
+                logger.warning(f"[PDF] ai-cards Genie 推理失败，回退规则: {e}")
+        
+        # 回退到规则匹配
             # 回退到规则匹配
             from tools.pdf_four_color_processor import PDFourColorProcessor
             processor = PDFourColorProcessor()
@@ -746,6 +751,201 @@ async def generate_ai_cards(
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+# ========== 多智能体四色卡片生成（复用会议模块的通政司→参谋司→驿传司流程） ==========
+
+# 尝试导入 call_llm 用于 Genie API 调用（避免直接 NPU 访问冲突）
+try:
+    from routes.meeting_routes import call_llm
+    _GENIE_CALL_AVAILABLE = True
+except ImportError:
+    _GENIE_CALL_AVAILABLE = False
+    logger.warning("[PDF] 无法导入 meeting_routes.call_llm，Genie/多智能体不可用")
+
+
+async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
+    """使用多智能体流程（通政司→参谋司→驿传司）生成四色知识卡片"""
+    if not _GENIE_CALL_AVAILABLE:
+        return {"cards": [], "mode": "multi-agent-unavailable"}
+
+    truncated = text[:6000]
+
+    # ========== 步骤1: 通政司 - 内容分析与四色分类 ==========
+    tongzhengsi_prompt = f"""你作为通政司，职责是分析文档内容并按四色分类法归纳。
+
+文档内容：
+{truncated}
+
+请按以下四色分类整理要点：
+1. 【事实】(blue) - 客观事实、数据、已有结论
+2. 【解释】(green) - 原因、机制、关系分析
+3. 【风险】(yellow) - 潜在问题、风险、挑战
+4. 【行动】(red) - 建议、行动计划、措施
+
+每个分类列出 2-5 条要点，每条控制在 50 字以内。"""
+
+    tongzhengsi_result = await call_llm(
+        system_prompt="你是通政司，擅长文档分析与四色分类。",
+        user_prompt=tongzhengsi_prompt,
+        max_tokens=500,
+        agent_id="pdf-tongzhengsi",
+        temperature=0.4
+    )
+
+    if not tongzhengsi_result:
+        return {"cards": [], "mode": "multi-agent-no-genie"}
+
+    # ========== 步骤2: 参谋司 - 基于通政司分类生成结构化卡片 ==========
+    canmousi_prompt = f"""你作为参谋司，请基于通政司的分析结果生成结构化四色知识卡片。
+
+通政司分析：
+{tongzhengsi_result}
+
+要求生成最多 {max_cards} 张卡片，每张一行，严格按此格式：
+类型(小写) | 标题(5-20字) | 内容(10-80字)
+
+类型必须是：fact / explanation / risk / action
+只输出卡片，不要序号和其他内容。"""
+
+    canmousi_result = await call_llm(
+        system_prompt="你是参谋司，擅长将分析转化为结构化知识卡片。",
+        user_prompt=canmousi_prompt,
+        max_tokens=800,
+        agent_id="pdf-canmousi",
+        temperature=0.5
+    )
+
+    if not canmousi_result:
+        return {"cards": [], "mode": "multi-agent-no-cards"}
+
+    # ========== 解析参谋司输出为卡片 ==========
+    raw_cards = []
+    for i, line in enumerate(canmousi_result.strip().split('\n')):
+        line = line.strip()
+        if '|' not in line:
+            continue
+        parts = line.split('|', 2)
+        if len(parts) >= 3:
+            card_type = parts[0].strip().lower()
+            if card_type not in ['fact', 'explanation', 'risk', 'action']:
+                continue
+            raw_cards.append({
+                "id": f"agent-card-{i+1}",
+                "type": card_type,
+                "title": parts[1].strip()[:30],
+                "content": parts[2].strip()[:100],
+                "source": "多智能体"
+            })
+
+    if not raw_cards:
+        return {"cards": [], "mode": "multi-agent-parse-failed"}
+
+    # ========== 步骤3: 驿传司 - 格式化与去重 ==========
+    seen = set()
+    deduped = []
+    for card in raw_cards:
+        key = (card["title"], card["content"][:30])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(card)
+
+    final_cards = deduped[:max_cards]
+    return {"cards": final_cards, "mode": "multi-agent"}
+
+
+@router.post("/generate/cards-from-text")
+async def generate_cards_from_text(data: dict):
+    """从前端提取的文本生成四色知识卡片（不需要 pypdf）
+    
+    可选 mode: "npu" / "rule" / "multi-agent" / "auto"（默认 auto）
+    """
+    text = data.get("text", "")
+    max_cards = data.get("max_cards", 20)
+    mode = data.get("mode", "auto")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="文本内容为空")
+
+    # mode = multi-agent: 使用通政司→参谋司→驿传司流程
+    if mode == "multi-agent":
+        result = await _generate_cards_multi_agent(text, max_cards)
+        if result["cards"]:
+            return {"success": True, **result}
+        logger.warning(f"[PDF] 多智能体生成失败 ({result['mode']})，不回退到其他模式")
+        return {"success": True, "cards": [], "count": 0, "mode": result["mode"]}
+
+    # mode = npu 或 auto: 通过 Genie API（端口 8910）推理，避免与 GenieAPIService 争抢 NPU
+    if mode in ("npu", "auto"):
+        if _GENIE_CALL_AVAILABLE:
+            try:
+                prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
+
+文档内容：
+{text[:6000]}
+
+请按以下格式生成{max_cards}张知识卡片，每张卡片一行，用 | 分隔：
+类型(小写) | 标题(不超过30字) | 内容(不超过100字)
+
+类型说明：
+- fact: 客观事实和数据
+- explanation: 原因分析和解释
+- risk: 潜在风险和问题
+- action: 行动建议
+
+只输出卡片，不要其他内容。"""
+
+                result_text = await call_llm(
+                    system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
+                    user_prompt=prompt,
+                    max_tokens=1000,
+                    agent_id="pdf-cards-from-text",
+                    temperature=0.4
+                )
+
+                if result_text:
+                    cards = []
+                    for i, line in enumerate(result_text.strip().split('\n')):
+                        if '|' not in line:
+                            continue
+                        parts = line.split('|', 2)
+                        if len(parts) >= 3:
+                            card_type = parts[0].strip().lower()
+                            if card_type not in ['fact', 'explanation', 'risk', 'action']:
+                                continue
+                            cards.append({
+                                "id": f"text-card-{i+1}",
+                                "type": card_type,
+                                "title": parts[1].strip()[:30],
+                                "content": parts[2].strip()[:100],
+                                "source": "AI生成"
+                            })
+                    if cards:
+                        return {"success": True, "cards": cards[:max_cards], "count": len(cards), "mode": "genie"}
+            except Exception as e:
+                logger.warning(f"[PDF] Genie 推理失败: {e}")
+
+        if mode == "npu":
+            return {"success": True, "cards": [], "count": 0, "mode": "genie-unavailable"}
+
+    # mode = rule 或 auto（NPU 不可用时的自动回退）
+    try:
+        from tools.pdf_four_color_processor import PDFourColorProcessor
+        processor = PDFourColorProcessor()
+        result = processor._analyze_content(text, max_cards)
+        return {"success": True, "cards": result[:max_cards], "count": len(result), "mode": "rule"}
+    except ImportError:
+        # 极简兜底：按段落分割
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        cards = []
+        for i, line in enumerate(lines[:max_cards]):
+            cards.append({
+                "id": f"text-card-{i+1}",
+                "type": "fact" if len(line) > 20 else "action",
+                "title": line[:30],
+                "content": line[:100],
+                "source": "text-fallback"
+            })
+        return {"success": True, "cards": cards, "count": len(cards), "mode": "fallback"}
 
 
 @router.post("/toolkit/images-to-pdf")

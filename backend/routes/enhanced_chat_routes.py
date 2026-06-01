@@ -118,8 +118,25 @@ def set_db_manager(manager):
     except Exception as e:
         logger.warning(f"[Chat] 知识图谱模块连接失败: {e}")
 
-# 技能注册表
+# 技能注册表（兼容旧系统，同时桥接到 Hermes SkillRegistry）
 skill_registry: Dict[str, Dict[str, Any]] = {}
+
+def _get_hermes_skill_registry():
+    """惰性获取 Hermes SkillRegistry"""
+    try:
+        from services.skill_system import get_skill_registry
+        return get_skill_registry()
+    except ImportError:
+        return None
+
+# 场景→Hermes技能名映射
+SCENE_TO_HERMES_SKILL = {
+    "card_analysis": "four_color_card",
+    "knowledge_graph": "knowledge_graph_visualization",
+    "report_generation": "html_report",
+    "automation": "report_automation",
+    "skill_ppt": "ppt_generator",
+}
 
 # 场景检测模式
 SCENE_PATTERNS = {
@@ -931,7 +948,7 @@ async def analyze_image_base64(image_base64: str) -> Optional[ImageAnalysisResul
 
 def register_skill(name: str, description: str, trigger_patterns: List[str], 
                    handler: Callable, parameters: Dict[str, Any] = None):
-    """注册技能"""
+    """注册技能（同时桥接到 Hermes SkillRegistry）"""
     skill_registry[name] = {
         "name": name,
         "description": description,
@@ -940,6 +957,13 @@ def register_skill(name: str, description: str, trigger_patterns: List[str],
         "parameters": parameters or {},
         "enabled": True
     }
+    # 同步注册到 Hermes SkillRegistry（如果有同名技能）
+    try:
+        hermes = _get_hermes_skill_registry()
+        if hermes and hermes.get_skill(name):
+            logger.debug(f"技能 {name} 已在 Hermes SkillRegistry 中可用")
+    except Exception:
+        pass
     logger.info(f"技能已注册: {name}")
 
 
@@ -1794,32 +1818,6 @@ def init_skills():
         parameters={"template": "string", "pages": "number"}
     )
     
-    # Excel分析技能
-    register_skill(
-        name="excel_analyzer",
-        description="分析Excel文件并生成报告",
-        trigger_patterns=[r"分析.*Excel", r"Excel.*分析", r"表格.*分析"],
-        handler=lambda query, context: {
-            "result": "Excel分析完成",
-            "file_path": "/generated/analysis.xlsx",
-            "metadata": {"charts": 3, "sheets": 2}
-        },
-        parameters={"file_path": "string", "analysis_type": "string"}
-    )
-    
-    # Word生成技能
-    register_skill(
-        name="word_generator",
-        description="生成Word文档",
-        trigger_patterns=[r"生成.*Word", r"创建.*Word", r"文档.*生成"],
-        handler=lambda query, context: {
-            "result": "Word文档生成成功",
-            "file_path": "/generated/document.docx",
-            "metadata": {"pages": 5, "template": "standard"}
-        },
-        parameters={"template": "string", "pages": "number"}
-    )
-    
     logger.info(f"已初始化 {len(skill_registry)} 个技能")
 
 
@@ -1986,7 +1984,7 @@ async def delete_draft(draft_id: str):
 class IntentDetectRequest(BaseModel):
     """意图识别请求"""
     query: str = Field(..., description="用户查询")
-    use_llm: bool = Field(default=True, description="是否使用LLM增强识别")
+    use_llm: bool = Field(default=False, description="是否使用LLM增强识别（默认关闭，正则已覆盖大多数场景）")
 
 
 @router.post("/intent/detect")
@@ -2091,7 +2089,7 @@ async def start_workflow(request: WorkflowStartRequest):
         intent_result = await recognize_intent(
             request.query,
             call_llm_func=call_llm_fn,
-            use_llm=True
+            use_llm=False  # 正则优先，不触发NPU
         )
         
         # 生成工作流
@@ -2212,7 +2210,7 @@ async def enhanced_chat_v2(request: EnhancedChatRequestV2):
             intent_result = await recognize_intent(
                 query,
                 call_llm_func=call_llm_fn,
-                use_llm=True
+                use_llm=False  # 正则优先，不触发NPU
             )
             
             response_data["intent"] = {

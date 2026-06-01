@@ -320,7 +320,43 @@ async def debug_routes():
 # 11. 启动服务
 # ============================================================
 if __name__ == "__main__":
+    import socket
+    import subprocess
     import uvicorn
+    
+    # 检查端口是否被占用，如果是则释放
+    def check_and_free_port(port: int):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex(('127.0.0.1', port))
+                if result == 0:
+                    print(f"[PORT] 端口 {port} 已被占用，尝试释放...")
+                    output = subprocess.run(
+                        ['powershell', '-Command',
+                         f"Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    import time
+                    time.sleep(2)
+                    # 再次检查
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                        s2.settimeout(1)
+                        result2 = s2.connect_ex(('127.0.0.1', port))
+                        if result2 == 0:
+                            print(f"[WARN] 无法释放端口 {port}，请手动关闭占用进程")
+                            return False
+                        else:
+                            print(f"[OK] 端口 {port} 已释放")
+                            return True
+                else:
+                    print(f"[OK] 端口 {port} 可用")
+                    return True
+        except Exception as e:
+            print(f"[WARN] 检查端口 {port} 时出错: {e}")
+            return True  # 继续尝试启动
+    
+    check_and_free_port(app_config.PORT)
     
     print(f"\n{'='*50}")
     print(f"启动 {app_config.APP_NAME} v{app_config.APP_VERSION}")

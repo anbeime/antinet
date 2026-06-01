@@ -181,6 +181,14 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册 Book Skill Generator 技能: {e}")
         
+        # PPT结构草稿技能 - MECE原则
+        try:
+            from skills.ppt_structure_draft_skill import PPTStructureDraftSkill
+            self.register(PPTStructureDraftSkill())
+            logger.info("[SkillRegistry] PPT结构草稿技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册PPT结构草稿技能: {e}")
+
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())

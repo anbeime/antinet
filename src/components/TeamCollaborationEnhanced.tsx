@@ -245,7 +245,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   useEffect(() => {
     console.log('[Collab] useEffect 触发, collabUserId:', collabUserId);
     if (!collabUserId) return;
-    collaborationService.connect(collabUserId);
+    collaborationService.connect(collabUserId, userInfo.name, userInfo.avatar);
 
     const unsubscribe = collaborationService.onMessage((msg) => {
       if (msg.type === 'history' && msg.activities) {

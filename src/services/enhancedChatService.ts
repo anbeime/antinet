@@ -436,7 +436,7 @@ class EnhancedChatService {
   /**
    * 检测意图
    */
-  async detectIntent(query: string, useLLM: boolean = true): Promise<IntentDetectionResult> {
+  async detectIntent(query: string, useLLM: boolean = false): Promise<IntentDetectionResult> {
     try {
       const response = await api.post<IntentDetectionResult>(`${API_BASE}/intent/detect`, {
         query,

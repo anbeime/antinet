@@ -116,6 +116,7 @@ const PDFAnalysis: React.FC = () => {
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 格式转换相关状态
@@ -194,6 +195,21 @@ const PDFAnalysis: React.FC = () => {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // 使用 pdf.js 在前端提取 PDF 文本（解决后端正则乱码问题）
+  const extractPdfTextLocally = async (file: File): Promise<{ full_text: string; page_count: number }> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const data = new Uint8Array(arrayBuffer);
+    const doc = await pdfjsLib.getDocument({ data }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map((item: any) => item.str).join(' ');
+      pages.push(text);
+    }
+    return { full_text: pages.join('\n\n'), page_count: doc.numPages };
+  };
+
   const handleExtractText = async () => {
     if (!uploadedFile) {
       toast.error('请先上传 PDF 文件');
@@ -201,54 +217,91 @@ const PDFAnalysis: React.FC = () => {
     }
 
     setIsProcessing(true);
-    setProcessingStatus({ stage: 'upload', progress: 0, message: '正在上传文件...' });
-
-    const formData = new FormData();
-    formData.append('file', uploadedFile);
+    setProcessingStatus({ stage: 'extract', progress: 10, message: '正在提取文本...' });
 
     try {
-      setProcessingStatus({ stage: 'extract', progress: 30, message: '正在提取文本...' });
-      
-      const response = await fetch(`${API_BASE}/api/pdf/extract/text`, {
-        method: 'POST',
-        body: formData
-      });
+      // 优先使用前端 pdf.js 提取（更准确的 CJK 支持）
+      const { full_text, page_count } = await extractPdfTextLocally(uploadedFile);
 
-      if (!response.ok) {
-        throw new Error('提取失败');
-      }
-
-      const result = await response.json();
+      setProcessingStatus({ stage: 'extract', progress: 60, message: '文本提取完成' });
       
       setAnalysisResult({
         fileName: uploadedFile.name,
-        pageCount: result.pages || 1,
-        wordCount: result.full_text?.split(/\s+/).length || 0,
-        extractedText: result.full_text || '',
-        summary: result.summary || '',
-        keyPoints: result.key_points || [],
-        tables: result.tables || [],
-        suggestedCards: result.suggested_cards || []
+        pageCount: page_count,
+        wordCount: full_text.split(/\s+/).length || 0,
+        extractedText: full_text,
+        summary: '',
+        keyPoints: [],
+        tables: [],
+        suggestedCards: []
       });
-      setEditedText(result.full_text || '');
+      setEditedText(full_text);
 
       setProcessingStatus({ stage: 'complete', progress: 100, message: '处理完成' });
-      toast.success('文本提取成功！');
+      toast.success(`文本提取成功！共 ${page_count} 页`);
     } catch (error) {
-      console.error('提取失败:', error);
-      toast.error('文本提取失败');
-      setProcessingStatus({ stage: 'error', progress: 0, message: '处理失败' });
+      console.error('前端 PDF 提取失败，尝试后端 API:', error);
+
+      // 回退到后端 API
+      try {
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+
+        setProcessingStatus({ stage: 'extract', progress: 30, message: '正在通过后端提取文本...' });
+
+        const response = await fetch(`${API_BASE}/api/pdf/extract/text`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error('后端提取失败');
+        }
+
+        const result = await response.json();
+
+        setAnalysisResult({
+          fileName: uploadedFile.name,
+          pageCount: result.pages || 1,
+          wordCount: result.full_text?.split(/\s+/).length || 0,
+          extractedText: result.full_text || '',
+          summary: result.summary || '',
+          keyPoints: result.key_points || [],
+          tables: result.tables || [],
+          suggestedCards: result.suggested_cards || []
+        });
+        setEditedText(result.full_text || '');
+
+        setProcessingStatus({ stage: 'complete', progress: 100, message: '处理完成' });
+        toast.success('文本提取成功！');
+      } catch (fallbackError) {
+        console.error('提取失败:', fallbackError);
+        toast.error('文本提取失败');
+        setProcessingStatus({ stage: 'error', progress: 0, message: '处理失败' });
+      }
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleExtractKnowledge = async (useAI: boolean = false) => {
+  // 通过后端从文本生成四色卡片（不需要后端正则 pypdf）
+  const generateCardsFromText = async (text: string, mode: string = 'auto'): Promise<any> => {
+    const resp = await fetch(`${API_BASE}/api/pdf/generate/cards-from-text`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 50000), max_cards: 20, mode })
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || '卡片生成失败');
+    return resp.json();
+  };
+
+  const handleExtractKnowledge = async (mode?: string) => {
     if (!uploadedFile) {
       toast.error('请先上传 PDF 文件');
       return;
     }
 
+    const genMode = mode || cardGenMode;
     setIsProcessing(true);
     setProcessingStatus({ stage: 'upload', progress: 0, message: '正在上传文件...' });
 
@@ -256,65 +309,50 @@ const PDFAnalysis: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      setProcessingStatus({ stage: 'analyze', progress: 30, message: useAI ? '正在AI智能分析...' : '正在分析文档...' });
-      
-      // 优先尝试智能 AI 卡片生成，如果失败则回退到规则生成
-      let response;
-      if (useAI) {
-        try {
-          response = await fetch(`${API_BASE}/api/pdf/generate/ai-cards`, {
-            method: 'POST',
-            body: formData
-          });
-        } catch (e) {
-          console.warn('AI卡片生成失败，回退到规则生成:', e);
-          response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
-            method: 'POST',
-            body: formData
-          });
-        }
-      } else {
-        response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
-          method: 'POST',
-          body: formData
-        });
+      setProcessingStatus({ stage: 'analyze', progress: 30, message: genMode === 'multi-agent' ? '正在多智能体分析...' : '正在分析文档...' });
+
+      // 先提取文本（用 pdf.js 前端提取，解决乱码）
+      let full_text: string;
+      let page_count: number;
+      try {
+        const result = await extractPdfTextLocally(uploadedFile);
+        full_text = result.full_text;
+        page_count = result.page_count;
+      } catch (e) {
+        // 回退到后端提取
+        const resp = await fetch(`${API_BASE}/api/pdf/extract/text`, { method: 'POST', body: formData });
+        if (!resp.ok) throw new Error('文本提取失败');
+        const data = await resp.json();
+        full_text = data.full_text || '';
+        page_count = data.pages || 1;
       }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || '知识提取失败');
+      if (!full_text.trim()) {
+        throw new Error('未能从 PDF 提取到文本内容');
       }
 
-      const result = await response.json();
-      
+      // 通过文本端点生成卡片
+      const textResult = await generateCardsFromText(full_text, genMode);
+
       setProcessingStatus({ stage: 'generate', progress: 70, message: '正在生成知识卡片...' });
 
-      const cardsData = result.cards || [];
-      const cards: KnowledgeCard[] = cardsData.map((card: any, index: number) => {
-        const safeCard = {
-          id: String(card?.id || `card-${Date.now()}-${index}`),
-          type: String(card?.type || 'fact'),
-          title: String(card?.title || '无标题'),
-          content: String(card?.content || '无内容'),
-        };
-
-        return {
-          id: safeCard.id,
-          color: (safeCard.type === 'fact' ? 'blue' : 
-                  safeCard.type === 'explanation' ? 'green' : 
-                  safeCard.type === 'risk' ? 'yellow' : 'red') as 'blue' | 'green' | 'yellow' | 'red',
-          title: safeCard.title,
-          content: safeCard.content,
-          address: `PDF/${result.filename || 'unknown'}/Card-${index + 1}`,
-          createdAt: new Date().toISOString(),
-        };
-      });
+      const cardsData = textResult.cards || [];
+      const cards: KnowledgeCard[] = cardsData.map((card: any, index: number) => ({
+        id: String(card?.id || `card-${Date.now()}-${index}`),
+        color: (card?.type === 'fact' ? 'blue' : 
+                card?.type === 'explanation' ? 'green' : 
+                card?.type === 'risk' ? 'yellow' : 'red') as 'blue' | 'green' | 'yellow' | 'red',
+        title: String(card?.title || '无标题'),
+        content: String(card?.content || '无内容'),
+        address: `PDF/${uploadedFile.name}/Card-${index + 1}`,
+        createdAt: new Date().toISOString(),
+      }));
 
       setGeneratedCards(cards);
       setSelectedCards(new Set());
       setSavedCardIds(new Set());
       setProcessingStatus({ stage: 'complete', progress: 100, message: '知识卡片生成完成' });
-      toast.success(`成功生成 ${cards.length} 张知识卡片！${result.mode ? ` (${result.mode})` : ''}`);
+      toast.success(`成功生成 ${cards.length} 张知识卡片${textResult.mode ? `（${textResult.mode}）` : ''}！`);
     } catch (error) {
       console.error('知识提取失败:', error);
       toast.error('知识提取失败，请检查后端服务');
@@ -1444,14 +1482,33 @@ const PDFAnalysis: React.FC = () => {
                   )}
 
                   {activeFeature === 'generate' && (
-                    <button
-                      onClick={() => handleExtractKnowledge(false)}
-                      disabled={!uploadedFile || isProcessing}
-                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
-                      生成知识卡片
-                    </button>
+                    <div className="space-y-2">
+                      {/* 生成模式选择 */}
+                      <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+                        {(['auto', 'rule', 'multi-agent'] as const).map(m => (
+                          <button
+                            key={m}
+                            onClick={() => setCardGenMode(m)}
+                            className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
+                              cardGenMode === m
+                                ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-300 shadow-sm'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                            }`}
+                          >
+                            {m === 'auto' ? '自动' : m === 'rule' ? '规则' : '多智能体'}
+                          </button>
+                        ))}
+                      </div>
+                      {/* 生成按钮 */}
+                      <button
+                        onClick={() => handleExtractKnowledge()}
+                        disabled={!uploadedFile || isProcessing}
+                        className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Layers className="w-5 h-5 mr-2" />}
+                        生成知识卡片
+                      </button>
+                    </div>
                   )}
 
                   {activeFeature === 'merge' && (

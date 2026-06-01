@@ -1976,6 +1976,8 @@ async def import_files_batch(files: List[UploadFile] = File(...)):
                 "success": True,
                 "file_type": file_result.get("file_type", ""),
                 "cards_count": file_result.get("total", 0),
+                "cards": file_result.get("cards", []),           # 包含完整卡片数据
+                "extracted_text": file_result.get("extracted_text", ""),
                 "extracted_length": file_result.get("extracted_length", 0),
                 "source_file_id": file_result.get("source_file_id", ""),
                 "error": None

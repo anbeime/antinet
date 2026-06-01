@@ -15,8 +15,6 @@ PdfReader = None
 
 def _lazy_load_pypdf():
     global PDF_AVAILABLE, PdfReader
-    if PDF_AVAILABLE:
-        return
     try:
         from pypdf import PdfReader as _PdfReader
         PdfReader = _PdfReader

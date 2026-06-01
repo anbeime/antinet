@@ -340,7 +340,14 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
   const [collabStatus, setCollabStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [collabUserName, setCollabUserName] = useState(() => localStorage.getItem('collabUserName') || '参与者');
+  const [collabUserName, setCollabUserName] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('zhiyi_user') || '{}');
+      return user.name || localStorage.getItem('collabUserName') || '参与者';
+    } catch {
+      return localStorage.getItem('collabUserName') || '参与者';
+    }
+  });
   const collabWsRef = useRef<WebSocket | null>(null);
   const collabUserId = useRef('meeting_' + Date.now());
 
@@ -1039,10 +1046,19 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
   useEffect(() => {
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
+    const userAvatar = (() => {
+      try {
+        const user = JSON.parse(localStorage.getItem('zhiyi_user') || '{}');
+        return user.avatar || '👤';
+      } catch { return '👤'; }
+    })();
+    const params = new URLSearchParams();
+    if (collabUserName) params.set('nickname', collabUserName);
+    if (userAvatar) params.set('avatar', userAvatar);
     // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
     const wsUrl = import.meta.env.DEV
-      ? `ws://localhost:8000/api/ws/collaboration/${userId}`
-      : `ws://${window.location.host}/api/ws/collaboration/${userId}`;
+      ? `ws://localhost:8000/api/ws/collaboration/${userId}?${params.toString()}`
+      : `ws://${window.location.host}/api/ws/collaboration/${userId}?${params.toString()}`;
     
     console.log('[Collab] 连接 WebSocket:', wsUrl);
     setCollabStatus('connecting');

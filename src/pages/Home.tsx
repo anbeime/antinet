@@ -94,6 +94,8 @@ interface KnowledgeCard {
 }
 
 // 卡片类型映射
+const getCardType = (color: string) => cardTypeMap[color as CardColor] ?? cardTypeMap.blue;
+
 const cardTypeMap: Record<CardColor, { 
   name: string; 
   description: string;
@@ -1370,9 +1372,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <motion.div
                     key={card.id}
                     whileHover={{ y: -5 }}
-                    className={`border rounded-xl overflow-hidden ${cardTypeMap[card.color].borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
+                    className={`border rounded-xl overflow-hidden ${getCardType(card.color).borderColor} ${selectedCardIds.has(card.id) ? 'ring-2 ring-blue-500' : ''}`}
                   >
-                    <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b`}>
+                    <div className={`${getCardType(card.color).bgColor} p-3 border-b`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center flex-1 min-w-0">
                           <input
@@ -1385,8 +1387,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                             }}
                             className="mr-2 w-4 h-4"
                           />
-                          <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
-                            {cardTypeMap[card.color].icon}
+                          <div className={`${getCardType(card.color).color} p-1.5 rounded mr-2`}>
+                            {getCardType(card.color).icon}
                           </div>
                           <h3 className="font-semibold truncate cursor-pointer hover:text-blue-600" onClick={() => openDetailModal(card)}>
                             {card.title}
@@ -1452,11 +1454,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                           <motion.div
                             key={card.id}
                             whileHover={{ y: -3 }}
-                            className={`border rounded-lg overflow-hidden cursor-pointer ${cardTypeMap[card.color].borderColor} bg-white dark:bg-gray-800`}
+                            className={`border rounded-lg overflow-hidden cursor-pointer ${getCardType(card.color).borderColor} bg-white dark:bg-gray-800`}
                             onClick={() => openDetailModal(card)}
                           >
-                            <div className={`${cardTypeMap[card.color].bgColor} px-3 py-2 flex items-center gap-2`}>
-                              <div className={`${cardTypeMap[card.color].color} p-1 rounded`}>{cardTypeMap[card.color].icon}</div>
+                            <div className={`${getCardType(card.color).bgColor} px-3 py-2 flex items-center gap-2`}>
+                              <div className={`${getCardType(card.color).color} p-1 rounded`}>{getCardType(card.color).icon}</div>
                               <span className="font-medium text-sm truncate">{card.title}</span>
                             </div>
                             <div className="p-3">
@@ -1794,18 +1796,18 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                        <motion.div
                          key={card.id}
                          whileHover={{ scale: 1.02, y: -2 }}
-                         className={`rounded-xl overflow-hidden border cursor-pointer hover:shadow-lg transition-all ${cardTypeMap[card.color].borderColor}`}
+                         className={`rounded-xl overflow-hidden border cursor-pointer hover:shadow-lg transition-all ${getCardType(card.color).borderColor}`}
                          onClick={() => {
                            setSelectedCard(card);
                            setShowDetailModal(true);
                            setShowAllCardsModal(false);
                          }}
                        >
-                         <div className={`${cardTypeMap[card.color].bgColor} p-3 border-b ${cardTypeMap[card.color].borderColor}`}>
+                         <div className={`${getCardType(card.color).bgColor} p-3 border-b ${getCardType(card.color).borderColor}`}>
                            <div className="flex items-center justify-between">
                              <div className="flex items-center flex-1 min-w-0">
-                               <div className={`${cardTypeMap[card.color].color} p-1.5 rounded mr-2`}>
-                                 {cardTypeMap[card.color].icon}
+                               <div className={`${getCardType(card.color).color} p-1.5 rounded mr-2`}>
+                                 {getCardType(card.color).icon}
                                </div>
                                <h3 className="font-semibold truncate">{card.title}</h3>
                              </div>
@@ -1824,8 +1826,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                                >
                                  <ZoomIn size={14} />
                                </button>
-                               <span className={`text-xs px-2 py-0.5 rounded-full ${cardTypeMap[card.color].color} text-white ml-1`}>
-                                 {cardTypeMap[card.color].name}
+                               <span className={`text-xs px-2 py-0.5 rounded-full ${getCardType(card.color).color} text-white ml-1`}>
+                                 {getCardType(card.color).name}
                                </span>
                              </div>
                            </div>
@@ -1860,16 +1862,16 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 onClick={e => e.stopPropagation()}
               >
                 {/* 放大模态框头部 */}
-                <div className={`${cardTypeMap[zoomedCard.color].bgColor} p-4 border-b ${cardTypeMap[zoomedCard.color].borderColor}`}>
+                <div className={`${getCardType(zoomedCard.color).bgColor} p-4 border-b ${getCardType(zoomedCard.color).borderColor}`}>
                   <div className="flex justify-between items-center">
                     <div className="flex items-center">
-                      <div className={`${cardTypeMap[zoomedCard.color].color} p-2 rounded-lg mr-3`}>
-                        {cardTypeMap[zoomedCard.color].icon}
+                      <div className={`${getCardType(zoomedCard.color).color} p-2 rounded-lg mr-3`}>
+                        {getCardType(zoomedCard.color).icon}
                       </div>
                       <div>
                         <h2 className="text-xl font-bold">{zoomedCard.title}</h2>
-                        <span className={`text-xs ${cardTypeMap[zoomedCard.color].textColor}`}>
-                          {cardTypeMap[zoomedCard.color].name}
+                        <span className={`text-xs ${getCardType(zoomedCard.color).textColor}`}>
+                          {getCardType(zoomedCard.color).name}
                         </span>
                       </div>
                     </div>
@@ -1893,7 +1895,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 
                 {/* 放大后的卡片内容 */}
                 <div className="flex-1 overflow-y-auto p-8">
-                  <div className={`${cardTypeMap[zoomedCard.color].bgColor} border ${cardTypeMap[zoomedCard.color].borderColor} rounded-xl p-6`}>
+                  <div className={`${getCardType(zoomedCard.color).bgColor} border ${getCardType(zoomedCard.color).borderColor} rounded-xl p-6`}>
                     <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
                       <ReactMarkdown>{zoomedCard.content}</ReactMarkdown>
                     </div>
@@ -1906,7 +1908,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       <span className="mx-2">·</span>
                       <span>创建于 {formatDate(zoomedCard.createdAt)}</span>
                     </div>
-                    <div className={`${cardTypeMap[zoomedCard.color].color} text-white px-3 py-1 rounded-full`}>
+                    <div className={`${getCardType(zoomedCard.color).color} text-white px-3 py-1 rounded-full`}>
                       {zoomedCard.address}
                     </div>
                   </div>

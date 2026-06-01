@@ -94,15 +94,16 @@ class CollaborationStore:
 
     # ---- WebSocket 连接管理 ----
 
-    async def connect(self, user_id: str, websocket: WebSocket):
+    async def connect(self, user_id: str, websocket: WebSocket, nickname: str = "", avatar: str = "👤"):
         await websocket.accept()
         self.active_connections[user_id] = websocket
+        display_name = nickname.strip() or f"用户{user_id}"
         if user_id in self.members:
             self.members[user_id].status = "online"
         self.members[user_id] = TeamMember(
             id=int(user_id) if user_id.isdigit() else hash(user_id) % 10000,
-            name=f"用户{user_id}",
-            avatar="👤",
+            name=display_name,
+            avatar=avatar or "👤",
             status="online",
             lastActive=datetime.now().isoformat()
         )
@@ -116,6 +117,8 @@ class CollaborationStore:
             await self._broadcast({
                 "type": "user_online",
                 "userId": user_id,
+                "userName": display_name,
+                "avatar": avatar or "👤",
                 "timestamp": datetime.now().isoformat()
             }, exclude=None)
         except Exception as e:
@@ -352,10 +355,13 @@ store = CollaborationStore()
 # ============== WebSocket 路由 ==============
 
 @router.websocket("/ws/collaboration/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebSocket 端点，客户端连接后持续接收实时消息"""
+async def websocket_endpoint(websocket: WebSocket, user_id: str, nickname: str = "", avatar: str = "👤"):
+    """WebSocket 端点，客户端连接后可接收和发送实时消息
+    支持 query 参数 nickname 和 avatar，例如：
+    ws://host/api/ws/collaboration/{user_id}?nickname=张三&avatar=🐶
+    """
     try:
-        await store.connect(user_id, websocket)
+        await store.connect(user_id, websocket, nickname, avatar)
     except Exception as e:
         logger.error(f"WebSocket connect 失败: {e}")
         return

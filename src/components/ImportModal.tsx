@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 import {
   X,
   Upload,
@@ -262,17 +268,19 @@ const ImportModal: React.FC<ImportModalProps> = ({
     return parseTextFile(file);
   };
 
-  // PDF文件解析 - 调用后端API
+  // PDF文件解析 - 使用pdf.js在前端提取（解决后端正则乱码问题）
   const parsePDFFile = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
-      method: 'POST',
-      body: formData
-    });
-    if (!response.ok) throw new Error('PDF解析失败');
-    const result = await response.json();
-    return result.cards.map((c: any) => c.content).join('\n\n');
+    const arrayBuffer = await file.arrayBuffer();
+    const data = new Uint8Array(arrayBuffer);
+    const doc = await pdfjsLib.getDocument({ data }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map((item: any) => item.str).join(' ');
+      pages.push(text);
+    }
+    return pages.join('\n\n');
   };
 
   // Excel文件解析 - 调用后端API
