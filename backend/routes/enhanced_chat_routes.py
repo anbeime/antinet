@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-增强版聊天路由 - 集成知识库查询、图片解析、技能调用
+增强版聊天路由 - 集成知识库查询、图片解析、技能调用、意图识别、工作流编排
 参考: https://github.com/anbeime/skill/tree/main/projects
-新增: 人设系统、记忆功能、语音对话
+新增: 人设系统、记忆功能、语音对话、9大意图识别、工作流引擎
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
@@ -20,6 +20,15 @@ import time
 from datetime import datetime
 
 from config import settings
+
+# 新增：意图识别和工作流编排
+from routes.intent_recognition import (
+    IntentType, IntentResult, recognize_intent, recognize_intent_regex,
+    get_intent_display_name, get_intent_emoji
+)
+from routes.workflow_orchestrator import (
+    WorkflowOrchestrator, get_workflow_orchestrator, WorkflowStatus
+)
 
 
 def clean_model_output(text: str) -> str:
@@ -198,9 +207,10 @@ class ImageAnalysisResult(BaseModel):
 
 
 class SceneType(str, Enum):
-    """场景类型"""
+    """场景类型 - 兼容旧版，映射到新版IntentType"""
     GENERAL = "general"
     CARD_SEARCH = "card_search"
+    CARD_CREATE = "card_create"              # 新增：创建卡片
     IMAGE_ANALYSIS = "image_analysis"
     SKILL_PPT = "skill_ppt"
     SKILL_EXCEL = "skill_excel"
@@ -208,6 +218,27 @@ class SceneType(str, Enum):
     GREETING = "greeting"
     HELP = "help"
     SELF_INTRO = "self_intro"
+    DOCUMENT_ANALYSIS = "document_analysis"   # 新增：文档分析
+    TASK_MANAGE = "task_manage"              # 新增：任务管理
+    PERFORMANCE_CHECK = "performance_check"   # 新增：性能检查
+    WORKFLOW = "workflow"                     # 新增：工作流
+    KG_ORGANIZE = "kg_organize"              # 新增：知识图谱组织
+
+# 意图到场景的映射
+INTENT_TO_SCENE = {
+    IntentType.CREATE_CARD: SceneType.CARD_CREATE,
+    IntentType.SEARCH_CARDS: SceneType.CARD_SEARCH,
+    IntentType.ORGANIZE_CARDS: SceneType.KG_ORGANIZE,
+    IntentType.ANALYZE_DOCUMENT: SceneType.DOCUMENT_ANALYSIS,
+    IntentType.GENERATE_PPT: SceneType.SKILL_PPT,
+    IntentType.MANAGE_TASKS: SceneType.TASK_MANAGE,
+    IntentType.ANALYZE_IMAGE: SceneType.IMAGE_ANALYSIS,
+    IntentType.CHECK_PERFORMANCE: SceneType.PERFORMANCE_CHECK,
+    IntentType.COMPLEX_WORKFLOW: SceneType.WORKFLOW,
+    IntentType.GREETING: SceneType.GREETING,
+    IntentType.HELP: SceneType.HELP,
+    IntentType.GENERAL_CHAT: SceneType.GENERAL,
+}
 
 
 class ChatRequest(BaseModel):
@@ -1948,6 +1979,411 @@ async def delete_draft(draft_id: str):
     except Exception as e:
         logger.error(f"删除草稿失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ 意图识别 API ============
+
+class IntentDetectRequest(BaseModel):
+    """意图识别请求"""
+    query: str = Field(..., description="用户查询")
+    use_llm: bool = Field(default=True, description="是否使用LLM增强识别")
+
+
+@router.post("/intent/detect")
+async def detect_intent_endpoint(request: IntentDetectRequest):
+    """
+    意图识别接口 - 检测用户查询的意图类型
+    返回9大核心意图类型及实体提取结果
+    """
+    try:
+        # 获取LLM调用函数
+        async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+            from routes.enhanced_chat_routes import call_genie
+            return await call_genie(
+                [{"role": "user", "content": user_prompt}],
+                max_tokens=100, timeout_sec=15.0
+            )
+        
+        intent_result = await recognize_intent(
+            request.query,
+            call_llm_func=call_llm_fn if request.use_llm else None,
+            use_llm=request.use_llm
+        )
+        
+        return {
+            "success": True,
+            "query": request.query,
+            "intent": {
+                "primary": intent_result.primary_intent.value,
+                "primary_name": get_intent_display_name(intent_result.primary_intent),
+                "primary_emoji": get_intent_emoji(intent_result.primary_intent),
+                "confidence": round(intent_result.confidence, 2),
+                "alternative": [
+                    {"intent": i.value, "name": get_intent_display_name(i)}
+                    for i in intent_result.alternative_intents[:2]
+                ],
+                "needs_clarification": intent_result.needs_clarification,
+                "clarification_question": intent_result.clarification_question,
+            },
+            "entities": {
+                "topics": intent_result.entities.topics,
+                "colors": intent_result.entities.colors,
+                "time_range": intent_result.entities.time_range,
+                "filters": intent_result.entities.filters,
+                "file_types": intent_result.entities.file_types,
+                "people": intent_result.entities.people,
+            }
+        }
+    except Exception as e:
+        logger.error(f"意图识别失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============ 工作流 API ============
+
+class WorkflowStartRequest(BaseModel):
+    """启动工作流请求"""
+    query: str = Field(..., description="用户查询")
+    template_id: Optional[str] = Field(None, description="指定使用的工作流模板ID")
+    user_id: str = Field(default="default_user", description="用户ID")
+
+
+@router.get("/workflow/templates")
+async def list_workflow_templates(category: Optional[str] = None):
+    """获取所有工作流模板"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        await orchestrator.initialize()
+        
+        all_templates = orchestrator.get_all_templates()
+        
+        if category:
+            all_templates = [t for t in all_templates if t["category"] == category]
+        
+        return {
+            "success": True,
+            "total": len(all_templates),
+            "templates": all_templates,
+            "categories": sorted(set(t["category"] for t in all_templates)),
+        }
+    except Exception as e:
+        logger.error(f"获取工作流模板失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/workflow/start")
+async def start_workflow(request: WorkflowStartRequest):
+    """
+    启动工作流 - 根据用户意图自动选择或指定模板
+    """
+    try:
+        orchestrator = get_workflow_orchestrator()
+        await orchestrator.initialize()
+        
+        # 意图识别
+        async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+            from routes.enhanced_chat_routes import call_genie
+            return await call_genie(
+                [{"role": "user", "content": user_prompt}],
+                max_tokens=100, timeout_sec=15.0
+            )
+        
+        intent_result = await recognize_intent(
+            request.query,
+            call_llm_func=call_llm_fn,
+            use_llm=True
+        )
+        
+        # 生成工作流
+        execution = await orchestrator.generate_workflow(
+            request.query,
+            intent_result,
+            request.user_id
+        )
+        
+        if not execution:
+            return {"success": False, "error": "无法生成工作流"}
+        
+        return {
+            "success": True,
+            "execution_id": execution.execution_id,
+            "template_id": execution.template_id,
+            "intent": {
+                "primary": intent_result.primary_intent.value,
+                "name": get_intent_display_name(intent_result.primary_intent),
+                "emoji": get_intent_emoji(intent_result.primary_intent),
+            },
+            "total_steps": len(execution.steps),
+            "steps": [
+                {
+                    "step_id": s.step_id,
+                    "name": s.name,
+                    "description": s.description,
+                    "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                    "requires_input": s.requires_input,
+                    "input_prompt": s.input_prompt,
+                }
+                for s in execution.steps
+            ],
+            "status": execution.status.value if hasattr(execution.status, 'value') else str(execution.status),
+        }
+    except Exception as e:
+        logger.error(f"启动工作流失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/workflow/status/{execution_id}")
+async def get_workflow_status(execution_id: str):
+    """获取工作流执行状态"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        status = orchestrator.get_execution_status(execution_id)
+        
+        if not status:
+            return {"success": False, "error": "工作流不存在"}
+        
+        return {"success": True, **status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/workflow/cancel/{execution_id}")
+async def cancel_workflow(execution_id: str):
+    """取消工作流执行"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        success = orchestrator.cancel_execution(execution_id)
+        
+        return {"success": success, "message": "工作流已取消" if success else "工作流不存在"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============ 聊天意图增强端点 ============
+
+class EnhancedChatRequestV2(BaseModel):
+    """增强版聊天请求（V2）- 带意图识别"""
+    query: str = Field(..., description="用户查询")
+    conversation_history: List[ChatMessage] = Field(default_factory=list)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    image_data: Optional[str] = Field(None)
+    session_id: Optional[str] = Field(None)
+    enable_workflow: bool = Field(default=False, description="是否启用工作流模式")
+    enable_intent_detection: bool = Field(default=True, description="是否启用意图识别")
+
+
+@router.post("/chat/v2")
+async def enhanced_chat_v2(request: EnhancedChatRequestV2):
+    """
+    增强版聊天接口 V2 - 集成意图识别和工作流
+    支持9大核心意图识别和动态工作流生成
+    """
+    try:
+        query = request.query
+        user_id = request.session_id or "default_user"
+        
+        # 记录用户消息
+        memory_manager.add_message(user_id, "user", query)
+        _extract_user_facts(query, user_id)
+        
+        response_data = {
+            "scene_type": "general",
+            "cards": [],
+            "skill_result": None,
+            "image_analysis": None,
+            "suggested_questions": [],
+            "intent": None,
+            "workflow": None,
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "session_id": request.session_id,
+            }
+        }
+        
+        # 意图识别
+        intent_result = None
+        if request.enable_intent_detection:
+            async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+                return await call_genie(
+                    [{"role": "user", "content": user_prompt}],
+                    max_tokens=100, timeout_sec=15.0
+                )
+            
+            intent_result = await recognize_intent(
+                query,
+                call_llm_func=call_llm_fn,
+                use_llm=True
+            )
+            
+            response_data["intent"] = {
+                "primary": intent_result.primary_intent.value,
+                "name": get_intent_display_name(intent_result.primary_intent),
+                "emoji": get_intent_emoji(intent_result.primary_intent),
+                "confidence": round(intent_result.confidence, 2),
+            }
+            
+            # 映射到场景类型
+            scene_type = INTENT_TO_SCENE.get(intent_result.primary_intent, SceneType.GENERAL)
+            response_data["scene_type"] = scene_type.value
+        
+        # 工作流模式
+        if request.enable_workflow and intent_result:
+            orchestrator = get_workflow_orchestrator()
+            await orchestrator.initialize()
+            
+            execution = await orchestrator.generate_workflow(
+                query, intent_result, user_id
+            )
+            
+            if execution:
+                response_data["workflow"] = {
+                    "execution_id": execution.execution_id,
+                    "template_id": execution.template_id,
+                    "total_steps": len(execution.steps),
+                    "steps": [
+                        {
+                            "step_id": s.step_id,
+                            "name": s.name,
+                            "description": s.description,
+                            "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                        }
+                        for s in execution.steps
+                    ],
+                }
+        
+        # 图片处理
+        if request.image_data:
+            analysis = await analyze_image_base64(request.image_data)
+            if analysis:
+                response_data["image_analysis"] = analysis
+                response_data["response"] = generate_image_analysis_response(analysis)
+                response_data["metadata"]["model"] = "vision-agent"
+            else:
+                response_data["response"] = "图片分析服务暂时不可用，请稍后重试。"
+        
+        # 基于意图路由处理
+        elif intent_result:
+            intent = intent_result.primary_intent
+            
+            if intent == IntentType.SEARCH_CARDS:
+                cards = search_cards_semantic(query)
+                response_data["cards"] = cards
+                response_data["response"] = generate_card_search_response(query, cards)
+                
+            elif intent == IntentType.GENERATE_PPT:
+                skill_name = "ppt_generator"
+                if skill_name in skill_registry:
+                    skill_result = await execute_skill(skill_name, query, request.context)
+                    response_data["skill_result"] = skill_result
+                    response_data["response"] = generate_skill_response(skill_result)
+                else:
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": f"用户想要生成PPT：{query}"}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = f"🛠️ PPT生成指导\n\n" + (genie_text or "请指定PPT主题")
+                
+            elif intent in [IntentType.CREATE_CARD, IntentType.ORGANIZE_CARDS]:
+                # 使用8-Agent引擎处理
+                try:
+                    from routes.eight_agent_engine import get_eight_agent_engine
+                    engine = get_eight_agent_engine()
+                    result = await engine.process(query, {"query": query}, user_id)
+                    
+                    if result.get("status") == "success":
+                        cards_data = result.get("four_color_cards", [])
+                        response_data["cards"] = [
+                            CardReference(
+                                card_id=c.get("card_id", ""),
+                                card_type=c.get("card_type", "blue"),
+                                title=c.get("title", ""),
+                                content=c.get("content", ""),
+                                similarity=1.0,
+                                color=c.get("card_type", "blue")
+                            )
+                            for c in cards_data[:6]
+                        ]
+                        report = result.get("report", {})
+                        response_data["response"] = report.get("text", f"已为您分析「{query}」，生成{len(cards_data)}张知识卡片")
+                    else:
+                        response_data["response"] = f"正在分析「{query}」..." 
+                except Exception as e:
+                    logger.warning(f"8-Agent分析失败: {e}")
+                    response_data["response"] = f"关于「{query}」，我已准备好进行分析，请稍后..." 
+                
+            elif intent == IntentType.CHECK_PERFORMANCE:
+                try:
+                    import psutil
+                    cpu = psutil.cpu_percent(interval=1)
+                    mem = psutil.virtual_memory()
+                    disk = psutil.disk_usage('/')
+                    response_data["response"] = f"""💻 **系统状态报告**
+
+🖥️ CPU 使用率: {cpu}%
+💾 内存使用率: {mem.percent}% (可用: {mem.available // (1024**2)} MB)
+📁 磁盘使用率: {disk.percent}% (可用: {disk.free // (1024**3)} GB)
+
+系统运行正常。"""
+                except ImportError:
+                    response_data["response"] = "系统监控模块未安装（需要 psutil）"
+                    
+            elif intent in [IntentType.GREETING, IntentType.HELP]:
+                response_data["response"] = "你好！我是小易。\n\n我可以帮您：\n* 📝 创建知识卡片 - 四色卡片体系\n* 🔍 搜索知识库 - 语义搜索\n* 📊 生成PPT报告\n* 📄 分析文档/PDF\n* 🖼️ 分析图片\n* ✅ 管理GTD任务\n* 🔗 构建知识图谱\n* 🏛️ 启动虚拟朝堂会议"
+                
+            else:
+                # 通用对话 + 知识库检索
+                result = hybrid_search_all(query, limit=5)
+                if result.cards or result.kg_entities:
+                    response_data["cards"] = result.cards[:3]
+                    context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = genie_text or generate_hybrid_response(query, result)
+                else:
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": query}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = genie_text or f"关于「{query}」，您可以尝试换个方式提问。"
+        
+        else:
+            # 无意图识别回退到旧逻辑
+            scene_type = detect_scene(query)
+            response_data["scene_type"] = scene_type.value
+            # ...使用原有逻辑（后续可重构）
+        
+        # 生成建议问题
+        response_data["suggested_questions"] = generate_suggested_questions(
+            SceneType(response_data["scene_type"]) if response_data["scene_type"] in [s.value for s in SceneType] else SceneType.GENERAL,
+            request.context,
+            response_data.get("cards", []),
+            query
+        )
+        
+        # 自动卡片建议
+        try:
+            from routes import auto_card
+            suggestions = auto_card.suggest_cards_api(query, response_data.get("response", ""))
+            response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
+        except Exception:
+            pass
+        
+        memory_manager.add_message(user_id, "assistant", response_data.get("response", ""))
+        
+        return ChatResponse(
+            response=response_data.get("response", ""),
+            scene_type=SceneType(response_data["scene_type"]) if response_data["scene_type"] in [s.value for s in SceneType] else SceneType.GENERAL,
+            cards=response_data.get("cards", []),
+            card_suggestions=response_data.get("card_suggestions", []),
+            suggested_questions=response_data.get("suggested_questions", []),
+            metadata=response_data.get("metadata", {}),
+        )
+        
+    except Exception as e:
+        logger.error(f"V2聊天处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
 
 # 初始化

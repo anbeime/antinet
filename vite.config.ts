@@ -24,7 +24,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        timeout: 300000,  // 5分钟超时，防止 Genie NPU 长推理被代理切断（默认60s不够）
+        proxyTimeout: 300000,
       },
       '/ws': {
         target: 'ws://127.0.0.1:8000',

@@ -381,7 +381,7 @@ async def genie_classify(request: ClassifyRequest):
         f"Text:\n{content}"
     )
 
-    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
 
     for model in models_to_try:
@@ -391,7 +391,6 @@ async def genie_classify(request: ClassifyRequest):
                 json_data={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": _JINYIWEI_CLASSIFY_SYSTEM},
                         {"role": "user", "content": user_prompt}
                     ],
                     "max_tokens": 2048,
@@ -467,23 +466,23 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze")
 async def genie_analyze(request: AnalyzeRequest):
     """AI 知识洞察：分析卡片并生成洞察"""
-    related_part = f"\n关联卡片：{request.related_titles}" if request.related_titles else ""
+    related_part = f"\nRelated cards: {request.related_titles}" if request.related_titles else ""
     user_prompt = (
-        f"你是一个知识管理专家。分析以下知识卡片，给出3个方面的洞察：\n\n"
-        f"卡片标题：{request.card_title}\n"
-        f"卡片内容：{request.card_content}{related_part}\n\n"
-        f"请严格按照JSON格式返回，不要其他文字：\n"
+        f"You are a knowledge management expert. Analyze this knowledge card and provide 3 insights.\n\n"
+        f"Card title: {request.card_title}\n"
+        f"Card content: {request.card_content}{related_part}\n\n"
+        f"Return ONLY valid JSON, no other text:\n"
         f"{{\n"
-        f'  "summary": "一句话总结这张卡片在知识体系中的角色（30字内）",\n'
-        f'  "importance": "重要性评分 0-100 的数字",\n'
-        f'  "gap": "一个知识空白点（20字内）",\n'
+        f'  "summary": "One-sentence summary of this card (max 30 chars)",\n'
+        f'  "importance": "importance score 0-100 as number",\n'
+        f'  "gap": "one knowledge gap (max 20 chars)",\n'
         f'  "recommendations": [\n'
-        f'    {{"title": "推荐主题", "reason": "推荐原因（10字内）"}}\n'
+        f'    {{"title": "recommended topic", "reason": "reason (max 10 chars)"}}\n'
         f'  ]\n'
         f"}}"
     )
 
-    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
     for model in models_to_try:
         try:

@@ -24,7 +24,6 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef<HTMLDivElement>(null);
   const dragStartPos = useRef({ x: 0, y: 0 });
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -63,7 +62,6 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
         {!isOpen && (
           <motion.div
             key="chat-button"
-            ref={dragRef}
             onMouseDown={handleMouseDown}
             style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
             initial={{ scale: 0, opacity: 0 }}

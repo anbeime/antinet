@@ -115,42 +115,56 @@ const KnowledgeGraphView: React.FC = () => {
     // 如果是 suggestions 格式（搜索结果），转换为节点
     if (data.suggestions && !data.nodes) {
       const suggestions = data.suggestions;
-      const nodes = suggestions.map((s: any, i: number) => {
-        const typeList = ['blue', 'green', 'yellow', 'red'];
-        const typeIdx = typeList.indexOf(s.card_type || 'blue');
-        const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
-        return {
-          id: String(s.card_id),
-          name: s.title || `卡片${s.card_id}`,
-          category: typeIdx >= 0 ? typeIdx : 0,
-          symbolSize: 35,
-          x: 500 + 280 * Math.cos(angle),
-          y: 300 + 280 * Math.sin(angle),
-          score: s.score,
-          content: s.content
-        };
-      });
+      const seenIds = new Set<string>();
+      const nodes = suggestions
+        .filter((s: any) => {
+          const sid = String(s.card_id);
+          if (seenIds.has(sid)) return false;
+          seenIds.add(sid);
+          return true;
+        })
+        .map((s: any, i: number) => {
+          const typeList = ['blue', 'green', 'yellow', 'red'];
+          const typeIdx = typeList.indexOf(s.card_type || 'blue');
+          const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
+          return {
+            id: String(s.card_id),
+            name: s.title || `卡片${s.card_id}`,
+            category: typeIdx >= 0 ? typeIdx : 0,
+            symbolSize: 35,
+            x: 500 + 280 * Math.cos(angle),
+            y: 300 + 280 * Math.sin(angle),
+            score: s.score,
+            content: s.content
+          };
+        });
       return { nodes, links: [], categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
     }
     // 处理普通图数据（nodes + links）
     const rawNodes = data.nodes || data.entities || [];
     const rawLinks = data.links || data.relations || [];
     const nodeMap = new Map();
+    const nameSet = new Set<string>();  // 防止重复名称
     let nodeIndex = 0;
     rawNodes.forEach((e: any) => {
       const id = String(e.id);
+      const name = e.title || e.name || `节点${e.id}`;
+      // 跳过已存在的 ID 或重名节点
+      if (nodeMap.has(id) || nameSet.has(name)) return;
+      
       if (!nodeMap.has(id)) {
         const typeList = ['blue', 'green', 'yellow', 'red'];
         const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
         const angle = (nodeIndex / Math.max(rawNodes.length, 1)) * 2 * Math.PI;
         nodeMap.set(id, {
           id,
-          name: e.title || e.name || `节点${e.id}`,
+          name,
           category: typeIdx >= 0 ? typeIdx : 0,
           symbolSize: e.is_current ? 50 : 35,
           x: 500 + 280 * Math.cos(angle),
           y: 300 + 280 * Math.sin(angle)
         });
+        nameSet.add(name);
         nodeIndex++;
       }
     });
@@ -235,7 +249,11 @@ const KnowledgeGraphView: React.FC = () => {
       if (window.innerWidth >= 768) {
         setSidebarOpen(true);
       }
-      chartInstance.current?.resize();
+      try {
+        chartInstance.current?.resize();
+      } catch (_) {
+        // 图表未就绪时 resize 会抛错，静默忽略
+      }
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -571,10 +589,27 @@ useEffect(() => {
         displayData = graphData;
       }
 
-      // 确保 displayData 结构完整
+      // 确保 displayData 结构完整，并对节点/连线去重
       if (!displayData || !displayData.nodes || !displayData.nodes.length) {
         displayData = sampleData;
       }
+
+      // 最终去重防线：ECharts graph 要求 name 和 id 必须唯一
+      const idSet = new Set<string>();
+      const nameSet = new Set<string>();
+      const dedupedNodes = displayData.nodes.filter((n: any) => {
+        const nid = String(n.id);
+        const nname = String(n.name || '');
+        if (idSet.has(nid) || nameSet.has(nname)) return false;
+        idSet.add(nid);
+        nameSet.add(nname);
+        return true;
+      });
+      
+      const validNodeIds = new Set(dedupedNodes.map((n: any) => String(n.id)));
+      const dedupedLinks = displayData.links.filter((l: any) => {
+        return validNodeIds.has(String(l.source)) && validNodeIds.has(String(l.target));
+      });
 
       const option: echarts.EChartsOption = {
         tooltip: {
@@ -588,14 +623,14 @@ useEffect(() => {
         series: [{
           type: 'graph',
           layout: 'force',
-          data: displayData.nodes.map((node: any) => ({
+          data: dedupedNodes.map((node: any) => ({
             id: node.id,
             name: node.name,
             category: node.category ?? 0,
             symbolSize: node.symbolSize || 30,
             label: { show: true, fontSize: 11, position: 'bottom' },
           })),
-          links: displayData.links.map((link: any) => ({
+          links: dedupedLinks.map((link: any) => ({
             source: link.source,
             target: link.target,
             lineStyle: { width: 2, curveness: 0.2 },
@@ -616,11 +651,21 @@ useEffect(() => {
 
       chartInstance.current.setOption(option, true);
 
-      setTimeout(() => {
+      // 等待力导向布局渲染完成后再 resize（避免 "resize should not be called during main process"）
+      const onRendered = () => {
         if (mountedRef.current && chartInstance.current) {
           chartInstance.current.resize();
         }
-      }, 500);
+        chartInstance.current?.off('rendered', onRendered);
+      };
+      chartInstance.current.on('rendered', onRendered);
+      
+      // 兜底：5秒后无论如何 resize 一次（rendered 事件可能被跳过）
+      setTimeout(() => {
+        if (mountedRef.current && chartInstance.current) {
+          try { chartInstance.current.resize(); } catch (_) {}
+        }
+      }, 5000);
 
 
       // 节点点击/双击的通用处理逻辑（提取为函数避免重复）

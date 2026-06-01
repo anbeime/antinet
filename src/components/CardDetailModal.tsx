@@ -369,26 +369,62 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
     setInsights(null);
     setInsightsLoading(true);
-    const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
-    fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        card_title: card.title,
-        card_content: card.content.slice(0, 500),
-        related_titles: relatedTitles
+    
+    const controller = new AbortController();
+    let retries = 0;
+    const maxRetries = 2;
+    
+    const fetchInsights = () => {
+      const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
+      fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          card_title: card.title,
+          card_content: card.content.slice(0, 500),
+          related_titles: relatedTitles
+        }),
+        signal: controller.signal,
       })
-    })
-      .then(r => r.json())
-      .then(data => {
-        const text = data.response || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          setInsights(JSON.parse(jsonMatch[0]));
-        }
-      })
-      .catch(() => {})
-      .finally(() => setInsightsLoading(false));
+        .then(r => {
+          if (!r.ok) {
+            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+          }
+          return r.json();
+        })
+        .then(data => {
+          const text = data.response || '';
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            setInsights(JSON.parse(jsonMatch[0]));
+          } else if (text) {
+            setInsights({ summary: text.slice(0, 100) });
+          }
+        })
+        .catch((err) => {
+          if (err.name === 'AbortError') return;
+          console.warn(`[CardDetail] Genie分析失败 (尝试 ${retries + 1}/${maxRetries + 1}):`, err.message);
+          
+          if (retries < maxRetries) {
+            retries++;
+            // 指数退避：2s, 4s
+            const delay = 2000 * retries;
+            setTimeout(fetchInsights, delay);
+          } else {
+            // 3次都失败，静默降级（不阻塞卡片查看）
+            setInsights(null);
+          }
+        })
+        .finally(() => {
+          if (retries >= maxRetries || retries === 0) {
+            setInsightsLoading(false);
+          }
+        });
+    };
+    
+    fetchInsights();
+    
+    return () => controller.abort();
   }, [card?.id, forwardlinks, backlinksLoading]);
 
   // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）

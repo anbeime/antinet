@@ -1833,7 +1833,14 @@ async def knowledge_retrieval_in_meeting(request: KnowledgeRetrievalRequest):
 
     final_response = ""
     try:
-        # 构建驿传司格式化提示
+        # 构建驿传司格式化提示搬移到外部
+        actions_text = "（无建议）"
+        if canmousi_actions:
+            action_lines = []
+            for i, a in enumerate(canmousi_actions[:3]):
+                action_lines.append(f"{i+1}. {a.get('title', a.get('description', ''))}")
+            actions_text = "\n".join(action_lines)
+
         yichuansi_prompt = f"""你是八府巡按的驿传司，负责将会议知识检索结果格式化输出给用户。
 
 用户问题：{query}
@@ -1843,7 +1850,7 @@ async def knowledge_retrieval_in_meeting(request: KnowledgeRetrievalRequest):
 {tongzhengsi_description if tongzhengsi_description else '（无相关知识）'}
 
 行动建议：
-{'\n'.join([f"{i+1}. {a.get('title', a.get('description', ''))}" for i, a in enumerate(canmousi_actions[:3])]) if canmousi_actions else '（无建议）'}
+{actions_text}
 
 输出要求：
 1. 简洁有力，200字以内

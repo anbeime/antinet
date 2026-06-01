@@ -14,7 +14,8 @@ import {
   Trash2, FileType, FileSpreadsheet,
   Upload, Mic, MicOff, Volume2, VolumeX,
   Eye, Maximize2, Minimize2,
-  Brain
+  Brain, GitBranch, FileSearch, CheckSquare,
+  Network, AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -470,6 +471,16 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [evolutionMode, setEvolutionMode] = useState(() => {
     return localStorage.getItem('evolutionMode') === 'true';
   });
+  const [workflowMode, setWorkflowMode] = useState(() => {
+    return localStorage.getItem('workflowMode') === 'true';
+  });
+  const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+  const [detectedIntent, setDetectedIntent] = useState<{
+    primary: string;
+    name: string;
+    emoji: string;
+    confidence: number;
+  } | null>(null);
   
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -499,10 +510,15 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         content: `你好！我是小易。
 
 我可以帮您：
-查询知识库卡片 - 搜索事实、解释、风险、行动卡片
-生成PPT演示 - 快速创建专业演示文稿
-分析Excel数据 - 数据分析和可视化
-生成Word文档 - 创建专业文档
+📝 创建四色知识卡片 - 从对话、文档中提取
+🔍 搜索知识库 - 语义搜索，精准查询
+📊 生成PPT演示 - 快速创建专业演示文稿
+📄 分析文档/PDF - 多格式文档智能分析
+✅ 管理GTD任务 - 个人工作流管理
+🔗 构建知识图谱 - 发现隐藏知识关联
+🔄 智能工作流 - 文献综述/项目复盘/竞品分析/风险评估
+
+💡 开启工作流模式可体验自动化工作流编排！
 
 有什么可以帮您的吗？`,
         timestamp: new Date().toISOString()
@@ -510,7 +526,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       setSuggestedQuestions([
         "帮我搜索关于项目管理的知识卡片",
         "分析一下这张图片",
-        "生成一个工作总结的PPT"
+        "生成一个工作总结的PPT",
+        "启动文献综述工作流"
       ]);
     }
   }, [isOpen]);
@@ -798,6 +815,34 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       };
       setMessages(prev => [...prev, userMessage]);
 
+      // 工作流模式：先检测意图
+      if (workflowMode && query.length > 3) {
+        try {
+          const intentResult = await enhancedChatService.detectIntent(query, true);
+          if (intentResult.success && intentResult.intent) {
+            setDetectedIntent({
+              primary: intentResult.intent.primary,
+              name: intentResult.intent.primary_name,
+              emoji: intentResult.intent.primary_emoji,
+              confidence: intentResult.intent.confidence,
+            });
+            
+            // 如果是复杂工作流意图，自动启动工作流
+            if (intentResult.intent.primary === 'complex_workflow' || 
+                intentResult.intent.primary === 'analyze_document' ||
+                intentResult.intent.primary === 'generate_ppt') {
+              const wfResult = await enhancedChatService.startWorkflow(query);
+              if (wfResult.success && wfResult.execution_id) {
+                setActiveWorkflowId(wfResult.execution_id);
+                toast.success(`🚀 工作流已启动: ${wfResult.intent?.name} (${wfResult.total_steps}步)`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('意图检测失败:', e);
+        }
+      }
+
       let response;
       
       if (evolutionMode) {
@@ -974,15 +1019,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       icon: <Search className="w-3 h-3" />,
       label: "查卡片",
       onClick: () => {
-        onClose();
-        navigate('/');
-        setTimeout(() => {
-          const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.value = '';
-          }
-        }, 100);
+        setInput("帮我搜索关于");
+        textareaRef.current?.focus();
       },
       color: "#8b4513"
     },
@@ -990,23 +1028,23 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       icon: <Presentation className="w-3 h-3" />,
       label: "生成PPT",
       onClick: () => {
-        onClose();
-        navigate('/ppt-analysis');
+        setInput("生成一个PPT报告：");
+        textareaRef.current?.focus();
       },
       color: "#a0522d"
     },
     {
-      icon: <Table className="w-3 h-3" />,
-      label: "分析Excel",
+      icon: <Sparkles className="w-3 h-3" />,
+      label: "创建卡片",
       onClick: () => {
-        onClose();
-        navigate('/excel-analysis');
+        setInput("帮我创建知识卡片：");
+        textareaRef.current?.focus();
       },
       color: "#b87333"
     },
     {
-      icon: <FileType className="w-3 h-3" />,
-      label: "PDF分析",
+      icon: <FileText className="w-3 h-3" />,
+      label: "分析文档",
       onClick: () => {
         onClose();
         navigate('/pdf-analysis');
@@ -1014,32 +1052,92 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       color: "#cd853f"
     },
     {
-      icon: <FileSpreadsheet className="w-3 h-3" />,
-      label: "格式转换",
-      onClick: () => {
-        onClose();
-        navigate('/pdf-analysis');
+      icon: <GitBranch className="w-3 h-3" />,
+      label: "文献综述",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动文献综述工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '文献综述'} (${result.total_steps}步)`);
+              setInput(`文献综述：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个文献综述，主题是：");
+          textareaRef.current?.focus();
+        }
       },
-      color: "#d4a574"
+      color: "#6b8e23"
     },
     {
-      icon: <Sparkles className="w-3 h-3" />,
-      label: "NPU分析",
+      icon: <CheckSquare className="w-3 h-3" />,
+      label: "GTD任务",
       onClick: () => {
-        onClose();
-        navigate('/npu-analysis');
-      },
-      color: "#8b7355"
-    },
-    {
-      icon: <Sparkles className="w-3 h-3" />,
-      label: "深度思考",
-      onClick: () => {
-        setInput("请帮我深度分析：");
+        setInput("管理我的任务：");
         textareaRef.current?.focus();
       },
-      color: "#6b4423"
-    }
+      color: "#4169e1"
+    },
+    {
+      icon: <Network className="w-3 h-3" />,
+      label: "知识图谱",
+      onClick: () => {
+        onClose();
+        navigate('/knowledge-graph');
+      },
+      color: "#9370db"
+    },
+    {
+      icon: <FileSearch className="w-3 h-3" />,
+      label: "项目复盘",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动项目复盘工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '项目复盘'} (${result.total_steps}步)`);
+              setInput(`项目复盘：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个项目复盘：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#dc143c"
+    },
+    {
+      icon: <AlertTriangle className="w-3 h-3" />,
+      label: "风险评估",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动风险评估工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '风险评估'} (${result.total_steps}步)`);
+              setInput(`风险评估：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一次风险评估：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#ff8c00"
+    },
   ];
 
   if (!isOpen) return null;
@@ -1097,6 +1195,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
               >
                 <Brain className="w-5 h-5" />
+              </button>
+              <button
+                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${workflowMode ? 'bg-green-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                onClick={() => {
+                  const newVal = !workflowMode;
+                  setWorkflowMode(newVal);
+                  localStorage.setItem('workflowMode', String(newVal));
+                  toast.success(newVal ? '已开启工作流模式 (智能编排)' : '已关闭工作流模式', { duration: 2000 });
+                }}
+                title={workflowMode ? '关闭工作流模式' : '开启工作流模式 - 自动识别意图并编排工作流'}
+              >
+                <GitBranch className="w-5 h-5" />
               </button>
               <button
                 className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
@@ -1166,6 +1276,26 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               <div ref={messagesEndRef} />
             </div>
           </div>
+
+          {/* 意图识别结果 */}
+          {detectedIntent && workflowMode && (
+            <div className="px-4 py-2" style={{ backgroundColor: '#f0faf0', borderTop: '1px solid #c8e6c9' }}>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-base">{detectedIntent.emoji}</span>
+                <span style={{ color: '#2e7d32' }}>
+                  意图识别: <strong>{detectedIntent.name}</strong>
+                </span>
+                <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#c8e6c9', color: '#1b5e20' }}>
+                  {(detectedIntent.confidence * 100).toFixed(0)}%
+                </span>
+                {activeWorkflowId && (
+                  <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#d4e157', color: '#827717' }}>
+                    🔄 工作流运行中
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 建议问题 */}
           {suggestedQuestions.length > 0 && (
