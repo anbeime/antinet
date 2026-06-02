@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, X, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import CalendarView from '@/components/CalendarView';
@@ -34,6 +34,14 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
     remind_at: '',
     reminder_enabled: false
   });
+
+  // 从首页跳转时直接打开全屏日历
+  useEffect(() => {
+    if (localStorage.getItem('openCalendarFullscreen') === 'true') {
+      localStorage.removeItem('openCalendarFullscreen');
+      setCalendarFullscreen(true);
+    }
+  }, []);
 
   const handleCreateTask = async () => {
     if (!formData.title.trim()) {

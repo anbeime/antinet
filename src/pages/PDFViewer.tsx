@@ -64,6 +64,7 @@ const PDFViewer: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [cardFilter, setCardFilter] = useState('');
   const [notesSelectedIds, setNotesSelectedIds] = useState<Set<string>>(new Set()); // 选中的卡片ID
+  const [currentTopic, setCurrentTopic] = useState(''); // 来自 URL 的专题参数
 
   // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
   const [activeView, setActiveView] = useState<'pdf' | 'source'>('pdf');
@@ -77,7 +78,14 @@ const PDFViewer: React.FC = () => {
   // ========== PDF 加载 ==========
   useEffect(() => {
     const urlParam = searchParams.get('url');
-    if (urlParam) loadPDFFromURL(urlParam);
+    const topicParam = searchParams.get('topic');
+    if (urlParam) {
+      loadPDFFromURL(urlParam);
+    } else if (topicParam) {
+      setFileName(`专题: ${topicParam}`);
+      setCurrentTopic(topicParam);
+      setShowCardPanel(true);
+    }
   }, []);
 
   const loadPDFFromURL = async (url: string) => {
@@ -193,7 +201,7 @@ const PDFViewer: React.FC = () => {
     } catch (e: any) { setSourcePdfError(e.message || 'PDF 生成失败'); } finally { setSourcePdfGenerating(false); }
   };
 
-  // ========== 知识卡片 CRUD ==========
+// ========== 知识卡片 CRUD ==========
   const loadCards = async () => {
     setCardsLoading(true);
     try {
@@ -202,88 +210,12 @@ const PDFViewer: React.FC = () => {
     } catch {} finally { setCardsLoading(false); }
   };
 
-  useEffect(() => { if (showCardPanel) loadCards(); }, [showCardPanel]);
+  // 客户端按专题过滤卡片
+  const topicFilteredCards = currentTopic
+    ? cards.filter(c => (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic))
+    : cards;
 
-  const selectCard = (card: any) => {
-    setSelectedCard(card);
-    setIsNewCard(false);
-    setActiveView('source');
-    setSourceViewMode('pdf');
-    setCardTitle(card.title || '');
-    setCardContent(card.content || '');
-    setCardType(card.card_type || card.type || 'blue');
-    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
-  };
-
-  const handleNewCard = () => {
-    setSelectedCard(null); setIsNewCard(true); setActiveView('source'); setSourceViewMode('markdown');
-    setCardTitle(''); setCardContent(''); setCardType('blue');
-    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
-  };
-
-  const handleSaveCard = async () => {
-    if (!cardContent.trim() && !cardTitle.trim()) return;
-    setSaving(true);
-    try {
-      const body = { title: cardTitle || '无标题', content: cardContent, type: cardType };
-      if (isNewCard) {
-        const res = await fetch(`${API_BASE}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (res.ok) { const saved = await res.json(); setSelectedCard(saved); setIsNewCard(false); loadCards(); }
-      } else if (selectedCard?.id) {
-        const res = await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        if (res.ok) { const updated = await res.json(); setSelectedCard(updated); loadCards(); }
-      }
-    } catch {} finally { setSaving(false); }
-  };
-
-  const handleDeleteCard = async () => {
-    if (!selectedCard?.id || isNewCard) return;
-    if (!window.confirm(`确定删除卡片「${selectedCard.title}」？`)) return;
-    try {
-      await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
-      setSelectedCard(null); setIsNewCard(false); setActiveView(pdfUrl ? 'pdf' : 'source');
-      loadCards();
-    } catch {}
-  };
-
-  // 切换卡片选中状态（用于添加到笔记）
-  const toggleNotesSelection = (cardId: string) => {
-    const newSet = new Set(notesSelectedIds);
-    if (newSet.has(cardId)) {
-      newSet.delete(cardId);
-    } else {
-      newSet.add(cardId);
-    }
-    setNotesSelectedIds(newSet);
-  };
-
-  // 将选中卡片保存到笔记队列
-  const addToNotes = () => {
-    const selectedCards = cards.filter(c => notesSelectedIds.has(c.id));
-    if (selectedCards.length === 0) {
-      toast.warning('请先勾选要添加到笔记的卡片');
-      return;
-    }
-    // 保存到 localStorage
-    const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
-    const merged = [...existing];
-    selectedCards.forEach(card => {
-      if (!merged.find((m: any) => m.id === card.id)) {
-        merged.push({
-          id: card.id,
-          title: card.title || '无标题',
-          content: card.content || '',
-          card_type: card.card_type || card.type || 'blue',
-          addedAt: new Date().toISOString()
-        });
-      }
-    });
-    localStorage.setItem('bookskill_notes', JSON.stringify(merged));
-    setNotesSelectedIds(new Set());
-    toast.success(`已添加 ${selectedCards.length} 张卡片到笔记`);
-  };
-
-  const filteredCards = cards.filter((c: any) => {
+  const filteredCards = topicFilteredCards.filter((c: any) => {
     if (!cardFilter) return true;
     const q = cardFilter.toLowerCase();
     return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
@@ -463,6 +395,22 @@ const PDFViewer: React.FC = () => {
                         className="text-xs px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600">生成主题 PDF</button>
                     </>
                   )}
+                  {cardContent && (
+                    <button onClick={() => {
+                      const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+                      const id = selectedCard?.id || `note-${Date.now()}`;
+                      if (!existing.find((m: any) => m.id === id)) {
+                        existing.push({ id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() });
+                        localStorage.setItem('bookskill_notes', JSON.stringify(existing));
+                        toast.success('已保存到笔记');
+                      } else {
+                        toast.warning('该卡片已在笔记中');
+                      }
+                    }}
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-500 text-white rounded hover:bg-amber-600">
+                      <BookmarkPlus size={12} />保存到笔记
+                    </button>
+                  )}
                 </div>
                 <div className="flex-1 min-h-0">
                   <object data={displayUrl} type="application/pdf" className="w-full h-full">
@@ -504,22 +452,22 @@ const PDFViewer: React.FC = () => {
               className="w-full h-[400px] p-4 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-purple-400"
               placeholder="# 标题&#10;&#10;在此输入 Markdown 内容..." />
             <div className="flex items-center gap-2">
-              <select value={exportTheme} onChange={e => setExportTheme(e.target.value)}
-                className="text-xs border rounded px-2 py-1.5 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
-                <option value="warm-academic">暖学术</option>
-                <option value="classic-thesis">经典论文</option>
-                <option value="tufte">Tufte</option>
-                <option value="ieee-journal">期刊蓝</option>
-                <option value="elegant-book">精装书</option>
-                <option value="chinese-red">中国红</option>
-                <option value="ink-wash">水墨</option>
-                <option value="github-light">GitHub</option>
-                <option value="nord-frost">Nord冰霜</option>
-                <option value="ocean-breeze">海洋</option>
-              </select>
-              <button onClick={() => generateSourcePdf()}
-                className="flex items-center gap-1 px-3 py-1.5 bg-purple-500 text-white text-xs rounded-lg hover:bg-purple-600">
-                <FileText size={12} />生成 PDF
+              <button onClick={() => {
+                if (!cardContent.trim()) { toast.warning('内容为空'); return; }
+                const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+                const id = selectedCard?.id || `note-${Date.now()}`;
+                if (!existing.find((m: any) => m.id === id)) {
+                  existing.push({ id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() });
+                  localStorage.setItem('bookskill_notes', JSON.stringify(existing));
+                  toast.success('已保存到笔记');
+                } else {
+                  existing[existing.findIndex((m: any) => m.id === id)] = { id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() };
+                  localStorage.setItem('bookskill_notes', JSON.stringify(existing));
+                  toast.success('笔记已更新');
+                }
+              }}
+                className="flex items-center gap-1 px-4 py-2 bg-amber-500 text-white text-sm rounded-lg hover:bg-amber-600">
+                <BookmarkPlus size={14} />保存进笔记
               </button>
             </div>
           </div>
@@ -595,7 +543,11 @@ const PDFViewer: React.FC = () => {
           <aside className="w-72 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold flex items-center gap-1"><Bookmark className="w-4 h-4 text-green-500" />知识卡片</h3>
+                <h3 className="text-sm font-semibold flex items-center gap-1">
+                  <Bookmark className="w-4 h-4 text-green-500" />
+                  知识卡片
+                  {currentTopic && <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-800 text-purple-600 dark:text-purple-300 rounded-full">{currentTopic}</span>}
+                </h3>
                 <div className="flex items-center gap-1">
                   <button onClick={() => setShowCardPanel(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="隐藏面板"><Eye size={14} className="text-gray-400" /></button>
                   <button onClick={() => setShowCardPanel(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="关闭面板"><X size={14} className="text-gray-400" /></button>
@@ -606,9 +558,16 @@ const PDFViewer: React.FC = () => {
                 className="w-full px-2 py-1 text-xs border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-1 focus:ring-green-400" placeholder="搜索卡片..." />
               {/* 添加到笔记按钮 */}
               {notesSelectedIds.size > 0 && (
-                <button onClick={addToNotes}
+                <button onClick={() => addAllToNotes()}
                   className="w-full mt-2 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-500 text-white rounded text-xs hover:bg-amber-600 transition-colors">
                   <BookmarkPlus className="w-3 h-3" />添加到笔记 ({notesSelectedIds.size})
+                </button>
+              )}
+              {/* 全部添加按钮 */}
+              {filteredCards.length > 0 && (
+                <button onClick={() => addAllToNotes()}
+                  className="w-full mt-2 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded text-[10px] hover:bg-amber-100 transition-colors">
+                  <BookmarkPlus className="w-3 h-3" />全部添加到笔记
                 </button>
               )}
             </div>
@@ -629,7 +588,10 @@ const PDFViewer: React.FC = () => {
                           className="w-3.5 h-3.5 rounded text-amber-500 cursor-pointer" />
                       </div>
                       <div onClick={() => selectCard(card)}
-                        className={`pl-7 pr-3 py-2 cursor-pointer border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${CARD_COLORS[card.card_type || card.type || 'blue']} ${selectedCard?.id === card.id ? 'ring-1 ring-green-400' : ''} ${notesSelectedIds.has(card.id) ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                        className={`pl-7 pr-3 py-2 cursor-pointer border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors relative ${CARD_COLORS[card.card_type || card.type || 'blue']} ${selectedCard?.id === card.id ? 'ring-1 ring-green-400' : ''} ${notesSelectedIds.has(card.id) ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                        {selectedCard?.id === card.id && (
+                          <Check className="absolute right-1 top-1 w-3 h-3 text-green-500" />
+                        )}
                         <div className="text-xs font-medium truncate">{card.title || '无标题'}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5 line-clamp-2">{card.content || ''}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5">{CARD_TYPE_LABELS[card.card_type || card.type || 'blue']}</div>

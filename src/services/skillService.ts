@@ -373,11 +373,10 @@ class SkillService {
   async getBookSkillStats(): Promise<any> {
     try {
       const response = await fetch(`${API_BASE}/skill/book-skill/stats`);
-      if (!response.ok) throw new Error('获取BookSkill统计失败');
+      if (!response.ok) return null;
       return await response.json();
-    } catch (error) {
-      console.error('获取BookSkill统计失败:', error);
-      throw error;
+    } catch {
+      return null;
     }
   }
 }

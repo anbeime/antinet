@@ -984,22 +984,32 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
                     { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
-                    { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
-                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
-                    { icon: <ListTodo size={20} />, title: '日历任务', desc: 'GTD任务管理与日程规划', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
-                    { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
-                    { icon: <Users size={20} />, title: '协作会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
-                    { icon: <GitBranch size={20} />, title: '知识库图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
                     { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-amber-500 to-yellow-400' },
                     { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-pink-500 to-rose-400' },
-                    { icon: <BookOpen size={20} />, title: '书籍方法论', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
+                    { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
+                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
+                    { icon: <Table size={20} />, title: '发票识别', desc: '发票OCR提取', link: 'tab:excel-analysis', subFeature: 'invoice', gradient: 'from-green-500 to-emerald-400' },
+                    { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
+                    { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
+                    { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
+                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
+                    { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
+                    { icon: <GitBranch size={20} />, title: '知识图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
+                    { icon: <BookOpen size={20} />, title: '书籍技能', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
                   ].map((item, i) => (
                     <motion.div
                       key={i}
                       whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
                       whileTap={{ scale: 0.98 }}
                       className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
-                      onClick={() => item.link.startsWith('tab:') ? setActiveTab(item.link.slice(4) as any) : navigate(item.link)}
+                      onClick={() => {
+                        if ((item as any).subFeature === 'invoice') {
+                          localStorage.setItem('openInvoiceManager', 'true');
+                        } else if ((item as any).subFeature === 'calendar') {
+                          localStorage.setItem('openCalendarFullscreen', 'true');
+                        }
+                        item.link.startsWith('tab:') ? setActiveTab(item.link.slice(4) as any) : navigate(item.link);
+                      }}
                     >
                       <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${item.gradient} flex items-center justify-center text-white flex-shrink-0`}>
                         {item.icon}

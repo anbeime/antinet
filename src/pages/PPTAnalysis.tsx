@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
 import KnowledgeGraph from '@/components/KnowledgeGraph';
-import AppHeader from '@/components/AppHeader';
 
 interface KnowledgeCard {
   id: string;
