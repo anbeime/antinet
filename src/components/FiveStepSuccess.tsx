@@ -141,7 +141,20 @@ const FiveStepSuccess: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [showStepGuide, setShowStepGuide] = useState(true);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 目标会话状态追踪
+  const [goalSession, setGoalSession] = useState<GoalSession>({
+    id: `session-${Date.now()}`,
+    goal: '',
+    currentStep: 0,
+    obstacles: [],
+    diagnosis: '',
+    solutions: [],
+    plan: '',
+    createdAt: new Date()
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -268,6 +281,7 @@ const FiveStepSuccess: React.FC = () => {
   const goToStep = (step: number) => {
     setCurrentStep(step);
     setShowStepGuide(true);
+    setGoalSession(prev => ({ ...prev, currentStep: step }));
     
     const stepInfo = FIVE_STEPS[step];
     const guidanceMessage: Message = {
@@ -289,6 +303,28 @@ ${stepInfo.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
   // 重置对话
   const handleReset = () => {
     initConversation();
+    setGoalSession({
+      id: `session-${Date.now()}`,
+      goal: '',
+      currentStep: 0,
+      obstacles: [],
+      diagnosis: '',
+      solutions: [],
+      plan: '',
+      createdAt: new Date()
+    });
+  };
+
+  // 生成会话摘要
+  const getSessionSummary = (): string => {
+    const parts: string[] = [];
+    if (goalSession.goal) parts.push(`🎯 目标: ${goalSession.goal}`);
+    if (goalSession.obstacles.length > 0) parts.push(`🚧 障碍: ${goalSession.obstacles.join('、')}`);
+    if (goalSession.diagnosis) parts.push(`🔍 诊断: ${goalSession.diagnosis}`);
+    if (goalSession.solutions.length > 0) parts.push(`💡 方案: ${goalSession.solutions.join('、')}`);
+    if (goalSession.plan) parts.push(`🚀 计划: ${goalSession.plan}`);
+    if (parts.length === 0) return '尚未记录任何进展。';
+    return parts.join('\n');
   };
 
   return (
@@ -452,6 +488,43 @@ ${stepInfo.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
         )}
       </AnimatePresence>
 
+      {/* 会话摘要弹窗 */}
+      <AnimatePresence>
+        {showSessionSummary && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setShowSessionSummary(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg p-6"
+              onClick={e => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <CheckCircle2 size={20} className="text-green-500" />
+                会话进展摘要
+              </h3>
+              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 font-sans">
+                {getSessionSummary()}
+              </pre>
+              <div className="flex justify-end mt-4">
+                <button
+                  onClick={() => setShowSessionSummary(false)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                >
+                  关闭
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 输入区域 */}
       <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
         <div className="flex gap-2">
@@ -476,12 +549,21 @@ ${stepInfo.questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
         </div>
         <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
           <span>按 Enter 发送，Shift + Enter 换行</span>
-          <button
-            onClick={() => setShowStepGuide(!showStepGuide)}
-            className="hover:text-blue-500 transition-colors"
-          >
-            {showStepGuide ? '隐藏步骤提示' : '显示步骤提示'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSessionSummary(true)}
+              className="hover:text-green-500 transition-colors"
+              title="查看会话进展摘要"
+            >
+              📋 会话摘要
+            </button>
+            <button
+              onClick={() => setShowStepGuide(!showStepGuide)}
+              className="hover:text-blue-500 transition-colors"
+            >
+              {showStepGuide ? '隐藏步骤提示' : '显示步骤提示'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

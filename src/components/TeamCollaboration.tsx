@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Permission } from '@/contexts/authContext';
 import {
   Users,
   Network,
@@ -795,10 +796,10 @@ const TeamCollaborationEnhanced: React.FC = () => {
           permissions: m.permissions || ['read', 'write']
         })));
 
-        // 同步当前用户权限：匹配到团队成员则使用其权限
+// 同步当前用户权限：匹配到团队成员则使用其权限
         const matchedMember = members.find((m: any) => m.name === userInfo.name);
         if (matchedMember && matchedMember.permissions) {
-          updatePermissions(matchedMember.permissions, matchedMember.role, matchedMember.id);
+          updatePermissions(matchedMember.permissions as Permission[], matchedMember.role, matchedMember.id);
         }
 
         // 从后端加载项目数据
@@ -897,9 +898,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
         await teamMemberService.update(editingMember.id, editingMember, userInfo.name);
         setTeamMembers(teamMembers.map(m => m.id === editingMember.id ? editingMember : m));
         toast.success('成员更新成功');
-        // 如果修改的是自己，同步权限到 AuthContext
+// 如果修改的是自己，同步权限到 AuthContext
         if (editingMember.name === userInfo.name && editingMember.permissions) {
-          updatePermissions(editingMember.permissions, editingMember.role, editingMember.id);
+          updatePermissions(editingMember.permissions as Permission[], editingMember.role, editingMember.id);
         }
       }
       setIsMemberModalOpen(false);

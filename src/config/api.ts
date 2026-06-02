@@ -278,17 +278,17 @@ export const apiRequest = async (
 
 // 语音服务 API
 export const speechService = {
-  getStatus: () => apiRequest<any>(SPEECH_ENDPOINTS.STATUS),
+  getStatus: () => apiRequest(SPEECH_ENDPOINTS.STATUS),
   
-  getVoices: () => apiRequest<any>(SPEECH_ENDPOINTS.TTS_VOICES),
+  getVoices: () => apiRequest(SPEECH_ENDPOINTS.TTS_VOICES),
   
-  getModels: () => apiRequest<any>(SPEECH_ENDPOINTS.STT_MODELS),
+  getModels: () => apiRequest(SPEECH_ENDPOINTS.STT_MODELS),
   
   textToSpeech: (text: string, voice: string = 'zh-CN-XiaoxiaoNeural') =>
-    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK, 'POST', { text, voice }),
+    apiRequest(SPEECH_ENDPOINTS.TTS_SPEAK, 'POST', { text, voice }),
   
   speakCard: (title: string, content: string, voice?: string) =>
-    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK_CARD, 'POST', {
+    apiRequest(SPEECH_ENDPOINTS.TTS_SPEAK_CARD, 'POST', {
       title,
       content,
       voice: voice || 'zh-CN-XiaoxiaoNeural'

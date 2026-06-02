@@ -332,7 +332,7 @@ const GeniePlayground: React.FC = () => {
         {serviceAvailable && currentModelName && (
           <div className="mb-4 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-700 dark:text-green-300 flex items-center space-x-2">
             <Wifi className="w-4 h-4" />
-            <span>当前已加载: <strong>{currentModelName}</strong> ({currentModelType === 'vision' ? '视觉' : '聊天'}模型) — NPU 同时只能运行一个模型</span>
+            <span>当前已加载: <strong>{currentModelName}</strong> ({currentModelType === 'vision' ? '视觉' : '聊天'}模型){loadedModels.length > 1 && <span className="ml-2 text-green-500">· 已加载 {loadedModels.length} 个模型</span>}</span>
           </div>
         )}
 

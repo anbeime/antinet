@@ -160,7 +160,7 @@ const RemotionGenerator: React.FC<RemotionGeneratorProps> = ({ cards, topic, onG
     }
   };
 
-  const handleExport = async (format: 'mp4' | 'webm' | 'gif') => {
+  const handleExport = async (_format: 'mp4' | 'webm' | 'gif') => {
     startRender();
   };
 

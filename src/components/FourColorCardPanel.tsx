@@ -7,8 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Bot, FileText, Network, RefreshCw, Download, Trash2,
-  ChevronDown, ChevronRight, Plus, Check, AlertCircle, Loader,
-  Database, Link2, Eye, Clock
+  ChevronDown, ChevronUp, Check, AlertCircle, Loader,
+  Database, Link2, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CardColors } from '@/types/designSystem';
@@ -66,6 +66,7 @@ const FourColorCardPanel: React.FC = () => {
   const [storageStats, setStorageStats] = useState<any>(null);
   const [exportedCards, setExportedCards] = useState<FourColorCard[]>([]);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
 
   // 颜色映射（基于设计系统 CardColors）
   const colorMap: Record<string, { bg: string; border: string; text: string; label: string; hex: string }> = {
@@ -178,6 +179,14 @@ const FourColorCardPanel: React.FC = () => {
     loadStorageStats();
   }, []);
 
+  const toggleCardExpand = (cardId: string) => {
+    setExpandedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(cardId)) { next.delete(cardId); } else { next.add(cardId); }
+      return next;
+    });
+  };
+
   // 渲染提取面板
   const renderExtractTab = () => (
     <div className="space-y-4">
@@ -247,6 +256,7 @@ const FourColorCardPanel: React.FC = () => {
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {result.cards.map((card, index) => {
               const colors = colorMap[card.card_type] || colorMap.blue;
+              const isExpanded = expandedCardIds.has(card.card_id);
               return (
                 <motion.div
                   key={card.card_id}
@@ -256,18 +266,34 @@ const FourColorCardPanel: React.FC = () => {
                   className={`${colors.bg} border ${colors.border} rounded-lg p-3`}
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium">{colors.label}</span>
-                        <span className="text-xs text-gray-500">{card.card_id}</span>
+                        <span className={`font-medium text-xs px-1.5 py-0.5 rounded ${colors.text} bg-white/60 dark:bg-white/10`}>
+                          {colors.label}
+                        </span>
+                        {card.title && (
+                          <span className="font-semibold text-sm truncate">{card.title}</span>
+                        )}
                         {card.explore_status === '待探索' && (
-                          <span className="text-xs px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded-full">
-                            待探索
+                          <span className="text-xs px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded-full flex items-center gap-1 flex-shrink-0">
+                            <AlertCircle className="w-3 h-3" /> 待探索
                           </span>
                         )}
                       </div>
-                      <p className="text-sm">{card.content}</p>
-                      {card.tags.length > 0 && (
+                      <p className={`text-sm ${isExpanded ? '' : 'line-clamp-2'}`}>{card.content}</p>
+                      {isExpanded && (
+                        <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600 space-y-1 text-xs text-gray-500">
+                          {card.source && <div>来源：{card.source}</div>}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(card.timestamp).toLocaleString()}</span>
+                            {card.confidence > 0 && <span>置信度：{(card.confidence * 100).toFixed(0)}%</span>}
+                            {card.related_cards.length > 0 && (
+                              <span className="flex items-center gap-1"><Link2 className="w-3 h-3" />{card.related_cards.length} 关联</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {!isExpanded && card.tags.length > 0 && (
                         <div className="flex gap-1 mt-2">
                           {card.tags.map(tag => (
                             <span key={tag} className="text-xs px-2 py-0.5 bg-white/50 rounded-full">
@@ -277,6 +303,13 @@ const FourColorCardPanel: React.FC = () => {
                         </div>
                       )}
                     </div>
+                    <button
+                      onClick={() => toggleCardExpand(card.card_id)}
+                      className="flex-shrink-0 ml-2 mt-0.5 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                      title={isExpanded ? '收起' : '展开'}
+                    >
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
                   </div>
                 </motion.div>
               );
@@ -321,16 +354,26 @@ const FourColorCardPanel: React.FC = () => {
       {/* 导出卡片列表 */}
       {exportedCards.length > 0 && (
         <div className="space-y-2 max-h-96 overflow-y-auto">
-          <h3 className="font-semibold">已导出卡片 ({exportedCards.length})</h3>
+          <h3 className="font-semibold flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-500" />
+            已导出卡片 ({exportedCards.length})
+          </h3>
           {exportedCards.map(card => {
             const colors = colorMap[card.card_type] || colorMap.blue;
             return (
               <div key={card.card_id} className={`${colors.bg} border ${colors.border} rounded-lg p-3`}>
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium">{colors.label}</span>
-                  <span className="text-xs text-gray-500">{card.card_id}</span>
+                  <span className={`font-medium text-xs px-1.5 py-0.5 rounded ${colors.text} bg-white/60 dark:bg-white/10`}>
+                    {colors.label}
+                  </span>
+                  {card.title && <span className="font-semibold text-sm">{card.title}</span>}
+                  <span className="text-xs text-gray-400 ml-auto">{card.card_id}</span>
                 </div>
                 <p className="text-sm">{card.content}</p>
+                <div className="flex items-center gap-3 mt-1 text-xs text-gray-400">
+                  {card.timestamp && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(card.timestamp).toLocaleDateString()}</span>}
+                  {card.source && <span>来源：{card.source}</span>}
+                </div>
               </div>
             );
           })}
@@ -438,9 +481,23 @@ const FourColorCardPanel: React.FC = () => {
 
         {/* Content */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border p-6">
-          {activeTab === 'extract' && renderExtractTab()}
-          {activeTab === 'storage' && renderStorageTab()}
-          {activeTab === 'prompt' && renderPromptTab()}
+          <AnimatePresence mode="wait">
+            {activeTab === 'extract' && (
+              <motion.div key="extract" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+                {renderExtractTab()}
+              </motion.div>
+            )}
+            {activeTab === 'storage' && (
+              <motion.div key="storage" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+                {renderStorageTab()}
+              </motion.div>
+            )}
+            {activeTab === 'prompt' && (
+              <motion.div key="prompt" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
+                {renderPromptTab()}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

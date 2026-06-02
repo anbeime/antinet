@@ -167,6 +167,8 @@ export interface GtdTask {
   remind_at?: string;
   created_at?: string;
   updated_at?: string;
+  assigned_to?: number;
+  assigned_to_name?: string;
 }
 
 // ============ 卡片-任务关联 ============

@@ -187,6 +187,43 @@ export const chatService = {
       throw error;
     }
   },
+
+  /**
+   * 语音朗读聊天回复
+   * @param text 需要朗读的文本
+   * @param voice 语音角色（可选，默认中文女声）
+   * @returns 音频元素，可用于暂停/停止控制
+   */
+  speakResponse: async (
+    text: string,
+    voice?: string
+  ): Promise<HTMLAudioElement | null> => {
+    try {
+      // 清理 markdown 语法，只保留纯文本
+      const cleanText = text
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/`[^`]+`/g, (m) => m.replace(/`/g, ''))
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/^#{1,6}\s+/gm, '')
+        .replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1')
+        .replace(/^>\s+/gm, '')
+        .replace(/\|/g, '')
+        .trim();
+
+      if (!cleanText) return null;
+
+      const result = await speechService.textToSpeech(cleanText, voice || 'zh-CN-XiaoxiaoNeural');
+      if (result?.audio_url) {
+        const filename = result.audio_url.split('/').pop() || '';
+        return speechService.playAudio(speechService.getAudioUrl(filename));
+      }
+      return null;
+    } catch (error) {
+      console.error('语音朗读失败:', error);
+      toast.error('语音朗读服务不可用');
+      return null;
+    }
+  },
 };
 
 // ========== 辅助函数 ==========

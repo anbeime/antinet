@@ -352,7 +352,7 @@ const PDFAnalysis: React.FC = () => {
       setSelectedCards(new Set());
       setSavedCardIds(new Set());
       setProcessingStatus({ stage: 'complete', progress: 100, message: '知识卡片生成完成' });
-      toast.success(`成功生成 ${cards.length} 张知识卡片${textResult.mode ? `（${textResult.mode}）` : ''}！`);
+      toast.success(`成功生成 ${cards.length} 张知识卡片（共 ${page_count} 页）${textResult.mode ? `（${textResult.mode}）` : ''}！`);
     } catch (error) {
       console.error('知识提取失败:', error);
       toast.error('知识提取失败，请检查后端服务');
@@ -956,6 +956,7 @@ const PDFAnalysis: React.FC = () => {
             <h3 className="text-xl font-semibold flex items-center">
               {formatIcon}
               <span className="ml-2">PDF 转 {formatLabel}</span>
+              <span className={`ml-2 w-2 h-2 rounded-full bg-${formatColor}-500`}></span>
             </h3>
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${isWord ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'}`}>
               {isWord ? '.docx' : '.xlsx'}
@@ -1644,7 +1645,10 @@ const PDFAnalysis: React.FC = () => {
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg text-center">
-                      <p className="text-2xl font-bold text-blue-600">{analysisResult.pageCount}</p>
+                      <div className="flex items-center justify-center gap-1">
+                        <Hash className="w-4 h-4 text-blue-500" />
+                        <p className="text-2xl font-bold text-blue-600">{analysisResult.pageCount}</p>
+                      </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400">页数</p>
                     </div>
                     <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center">
@@ -1907,201 +1911,11 @@ const PDFAnalysis: React.FC = () => {
                 </div>
               )}
 
-              {/* 转Word/Excel - 转换任务列表 */}
-              {(activeFeature === 'convertWord' || activeFeature === 'convertExcel') && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                  <h3 className="text-xl font-semibold mb-4 flex items-center">
-                    {activeFeature === 'convertWord' ? <FileType className="w-5 h-5 mr-2 text-blue-500" /> : <FileSpreadsheet className="w-5 h-5 mr-2 text-green-500" />}
-                    转换为 {activeFeature === 'convertWord' ? 'Word' : 'Excel'}
-                    <span className={`ml-3 px-2 py-1 rounded-full text-xs font-medium ${activeFeature === 'convertWord' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'}`}>
-                      {activeFeature === 'convertWord' ? '.docx' : '.xlsx'}
-                    </span>
-                  </h3>
-
-                  {conversionTasks.filter(t => t.targetFormat === (activeFeature === 'convertWord' ? 'word' : 'excel')).length > 0 ? (
-                    <div className="space-y-3">
-                      {conversionTasks.filter(t => t.targetFormat === (activeFeature === 'convertWord' ? 'word' : 'excel')).map(task => (
-                        <motion.div
-                          key={task.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center space-x-3">
-                              <File className="w-5 h-5 text-gray-400" />
-                              <span className="text-sm font-medium truncate max-w-[200px]">{task.fileName}</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              {task.status === 'processing' && (
-                                <Loader className="w-4 h-4 animate-spin text-blue-500" />
-                              )}
-                              {task.status === 'completed' && (
-                                <>
-                                  <CheckCircle className="w-4 h-4 text-green-500" />
-                                  <button
-                                    onClick={() => handleDownloadResult(task)}
-                                    className="text-blue-500 hover:text-blue-600 p-1"
-                                    title="下载"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                              {task.status === 'error' && (
-                                <AlertCircle className="w-4 h-4 text-red-500" />
-                              )}
-                              <button
-                                onClick={() => removeConversionTask(task.id)}
-                                className="text-gray-400 hover:text-red-500 p-1"
-                                title="移除"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {task.status === 'processing' && (
-                            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                              <motion.div
-                                className={`h-2 rounded-full ${activeFeature === 'convertWord' ? 'bg-blue-500' : 'bg-green-500'}`}
-                                initial={{ width: 0 }}
-                                animate={{ width: `${task.progress}%` }}
-                              />
-                            </div>
-                          )}
-                          {task.status === 'error' && task.errorMessage && (
-                            <p className="text-xs text-red-500 mt-1">{task.errorMessage}</p>
-                          )}
-                        </motion.div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      {activeFeature === 'convertWord' ? <FileType className="w-16 h-16 mx-auto text-blue-300 mb-4" /> : <FileSpreadsheet className="w-16 h-16 mx-auto text-green-300 mb-4" />}
-                      <p className="text-gray-500 dark:text-gray-400">上传 PDF 文件，自动开始转换为 {activeFeature === 'convertWord' ? 'Word' : 'Excel'}</p>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* 转Word/Excel - 转换面板 */}
+              {(activeFeature === 'convertWord' || activeFeature === 'convertExcel') && renderConversionPanel()}
 
               {/* 转换记录 - 右侧显示记录列表 */}
-              {activeFeature === 'history' && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-semibold flex items-center">
-                      <History className="w-5 h-5 mr-2 text-gray-500" />
-                      转换历史记录
-                    </h3>
-                    {conversionRecords.length > 0 && (
-                      <button
-                        onClick={clearConversionRecords}
-                        className="text-sm text-red-500 hover:text-red-600 flex items-center space-x-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span>清空记录</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {conversionRecords.length > 0 ? (
-                    <div className="space-y-3">
-                      {conversionRecords.map(record => (
-                        <motion.div
-                          key={record.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600"
-                        >
-                          <div className="flex items-center space-x-3">
-                            {record.targetFormat === 'word' ? (
-                              <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                                <FileType className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                              </div>
-                            ) : record.targetFormat === 'pdf' ? (
-                              <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                                <FileDown className="w-5 h-5 text-red-600 dark:text-red-400" />
-                              </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-                                <FileSpreadsheet className="w-5 h-5 text-green-600 dark:text-green-400" />
-                              </div>
-                            )}
-                            <div>
-                              {record.fileDataUrl ? (
-                                <a
-                                  href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                                  title="点击查看"
-                                >
-                                  {record.fileName}
-                                </a>
-                              ) : (
-                                <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
-                              )}
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                转换为 {record.targetFormat === 'word' ? 'Word' : record.targetFormat === 'pdf' ? 'PDF' : 'Excel'} · {record.createdAt.toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right flex items-center gap-1.5">
-                            {record.status === 'completed' ? (
-                              <>
-                                {record.fileDataUrl && (
-                                  <>
-                                    <a
-                                      href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:underline whitespace-nowrap"
-                                      title="在线查看"
-                                    >
-                                      <Eye className="w-3 h-3 inline mr-0.5" />
-                                      查看
-                                    </a>
-                                    <button
-                                      onClick={() => {
-                                        const a = document.createElement('a');
-                                        a.href = record.fileDataUrl!;
-                                        const ext = record.targetFormat === 'word' ? '.docx' : record.targetFormat === 'excel' ? '.xlsx' : '.pdf';
-                                        a.download = record.fileName.replace(/\.\w+$/, ext);
-                                        document.body.appendChild(a);
-                                        a.click();
-                                        document.body.removeChild(a);
-                                      }}
-                                      className="px-2 py-1 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:underline whitespace-nowrap"
-                                      title="下载文件"
-                                    >
-                                      <Download className="w-3 h-3 inline mr-0.5" />
-                                      下载
-                                    </button>
-                                  </>
-                                )}
-                                <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
-                              </>
-                            ) : (
-                              <div>
-                                <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">失败</span>
-                                {record.errorMessage && (
-                                  <p className="text-xs text-red-500 dark:text-red-400 mt-1 max-w-[200px] truncate" title={record.errorMessage}>
-                                    {record.errorMessage}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-8">
-                      <Clock className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-                      <p className="text-gray-500 dark:text-gray-400">暂无转换记录</p>
-                    </div>
-                  )}
-                </div>
-              )}
+              {activeFeature === 'history' && renderHistoryPanel()}
 
               {/* PPT 转 PDF 面板 */}
               {activeFeature === 'pptConvert' && renderPPTConvertPanel()}
@@ -2202,7 +2016,7 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
         try {
           const pdfjs = getPdfJs();
           const doc = pdfjs.getDocument({ data });
-          const realDoc = doc.promise ? await doc.promise : doc;
+          const realDoc = await doc.promise;
           setPdfDoc(realDoc);
           setTotalPages(realDoc.numPages);
           setCurrentPage(1);
@@ -2240,7 +2054,7 @@ const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalF
       try {
         const pdfjs = getPdfJs();
         const doc = pdfjs.getDocument({ data });
-        const realDoc = doc.promise ? await doc.promise : doc;
+        const realDoc = await doc.promise;
         setPdfDoc(realDoc);
         setTotalPages(realDoc.numPages);
         setCurrentPage(1);

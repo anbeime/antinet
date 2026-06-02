@@ -17,7 +17,7 @@ const API_BASE = getApiBaseUrl()
 interface GraphNode {
   id: string;
   name: string;
-  category: string;
+  category: number;
   symbolSize: number;
 }
 
@@ -75,7 +75,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
-  const [apiData, setApiData] = useState<{entities: any[], relations: any[]} | null>(null);
+  const [apiData, setApiData] = useState<{nodes: any[], links: any[], entities?: any[], relations?: any[], categories?: any[]} | null>(null);
   const [graphSource, setGraphSource] = useState<'sample' | 'api'>('sample');
   const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap'>('graph');  // 图谱/列表/思维导图 切换
   const [listSearch, setListSearch] = useState('');
@@ -204,7 +204,6 @@ const KnowledgeGraphView: React.FC = () => {
     const links = displayData.links || [];
     if (!nodes.length) return null;
 
-    const categoryColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
     const hasIncoming = new Set(links.map((l: any) => String(l.target)));
     let roots = nodes.filter((n: any) => !hasIncoming.has(String(n.id)));
     if (!roots.length && nodes.length > 0) roots = [nodes[0]];
@@ -344,9 +343,9 @@ const KnowledgeGraphView: React.FC = () => {
  setGraphSource('api');
  // 不覆盖 cards 列表 —— 保持全部卡片供搜索用
  // 图谱搜索结果通过 apiData + graphSource='api' 单独管理
-    } catch (e) {
+    } catch (e: any) {
       console.error('Load KG failed:', e);
-      alert('搜索失败: ' + e.message);
+      alert('搜索失败: ' + (e?.message || '未知错误'));
     } finally {
       setLoadingAPI(false);
     }
@@ -645,7 +644,7 @@ useEffect(() => {
           scaleLimit: { min: 0.3, max: 3 },
           lineStyle: { color: 'source', curveness: 0.3 },
           emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 }
+          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 } as any
         }]
       };
 
@@ -669,7 +668,7 @@ useEffect(() => {
 
 
       // 节点点击/双击的通用处理逻辑（提取为函数避免重复）
-      const handleNodeClick = async (params: any) => {
+      const handleNodeClick = (params: any) => {
         const isNodeClick =
           params.dataType === 'node' ||
           (params.seriesType === 'graph' && params.data != null);
@@ -679,10 +678,8 @@ useEffect(() => {
         const nodeId = params.data?.id || params.value?.id;
         const nodeName = params.data?.name || params.name || '';
 
-        // 选中节点，左侧面板同步高亮
         setSelectedNode(nodeName);
 
-        // api模式从服务端获取卡片详情，sample模式显示提示
         if (nodeId && graphSource === 'api') {
           openCardDetail(nodeId);
         } else if (graphSource === 'sample') {
@@ -819,17 +816,25 @@ return (
       </button>
 
       {/* Overlay on mobile */}
+      <AnimatePresence>
       {sidebarOpen && (
-        <div className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)} />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)}
+        />
       )}
+      </AnimatePresence>
 
       <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static z-40 md:z-auto w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto transition-transform duration-200 h-full`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold flex items-center space-x-2">
-            <Network className="w-5 h-5" />
-            <span>知识图谱工作台</span>
-          </h2>
-        </div>
+<div className="flex items-center gap-2 mb-3">
+            <Database size={18} className="text-gray-500" />
+            <h2 className="text-lg font-bold flex items-center space-x-2">
+              <Network className="w-5 h-5" />
+              <span>知识图谱</span>
+            </h2>
+          </div>
 
 
 {/* 图谱 / 列表 / 思维导图 切换 */}
@@ -868,8 +873,13 @@ return (
         )}
 
         <div className="space-y-3 mb-4">
-
-          
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="输入主题搜索知识图谱..."
+            className="w-full px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 outline-none focus:ring-2 focus:ring-blue-400"
+          />
           <div className="flex space-x-1">
           <button
             onClick={() => { setGraphSource('sample'); setApiData(null); setCards([]); loadCards(); initChart(); }}
@@ -879,10 +889,10 @@ return (
           </button>
             <button
               onClick={() => { if(topic.trim()) loadKnowledgeGraph(); }}
-              disabled={!topic.trim()}
-              className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+              disabled={!topic.trim() || loadingAPI}
+              className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'} ${loadingAPI ? 'opacity-50 cursor-wait' : ''}`}
             >
-              API数据
+              {loadingAPI ? '加载中...' : 'API数据'}
             </button>
           </div>
         </div>
@@ -930,6 +940,13 @@ return (
             <RefreshCw className="w-4 h-4" />
             <span>刷新布局</span>
           </button>
+          <button
+            onClick={() => { navigator.clipboard?.writeText(window.location.href).then(() => { const el = document.createElement('div'); el.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50'; el.textContent = '链接已复制'; document.body.appendChild(el); setTimeout(() => el.remove(), 2000); }).catch(() => {}); }}
+            className="w-full flex items-center justify-center space-x-2 bg-gray-200 dark:bg-gray-700 py-2 rounded-lg"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>分享</span>
+          </button>
         </div>
 
         <div className="mt-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
@@ -940,7 +957,10 @@ return (
         </div>
 
         <div className="mt-4">
-          <h3 className="text-sm font-medium mb-2 text-gray-500">操作说明</h3>
+          <h3 className="text-sm font-medium mb-2 text-gray-500 flex items-center gap-1">
+            <Move size={14} />
+            操作说明
+          </h3>
           <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
             <li>• 鼠标拖拽移动节点</li>
             <li>• 滚轮缩放视图</li>
@@ -1043,8 +1063,8 @@ return (
                     className="md:hidden p-1 mr-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                     ←
                   </button>
-                  <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
-                    {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t:string=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
+                    {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type as string||'blue'] as string}</span>
                   <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto shrink-0">
@@ -1215,8 +1235,8 @@ return (
                     <option value="red">行动</option>
                   </select>
                 ) : (
-                  <span className={`text-xs px-2 py-1 rounded text-white ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[modalCard.card_type || modalCard.type || 'blue'] || 'bg-blue-500')}`}>
-                    {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[modalCard.card_type || modalCard.type || 'blue'] || '事实'}
+                  <span className={`text-xs px-2 py-1 rounded text-white ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[(modalCard.card_type || modalCard.type || 'blue') as string] || 'bg-blue-500')}`}>
+                    {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[(modalCard.card_type || modalCard.type || 'blue') as string] || '事实'}
                   </span>
                 )}
                 <span className="text-xs text-gray-400">#{modalCard.id}</span>
@@ -1240,8 +1260,9 @@ return (
 
               {/* 地址信息 */}
               {modalCard.address && !isModalEditing && (
-                <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm">
-                  地址: {modalCard.address}
+                <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm flex items-center gap-2">
+                  <ExternalLink size={14} className="text-gray-400 flex-shrink-0" />
+                  <span className="truncate">{modalCard.address}</span>
                 </div>
               )}
             </div>
@@ -1374,6 +1395,7 @@ return (
           <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col ${pdfMaximized ? 'fixed inset-4 md:inset-6' : 'w-full max-w-5xl max-h-[95vh] h-[85vh]'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0 gap-3">
               <div className="flex items-center gap-3 min-w-0">
+                <Settings size={18} className="text-gray-500" />
                 <h3 className="font-semibold truncate">{pdfPreviewTitle}</h3>
                 <select value={exportTheme} onChange={async e => { setExportTheme(e.target.value); if (listMarkdown) { try { const fd = new FormData(); fd.append('file', new Blob([listMarkdown], { type: 'text/markdown' }), 'card.md'); fd.append('title', listSelectedCard?.title || '知识卡片'); fd.append('author', 'Antinet'); fd.append('theme', e.target.value); const r = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (r.ok) { const b = await r.blob(); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(URL.createObjectURL(b)); } } catch (ex) { console.error('切换主题失败:', ex); } } }}
                   className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">

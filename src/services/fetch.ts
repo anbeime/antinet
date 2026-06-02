@@ -3,7 +3,7 @@
 // 提供统一的 HTTP 请求处理、错误处理和响应处理
 
 import { toast } from 'sonner';
-import { processResponse, ResponseCode } from './responseProcessor';
+import { processResponse } from './responseProcessor';
 
 // 动态获取API地址，支持局域网访问
 const getApiBaseUrl = () => {
@@ -54,7 +54,7 @@ interface ResponseError {
 /**
  * 生成请求ID
  */
-function generateRequestId(url: string): number {
+function generateRequestId(_url: string): number {
   return new Date().getTime();
 }
 
@@ -105,7 +105,10 @@ export async function fetchPost<T = any>(
   if (data) {
     if (data instanceof FormData) {
       init.body = data;
-      delete init.headers['Content-Type']; // 让浏览器自动设置 Content-Type
+      // 让浏览器自动设置 Content-Type，移除手动设置的
+      if (init.headers && typeof init.headers === 'object' && !Array.isArray(init.headers)) {
+        delete (init.headers as Record<string, string>)['Content-Type'];
+      }
     } else {
       init.body = JSON.stringify(data);
     }

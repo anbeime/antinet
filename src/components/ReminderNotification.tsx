@@ -22,6 +22,14 @@ const useEdgeTTS = () => {
         currentAudio.current = null;
       }
 
+      // 恢复 AudioContext（解决浏览器自动播放限制）
+      if (!audioContext.current) {
+        audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioContext.current.state === 'suspended') {
+        await audioContext.current.resume();
+      }
+
       // 调用后端 TTS API (使用与增强版聊天相同的 API)
       const response = await fetch(getApiBaseUrl() + '/api/speech/tts/speak-bytes', {
         method: 'POST',
@@ -64,7 +72,7 @@ const useEdgeTTS = () => {
     }
   };
 
-  const speak = async (text: string, voice: string = '晓伊') => {
+  const speak = async (text: string) => {
     if (!isMounted.current) return;
     
     // 将文本添加到队列
@@ -118,8 +126,13 @@ export const useNotifications = () => {
   const { speak } = useEdgeTTS();
   const notifiedIds = useRef<Set<number>>(new Set());
   const isInitialized = useRef(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('voice_enabled') !== 'false';
+    }
+    return true;
+  });
 
-  // 从 localStorage 恢复已通知的 ID
   useEffect(() => {
     if (isInitialized.current) return;
     isInitialized.current = true;
@@ -136,7 +149,6 @@ export const useNotifications = () => {
     }
   }, []);
 
-  // 保存已通知的 ID 到 localStorage
   const saveNotifiedIds = () => {
     try {
       const ids = Array.from(notifiedIds.current);
@@ -152,8 +164,12 @@ export const useNotifications = () => {
     }
   }, []);
 
-  const showNotification = React.useCallback((title: string, body: string, taskId: number, enableVoice: boolean = true) => {
-    // 避免重复通知
+  const toggleVoice = (enabled: boolean) => {
+    setVoiceEnabled(enabled);
+    localStorage.setItem('voice_enabled', String(enabled));
+  };
+
+  const showNotification = React.useCallback((title: string, body: string, taskId: number, enableVoice?: boolean) => {
     if (notifiedIds.current.has(taskId)) {
       console.log('[Reminder] 跳过已通知的任务:', taskId);
       return;
@@ -162,12 +178,11 @@ export const useNotifications = () => {
     saveNotifiedIds();
     console.log('[Reminder] 发送通知:', taskId, title);
 
-    // 语音通知
-    if (enableVoice && 'speechSynthesis' in window) {
+    const shouldSpeak = enableVoice !== undefined ? enableVoice : voiceEnabled;
+    if (shouldSpeak && 'speechSynthesis' in window) {
       speak(body);
     }
 
-    // 系统通知
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(title, {
         body,
@@ -178,20 +193,18 @@ export const useNotifications = () => {
       });
     }
     
-    // Toast 通知
     toast.info(body, {
       description: title,
       duration: 10000,
       id: `reminder-${taskId}`,
     });
-  }, [speak]);
+  }, [speak, voiceEnabled]);
 
-  return { showNotification };
+  return { showNotification, voiceEnabled, toggleVoice };
 };
 
 export const ReminderNotification: React.FC = () => {
-  const { showNotification } = useNotifications();
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const { showNotification, voiceEnabled, toggleVoice } = useNotifications();
 
   useEffect(() => {
     const checkReminders = async () => {
@@ -208,8 +221,7 @@ export const ReminderNotification: React.FC = () => {
               showNotification(
                 '🔔 任务提醒',
                 body,
-                reminder.id,
-                voiceEnabled
+                reminder.id
               );
             });
           }
@@ -219,18 +231,32 @@ export const ReminderNotification: React.FC = () => {
       }
     };
 
-    // 每天检查一次
-    const interval = setInterval(checkReminders, 86400000); // 24 hours in milliseconds
+    const interval = setInterval(checkReminders, 86400000);
     checkReminders();
 
     return () => clearInterval(interval);
-  }, [showNotification, voiceEnabled]);
+  }, [showNotification]);
 
-  return null;
+  return (
+    <div className="fixed bottom-4 right-4 z-50 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-4">
+        <span className="text-sm font-medium">🔔 提醒</span>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={voiceEnabled}
+            onChange={(e) => toggleVoice(e.target.checked)}
+            className="w-4 h-4 text-blue-600 rounded"
+          />
+          <span className="text-sm">语音</span>
+        </label>
+      </div>
+    </div>
+  );
 };
 
 export const NotificationSettings: React.FC = () => {
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const { voiceEnabled, toggleVoice } = useNotifications();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const requestPermission = () => {
@@ -298,7 +324,7 @@ export const NotificationSettings: React.FC = () => {
           <input
             type="checkbox"
             checked={voiceEnabled}
-            onChange={(e) => setVoiceEnabled(e.target.checked)}
+            onChange={(e) => toggleVoice(e.target.checked)}
             className="w-5 h-5 text-blue-600"
           />
           <span>启用语音提醒</span>

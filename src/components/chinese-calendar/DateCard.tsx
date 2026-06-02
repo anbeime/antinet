@@ -123,7 +123,7 @@ class Particle {
   }
 }
 
-export default function DateCard({ solarDate, lunarDate, weekday, month, holidayStatus, daysToHoliday, season }: DateCardProps) {
+export default React.memo(function DateCard({ solarDate, lunarDate, weekday, month, holidayStatus, daysToHoliday, season }: DateCardProps) {
   const [countedDate, setCountedDate] = useState(parseInt(solarDate));
   const [isHovered, setIsHovered] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -268,5 +268,5 @@ export default function DateCard({ solarDate, lunarDate, weekday, month, holiday
       </Card>
     </motion.div>
   );
-}
+});
 

@@ -142,14 +142,25 @@ const MultiModel: React.FC = () => {
                   className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                     currentModel === model.id
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                      : isLoading
+                        ? 'border-gray-300 dark:border-gray-600 opacity-60 cursor-wait'
+                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
                   }`}
-                  onClick={() => currentModel !== model.id && switchModel(model.id)}
+                  onClick={() => {
+                    if (isLoading) {
+                      toast.info('正在切换模型中，请稍候...');
+                      return;
+                    }
+                    currentModel !== model.id && switchModel(model.id);
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="font-medium">{model.name}</span>
+                        {isLoading && currentModel !== model.id && (
+                          <RefreshCw className="w-3 h-3 animate-spin text-blue-500" />
+                        )}
                         {model.recommended && (
                           <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">
                             推荐

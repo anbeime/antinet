@@ -49,6 +49,7 @@ const PixelOfficePhaser: React.FC<PixelOfficePhaserProps> = ({ state, isRunning 
   const frameRef = useRef(0);
   const characterPosRef = useRef({ x: 400, y: 130 });
   const targetPosRef = useRef({ x: 400, y: 130 });
+  const [canvasReady, setCanvasReady] = useState(false);
 
   // 动画循环
   useEffect(() => {
@@ -58,9 +59,23 @@ const PixelOfficePhaser: React.FC<PixelOfficePhaserProps> = ({ state, isRunning 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    setCanvasReady(true);
+
     const animate = () => {
       frameRef.current++;
       
+      if (!isRunning) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#666666';
+        ctx.font = '18px Microsoft YaHei';
+        ctx.textAlign = 'center';
+        ctx.fillText('⏸ 协作已暂停', canvas.width / 2, canvas.height / 2);
+        animationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
       // 清空画布
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
@@ -219,7 +234,7 @@ const PixelOfficePhaser: React.FC<PixelOfficePhaserProps> = ({ state, isRunning 
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [state]);
+  }, [state, isRunning]);
 
   const activeAgent = AGENTS[state.active_agent] || AGENTS.orchestrator;
   const workingCount = Object.values(state.agent_states).filter(s => s !== 'idle' && s !== 'error').length;
@@ -235,8 +250,9 @@ const PixelOfficePhaser: React.FC<PixelOfficePhaserProps> = ({ state, isRunning 
         <div className="flex items-center gap-3">
           <span className="text-gray-400 text-sm">活跃: {workingCount}/8</span>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <Activity className={`w-4 h-4 ${isRunning ? 'text-red-500 animate-pulse' : 'text-gray-600'}`} />
             <span className="text-gray-400 text-sm">{state.progress}%</span>
+            {!canvasReady && <span className="text-gray-600 text-xs">初始化中...</span>}
           </div>
         </div>
       </div>

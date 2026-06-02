@@ -1,12 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   FileText,
   Upload,
   BarChart3,
   CheckCircle,
-  Loader,
   FileDown,
   Layers,
   Scissors,
@@ -15,13 +14,10 @@ import {
   ArrowRight,
   FileType,
   FileSpreadsheet,
-  Download,
-  Eye,
   X,
-  AlertCircle,
   Image,
   FileImage,
-  Compress,
+  Minimize2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
@@ -740,7 +736,11 @@ const PDFAnalysisEnhanced: React.FC = () => {
                   </>
                 ) : activeFeature === 'convert' ? (
                   <>
-                    <RefreshCw className="w-16 h-16 mx-auto text-indigo-500 mb-4" />
+                    <div className="flex items-center justify-center gap-3 mb-4">
+                      <FileType className="w-12 h-12 text-blue-500" />
+                      <ArrowRight className="w-6 h-6 text-gray-400" />
+                      <FileSpreadsheet className="w-12 h-12 text-green-500" />
+                    </div>
                     <h3 className="text-lg font-semibold mb-2">格式转换</h3>
                     <p className="text-gray-600 dark:text-gray-400">转换为 Word、Excel 等格式</p>
                   </>

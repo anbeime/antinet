@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { analyticsService } from '../services/dataService';
 import { collaborationService, collaborationREST } from '../services/collaborationService';
+import { teamMemberService } from '../services/integrationService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import { 

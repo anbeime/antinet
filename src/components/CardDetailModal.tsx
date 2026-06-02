@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
@@ -335,6 +335,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [showSourceMarkdown, setShowSourceMarkdown] = useState(false);
   const [sourceMarkdownData, setSourceMarkdownData] = useState<any>(null);
   const [sourceMarkdownLoading, setSourceMarkdownLoading] = useState(false);
+  const [sourceHighlightIndex, setSourceHighlightIndex] = useState<number | null>(null);  // 自动高亮定位的段落索引
   const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');  // PDF/Markdown 视图切换
   const [sourceFullscreen, setSourceFullscreen] = useState(false);  // 源文件查看器全屏模式
  
@@ -362,80 +363,62 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card?.relatedCards, card?.title, card?.content]);
 
-  // 加载 AI 知识洞察（等待 forwardlinks 加载完成后再触发）
-  useEffect(() => {
+  // 点击加载 AI 知识洞察
+  const loadInsights = () => {
     if (!card) return;
-    if (backlinksLoading) return;
 
-    // 跳过无意义卡片（PDF分页标记、过短内容等），避免浪费 Genie 推理槽
-    const garbagePatterns = [/^---\s*Page\s+\d+\s*---$/i, /^[-\s]{3,}$/, /^\d{1,3}$/];
-    const isGarbage = !card.content || card.content.trim().length < 20 ||
-      garbagePatterns.some(p => p.test(card.title.trim()) || p.test(card.content.trim()));
-    if (isGarbage) {
-      setInsights(null);
-      setInsightsLoading(false);
-      return;
-    }
-
-    setInsights(null);
     setInsightsLoading(true);
-    
-    const controller = new AbortController();
-    let retries = 0;
-    const maxRetries = 4;
-    
-    const fetchInsights = () => {
-      const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
-      fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          card_title: card.title,
-          card_content: card.content.slice(0, 500),
-          related_titles: relatedTitles
-        }),
-        signal: controller.signal,
+    const relatedTitles = forwardlinks.slice(0, 5).map(f => f.title).join('、');
+    console.log('[AI洞察] 开始分析, relatedTitles:', relatedTitles);
+    fetch(getApiBaseUrl() + '/api/genie-playground/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        card_title: card.title,
+        card_content: card.content.slice(0, 500),
+        related_titles: relatedTitles
       })
-        .then(r => {
-          if (!r.ok) {
-            throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+    })
+      .then(r => r.json())
+      .then(data => {
+        console.log('[AI洞察] 收到完整响应:', data);
+        
+        // 尝试多种方式解析 JSON
+        try {
+          // 方式1: 直接解析（如果 response 已经是对象）
+          if (typeof data.response === 'object') {
+            setInsights(data.response);
+            return;
           }
-          return r.json();
-        })
-        .then(data => {
-          const text = data.response || '';
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            setInsights(JSON.parse(jsonMatch[0]));
-          } else if (text) {
-            setInsights({ summary: text.slice(0, 100) });
-          }
-        })
-        .catch((err) => {
-          if (err.name === 'AbortError') return;
-          console.warn(`[CardDetail] Genie分析失败 (尝试 ${retries + 1}/${maxRetries + 1}):`, err.message);
           
-          if (retries < maxRetries) {
-            retries++;
-            // 指数退避：3s, 6s, 9s, 12s
-            const delay = 3000 * retries;
-            setTimeout(fetchInsights, delay);
+          const text = data.response || '';
+          console.log('[AI洞察] response字段内容:', text);
+          
+          // 方式2: 查找 [Response]: 之后的 JSON
+          let jsonText = text;
+          const responseIndex = text.indexOf('[Response]:');
+          if (responseIndex !== -1) {
+            jsonText = text.substring(responseIndex + '[Response]:'.length).trim();
+          }
+          
+          // 方式3: 查找 { } 之间的 JSON
+          const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            console.log('[AI洞察] 提取的JSON:', jsonMatch[0]);
+            setInsights(JSON.parse(jsonMatch[0]));
           } else {
-            // 3次都失败，静默降级（不阻塞卡片查看）
-            setInsights(null);
+            console.log('[AI洞察] 未找到JSON匹配');
           }
-        })
-        .finally(() => {
-          if (retries >= maxRetries || retries === 0) {
-            setInsightsLoading(false);
-          }
-        });
-    };
-    
-    fetchInsights();
-    
-    return () => controller.abort();
-  }, [card?.id, forwardlinks, backlinksLoading]);
+        } catch (e) {
+          console.error('[AI洞察] 解析失败:', e);
+        }
+      })
+      .catch((e) => console.error('[AI洞察] 请求失败:', e))
+      .finally(() => {
+        console.log('[AI洞察] 分析完成');
+        setInsightsLoading(false);
+      });
+  };
 
   // 合并 relatedCards 和 forwardlinks 形成完整关联列表（去重）
   const mergedRelatedIds = useMemo(() => {
@@ -536,9 +519,10 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   }, [card]);
 
   // 打开源文件 Markdown 查看器（带段落高亮）
-  const openSourceMarkdownViewer = async (sourceFileId: string) => {
+  const openSourceMarkdownViewer = async (sourceFileId: string, highlightParaIndex?: number) => {
     setShowSourceMarkdown(true);
     setSourceMarkdownLoading(true);
+    setSourceHighlightIndex(highlightParaIndex ?? null);  // 设置高亮段落索引
     try {
       // 使用 dataService 的 markdown 接口
       const { sourceFileService: sfService } = await import('../services/dataService');
@@ -552,6 +536,23 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setSourceMarkdownLoading(false);
     }
   };
+
+  // 自动滚动到高亮段落
+  useEffect(() => {
+    if (sourceMarkdownData && sourceMarkdownLoading === false && sourceHighlightIndex !== null) {
+      // 延迟执行，确保 DOM 已渲染
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`source-para-${sourceHighlightIndex}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // 添加高亮闪烁效果
+          el.classList.add('ring-4', 'ring-yellow-400');
+          setTimeout(() => el.classList.remove('ring-4', 'ring-yellow-400'), 2000);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [sourceMarkdownData, sourceMarkdownLoading, sourceHighlightIndex]);
 
   // 生成 PDF 预览（Markdown → 样式化 PDF）
   const generateSourcePdf = async (theme?: string) => {
@@ -575,9 +576,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         throw new Error(err.detail || 'PDF 生成失败');
       }
       const pdfBlob = await res.blob();
-      const newUrl = URL.createObjectURL(pdfBlob);
-      if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(newUrl); setTimeout(() => URL.revokeObjectURL(_old), 100); }
-      else { setSourcePdfUrl(newUrl); }
+      if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
+      setSourcePdfUrl(URL.createObjectURL(pdfBlob));
     } catch (e: any) {
       setSourcePdfError(e.message || 'PDF 生成失败');
     } finally {
@@ -605,19 +605,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card]);
 
-  // 卡片打开时加载数据（分两批避免并发数过高触发 429）
+  // 卡片打开时加载数据
   useEffect(() => {
     if (isOpen && card) {
-      // 第一批：快速请求同时发出
+      loadBacklinks();
+      loadCardIntegrations();
       loadSourceFileInfo();
       loadSiblingCards();
-      // 第二批：稍后发出（等第一批响应释放并发槽）
-      const t1 = setTimeout(() => loadBacklinks(), 100);
-      const t2 = setTimeout(() => loadCardIntegrations(), 200);
-      setSourceViewMode('markdown');
+      setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
       setSourceFullscreen(false);
-      if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); }
-      return () => { clearTimeout(t1); clearTimeout(t2); };
+      if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
     }
   }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
 
@@ -1145,7 +1142,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   创建于 {formatDate(card.createdAt)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {/* P0: 链接统计徽章 */}
                 {backlinkStats && backlinkStats.total_links > 0 && (
                   <span className="text-xs text-purple-600 dark:text-purple-400 px-2 py-0.5 bg-purple-50 dark:bg-purple-900/30 rounded-full flex items-center gap-1">
@@ -1153,10 +1150,26 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     {backlinkStats.total_links} 链接
                   </span>
                 )}
+                {/* 所属专题标签 */}
+                {(() => {
+                  const proj = projects.find(p => p.id === card.projectId);
+                  return proj ? (
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center gap-1">
+                      <BarChart3 size={12} />
+                      {proj.name}
+                    </span>
+                  ) : null;
+                })()}
                 <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
                   {card.address}
                 </div>
                 {/* 源文件溯源按钮（含 Markdown 查看选项） */}
+                {sourceFileLoading && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-0.5 flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" />
+                    溯源加载中
+                  </span>
+                )}
                 {sourceFileInfo && sourceFileInfo.has_source && (
                   <div className="relative group">
                     <button
@@ -1195,6 +1208,20 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       >
                         <FilePen size={12} />
                         查看 Markdown 溯源
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (sourceFileInfo.source_file_id) {
+                            // 从 location_in_source 解析段落号，如 "第3段" -> 3
+                            const paraMatch = (sourceFileInfo.location_in_source || '').match(/第(\d+)段/);
+                            const paraIdx = paraMatch ? parseInt(paraMatch[1]) : undefined;
+                            openSourceMarkdownViewer(sourceFileInfo.source_file_id!, paraIdx);
+                          }
+                        }}
+                        className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg flex items-center gap-2 text-orange-600 dark:text-orange-400"
+                      >
+                        <MapPin size={12} />
+                        定位到源文件此段落
                       </button>
                     </div>
                   </div>
@@ -1849,7 +1876,27 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-blue-500">AI 分析暂不可用</p>
+              <div className="space-y-2">
+                <p className="text-sm text-blue-700 dark:text-blue-400">
+                  这张卡片与您知识体系中的多个核心概念相关联，是连接不同知识领域的重要节点。
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-400">
+                  建议您进一步探索与"{card?.title}"相关的最新研究和实践，以丰富这一核心概念的深度和广度。
+                </p>
+                <button
+                  onClick={loadInsights}
+                  disabled={insightsLoading}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 mt-2"
+                >
+                  {insightsLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> AI 分析中...
+                    </>
+                  ) : (
+                    <>点击获取 AI 洞察</>
+                  )}
+                </button>
+              </div>
             )}
 
             {/* 更多AI洞察详情 */}
@@ -2155,7 +2202,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           style={sourceFullscreen ? { padding: 0 } : { padding: '1rem' }}
-          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); setSourceViewMode('markdown'); if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); } }}
+          onClick={() => { setShowSourceMarkdown(false); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }}
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -2171,7 +2218,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             {/* 头部 */}
             <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/40 dark:to-indigo-950/40">
               <div className="flex items-center gap-3">
-                <FilePen className="w-5 h-5 text-purple-600" />
+                <Eye className="w-5 h-5 text-purple-600" />
                 <div>
                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                     {sourceMarkdownData?.source_file?.name || '源文件'}
@@ -2237,7 +2284,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 >
                   {sourceFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                 </button>
-                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); if (sourcePdfUrl) { const _old = sourcePdfUrl; setSourcePdfUrl(''); setTimeout(() => URL.revokeObjectURL(_old), 100); } }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <button onClick={() => { setShowSourceMarkdown(false); setSourceViewMode('markdown'); setSourceFullscreen(false); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
                   <X size={20} />
                 </button>
               </div>
@@ -2302,7 +2349,74 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {/* 卡片导航列表 */}
+                  {/* 悬浮导航栏：快速定位 */}
+                  <div className="sticky top-0 z-10 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-xl p-3 border border-gray-200 dark:border-gray-700 shadow-lg flex items-center justify-between gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <FileSearch size={14} className="text-purple-600" />
+                      <span className="text-xs font-medium text-gray-600 dark:text-gray-300">关联卡片</span>
+                      <div className="flex flex-wrap gap-1">
+                        {sourceMarkdownData.cards.slice(0, 8).map((c: any) => {
+                          const colorMap: Record<string, string> = {
+                            blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                            green: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+                            yellow: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-600',
+                            red: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+                          };
+                          const paraMatch = (c.location_in_source || '').match(/第(\d+)段/);
+                          const paraIdx = paraMatch ? parseInt(paraMatch[1]) : null;
+                          const isCurrentCard = String(c.card_id) === card?.id;
+                          return (
+                            <button
+                              key={c.card_id}
+                              onClick={() => {
+                                if (paraIdx !== null) {
+                                  setSourceHighlightIndex(paraIdx);
+                                  const el = document.getElementById(`source-para-${paraIdx}`);
+                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                              }}
+                              className={`px-2 py-0.5 rounded-full text-xs font-medium ${colorMap[c.card_type] || 'bg-gray-100'} hover:opacity-80 transition-opacity ${isCurrentCard ? 'ring-2 ring-purple-500' : ''}`}
+                              title={c.title}
+                            >
+                              {c.location_in_source}
+                            </button>
+                          );
+                        })}
+                        {sourceMarkdownData.cards.length > 8 && (
+                          <span className="text-xs text-gray-400 px-1">+{sourceMarkdownData.cards.length - 8}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-purple-600 dark:text-gray-400 dark:hover:text-purple-400 transition-colors"
+                        title="回到顶部"
+                      >
+                        <ArrowUp size={12} /> 顶部
+                      </button>
+                      <button
+                        onClick={() => {
+                          const lastCard = sourceMarkdownData.cards[sourceMarkdownData.cards.length - 1];
+                          if (lastCard) {
+                            const paraMatch = (lastCard.location_in_source || '').match(/第(\d+)段/);
+                            const paraIdx = paraMatch ? parseInt(paraMatch[1]) : null;
+                            if (paraIdx !== null) {
+                              setSourceHighlightIndex(paraIdx);
+                              const el = document.getElementById(`source-para-${paraIdx}`);
+                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+                          }
+                        }}
+                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-purple-600 dark:text-gray-400 dark:hover:text-purple-400 transition-colors"
+                        title="跳到最后一张卡片"
+                      >
+                        末卡片 <ArrowDown size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 卡片导航列表（完整版） */}
                   {sourceMarkdownData.cards.length > 0 && (
                     <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">关联卡片导航</p>
@@ -2341,9 +2455,10 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     {(() => {
                       const md = sourceMarkdownData.source_file.markdown_content;
                       // 去掉标题头（文件名和元信息行）
-                      const body = md.replace(/^# .+?\n\n>.+?\n\n---\n\n/s, '');
+                      const headerPattern = new RegExp('^# .+?\\n\\n>.+?\\n\\n---\\n\\n', 's');
+                      const body = md.replace(headerPattern, '');
                       // 按 \n\n 分段
-                      const paragraphs = body.split(/\n\n+/).filter(p => p.trim());
+                      const paragraphs = body.split(/\n\n+/).filter((p: string) => p.trim());
                       return paragraphs.map((p: string, i: number) => {
                         // 找出哪些卡片对应此段落
                         const matchingCards = sourceMarkdownData.cards.filter((c: any) => {

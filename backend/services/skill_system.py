@@ -322,20 +322,23 @@ class DataCleaningSkill(Skill):
             agent_name="密卷房"
         )
     
-    async def execute(self, data: List[Dict]) -> Dict:
+    async def execute(self, data: List) -> Dict:
         """执行数据清洗"""
         cleaned_data = []
         
         for item in data:
-            cleaned_item = item.copy()
-            
-            # 去除空值
-            cleaned_item = {k: v for k, v in cleaned_item.items() if v is not None}
-            
-            # 标准化字符串
-            for k, v in cleaned_item.items():
-                if isinstance(v, str):
-                    cleaned_item[k] = v.strip()
+            if isinstance(item, dict):
+                cleaned_item = item.copy()
+                # 去除空值
+                cleaned_item = {k: v for k, v in cleaned_item.items() if v is not None}
+                # 标准化字符串
+                for k, v in cleaned_item.items():
+                    if isinstance(v, str):
+                        cleaned_item[k] = v.strip()
+            elif isinstance(item, str):
+                cleaned_item = item.strip()
+            else:
+                cleaned_item = item
             
             cleaned_data.append(cleaned_item)
         

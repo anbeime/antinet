@@ -63,7 +63,7 @@ const OfficePreview: React.FC<OfficePreviewProps> = ({
 
   // 获取文件图标和颜色
   const getFileIcon = () => {
-    if (fileType === 'xlsx' || fileType === 'xls') {
+    if (fileType === 'xlsx') {
       return <FileSpreadsheet size={64} className="mb-4 text-green-500" />;
     } else if (fileType === 'pptx' || fileType === 'ppt') {
       return <FileText size={64} className="mb-4 text-orange-500" />;

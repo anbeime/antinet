@@ -221,6 +221,14 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN project_id INTEGER")
             except:
                 pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_context TEXT")
+            except:
+                pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_card_id INTEGER")
+            except:
+                pass
 
             # 9. 专题研究表
             cursor.execute("""
@@ -1201,14 +1209,23 @@ class DatabaseManager:
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
-    def add_gtd_task(self, title: str, description: Optional[str], priority: str, category: str, due_date: Optional[str] = None, source_type: Optional[str] = None, source_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_gtd_tasks_by_source(self, source_type: str, source_id: int) -> List[Dict[str, Any]]:
+        """根据来源类型和ID获取任务"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM gtd_tasks WHERE source_type = ? AND source_id = ? ORDER BY created_at DESC"
+            cursor.execute(query, (source_type, source_id))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def add_gtd_task(self, title: str, description: Optional[str], priority: str, category: str, due_date: Optional[str] = None, source_type: Optional[str] = None, source_id: Optional[int] = None, source_context: Optional[str] = None, source_card_id: Optional[int] = None) -> Dict[str, Any]:
         """添加GTD任务"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (title, description, priority, category, due_date, source_type, source_id))
+                INSERT INTO gtd_tasks (title, description, priority, category, due_date, source_type, source_id, source_context, source_card_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (title, description, priority, category, due_date, source_type, source_id, source_context, source_card_id))
             task_id = cursor.lastrowid
             conn.commit()
             cursor.execute("SELECT * FROM gtd_tasks WHERE id = ?", (task_id,))

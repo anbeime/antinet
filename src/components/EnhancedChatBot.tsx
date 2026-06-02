@@ -11,7 +11,7 @@ import {
   X, Send, Bot, User,
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
-  Trash2, FileType, FileSpreadsheet,
+  Trash2,
   Upload, Mic, MicOff, Volume2, VolumeX,
   Eye, Maximize2, Minimize2,
   Brain, GitBranch, FileSearch, CheckSquare,
@@ -1114,6 +1114,29 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         }
       },
       color: "#dc143c"
+    },
+    {
+      icon: <Table className="w-3 h-3" />,
+      label: "竞品分析",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动竞品分析工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '竞品分析'} (${result.total_steps}步)`);
+              setInput(`竞品分析：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个竞品分析，用表格对比：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#2e8b57"
     },
     {
       icon: <AlertTriangle className="w-3 h-3" />,

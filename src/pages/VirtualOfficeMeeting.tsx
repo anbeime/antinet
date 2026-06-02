@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
@@ -19,7 +20,6 @@ import {
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { gtdTaskService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import MeetingCardPanel from '@/components/MeetingCardPanel';
 import MeetingCardSaveModal from '@/components/MeetingCardSaveModal';
@@ -27,14 +27,15 @@ import type { MeetingCard } from '@/types/card';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
-  orchestrator: { name: '锦衣卫', cnName: '陆绎', color: '#e74c3c', x: 400, y: 100 },
-  mijuanfang: { name: '密卷房', cnName: '档案官', color: '#3498db', x: 120, y: 160 },
-  tongzhengsi: { name: '通政司', cnName: '通讯官', color: '#2ecc71', x: 680, y: 160 },
-  jianchayuan: { name: '监察院', cnName: '监察官', color: '#f39c12', x: 120, y: 290 },
-  xingyusi: { name: '刑狱司', cnName: '风险官', color: '#9b59b6', x: 680, y: 290 },
-  canmousi: { name: '参谋司', cnName: '参谋官', color: '#1abc9c', x: 250, y: 410 },
-  taishige: { name: '太史阁', cnName: '记忆官', color: '#e67e22', x: 550, y: 410 },
-  yichuansi: { name: '驿传司', cnName: '传令官', color: '#34495e', x: 400, y: 250 }
+  // 与后端 AGENT_MAPPING 保持一致
+  taishige: { name: '太史阁', cnName: '历史记录与反思官', color: '#3b82f6', x: 120, y: 160 },
+  jinjiyu: { name: '锦衣卫', cnName: '安全与情报收集官', color: '#ef4444', x: 680, y: 160 },
+  tongzhengsi: { name: '通政司', cnName: '信息与通讯中枢', color: '#22c55e', x: 120, y: 290 },
+  jianchayuan: { name: '监察院', cnName: '监督与审计官', color: '#a855f7', x: 680, y: 290 },
+  mijuanfang: { name: '密卷房', cnName: '知识库与档案管理员', color: '#6366f1', x: 250, y: 410 },
+  chengxiangfu: { name: '丞相府', cnName: '战略规划与决策官', color: '#eab308', x: 550, y: 410 },
+  junjichu: { name: '军机处', cnName: '执行与协调官', color: '#f97316', x: 400, y: 250 },
+  zhihuishi: { name: '指挥使', cnName: '总指挥与裁决官', color: '#14b8a6', x: 400, y: 100 }
 };
 
 // Backend Agent Mapping
@@ -61,21 +62,26 @@ const PIXEL_STATE_NAMES: Record<string, string> = {
 
 // 像素办公室 AGENT key 到会议 AGENT id 的映射
 const PIXEL_TO_MEETING: Record<string, string> = {
-  orchestrator: 'jinjiyu', mijuanfang: 'mijuanfang', tongzhengsi: 'tongzhengsi',
-  jianchayuan: 'jianchayuan', xingyusi: 'chengxiangfu', canmousi: 'junjichu',
-  taishige: 'taishige', yichuansi: 'zhihuishi'
+  taishige: 'taishige',
+  jinjiyu: 'jinjiyu',
+  tongzhengsi: 'tongzhengsi',
+  jianchayuan: 'jianchayuan',
+  mijuanfang: 'mijuanfang',
+  chengxiangfu: 'chengxiangfu',
+  junjichu: 'junjichu',
+  zhihuishi: 'zhihuishi'
 };
 
-// 会议流程步骤
+// 会议流程步骤 - 与后端 AGENT_MAPPING 一致
 const MEETING_STEPS = [
-  { agent: 'orchestrator', state: 'executing', detail: '总指挥使正在分解任务...' },
   { agent: 'mijuanfang', state: 'researching', detail: '档案官正在解析用户素材...' },
   { agent: 'tongzhengsi', state: 'writing', detail: '通讯官正在提取核心事实...' },
   { agent: 'jianchayuan', state: 'researching', detail: '监察官正在分析原因逻辑...' },
-  { agent: 'xingyusi', state: 'researching', detail: '风险官正在检测潜在风险...' },
-  { agent: 'canmousi', state: 'writing', detail: '参谋官正在生成行动建议...' },
+  { agent: 'jinjiyu', state: 'researching', detail: '风险官正在检测潜在风险...' },
+  { agent: 'chengxiangfu', state: 'writing', detail: '参谋官正在生成行动建议...' },
+  { agent: 'junjichu', state: 'executing', detail: '执行官正在分解任务...' },
   { agent: 'taishige', state: 'syncing', detail: '记忆官正在存储知识成果...' },
-  { agent: 'yichuansi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
+  { agent: 'zhihuishi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
 ];
 
  // 8-Agent 角色定义
@@ -100,7 +106,7 @@ const CARD_TYPE_MAP = {
 
 // 降级模拟讨论轮次数据（SSE 不可用时使用）
 // 注意：模拟不伪造 Agent 发言和卡片。真实数据由 SSE agent_speech / agent_cards 推送。
-const generateMockDiscussion = (topic: string, rounds: number) => {
+const generateMockDiscussion = (_topic: string, rounds: number) => {
   return Array.from({ length: rounds }, (_, i) => ({
     round: i + 1,
     title: `第${i + 1}轮讨论`,
@@ -316,10 +322,12 @@ const PixelOfficeCanvas: React.FC<{
 
 // ==================== 主页面组件 ====================
 const VirtualOfficeMeeting: React.FC = () => {
+  const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
   const [rounds, setRounds] = useState(3);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);  // 当前会议的 meeting_id (TEXT)
   const [meetingMode, setMeetingMode] = useState('free');
   const [meetingModes, setMeetingModes] = useState<{id: string; name: string; description: string}[]>([]);
   const [meetingImage, setMeetingImage] = useState<string | null>(null);  // Base64 图片数据
@@ -330,7 +338,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'new' | 'history' | 'tasks'>('new');
   const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
-  const [agentList, setAgentList] = useState<any[]>([]);
+  const [agentList, setAgentList] = useState<any[]>(() =>
+    Object.entries(PIXEL_AGENTS).map(([id, a]) => ({ id, ...a, state: 'idle' }))
+  );
   const [taskList, setTaskList] = useState<any[]>([]);
   const [hybridMode, setHybridMode] = useState(true);
   const [meetingCards, setMeetingCards] = useState<MeetingCard[]>([]);  // 会议中积累的知识卡片
@@ -443,7 +453,7 @@ const VirtualOfficeMeeting: React.FC = () => {
 
   // 像素办公室状态
   const [pixelState, setPixelState] = useState({
-    activeAgent: 'orchestrator',
+    activeAgent: 'zhihuishi',
     agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {} as Record<string, string>),
     detail: '八府巡按，各司其职',
     progress: 0
@@ -592,7 +602,7 @@ useEffect(() => {
 
     // 初始化像素状态
     setPixelState({
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
       detail: '正在连接八府巡按...',
       progress: 0
@@ -602,6 +612,8 @@ useEffect(() => {
     // 尝试 SSE 流式接口
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let allRounds: any[] = [];
+    let currentRound: any = null;
 
     try {
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
@@ -618,8 +630,6 @@ useEffect(() => {
 
       const decoder = new TextDecoder();
       let buffer = '';
-      const allRounds: any[] = [];
-      let currentRound: any = null;
       let totalAgents = Object.keys(PIXEL_AGENTS).length;
       let speechCount = 0;
       let totalExpected = rounds * totalAgents;
@@ -655,7 +665,7 @@ useEffect(() => {
               break;
 
             case 'agent_speaking': {
-              const pixelKey = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'orchestrator';
+              const pixelKey = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'zhihuishi';
               setPixelState(prev => ({
                 ...prev,
                 activeAgent: pixelKey,
@@ -674,7 +684,7 @@ useEffect(() => {
             case 'agent_speech': {
               speechCount++;
               const progress = Math.round((speechCount / totalExpected) * 90) + 5;
-              const pixelKey2 = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'orchestrator';
+              const pixelKey2 = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'zhihuishi';
 
               // 该 Agent 发言完毕，切换为 syncing
               setPixelState(prev => ({
@@ -779,17 +789,22 @@ useEffect(() => {
             case 'meeting_end':
               // 会议结束 - 所有 Agent 归位
               setPixelState({
-                activeAgent: 'orchestrator',
+                activeAgent: 'zhihuishi',
                 agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
                 detail: '八府巡按会议圆满完成！',
                 progress: 100
               });
-              setMessengerInfo({ agentName: '驿传司', agentTitle: '传令官', message: '八府巡按会议已圆满完成！', progress: 100 });
+              setMessengerInfo({ agentName: '指挥使', agentTitle: '总指挥与裁决官', message: '八府巡按会议已圆满完成！', progress: 100 });
 
               // 如果最后一轮还没 push
               if (currentRound) {
                 allRounds.push(currentRound);
                 currentRound = null;
+              }
+
+              // 保存会议ID用于后续跳转到详情页
+              if (evt.data.meeting_id) {
+                setCurrentMeetingId(evt.data.meeting_id);
               }
 
               setMeetingResult(allRounds);
@@ -907,7 +922,7 @@ useEffect(() => {
     setIsLoading(false);
     setPixelState(prev => ({
       ...prev,
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       detail: '会议已停止',
       progress: 0,
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {})
@@ -958,7 +973,7 @@ useEffect(() => {
     setIsLoading(false);
     setLiveDiscussions([]);
     setPixelState({
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
       detail: '八府巡按，各司其职',
       progress: 0
@@ -972,46 +987,20 @@ useEffect(() => {
     toast.info('会议已重置');
   };
 
-  // 保存到任务归档
-  const saveToArchive = async () => {
-    if (!meetingResult || meetingResult.length === 0) return;
+  // 结束会议并保存到历史记录（不再自动创建任务，用户在详情页手动提取）
+  const saveMeetingRecord = async () => {
+    if (!currentMeetingId) {
+      toast.error('会议尚未保存，请稍后再试');
+      return;
+    }
     
-    const summary = meetingResult[meetingResult.length - 1]?.summary || '';
-    const decision = meetingResult[meetingResult.length - 1]?.decision || '';
-    const actionItems = meetingResult[meetingResult.length - 1]?.actionItems || [];
-    
-    const taskContent = `【会议主题】${topic}
-【背景】${context || '无'}
-【讨论轮数】${meetingResult.length}轮
-
-【总结】
-${summary}
-
-【决策】
-${decision}
-
-【行动项】
-${actionItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}
-
-【详细讨论】
-${(meetingResult || []).slice(0, -1).map((round: any, i: number) => 
-  `--- 第${i + 1}轮 (${round.theme}) ---\n${round.speeches?.map((s: any) => `【${s.agent_name}】${s.speech}`).join('\n')}`
-).join('\n\n')}`;
-
     try {
-      await gtdTaskService.add({
-        title: `会议纪要: ${topic}`,
-        description: taskContent,
-        category: 'archive',
-        priority: 'medium'
-      });
-      // 保存归档成功后，清除聊天区的会议卡片和缓存
-      setMeetingCards([]);
-      sessionStorage.removeItem(MEETING_STORAGE_KEY);
-      toast.success('会议记录已保存到任务归档');
+      // 跳转到会议详情页（使用 TEXT meeting_id）
+      navigate(`/meeting/${encodeURIComponent(currentMeetingId)}`);
+      toast.success('会议记录已保存，进入详情页查看');
     } catch (error) {
-      console.error('保存归档失败:', error);
-      toast.error('保存归档失败，请重试');
+      console.error('跳转失败:', error);
+      toast.error('保存失败，请重试');
     }
   };
 
@@ -1025,6 +1014,14 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
 
   // 计算活跃数量
   const workingCount = Object.values(pixelState.agentStates).filter(s => s !== 'idle' && s !== 'error').length;
+
+  // 同步 agentList 状态与 pixelState
+  useEffect(() => {
+    setAgentList(prev => prev.map(a => ({
+      ...a,
+      state: pixelState.agentStates[a.id] || 'idle'
+    })));
+  }, [pixelState.agentStates]);
 
   // 实时讨论自动滚动到底部
   useEffect(() => {
@@ -1616,6 +1613,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   <div className="flex items-center gap-2">
                     <Monitor className="w-4 h-4 text-gray-400" />
                     <span className="text-white font-medium text-sm">像素办公室</span>
+                    <span className="text-xs text-gray-500 ml-2">{agentList.length} 司</span>
                   </div>
               <div className="flex items-center gap-3">
                 <span className="text-white text-xs">进度: {pixelState.progress}%</span>
@@ -1647,7 +1645,16 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   <div className="text-gray-400 text-xs mt-0.5">{messengerInfo.message}</div>
                 </div>
               </div>
-              <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
+              <div className="flex items-center gap-2">
+                <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
+                <button
+                  onClick={() => setShowMessageModal(true)}
+                  className="text-xs px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 transition-colors"
+                  title="发送密信给 Agent"
+                >
+                  密信
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1798,12 +1805,12 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={saveToArchive}
+                      onClick={saveMeetingRecord}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      保存归档
+                      结束并查看记录
                     </button>
                     <button
                       onClick={() => setSimplifiedView(!simplifiedView)}
@@ -2084,6 +2091,78 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           );
         }}
       />
+
+      {/* 密信模态框 */}
+      {showMessageModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowMessageModal(false)}>
+          <div className="rounded-xl border border-gray-700/50 w-full max-w-md p-5" style={{ background: '#1a2235' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-medium flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-green-400" />
+                发送密信
+              </h3>
+              <button onClick={() => setShowMessageModal(false)} className="text-gray-500 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">发送方</label>
+                <select
+                  value={messageForm.from_agent}
+                  onChange={e => setMessageForm(prev => ({ ...prev, from_agent: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50"
+                  style={{ background: '#0f1729' }}
+                >
+                  <option value="">选择发送 Agent</option>
+                  {agentList.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">接收方</label>
+                <select
+                  value={messageForm.to_agent}
+                  onChange={e => setMessageForm(prev => ({ ...prev, to_agent: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50"
+                  style={{ background: '#0f1729' }}
+                >
+                  <option value="">选择接收 Agent</option>
+                  {agentList.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">消息内容</label>
+                <textarea
+                  value={messageForm.message}
+                  onChange={e => setMessageForm(prev => ({ ...prev, message: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50 resize-none"
+                  style={{ background: '#0f1729' }}
+                  rows={3}
+                  placeholder="输入要发送的消息..."
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (messageForm.from_agent && messageForm.to_agent && messageForm.message) {
+                    toast.success(`密信已从 ${messageForm.from_agent} 发送至 ${messageForm.to_agent}`);
+                    setMessageForm({ from_agent: '', to_agent: '', message: '' });
+                    setShowMessageModal(false);
+                  } else {
+                    toast.error('请完整填写发件方、收件方和消息内容');
+                  }
+                }}
+                className="w-full py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm transition-colors"
+              >
+                发送密信
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -90,6 +90,7 @@ interface ProjectCard {
 interface ResearchProjectManagerProps {
   onSelectProject?: (project: ResearchProject) => void;
   selectedProjectId?: number | null;
+  showDeepLinkButton?: boolean;
 }
 
 interface AllCardsResponse {
@@ -162,10 +163,11 @@ const formatDate = (dateStr?: string) => {
 };
 
 // ========== 专题卡片详情弹窗组件（全屏级别）- 用于ProjectDetailPanel内部 ==========
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const ResearchCardDetailModal: React.FC<{
   card: ProjectCard;
   onClose: () => void;
-  onConvertToTask: (id: number) => void;
+  onConvertToTask: (id: number, onComplete?: () => void) => void;
   onUpdate?: (cardId: number, updates: { title: string; content: string; card_type?: string; related_cards?: number[] }) => void;
   projectId?: number;
   allProjects?: ResearchProject[];
@@ -365,28 +367,9 @@ const ResearchCardDetailModal: React.FC<{
   };
 
   const handleSaveCardEdit = async () => {
-    try {
-      const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards/${card.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editTitle,
-          content: editContent,
-          related_cards: relatedCards
-        })
-      });
-      if (response.ok) {
-        toast.success('保存成功');
-        onSaveSuccess?.();
-        onUpdate?.(card.id, { title: editTitle, content: editContent, related_cards: relatedCards });
-        onClose(); // 保存成功后关闭弹窗
-      } else {
-        const data = await response.json();
-        toast.error(data.message || '保存失败');
-      }
-    } catch (err) {
-      toast.error('保存失败');
-    }
+    await handleSaveEdit();
+    onSaveSuccess?.();
+    onClose();
   };
 
   const renderContent = (content: string) => {
@@ -724,7 +707,7 @@ const ResearchCardDetailModal: React.FC<{
                   </button>
                   {card.card_type === 'red' && (
                     <button
-                      onClick={() => { onConvertToTask(card.id); onClose(); }}
+                      onClick={() => { onConvertToTask(card.id, onClose); }}
                       className="flex items-center px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
                     >
                       <ArrowRight className="w-4 h-4 mr-1.5" />
@@ -778,6 +761,7 @@ const ProjectDetailPanel: React.FC<{
   onConvertCardToTask: (cardId: number) => void;
   allProjects?: ResearchProject[];
 }> = ({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
+  const allProjectsList = allProjects;
   const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'network'>('cards');
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
   const [tasks, setTasks] = useState<GtdTask[]>([]);
@@ -787,6 +771,7 @@ const ProjectDetailPanel: React.FC<{
   const [showCardDetail, setShowCardDetail] = useState(false);
   const [taskRefreshTrigger, setTaskRefreshTrigger] = useState(0);  // 触发 CardDetailModal 刷新任务列表
   const [showCreateCard, setShowCreateCard] = useState(false);
+  const [showMoveCard, setShowMoveCard] = useState(false);
   // 任务编辑弹窗
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
@@ -1000,7 +985,7 @@ const ProjectDetailPanel: React.FC<{
       
       if (response.ok) {
         toast.success('卡片已删除');
-        loadData();
+        refreshCards();
       } else {
         const data = await response.json();
         toast.error(data.detail || '删除失败');
@@ -1010,7 +995,7 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
-  const handleConvertToTask = async (cardId: number) => {
+  const handleConvertToTask = async (cardId: number, onComplete?: () => void) => {
     try {
       // 1. 先将卡片转换为任务
       const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
@@ -1028,9 +1013,10 @@ const ProjectDetailPanel: React.FC<{
         }
         
         toast.success('已转换为任务并关联到专题');
-        loadData();
+        await loadData();  // 等待数据刷新完成
         onConvertCardToTask(cardId);
         setTaskRefreshTrigger(prev => prev + 1);
+        onComplete?.();  // 通知完成，可用于关闭弹窗
       } else {
         const errData = await response.json().catch(() => ({}));
         toast.error(errData.detail || '转换失败，请确认后端已重启');
@@ -1056,7 +1042,7 @@ const ProjectDetailPanel: React.FC<{
       });
       if (res.ok) {
         toast.success('任务已更新');
-        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, title: editTaskTitle, description: editTaskDesc, priority: editTaskPriority, category: editTaskCategory, due_date: editTaskDueDate } : t));
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, title: editTaskTitle, description: editTaskDesc, priority: editTaskPriority, category: editTaskCategory, due_date: editTaskDueDate } as GtdTask : t));
         setEditingTask(null);
         loadProjectStats();
       } else {
@@ -1114,18 +1100,53 @@ const ProjectDetailPanel: React.FC<{
                   loading ? '生成中...' : '导出PDF'
                 )}
               </PDFDownloadLink>
-              {/*<button*/}
-              {/*  onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}*/}
-              {/*  className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${*/}
-              {/*    showKnowledgeGraph*/}
-              {/*      ? 'text-white bg-indigo-600 hover:bg-indigo-700'*/}
-              {/*      : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'*/}
-              {/*  }`}*/}
-              {/*  title="查看专题知识网络"*/}
-              {/*>*/}
-              {/*  <Network className="w-4 h-4 mr-1" />*/}
-              {/*  {showKnowledgeGraph ? '关闭网络' : '知识网络'}*/}
-              {/*</button>*/}
+              <button
+                onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}
+                className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
+                  showKnowledgeGraph
+                    ? 'text-white bg-indigo-600 hover:bg-indigo-700'
+                    : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                }`}
+                title="查看专题知识网络"
+              >
+                <Eye className="w-4 h-4 mr-1" />
+                {showKnowledgeGraph ? '关闭网络' : '知识网络'}
+              </button>
+              <button
+                onClick={handleExportPPT}
+                disabled={exportingPPT}
+                className="flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                title="导出为PPT"
+              >
+                {exportingPPT ? '生成中...' : '导出PPT'}
+              </button>
+              {pptResult && (
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-1 rounded ${pptResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {pptResult.message}
+                  </span>
+                  {pptResult.success && pptResult.filename && (
+                    <button
+                      onClick={() => handleDownloadPPT(pptResult.filename)}
+                      className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                      title="下载PPT文件"
+                    >
+                      下载
+                    </button>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  const shareUrl = `${window.location.origin}/research?project=${project.id}`;
+                  navigator.clipboard?.writeText(shareUrl);
+                  toast.success('分享链接已复制');
+                }}
+                className="flex items-center px-2 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
+                title="分享专题"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
               <button
                 onClick={onClose}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -1550,56 +1571,34 @@ const ProjectDetailPanel: React.FC<{
           </div>
         </div>
 
-        {/* ===== 卡片详情弹窗 - 使用全局CardDetailModal ===== */}
-        <CardDetailModal
-          isOpen={showCardDetail && selectedCard !== null}
-          onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
-          card={selectedCard ? convertProjectCardToKnowledgeCard(selectedCard) : null}
-          allCards={cards.map(convertProjectCardToKnowledgeCard)}
-          onDelete={async (cardId: string) => {
-            try {
-              await fetch(`${RESEARCH_API_BASE}/cards/${cardId}`, { method: 'DELETE' });
-              setCards(prev => prev.filter(c => String(c.id) !== cardId));
-              setShowCardDetail(false);
-              setSelectedCard(null);
-              toast.success('卡片已删除');
-            } catch {
-              toast.error('删除失败');
-            }
-          }}
-          onRelatedCardClick={(cardId: string) => {
-            const targetCard = cards.find(c => String(c.id) === cardId);
-            if (targetCard) {
-              setSelectedCard(targetCard);
-            }
-          }}
-          onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
-            try {
-              const response = await fetch(`${RESEARCH_API_BASE}/cards/${updatedCard.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  title: updatedCard.title,
-                  content: updatedCard.content,
-                  type: updatedCard.color,
-                  related_cards: updatedCard.relatedCards.map(Number)
-                })
-              });
-              if (response.ok) {
-                const updated = convertKnowledgeCardToProjectCard(updatedCard);
-                setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
-                toast.success('卡片已更新');
+        {/* ===== 卡片详情弹窗 - 使用专题级ResearchCardDetailModal ===== */}
+        {showCardDetail && selectedCard && (
+          <ResearchCardDetailModal
+            card={selectedCard}
+            onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
+            onConvertToTask={handleConvertToTask}
+            onUpdate={async (cardId, updates) => {
+              if (updates) {
+                try {
+                  const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${cardId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                  });
+                  if (!res.ok) throw new Error('更新失败');
+                } catch { toast.error('卡片更新失败'); }
               }
-            } catch {
-              toast.error('更新失败');
-            }
-          }}
-          onCreateRecommendedCard={(title: string, reason: string) => {
-            // 可以在这里实现推荐卡片创建的逻辑
-            toast.info(`推荐创建: ${title}`);
-          }}
-          refreshTrigger={taskRefreshTrigger}
-        />
+              await refreshCards();
+            }}
+            projectId={project.id}
+            allProjects={allProjectsList}
+            onRelatedCardClick={(cardId) => {
+              const targetCard = cards.find(c => c.id === cardId);
+              if (targetCard) setSelectedCard(targetCard);
+            }}
+            onSaveSuccess={() => refreshCards()}
+          />
+        )}
 
         {/* ===== 创建卡片弹窗 - 复用首页 CreateCardModal ===== */}
         <CreateCardModal
@@ -1607,10 +1606,47 @@ const ProjectDetailPanel: React.FC<{
           onClose={() => setShowCreateCard(false)}
           onSave={handleCreateCardSave}
           initialColor="blue"
-          existingCards={cards.map(c => ({ id: String(c.id), title: c.title }))}
+          existingCards={cards.map(c => ({ id: String(c.id), title: c.title, content: c.content }))}
           projectId={project.id}
           projectName={project.name}
         />
+
+        {/* 移动到其他专题弹窗 */}
+        {showMoveCard && selectedCard && allProjectsList.length > 0 && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50" onClick={() => setShowMoveCard(false)}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold mb-4">移动卡片到其他专题</h3>
+              <p className="text-sm text-gray-500 mb-3">
+                将《{selectedCard.title}》移动到：
+              </p>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {allProjectsList.filter(p => p.id !== project.id).map(p => (
+                  <button
+                    key={p.id}
+                    onClick={async () => {
+                      try {
+                        await fetch(`${RESEARCH_API_BASE}/cards/${selectedCard.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ project_id: p.id })
+                        });
+                        toast.success(`已移动到《${p.name}》`);
+                        setShowMoveCard(false);
+                        refreshCards();
+                      } catch {
+                        toast.error('移动失败');
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                  >
+                    <span>{p.icon || '📚'}</span>
+                    <span>{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 任务编辑弹窗 */}
         {editingTask && (
@@ -1740,7 +1776,8 @@ const ProjectPDF: React.FC<ProjectPDFProps> = ({ cards, projectName }) => (
 // ========== 主组件 ==========
 const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   onSelectProject,
-  selectedProjectId
+  selectedProjectId,
+  showDeepLinkButton = false
 }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ResearchProject[]>([]);
@@ -1854,12 +1891,16 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
         <div className="space-y-3">
           {projects.map((project) => {
             const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
+            const isSelected = selectedProjectId === project.id;
             return (
               <motion.div
                 key={project.id}
                 whileHover={{ y: -1 }}
-                className={`rounded-xl border-2 ${colorOpt.border} bg-white dark:bg-gray-800 hover:shadow-md transition-all cursor-pointer overflow-hidden`}
-                onClick={() => setOpenProject(project)}
+                className={`rounded-xl border-2 ${isSelected ? `${colorOpt.border} ring-2 ring-blue-400` : colorOpt.border} bg-white dark:bg-gray-800 hover:shadow-md transition-all cursor-pointer overflow-hidden`}
+                onClick={() => {
+                  onSelectProject?.(project);
+                  setOpenProject(project);
+                }}
               >
                 <div className={`flex items-center justify-between p-4 ${colorOpt.bg} dark:bg-gray-800`}>
                   <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -1875,6 +1916,15 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
                       )}
                     </div>
                   </div>
+                  {showDeepLinkButton && project.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/research?project=${project.id}`); }}
+                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      title="深链接"
+                    >
+                      <ExternalLink className="w-4 h-4 text-gray-500" />
+                    </button>
+                  )}
                   <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditingProject(project); setShowEditModal(true); }}

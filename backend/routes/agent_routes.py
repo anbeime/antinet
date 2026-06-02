@@ -157,7 +157,7 @@ class AnalysisReport(BaseModel):
     summary: str
     cards: List[FourColorCard]
     agent_results: Dict[str, Any]
-    performance: Dict[str, float]
+    performance: Dict[str, Any]
     created_at: str
 
 

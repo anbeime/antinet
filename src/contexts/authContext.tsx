@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useCallback, useContext } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-type Permission = 'admin' | 'edit' | 'comment' | 'view' | 'read' | 'write';
+export type Permission = 'admin' | 'edit' | 'comment' | 'view' | 'read' | 'write';
 
 interface UserInfo {
   id: string;

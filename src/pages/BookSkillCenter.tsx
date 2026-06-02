@@ -15,6 +15,7 @@ import {
 import { skillService } from '@/services/skillService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
+import AppHeader from '@/components/AppHeader';
 
 // ============ Types ============
 interface BookMethodology {
@@ -33,15 +34,8 @@ interface BookMethodology {
   command_name: string;
 }
 
-interface BookSkillData {
-  book_name: string;
-  book_author: string;
-  book_id: string;
-  methodology_count: number;
-  extracted_at: string;
-  methodologies: BookMethodology[];
-  total_cards_generated: Record<string, number>;
-}
+// ============ Tab Config ============
+type TabType = 'extract' | 'query' | 'case' | 'bookshelf';
 
 interface CaseStudy {
   case_id: string;
@@ -53,7 +47,6 @@ interface CaseStudy {
   created_at: string;
 }
 
-// ============ Color Theme ============
 const FOUR_COLORS = {
   yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-200 dark:border-yellow-700', text: 'text-yellow-700 dark:text-yellow-300', icon: Lightbulb, label: '方法论' },
   blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-700', text: 'text-blue-700 dark:text-blue-300', icon: BookMarked, label: '案例' },
@@ -61,13 +54,10 @@ const FOUR_COLORS = {
   red: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-700', text: 'text-red-700 dark:text-red-300', icon: Zap, label: '行动' },
 };
 
-// ============ Tab Config ============
-type TabType = 'extract' | 'query' | 'case' | 'bookshelf';
-
 interface TabConfig {
   key: TabType;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ElementType;
   color: string;
 }
 
@@ -89,15 +79,19 @@ const BookSkillCenter: React.FC = () => {
     loadStats();
   }, []);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await skillService.getBookSkillStats();
       setStats(data);
     } catch { /* ignore */ }
-  };
+    setLoading(false);
+  }, []);
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      <AppHeader />
+      <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -113,13 +107,62 @@ const BookSkillCenter: React.FC = () => {
             把书籍方法论变成随时待命的 AI 顾问 · 四色知识管理系统集成
           </p>
         </div>
-        {stats && (
-          <div className="flex gap-3 flex-wrap">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <Loader size={16} className="animate-spin" />
+            加载统计...
+          </div>
+        ) : stats ? (
+          <div className="flex gap-3 flex-wrap items-center">
             <StatBadge icon={BookOpen} value={stats.total_books} label="书籍" color="yellow" />
             <StatBadge icon={Lightbulb} value={stats.total_methodologies} label="方法论" color="yellow" />
             <StatBadge icon={CheckCircle} value={stats.total_case_studies} label="案例" color="blue" />
+            {stats.total_methodologies > 0 && (
+              <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
+                <TrendingUp size={14} />
+                活跃中
+              </div>
+            )}
+            <button
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.txt,.md';
+                input.onchange = async (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) {
+                    const text = await file.text();
+                    localStorage.setItem('book_skill_import_text', text);
+                    setActiveTab('extract');
+                    toast.success(`已加载文件: ${file.name}`);
+                  }
+                };
+                input.click();
+              }}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              title="导入文件"
+            >
+              <FileUp size={14} />
+            </button>
+            <button
+              onClick={() => {
+                const url = getApiBaseUrl() + '/api/knowledge/cards?type=methodology&limit=5';
+                fetch(url).then(r => r.ok ? toast.success('API 连接正常') : toast.error('API 异常')).catch(() => toast.error('API 不可达'));
+              }}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800/30 transition-colors"
+              title="连接测试"
+            >
+              <Link2 size={14} />
+            </button>
+            <button
+              onClick={() => setActiveTab('extract')}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-800/40 transition-colors"
+            >
+              <Plus size={14} />
+              新增书籍
+            </button>
           </div>
-        )}
+        ) : null}
       </motion.div>
 
       {/* Four-Color Flow Diagram */}
@@ -129,23 +172,30 @@ const BookSkillCenter: React.FC = () => {
         className="bg-gradient-to-r from-yellow-50 via-blue-50 to-green-50 dark:from-yellow-900/10 dark:via-blue-900/10 dark:to-green-900/10 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
       >
         <div className="flex items-center justify-center gap-2 md:gap-4 text-xs md:text-sm flex-wrap">
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 font-medium text-yellow-700 dark:text-yellow-300">
-            📕 书籍输入
-          </span>
-          <ArrowRight size={16} className="text-gray-400" />
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 font-medium text-yellow-700 dark:text-yellow-300">
-            🟡 提取方法论
-          </span>
-          <ArrowRight size={16} className="text-gray-400" />
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 font-medium text-blue-700 dark:text-blue-300">
-            🤖 AI 顾问推演
-          </span>
-          <ArrowRight size={16} className="text-gray-400" />
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 dark:bg-green-900/30 font-medium text-green-700 dark:text-green-300">
-            🔵 案例沉淀
-          </span>
+          {[
+            { label: '📕 书籍输入', c: 'yellow' as const },
+            { label: '🟡 提取方法论', c: 'yellow' as const },
+            { label: '🤖 AI 顾问推演', c: 'blue' as const },
+            { label: '🔵 案例沉淀', c: 'blue' as const },
+          ].map((step, i) => (
+            <React.Fragment key={step.label}>
+              {i > 0 && <ArrowRight size={16} className="text-gray-400" />}
+              <span className={`flex items-center gap-1 px-3 py-1.5 rounded-full font-medium ${FOUR_COLORS[step.c].bg} ${FOUR_COLORS[step.c].text}`}>
+                {step.label}
+              </span>
+            </React.Fragment>
+          ))}
         </div>
       </motion.div>
+
+      {/* Color Legend */}
+      <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
+        {Object.entries(CARD_COLOR_MAP).map(([key, val]) => (
+          <span key={key} className={`flex items-center gap-1 px-2 py-0.5 rounded ${CARD_COLOR_CSS[key as keyof typeof CARD_COLOR_CSS] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}>
+            {val} ({key})
+          </span>
+        ))}
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
@@ -180,13 +230,14 @@ const BookSkillCenter: React.FC = () => {
           {activeTab === 'bookshelf' && <BookshelfPanel />}
         </motion.div>
       </AnimatePresence>
+      </div>
     </div>
   );
 };
 
 // ============ Stat Badge ============
 const StatBadge: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ElementType;
   value: number;
   label: string;
   color: string;
@@ -519,6 +570,8 @@ const CasePanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [solution, setSolution] = useState('');
   const [outcome, setOutcome] = useState('');
   const [loading, setLoading] = useState(false);
+  const [savedCases, setSavedCases] = useState<CaseStudy[]>([]);
+  const [caseFilter, setCaseFilter] = useState('');
 
   const handleSave = async () => {
     if (!bookName || !methodName || !problem || !solution) {
@@ -529,6 +582,8 @@ const CasePanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
     try {
       await skillService.saveBookCaseStudy(bookName, methodName, problem, solution, outcome);
       toast.success('✅ 案例已保存为蓝色卡片！');
+      const newCase: CaseStudy = { case_id: Date.now().toString(), book_name: bookName, methodology_name: methodName, problem, solution, outcome, created_at: new Date().toISOString() };
+      setSavedCases(prev => [...prev, newCase]);
       setBookName('');
       setMethodName('');
       setProblem('');
@@ -586,6 +641,20 @@ const CasePanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
         >
           {loading ? <><Loader size={16} className="animate-spin" /> 保存中...</> : <><Save size={16} /> 保存 → 蓝色卡片 🔵</>}
         </button>
+        {savedCases.length > 0 && (
+          <div className="border-t border-gray-100 dark:border-gray-700 pt-3 mt-2">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="搜索已保存案例..."
+                value={caseFilter}
+                onChange={(e) => setCaseFilter(e.target.value)}
+                className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-1 focus:ring-green-500 outline-none"
+              />
+              <span className="text-xs text-gray-400">{savedCases.length} 条</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -596,6 +665,7 @@ const BookshelfPanel: React.FC = () => {
   const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBook, setSelectedBook] = useState<any>(null);
+  const [filterText, setFilterText] = useState('');
 
   useEffect(() => {
     loadBooks();
@@ -623,6 +693,10 @@ const BookshelfPanel: React.FC = () => {
     }
   };
 
+  const filteredBooks = books.filter((b: any) =>
+    !filterText || b.book_name?.toLowerCase().includes(filterText.toLowerCase())
+  );
+
   if (loading) {
     return <div className="text-center py-12"><Loader size={32} className="animate-spin mx-auto text-blue-500" /></div>;
   }
@@ -630,14 +704,38 @@ const BookshelfPanel: React.FC = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="space-y-3">
-        {books.length === 0 ? (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="筛选书籍..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+              className="w-full pl-8 pr-8 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            />
+            {filterText && (
+              <button onClick={() => setFilterText('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={loadBooks}
+            className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"
+            title="刷新"
+          >
+            <Loader size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+        {filteredBooks.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
             <Library size={48} className="mx-auto text-gray-300 mb-3" />
             <p className="text-gray-500">书架还是空的</p>
             <p className="text-sm text-gray-400 mt-1">先在「提取方法论」页面添加书籍吧</p>
           </div>
         ) : (
-          (books || []).map((b: any) => (
+          (filteredBooks || []).map((b: any) => (
             <button
               key={b.book_id}
               onClick={() => handleSelectBook(b.book_name)}
@@ -647,8 +745,19 @@ const BookshelfPanel: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <BookOpen size={20} className="text-yellow-500" />
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white text-sm">《{b.book_name}》</p>
-                    {b.book_author && <p className="text-xs text-gray-400">{b.book_author}</p>}
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900 dark:text-white text-sm">《{b.book_name}》</p>
+                      {b.usage_count > 0 && <Star size={12} className="text-yellow-400 fill-yellow-400" />}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {b.book_author && <p className="text-xs text-gray-400">{b.book_author}</p>}
+                      {b.last_used && (
+                        <span className="flex items-center gap-1 text-[10px] text-gray-400">
+                          <Clock size={10} />
+                          {new Date(b.last_used).toLocaleDateString('zh-CN')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -671,10 +780,30 @@ const BookshelfPanel: React.FC = () => {
             animate={{ opacity: 1, x: 0 }}
             className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4"
           >
-            <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-              <BookMarked size={18} className="text-yellow-500" />
-              《{selectedBook.book_name}》
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <BookMarked size={18} className="text-yellow-500" />
+                《{selectedBook.book_name}》
+              </h2>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { navigator.clipboard?.writeText(JSON.stringify(selectedBook, null, 2)); toast.success('已导出为 JSON'); }}
+                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600"
+                  title="导出为 JSON"
+                >
+                  <Download size={14} />
+                </button>
+                {selectedBook.book_id && (
+                  <button
+                    onClick={() => window.open(`/book-skill?book=${selectedBook.book_id}`, '_blank')}
+                    className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500"
+                    title="在新标签页打开"
+                  >
+                    <ExternalLink size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="flex gap-2 flex-wrap">
               <span className="text-xs px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 rounded">
                 🟡 方法论: {selectedBook.methodology_count}

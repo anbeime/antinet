@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Users, History, Shield, MessageSquare, Eye, Database, Crown, Target, Activity, Zap, TrendingUp, Clock, Cpu } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -230,11 +230,14 @@ const AgentSystem: React.FC = () => {
           {/* 左侧：Agent列表 */}
           <div className="lg:col-span-1 space-y-4">
             <h2 className="text-lg font-semibold mb-4">智能体列表</h2>
-            {agents.map((agent) => {
+            {agents.map((agent, index) => {
               const AgentIcon = agent.icon;
               return (
-                <div
+                <motion.div
                   key={agent.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
                   onClick={() => setSelectedAgent(agent.id)}
                   className={`p-4 rounded-xl border cursor-pointer transition-all ${
                     selectedAgent === agent.id
@@ -262,14 +265,22 @@ const AgentSystem: React.FC = () => {
                       {agent.status === 'running' ? '运行中' : agent.status === 'busy' ? '工作中' : '空闲'}
                     </span>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>
 
           {/* 右侧：Agent详情 */}
           <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={selectedAgent}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+              >
               {/* 头部 */}
               <div className={`bg-gradient-to-r ${selectedAgentData.color} p-6 text-white relative`}>
                 <div className="flex items-center space-x-4 flex-wrap">
@@ -344,7 +355,8 @@ const AgentSystem: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
+          </AnimatePresence>
           </div>
         </div>
       </div>

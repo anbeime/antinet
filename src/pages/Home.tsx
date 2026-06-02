@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -24,14 +24,9 @@ import {
   BookOpen,
   GitBranch,
   Database,
-  CheckSquare,
-  Video,
   Briefcase,
   Upload,
-  Download,
-  Settings,
   Network,
-  Lightbulb,
   Copy,
   ZoomIn,
   Menu,
@@ -64,7 +59,6 @@ import MindMap from '@/pages/MindMap';
 import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 import PDFViewer from '@/pages/PDFViewer';
 import PPTViewer from '@/pages/PPTViewer';
-import ReportAutomation from '@/pages/ReportAutomation';
 import OfficeDocs from '@/pages/OfficeDocs';
 
 
@@ -169,7 +163,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     if (initialTab === 'remotion') return 'remotion';
     return 'dashboard';
   });
-  const [showChatModal, setShowChatModal] = useState(false);
   const [selectedCardColor, setSelectedCardColor] = useState<CardColor | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -217,9 +210,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   };
   
   // Mock数据状态管理
-  const [featureHighlights, setFeatureHighlights] = useState<any[]>([]);
-  const [applicationScenarios, setApplicationScenarios] = useState<any[]>([]);
-  const [knowledgeStats, setKnowledgeStats] = useState<any[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -622,77 +612,52 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
 
   // 加载仪表板数据
-  useEffect(() => {
+  const loadDashboardData = useCallback(async () => {
     let isMounted = true;
-    const loadDashboardData = async () => {
-      if (activeTab !== 'dashboard') return;
-      
-      setStatsLoading(true);
-      setStatsError(null);
-      
-      try {
-        // 从知识卡片API获取真实数据
-        const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
-        if (!isMounted) return;
-        if (!response.ok) throw new Error('API请求失败');
-        const data = await response.json();
-        const rawCards = data.cards || data || [];
-        
-        if (!Array.isArray(rawCards)) {
-          console.error('API返回格式错误:', data);
-          throw new Error('数据格式错误');
-        }
-        
-        const cards = rawCards.map((c: any) => ({
-          ...c,
-          color: c.card_type || (c.category === '事实' ? 'blue' : c.category === '解释' ? 'green' : c.category === '风险' ? 'yellow' : 'red')
-        }));
-        
-        // 统计卡片类型
-        const typeCount = {
-          blue: cards.filter((c: any) => c.color === 'blue' || c.card_type === 'blue' || c.category === '事实').length,
-          green: cards.filter((c: any) => c.color === 'green' || c.card_type === 'green' || c.category === '解释').length,
-          yellow: cards.filter((c: any) => c.color === 'yellow' || c.card_type === 'yellow' || c.category === '风险').length,
-          red: cards.filter((c: any) => c.color === 'red' || c.card_type === 'red' || c.category === '行动').length,
-        };
-        
-        setKnowledgeStats([
-          { label: '事实卡片', count: typeCount.blue, color: 'blue' },
-          { label: '解释卡片', count: typeCount.green, color: 'green' },
-          { label: '风险卡片', count: typeCount.yellow, color: 'yellow' },
-          { label: '行动卡片', count: typeCount.red, color: 'red' },
-        ]);
-        
-// 设置功能亮点
-        setFeatureHighlights([
-          { icon: '>>', title: 'NPU加速推理', description: '使用骁龙X Elite NPU，推理延迟<500ms', link: '/genie-playground' },
-          { icon: '##', title: '四色卡片系统', description: '事实/解释/风险/行动四色知识管理', link: 'tab:cards-management' },
-          { icon: '8x', title: '8-Agent智能体', description: '8个智能Agent协同分析', link: '/agent-system' },
-          { icon: '[]', title: '智能报告生成', description: '一键生成PPT/PDF/Excel报告', link: 'tab:ppt-analysis' },
-        ]);
-        
-        // 设置应用场景
-        setApplicationScenarios([
-          { icon: 'Lo', title: '端侧隐私保护', description: 'NPU推理<500ms，数据不出域', link: 'tab:data-management' },
-          { icon: 'Pr', title: '专题项目管理', description: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
-          { icon: 'Tm', title: '局域网团队协作', description: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
-        ]);
-
+    setStatsLoading(true);
+    setStatsError(null);
     
-        
-        console.log('仪表板数据加载完成:', { cards: cards.length, typeCount });
-      } catch (error) {
-        console.error('加载仪表板数据失败:', error);
-        if (!isMounted) return;
-        setStatsError('加载统计数据失败');
-      } finally {
-        if (isMounted) setStatsLoading(false);
+    try {
+      // 从知识卡片API获取真实数据
+      const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
+      if (!isMounted) return;
+      if (!response.ok) throw new Error('API请求失败');
+      const data = await response.json();
+      const rawCards = data.cards || data || [];
+      
+      if (!Array.isArray(rawCards)) {
+        console.error('API返回格式错误:', data);
+        throw new Error('数据格式错误');
       }
-    };
+      
+      const fetchedCards = rawCards.map((c: any) => ({
+        ...c,
+        color: c.card_type || (c.category === '事实' ? 'blue' : c.category === '解释' ? 'green' : c.category === '风险' ? 'yellow' : 'red')
+      }));
+      
+      // 统计卡片类型
+      const typeCount = {
+        blue: fetchedCards.filter((c: any) => c.color === 'blue' || c.card_type === 'blue' || c.category === '事实').length,
+        green: fetchedCards.filter((c: any) => c.color === 'green' || c.card_type === 'green' || c.category === '解释').length,
+        yellow: fetchedCards.filter((c: any) => c.color === 'yellow' || c.card_type === 'yellow' || c.category === '风险').length,
+        red: fetchedCards.filter((c: any) => c.color === 'red' || c.card_type === 'red' || c.category === '行动').length,
+      };
+      
+      console.log('仪表板数据加载完成:', { cards: fetchedCards.length, typeCount });
+    } catch (error) {
+      console.error('加载仪表板数据失败:', error);
+      if (!isMounted) return;
+      setStatsError('加载统计数据失败');
+    } finally {
+      if (isMounted) setStatsLoading(false);
+    }
+  }, []);
 
-    loadDashboardData();
-    return () => { isMounted = false; };
-  }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      loadDashboardData();
+    }
+  }, [activeTab, loadDashboardData]);
 
   // 更新卡片
   const handleUpdateCard = async (updatedCard: KnowledgeCard) => {
@@ -738,10 +703,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     }
   };
 
-  // 防止 TS6133 警告 - 实际使用 knowledgeStats
-  if (knowledgeStats.length === 0 && statsLoading === false) {
-    // knowledgeStats 已设置但未在UI中显示，这里只是为了避免TS警告
-  }
   
   return (
     <div className={`flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300`}>
@@ -833,9 +794,85 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <span>Excel/在线表格</span>
                 </button>
 
-              </div>
             </div>
 
+            {/* 功能亮点 */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+            >
+              <h2 className="text-xl font-bold mb-4">功能亮点</h2>
+              <div className="space-y-3">
+                {[
+                  { icon: '>>', title: 'NPU 加速推理', desc: '使用骁龙X Elite NPU，推理延迟<500ms', link: '/genie-playground' },
+                  { icon: '##', title: '四色卡片系统', desc: '事实/解释/风险/行动四色知识管理', link: 'tab:cards-management' },
+                  { icon: '8x', title: '8-Agent 智能体', desc: '8个智能Agent协同分析', link: '/agent-system' },
+                  { icon: '[]', title: '智能报告生成', desc: '一键生成PPT/PDF/Excel报告', link: 'tab:ppt-analysis' },
+                ].map((item, i) => (
+                  <motion.div
+                    key={i}
+                    whileHover={{ x: 5 }}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50 cursor-pointer"
+                    onClick={() => item.link.startsWith('tab:') ? setActiveTab(item.link.slice(4) as any) : navigate(item.link)}
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-400 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                      {item.icon}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm">{item.title}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{item.desc}</div>
+                    </div>
+                    <ChevronRight size={16} className="ml-auto text-gray-400" />
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+
+            {/* 企业应用场景 */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.5 }}
+              className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+            >
+              <h2 className="text-xl font-bold mb-4">企业应用场景</h2>
+              <div className="space-y-3">
+                {[
+                  { icon: 'Lo', title: '端侧隐私保护', desc: 'NPU推理<500ms，数据不出域', link: 'tab:data-management' },
+                  { icon: 'Pr', title: '专题项目管理', desc: '企业级专题任务协同管理', link: 'tab:cards-management|research' },
+                  { icon: 'Tm', title: '局域网团队协作', desc: '团队智能协作，本地知识共享', link: 'tab:virtual-office-meeting' },
+                ].map((scenario, i) => (
+                  <motion.div
+                    key={i}
+                    whileHover={{ x: 5 }}
+                    className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50 cursor-pointer"
+                    onClick={() => {
+                      if (scenario.link.startsWith('tab:')) {
+                        const tabTarget = scenario.link.slice(4);
+                        const [mainTab, subTab] = tabTarget.split('|');
+                        setActiveTab(mainTab as any);
+                        if (subTab) setKnowledgeSubTab(subTab as any);
+                      } else {
+                        navigate(scenario.link);
+                      }
+                    }}
+                  >
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-400 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                      {scenario.icon}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm">{scenario.title}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{scenario.desc}</div>
+                    </div>
+                    <ChevronRight size={16} className="ml-auto text-gray-400" />
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+
+          </div>
             
 
             
@@ -1032,6 +1069,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     { icon: <GitBranch size={20} />, title: '知识库图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
                     { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-amber-500 to-yellow-400' },
                     { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-pink-500 to-rose-400' },
+                    { icon: <BookOpen size={20} />, title: '书籍方法论', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
                   ].map((item, i) => (
                     <motion.div
                       key={i}
@@ -1112,7 +1150,18 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                      <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
                    </div>
-                 ) : cards.length === 0 ? (
+                  ) : statsError ? (
+                    <div className="text-center py-8">
+                      <AlertCircle className="w-12 h-12 text-red-300 dark:text-red-600 mx-auto mb-2 opacity-50" />
+                      <p className="text-red-500 dark:text-red-400">{statsError}</p>
+                      <button
+                        onClick={loadDashboardData}
+                        className="mt-3 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-sm hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors"
+                      >
+                        重试加载
+                      </button>
+                    </div>
+                  ) : cards.length === 0 ? (
                    <div className="text-center py-8">
                      <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
                      <p className="text-gray-500 dark:text-gray-400">暂无卡片数据</p>

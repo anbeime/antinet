@@ -19,13 +19,13 @@ import SkillCenter from "@/pages/SkillCenter";
 import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
 import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
+import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
 
-import MarkdownConverter from "@/pages/MarkdownConverter";
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
@@ -58,6 +58,7 @@ export default function App() {
           <Route path="/multi-model" element={<MultiModel />} />
           <Route path="/format-converter" element={<FormatConverter />} />
           <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
+          <Route path="/meeting/:meetingId" element={<MeetingDetailPage />} />
           <Route path="/gtd-tasks" element={<GTDTaskManager />} />
           <Route path="/genie-playground" element={<GeniePlayground />} />
           <Route path="/genie-npu-test" element={<GenieNPUTest />} />

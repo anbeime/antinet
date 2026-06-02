@@ -3,6 +3,7 @@
 
 import React, { useState } from 'react';
 import { API_ENDPOINTS } from '@/config/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 interface TestResult {
   endpoint: string;
@@ -42,7 +43,7 @@ const APITestPanel: React.FC = () => {
     const startTime = Date.now();
 
     try {
-      const response = await fetch(`getApiBaseUrl() + ${endpoint}`, {
+      const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
       });

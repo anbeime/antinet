@@ -15,6 +15,7 @@ import time
 import httpx
 import os
 from config import settings
+from paths import DB_PATH
 from routes.enhanced_chat_routes import search_cards_semantic, CardReference
 
 logger = logging.getLogger(__name__)
@@ -251,6 +252,90 @@ async def get_agent_messages(
 
 # ==================== 原有 Agent 映射 ====================
 AGENT_MAPPING = {
+    "taishige": {
+        "backend_id": "memory",
+        "name": "太史阁",
+        "title": "历史记录与反思官",
+        "avatar": "📚",
+        "description": "负责记录所有操作、决策和结果，构建组织的集体记忆与经验库",
+        "color": "from-blue-500 to-blue-600",
+        "pixel_id": "taishige",
+        "system_prompt": "你是「太史阁」，负责历史记录与反思。密卷房检索知识卡片后，你结合历史经验进行解读，为当前议题提供历史视角的参考。请基于【知识库参考卡片】提炼关键洞察。发言简洁有力，80字以内。"
+    },
+    "jinjiyu": {
+        "backend_id": "risk_detector",
+        "name": "锦衣卫",
+        "title": "安全与情报收集官",
+        "avatar": "🛡️",
+        "description": "监控系统安全状态，识别潜在威胁和风险，收集内外部情报",
+        "color": "from-red-500 to-red-600",
+        "pixel_id": "xingyusi",
+        "system_prompt": "你是「锦衣卫」，负责安全与情报收集。发言要简洁有力，80字以内。只输出风险点，禁止重复背景信息和角色描述。"
+    },
+    "tongzhengsi": {
+        "backend_id": "fact_generator",
+        "name": "通政司",
+        "title": "信息与通讯中枢",
+        "avatar": "📡",
+        "description": "管理所有信息流，确保内外部通讯畅通，促进跨部门协作",
+        "color": "from-green-500 to-green-600",
+        "pixel_id": "tongzhengsi",
+        "system_prompt": "你是「通政司」，负责信息与通讯中枢。密卷房和太史阁检索知识卡片后，你将卡片中的关键信息整理并传达给八府同仁，确保各部门掌握必要的知识背景。发言简洁有力，80字以内。"
+    },
+    "jianchayuan": {
+        "backend_id": "interpreter",
+        "name": "监察院",
+        "title": "监督与审计官",
+        "avatar": "🔍",
+        "description": "监督各项操作和流程的执行情况，进行合规性审计",
+        "color": "from-purple-500 to-purple-600",
+        "pixel_id": "jianchayuan",
+        "system_prompt": "你是「监察院」，负责监督与审计。你的职责是审视议题中的合规性、流程规范性，指出漏洞和改进空间。严格限制：必须用中文，60字以内，只说问题点，不要重复背景。"
+    },
+    "mijuanfang": {
+        "backend_id": "preprocessor",
+        "name": "密卷房",
+        "title": "知识库与档案管理员",
+        "avatar": "📂",
+        "description": "专门负责非结构化知识的整理、归档、索引和检索",
+        "color": "from-indigo-500 to-indigo-600",
+        "pixel_id": "mijuanfang",
+        "system_prompt": "你是「密卷房」，负责知识库与档案管理。你的职责是从知识库中检索相关资料，将检索到的卡片内容提炼后汇报给通政司分发。严格限制：必须用中文，60字以内，直接引用卡片中的关键事实。"
+    },
+    "chengxiangfu": {
+        "backend_id": "action_advisor",
+        "name": "丞相府",
+        "title": "战略规划与决策官",
+        "avatar": "🏛️",
+        "description": "制定战略规划，提供高层决策建议，协调各方资源",
+        "color": "from-yellow-500 to-yellow-600",
+        "pixel_id": "canmousi",
+        "system_prompt": "你是「丞相府」，负责战略规划与决策。你的职责是从战略高度分析议题，提出可执行的方案和建议。严格限制：必须用中文，60字以内，只说方案要点，不要重复背景。"
+    },
+    "junjichu": {
+        "backend_id": "messenger",
+        "name": "军机处",
+        "title": "执行与协调官",
+        "avatar": "⚔️",
+        "description": "负责任务执行、跨部门协调和进度跟踪",
+        "color": "from-orange-500 to-orange-600",
+        "pixel_id": "yichuansi",
+        "system_prompt": "你是「军机处」，负责执行与协调。你的职责是将讨论成果转化为具体执行计划，明确分工和时间节点。严格限制：必须用中文，60字以内，只说执行要点，不要重复背景。"
+    },
+    "zhihuishi": {
+        "backend_id": "orchestrator",
+        "name": "指挥使",
+        "title": "总指挥与裁决官",
+        "avatar": "👑",
+        "description": "统筹全局，做出最终裁决，确保各方协同高效运转",
+        "color": "from-teal-500 to-teal-600",
+        "pixel_id": "orchestrator",
+        "system_prompt": "你是「指挥使」，负责总指挥与最终裁决。你的职责是综合各方意见，做出最终决策，明确下一步行动方向。严格限制：必须用中文，60字以内，只说决策要点，不要重复背景。"
+    }
+}
+
+# 8-Agent 协作系统 - 完整的智能体定义
+PIXEL_AGENTS = {
     "taishige": {
         "backend_id": "memory",
         "name": "太史阁",
@@ -2501,23 +2586,7 @@ async def create_meeting_stream(request: MeetingRequest):
             except Exception as e:
                 logger.error(f"保存Agent提取卡片失败: {e}")
 
-        # 闭环二：自动从会议行动项创建GTD任务和知识卡片
-        try:
-            created_tasks = _auto_create_tasks_from_meeting(db, meeting_id, action_items)
-            created_cards = _auto_create_cards_from_meeting(db, meeting_id, request.topic, summary, decision, action_items)
-            if created_tasks or created_cards:
-                yield _sse_event("meeting_autogen", {
-                    "meeting_id": meeting_id,
-                    "created_tasks": len(created_tasks),
-                    "created_cards": len(created_cards),
-                    "task_ids": [t.get('id') for t in created_tasks if t],
-                    "card_ids": [c.get('id') for c in created_cards if c],
-                    "timestamp": datetime.now().isoformat()
-                })
-        except Exception as e:
-            logger.error(f"会议自动闭环失败: {e}")
-
-        # 会议结束
+        # 会议结束（不再自动创建任务和卡片，用户可在会议详情页手动提取）
         yield _sse_event("meeting_end", {
             "meeting_id": meeting_id,
             "topic": request.topic,
@@ -2806,13 +2875,7 @@ async def create_meeting(request: MeetingRequest):
     except Exception as e:
         logger.error(f"保存会议记录失败: {e}")
 
-    # 闭环二：自动从会议行动项创建GTD任务和知识卡片
-    autogen_result = {"tasks": [], "cards": []}
-    try:
-        autogen_result["tasks"] = _auto_create_tasks_from_meeting(db, meeting_id, action_items)
-        autogen_result["cards"] = _auto_create_cards_from_meeting(db, meeting_id, request.topic, summary, decision, action_items)
-    except Exception as e:
-        logger.error(f"会议自动闭环失败: {e}")
+    # 会议结束（不再自动创建任务和卡片，用户可在会议详情页手动提取）
 
     return MeetingResponse(
         success=True,
@@ -3106,3 +3169,96 @@ def _parse_decision(decision_text: str, topic: str) -> tuple:
         ]
 
     return summary, decision, action_items
+
+
+# ==================== 从会议上下文创建任务 ====================
+
+class CreateTaskFromMeetingRequest(BaseModel):
+    """从会议上下文创建任务"""
+    title: str
+    description: Optional[str] = None
+    meeting_id: Any  # meetings 表的主键 id (可以是数字或 TEXT meeting_id)
+    context_text: Optional[str] = None  # 用户选中的原文片段
+    source_card_id: Optional[int] = None  # 如果从卡片创建
+    priority: Optional[str] = "medium"
+    category: Optional[str] = "inbox"
+    due_date: Optional[str] = None
+    assignee_id: Optional[int] = None
+
+
+class CreateTaskFromMeetingResponse(BaseModel):
+    """创建任务响应"""
+    success: bool
+    task: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+
+
+@router.post("/tasks/from-meeting-context", response_model=CreateTaskFromMeetingResponse, tags=["会议任务提取"])
+async def create_task_from_meeting_context(request: CreateTaskFromMeetingRequest):
+    """从会议上下文创建关联任务"""
+    try:
+        from database import DatabaseManager
+        db = DatabaseManager(DB_PATH)
+        
+        # 验证会议存在
+        meeting = None
+        # 先尝试用数字 ID 查找
+        try:
+            meeting_id_int = int(request.meeting_id)
+            meeting = db.get_meeting_by_id(meeting_id_int)
+        except (ValueError, TypeError):
+            pass
+        
+        # 如果数字 ID 没找到，尝试用 TEXT meeting_id 查找
+        if not meeting:
+            meeting = db.get_meeting(str(request.meeting_id))
+        
+        if not meeting:
+            raise HTTPException(status_code=404, detail=f"会议不存在: {request.meeting_id}")
+        
+        # 创建任务，source_id 使用会议的数据库主键 ID
+        task = db.add_gtd_task(
+            title=request.title,
+            description=request.description,
+            priority=request.priority or "medium",
+            category=request.category or "inbox",
+            due_date=request.due_date,
+            source_type="meeting",
+            source_id=meeting["id"],  # 使用数据库主键 ID
+            source_context=request.context_text,
+            source_card_id=request.source_card_id
+        )
+        
+        logger.info(f"从会议 {meeting['meeting_id']} (id={meeting['id']}) 创建任务: {task['id']} - {request.title}")
+        
+        return CreateTaskFromMeetingResponse(
+            success=True,
+            task=task,
+            message="任务创建成功"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"从会议创建任务失败: {e}")
+        raise HTTPException(status_code=500, detail=f"创建任务失败: {str(e)}")
+
+
+@router.get("/tasks/from-meeting/{meeting_id}", tags=["会议任务提取"])
+async def get_tasks_from_meeting(meeting_id: int):
+    """获取从某次会议创建的所有任务"""
+    try:
+        from database import DatabaseManager
+        db = DatabaseManager(DB_PATH)
+        
+        # 先用数字 id 查找
+        tasks = db.get_gtd_tasks_by_source("meeting", meeting_id)
+        if not tasks:
+            # 尝试用 TEXT meeting_id 查找
+            meeting = db.get_meeting(str(meeting_id))
+            if meeting:
+                tasks = db.get_gtd_tasks_by_source("meeting", meeting["id"])
+        
+        return {"success": True, "meeting_id": meeting_id, "tasks": tasks, "count": len(tasks)}
+    except Exception as e:
+        logger.error(f"获取会议任务失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取任务失败: {str(e)}")

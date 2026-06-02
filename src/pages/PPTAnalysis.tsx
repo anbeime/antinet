@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video, History } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video, History, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
 import KnowledgeGraph from '@/components/KnowledgeGraph';
+import AppHeader from '@/components/AppHeader';
 
 interface KnowledgeCard {
   id: string;
@@ -415,8 +416,9 @@ const PPTAnalysis: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      <AppHeader />
+      <div className="p-4 md:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -431,9 +433,18 @@ const PPTAnalysis: React.FC = () => {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                 PPT生成
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                智能生成专业演示文稿 - 支持文本转换和卡片导出
-              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-gray-600 dark:text-gray-400">
+                  智能生成专业演示文稿 - 支持文本转换和卡片导出
+                </p>
+                <button
+                  onClick={() => navigate('/book-skill')}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-800/60 transition-colors"
+                >
+                  <BookOpen size={12} />
+                  书籍方法论
+                </button>
+              </div>
             </div>
           </div>
 

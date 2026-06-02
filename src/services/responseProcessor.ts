@@ -41,9 +41,9 @@ export function processResponse(response: ResponseData | any): ResponseData | fa
   if (typeof response.code === 'number') {
     if (response.code < 0) {
       // 错误消息
-      const messageType = response.code === ResponseCode.ERROR ? 'error' : 'info';
       const duration = response.data?.closeTimeout || 0;
-      toast.error(response.msg, { duration });
+      const toastFn = response.code === ResponseCode.ERROR ? toast.error : toast.info;
+      toastFn(response.msg, { duration });
       return false;
     }
 
@@ -60,13 +60,13 @@ export function processResponse(response: ResponseData | any): ResponseData | fa
  * 处理特殊命令
  * 参考 SiYuan processMessage 中的命令处理
  */
-function handleCommand(response: ResponseData): false {
+function handleCommand(response: ResponseData): ResponseData | false {
   const { cmd, msg, data } = response;
 
   switch (cmd) {
     case 'msg':
       // 显示消息
-      const id = toast.message(msg, {
+      toast.message(msg, {
         duration: data?.closeTimeout || 0,
       });
       // 添加微软防御者排除项点击处理
