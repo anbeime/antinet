@@ -380,35 +380,48 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       })
     })
       .then(r => r.json())
-      .then(data => {
+  .then(data => {
         console.log('[AI洞察] 收到完整响应:', data);
-        
-        // 尝试多种方式解析 JSON
+
         try {
-          // 方式1: 直接解析（如果 response 已经是对象）
           if (typeof data.response === 'object') {
             setInsights(data.response);
             return;
           }
-          
+
           const text = data.response || '';
           console.log('[AI洞察] response字段内容:', text);
-          
-          // 方式2: 查找 [Response]: 之后的 JSON
+
           let jsonText = text;
           const responseIndex = text.indexOf('[Response]:');
           if (responseIndex !== -1) {
             jsonText = text.substring(responseIndex + '[Response]:'.length).trim();
           }
-          
-          // 方式3: 查找 { } 之间的 JSON
+
           const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
-            console.log('[AI洞察] 提取的JSON:', jsonMatch[0]);
-            setInsights(JSON.parse(jsonMatch[0]));
-          } else {
-            console.log('[AI洞察] 未找到JSON匹配');
+            try {
+              const parsed = JSON.parse(jsonMatch[0]);
+              if (parsed.summary !== undefined) {
+                console.log('[AI洞察] 提取的JSON:', jsonMatch[0]);
+                setInsights(parsed);
+                return;
+              }
+            } catch (_) {}
           }
+
+          console.log('[AI洞察] JSON解析失败, 使用文本fallback');
+          const bulletMatches = jsonText.match(/\d+\.\s*\*\*(.+?)\*\*[:：]\s*(.+?)(?=\n\d+\.|\n\n|$)/g);
+          const summary = bulletMatches
+            ? bulletMatches.map((b: string) => b.replace(/^\d+\.\s*\*\*/, '').replace(/\*\*[:：]/, ':').trim()).join('；').slice(0, 80)
+            : jsonText.slice(0, 80);
+          setInsights({
+            summary,
+            importance: 50,
+            gap: '需要深入分析',
+            recommendations: [{ title: '深入探索此主题', reason: '关联分析' }],
+            raw_text: jsonText
+          });
         } catch (e) {
           console.error('[AI洞察] 解析失败:', e);
         }
@@ -1863,10 +1876,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             </div>
             {insightsLoading ? (
               <p className="text-sm text-blue-400 animate-pulse">AI 正在分析...</p>
-            ) : insights ? (
-              <div className="space-y-3">
-                <p className="text-sm text-blue-700 dark:text-blue-400">{insights.summary || '暂无分析'}</p>
-                <div className="mt-4 flex justify-end">
+ ) : insights ? (
+          <div className="space-y-3">
+            {insights.raw_text ? (
+              <div className="text-sm text-blue-700 dark:text-blue-400 whitespace-pre-wrap">{insights.raw_text}</div>
+            ) : (
+              <p className="text-sm text-blue-700 dark:text-blue-400">{insights.summary || '暂无分析'}</p>
+            )}
+            <div className="mt-4 flex justify-end">
                   <button
                     className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
                     onClick={() => setShowMoreInsights(!showMoreInsights)}

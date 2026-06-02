@@ -11,7 +11,6 @@ import {
   Loader2,
   Copy,
   Download,
-  RefreshCw,
   Lightbulb,
   Target,
   Zap,
@@ -19,8 +18,7 @@ import {
   ChevronDown,
   ChevronRight,
   Trash2,
-  Edit3,
-  Save
+  Edit3
 } from 'lucide-react';
 
 // API 配置

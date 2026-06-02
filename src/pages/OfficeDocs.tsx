@@ -6,7 +6,8 @@ import {
   Save, FolderOpen, X, Maximize2, Minimize2, Eye, Edit3,
   FileType, Search, FilePlus, Trash2, RefreshCw, Clock,
   Edit, Check, ChevronRight, Zap, ArrowRight, File,
-  FileCode, FileImage, Table, Settings, CheckCircle, AlertCircle, Loader2, Copy
+  FileCode, FileImage, Table, Settings, CheckCircle, AlertCircle, Loader2, Copy,
+  ArrowLeft
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -98,6 +99,9 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
   const [renderMermaid, setRenderMermaid] = useState(true);
   const [extractCsv, setExtractCsv] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [files, setFiles] = useState<DocFile[]>([
     { id: '1', name: '销售数据.xlsx', type: 'excel', path: '/data/exports/sales.xlsx', size: 25600, modified: '2025-01-20' },
@@ -213,6 +217,14 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
   useEffect(() => {
     loadLuckysheet();
+    if (initialFile) {
+      const matched = files.find(f => f.path === initialFile || f.name === initialFile);
+      if (matched) {
+        setCurrentFile(matched);
+        setActiveTab(matched.type === 'excel' ? 'excel' : 'convert');
+        addToHistory(matched.name, matched.type, 'view');
+      }
+    }
     return () => {
       if (window.luckysheet) {
         try {
@@ -351,7 +363,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   // 格式转换功能
   const loadConverterStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/markdown-converter/status');
+      const response = await fetch(`${API_BASE}/status`);
       if (response.ok) {
         const data = await response.json();
         setConverterStatus(data);
@@ -376,7 +388,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     setSuccess('');
 
     try {
-      const response = await fetch('/api/markdown-converter/convert', {
+      const response = await fetch(`${API_BASE}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -419,7 +431,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     setError('');
 
     try {
-      const response = await fetch('/api/markdown-converter/mermaid/render', {
+      const response = await fetch(`${API_BASE}/mermaid/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -453,10 +465,6 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     setSuccess('Markdown 已复制到剪贴板');
   };
 
-  const getStatusColor = (available: boolean) => {
-    return available ? 'text-green-500' : 'text-red-500';
-  };
-
   // 加载转换器状态
   useEffect(() => {
     if (activeTab === 'convert') {
@@ -464,8 +472,17 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     }
   }, [activeTab, loadConverterStatus]);
 
+  const getStatusColor = (available: boolean) => {
+    return available ? 'text-green-500' : 'text-red-500';
+  };
+
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-gray-100 dark:bg-gray-900">
+    <div
+      ref={containerRef}
+      className={`flex bg-gray-100 dark:bg-gray-900 ${
+        isFullscreen ? 'fixed inset-0 z-50' : 'flex-col md:flex-row h-screen'
+      }`}
+    >
       {showFileList && (
         <motion.aside
           initial={{ x: -300 }}
@@ -477,47 +494,110 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
               <FolderOpen className="w-5 h-5 mr-2 text-blue-500" />
               文件管理
             </h2>
+            <div className="mt-3 relative">
+              <Search className="w-4 h-4 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索文件..."
+                className="w-full pl-8 pr-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
           </div>
           
           <div className="p-4">
             <label className="block">
               <input
                 type="file"
-                accept=".xlsx,.xls,.pdf,.pptx"
+                accept=".xlsx,.xls,.pdf,.pptx,.docx,.doc"
                 onChange={handleFileUpload}
                 className="hidden"
               />
               <div className="flex items-center justify-center space-x-2 w-full px-4 py-2 bg-blue-500 text-white rounded-lg cursor-pointer hover:bg-blue-600 transition-colors">
                 <Upload className="w-4 h-4" />
                 <span>上传文件</span>
+                <ChevronRight className="w-3 h-3 ml-auto" />
               </div>
             </label>
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
-            {files.map(file => (
+            {files
+              .filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()))
+              .map(file => (
               <motion.div
                 key={file.id}
                 whileHover={{ scale: 1.02 }}
-                onClick={() => file.type === 'pdf' ? openPDF(file) : file.type === 'ppt' ? openPPT(file) : setActiveTab('excel')}
                 className={`p-3 mb-2 rounded-lg cursor-pointer transition-colors ${
                   currentFile?.id === file.id 
                     ? 'bg-blue-100 dark:bg-blue-900/30 border border-blue-300' 
                     : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`}
               >
-                <div className="flex items-center">
-                  {file.type === 'excel' && <FileSpreadsheet className="w-5 h-5 text-green-500 mr-2" />}
-                  {file.type === 'pdf' && <FileText className="w-5 h-5 text-red-500 mr-2" />}
-                  {file.type === 'ppt' && <Presentation className="w-5 h-5 text-orange-500 mr-2" />}
-                  <span className="font-medium truncate">{file.name}</span>
-                </div>
-                <div className="text-xs text-gray-500 mt-1 flex justify-between">
-                  <span>{formatFileSize(file.size)}</span>
-                  <span>{file.modified}</span>
-                </div>
+                {editingFileId === file.id ? (
+                  <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                    <FileType className="w-5 h-5 text-gray-500 mr-1" />
+                    <input
+                      type="text"
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(file.id); if (e.key === 'Escape') setEditingFileId(null); }}
+                      className="flex-1 px-1 py-0.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700"
+                      autoFocus
+                    />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRename(file.id); }}
+                      className="p-1 text-green-500 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
+                      title="确认"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingFileId(null); }}
+                      className="p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                      title="取消"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div onClick={() => file.type === 'pdf' ? openPDF(file) : file.type === 'ppt' ? openPPT(file) : setActiveTab('excel')}>
+                    <div className="flex items-center">
+                      {file.type === 'excel' && <FileSpreadsheet className="w-5 h-5 text-green-500 mr-2" />}
+                      {file.type === 'pdf' && <FileText className="w-5 h-5 text-red-500 mr-2" />}
+                      {file.type === 'ppt' && <Presentation className="w-5 h-5 text-orange-500 mr-2" />}
+                      {file.type === 'other' && <File className="w-5 h-5 text-gray-500 mr-2" />}
+                      <span className="font-medium truncate flex-1">{file.name}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); startRename(file); }}
+                        className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 rounded opacity-0 group-hover:opacity-100"
+                        title="重命名"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); if (window.confirm(`确定删除 ${file.name} ?`)) handleDelete(file.id); }}
+                        className="p-1 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                        title="删除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                      <span>{formatFileSize(file.size)}</span>
+                      <span>{file.modified}</span>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             ))}
+            {files.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+              <div className="text-center text-gray-400 text-sm py-8">
+                <FileType className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>未找到匹配的文件</p>
+              </div>
+            )}
           </div>
         </motion.aside>
       )}
@@ -557,6 +637,47 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
             <div className="flex items-center space-x-2">
               <button
+                onClick={() => navigate('/')}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="返回首页"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`p-2 rounded relative ${
+                  showHistory ? 'bg-blue-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+                title="操作历史"
+              >
+                <Clock className="w-4 h-4" />
+                {history.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 text-[10px] bg-red-500 text-white rounded-full flex items-center justify-center">
+                    {history.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setShowTools(!showTools)}
+                className={`p-2 rounded ${
+                  showTools ? 'bg-purple-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+                title="工具面板"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title={isFullscreen ? '退出全屏' : '全屏'}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+
+              <button
                 onClick={() => setViewMode(viewMode === 'edit' ? 'view' : 'edit')}
                 className={`flex items-center space-x-1 px-3 py-1.5 rounded ${
                   viewMode === 'edit' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'
@@ -570,16 +691,148 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                 onClick={handleExport}
                 className="flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600"
               >
-                <Download className="w-4 h-4" />
-                <span className="text-sm">导出</span>
+                <Save className="w-4 h-4" />
+                <span className="text-sm">保存</span>
+                <ArrowRight className="w-3 h-3 ml-1" />
               </button>
             </div>
           </div>
         </header>
 
         <main className="flex-1 overflow-hidden relative">
+          {showTools && (
+            <motion.aside
+              initial={{ x: 300, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="absolute top-0 right-0 w-64 h-full bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-lg z-40 overflow-y-auto"
+            >
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 className="font-semibold flex items-center">
+                  <Zap className="w-4 h-4 mr-2 text-purple-500" />
+                  快速操作
+                </h3>
+                <button
+                  onClick={() => setShowTools(false)}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <button
+                  onClick={loadConverterStatus}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg"
+                >
+                  <span className="flex items-center">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    刷新转换器
+                  </span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={handleExport}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg"
+                >
+                  <span className="flex items-center">
+                    <Save className="w-4 h-4 mr-2" />
+                    保存当前文件
+                  </span>
+                  <ArrowRight className="w-3 h-3" />
+                </button>
+                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <h4 className="text-sm font-medium mb-2 flex items-center">
+                    <Settings className="w-4 h-4 mr-2" />
+                    转换选项
+                  </h4>
+                  <label className="flex items-center justify-between p-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                    <span className="flex items-center">
+                      <FileImage className="w-4 h-4 mr-2 text-purple-500" />
+                      启用 Mermaid
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={renderMermaid}
+                      onChange={(e) => setRenderMermaid(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between p-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer">
+                    <span className="flex items-center">
+                      <Table className="w-4 h-4 mr-2 text-emerald-500" />
+                      提取 CSV
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={extractCsv}
+                      onChange={(e) => setExtractCsv(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                  </label>
+                </div>
+              </div>
+            </motion.aside>
+          )}
+
+          {showHistory && (
+            <motion.aside
+              initial={{ x: 300, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="absolute top-0 right-0 w-72 h-full bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 shadow-lg z-40 overflow-y-auto"
+            >
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <h3 className="font-semibold flex items-center">
+                  <Clock className="w-4 h-4 mr-2 text-blue-500" />
+                  操作历史
+                  <span className="ml-2 text-xs text-gray-500">({history.length})</span>
+                </h3>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-2">
+                {history.length === 0 ? (
+                  <div className="text-center text-gray-400 text-sm py-8">
+                    <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p>暂无操作记录</p>
+                  </div>
+                ) : (
+                  history.map(item => (
+                    <div
+                      key={item.id}
+                      className="p-3 mb-2 rounded-lg bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                          {item.action === 'upload' && <FilePlus className="w-4 h-4 text-blue-500 flex-shrink-0" />}
+                          {item.action === 'view' && <Eye className="w-4 h-4 text-green-500 flex-shrink-0" />}
+                          {item.action === 'edit' && <Edit3 className="w-4 h-4 text-orange-500 flex-shrink-0" />}
+                          {item.action === 'export' && <Download className="w-4 h-4 text-purple-500 flex-shrink-0" />}
+                          <span className="text-sm font-medium truncate">{item.name}</span>
+                        </div>
+                        <ChevronRight className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1 ml-6">
+                        <span className="capitalize">{item.action}</span> · {item.timestamp}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.aside>
+          )}
+
+          <AnimatePresence mode="wait">
           {activeTab === 'excel' && (
-            <div className="h-full flex flex-col">
+            <motion.div
+              key="excel"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="h-full flex flex-col"
+            >
               {isLoading && (
                 <div className="absolute inset-0 bg-white/80 dark:bg-black/80 flex items-center justify-center z-50">
                   <div className="text-center">
@@ -626,18 +879,24 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                   </p>
                 </div>
               ) : (
-                <div 
+                <div
                   ref={luckysheetRef}
                   id="luckysheet-container"
                   className="luckysheet-container flex-1"
                   style={{ height: '100%' }}
                 />
               )}
-            </div>
+            </motion.div>
           )}
 
           {activeTab === 'convert' && (
-            <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
+            <motion.div
+              key="convert"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="h-full flex flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden"
+            >
               {/* 状态栏 */}
               <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
                 <div className="flex items-center justify-between">
@@ -653,16 +912,22 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                 {converterStatus && (
                   <div className="mt-3 flex flex-wrap gap-4 text-sm">
                     <div className="flex items-center space-x-2">
-                      <span className={getStatusColor(converterStatus.pandoc.available)}>●</span>
-                      <span>Pandoc: {converterStatus.pandoc.available ? '可用' : '不可用'}</span>
+                      {converterStatus.pandoc.available
+                        ? <CheckCircle className="w-4 h-4 text-green-500" />
+                        : <AlertCircle className="w-4 h-4 text-red-500" />}
+                      <span className={getStatusColor(converterStatus.pandoc.available)}>Pandoc: {converterStatus.pandoc.available ? '可用' : '不可用'}</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={getStatusColor(converterStatus.mermaid_cli.available)}>●</span>
-                      <span>Mermaid: {converterStatus.mermaid_cli.available ? '可用' : '不可用'}</span>
+                      {converterStatus.mermaid_cli.available
+                        ? <CheckCircle className="w-4 h-4 text-green-500" />
+                        : <AlertCircle className="w-4 h-4 text-red-500" />}
+                      <span className={getStatusColor(converterStatus.mermaid_cli.available)}>Mermaid: {converterStatus.mermaid_cli.available ? '可用' : '不可用'}</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={getStatusColor(converterStatus.pdfplumber)}>●</span>
-                      <span>PDF处理: {converterStatus.pdfplumber ? '可用' : '不可用'}</span>
+                      {converterStatus.pdfplumber
+                        ? <CheckCircle className="w-4 h-4 text-green-500" />
+                        : <AlertCircle className="w-4 h-4 text-red-500" />}
+                      <span className={getStatusColor(converterStatus.pdfplumber)}>PDF处理: {converterStatus.pdfplumber ? '可用' : '不可用'}</span>
                     </div>
                   </div>
                 )}
@@ -670,13 +935,15 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
 
               {/* 错误和成功消息 */}
               {error && (
-                <div className="mx-4 mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm">
-                  {error}
+                <div className="mx-4 mt-4 p-3 bg-red-100 dark:bg-red-900 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-300 text-sm flex items-center space-x-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
               {success && (
-                <div className="mx-4 mt-4 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-300 text-sm">
-                  {success}
+                <div className="mx-4 mt-4 p-3 bg-green-100 dark:bg-green-900 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-300 text-sm flex items-center space-x-2">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{success}</span>
                 </div>
               )}
 
@@ -701,7 +968,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                       placeholder="在此输入 Markdown 内容，或粘贴文件内容..."
                       className="flex-1 w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    <div className="mt-4 flex items-center space-x-4">
+                    <div className="mt-4 flex items-center space-x-4 flex-wrap gap-2">
                       <label className="flex items-center space-x-2 text-sm">
                         <span>Mermaid 主题:</span>
                         <select
@@ -714,6 +981,26 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                           <option value="forest">森林</option>
                           <option value="neutral">中性</option>
                         </select>
+                      </label>
+                      <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={renderMermaid}
+                          onChange={(e) => setRenderMermaid(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <FileImage className="w-3.5 h-3.5 text-purple-500" />
+                        <span>启用 Mermaid</span>
+                      </label>
+                      <label className="flex items-center space-x-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={extractCsv}
+                          onChange={(e) => setExtractCsv(e.target.checked)}
+                          className="w-4 h-4"
+                        />
+                        <Table className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>提取 CSV</span>
                       </label>
                     </div>
                   </div>
@@ -788,8 +1075,9 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </main>
       </div>
 

@@ -774,6 +774,7 @@ const ProjectDetailPanel: React.FC<{
   const [showMoveCard, setShowMoveCard] = useState(false);
   // 任务编辑弹窗
   const [editingTask, setEditingTask] = useState<any>(null);
+  const [previewCard, setPreviewCard] = useState<ProjectCard | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDesc, setEditTaskDesc] = useState('');
   const [editTaskPriority, setEditTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
@@ -798,6 +799,11 @@ const ProjectDetailPanel: React.FC<{
   useEffect(() => {
     loadData();
   }, [project.id]);
+
+  // 外部任务刷新触发卡片重载
+  useEffect(() => {
+    if (taskRefreshTrigger > 0) loadData();
+  }, [taskRefreshTrigger]);
 
   const loadData = async () => {
     if (!project.id) return;
@@ -1275,12 +1281,19 @@ const ProjectDetailPanel: React.FC<{
                                       转任务
                                     </button>
                                   )}
-<button
+                                  <button
                                     onClick={(e) => { e.stopPropagation(); setSelectedCard(card); setShowCardDetail(true); }}
                                     className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
                                     title="查看详情"
                                   >
                                     <Maximize2 className="w-4 h-4 text-gray-500" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setPreviewCard(card); }}
+                                    className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    title="知识卡片预览"
+                                  >
+                                    {convertProjectCardToKnowledgeCard(card).color === 'blue' ? '📘' : convertProjectCardToKnowledgeCard(card).color === 'green' ? '📗' : convertProjectCardToKnowledgeCard(card).color === 'yellow' ? '📒' : '📕'}
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
@@ -1646,6 +1659,32 @@ const ProjectDetailPanel: React.FC<{
               </div>
             </div>
           </div>
+        )}
+
+        {/* 知识卡片预览弹窗 (CardDetailModal) */}
+        {previewCard && (
+          <CardDetailModal
+            isOpen={true}
+            card={convertProjectCardToKnowledgeCard(previewCard)}
+            allCards={cards.map(convertProjectCardToKnowledgeCard)}
+            onClose={() => setPreviewCard(null)}
+            onDelete={async (id: string) => {
+              await fetch(`${RESEARCH_API_BASE}/cards/${id}`, { method: 'DELETE' });
+              setCards(prev => prev.filter(c => String(c.id) !== id));
+              setPreviewCard(null);
+              toast.success('卡片已删除');
+            }}
+            onRelatedCardClick={(id: string) => {
+              const target = cards.find(c => String(c.id) === id);
+              if (target) setPreviewCard(target);
+            }}
+            onUpdateCard={(updatedCard: KnowledgeCardForDetail) => {
+              const updated = convertKnowledgeCardToProjectCard(updatedCard);
+              setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
+              toast.success('卡片已更新');
+            }}
+            onCreateRecommendedCard={(title: string) => toast.info(`推荐: ${title}`)}
+          />
         )}
 
         {/* 任务编辑弹窗 */}

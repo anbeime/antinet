@@ -13,6 +13,7 @@ import {
   Book, FileUp, Download, Link2, X, ExternalLink, Filter
 } from 'lucide-react';
 import { skillService } from '@/services/skillService';
+import { researchProjectService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
 import AppHeader from '@/components/AppHeader';
@@ -261,20 +262,129 @@ const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState('');
+  const [topicCards, setTopicCards] = useState<any[]>([]);
+  const [booksInTopic, setBooksInTopic] = useState<any[]>([]);
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [enableLLM, setEnableLLM] = useState(false);
+  const [pdfAnnotations, setPdfAnnotations] = useState<any[]>([]); // PDF 标注卡片
+  const [loadingAnnotations, setLoadingAnnotations] = useState(false);
+  const [selectedAnnotations, setSelectedAnnotations] = useState<Set<string>>(new Set());
+
+  // 加载专题列表 - 使用 Research Project API
+  useEffect(() => {
+    const loadTopics = async () => {
+      setLoadingTopics(true);
+      try {
+        const data = await researchProjectService.getAll();
+        setTopics(data || []);
+      } catch { /* ignore */ }
+      setLoadingTopics(false);
+    };
+    loadTopics();
+  }, []);
+
+  // 当选择专题时，加载该专题下的书籍列表
+  useEffect(() => {
+    const loadTopicBooks = async () => {
+      if (!selectedTopic) {
+        setTopicCards([]);
+        setBooksInTopic([]);
+        setContent('');
+        return;
+      }
+      try {
+        const projects = await researchProjectService.getAll();
+        const project = projects.find((p: any) => p.name === selectedTopic);
+        if (project && project.id) {
+          const cards = await researchProjectService.getCards(project.id);
+          setTopicCards(cards || []);
+          
+          // 按书籍/来源分组
+          const bookMap = new Map<string, any[]>();
+          cards.forEach((c: any) => {
+            const bookKey = c.book_name || c.source || c.category || '默认';
+            if (!bookMap.has(bookKey)) {
+              bookMap.set(bookKey, []);
+            }
+            bookMap.get(bookKey)!.push(c);
+          });
+          
+          const books = Array.from(bookMap.entries()).map(([name, cardList]) => ({
+            name,
+            count: cardList.length,
+            cards: cardList
+          }));
+          setBooksInTopic(books);
+        }
+      } catch { /* ignore */ }
+    };
+loadTopicBooks();
+  }, [selectedTopic]);
+
+  // 加载 PDF 标注笔记（从 localStorage 笔记队列）
+  useEffect(() => {
+    const loadNotes = () => {
+      if (mode !== 'notes') {
+        setPdfAnnotations([]);
+        setSelectedAnnotations(new Set());
+        return;
+      }
+      setLoadingAnnotations(true);
+      try {
+        const saved = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+        setPdfAnnotations(saved);
+      } catch { /* ignore */ }
+      setLoadingAnnotations(false);
+    };
+    loadNotes();
+    
+    // 监听 localStorage 变化（当在其他标签页添加笔记时）
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'bookskill_notes') loadNotes();
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [mode]);
+
+  const toggleAnnotation = (id: string) => {
+    const newSelected = new Set(selectedAnnotations);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedAnnotations(newSelected);
+    
+    // 更新内容 - 使用 id 匹配
+    const selectedCards = pdfAnnotations.filter((a: any, i: number) => newSelected.has(a.id || String(i)));
+    if (selectedCards.length > 0) {
+      const combined = selectedCards.map((c: any) => 
+        `【${c.title || '无标题'}】\n${c.content || ''}`
+      ).join('\n\n---\n\n');
+      setContent(combined);
+    } else {
+      setContent('');
+    }
+  };
 
   const handleExtract = async () => {
+    let modelToUse = enableLLM ? 'local-7b' : undefined;
+    
     if (!content.trim()) {
       toast.error('请填写书籍内容或笔记');
       return;
     }
+    
     setLoading(true);
     setResult(null);
     try {
       let data;
-      if (mode === 'text') {
-        data = await skillService.extractBookSkill(content, bookName, bookAuthor);
-      } else {
+      if (mode === 'notes') {
         data = await skillService.extractBookSkillFromNotes(content, bookName, bookAuthor);
+      } else {
+        data = await skillService.extractBookSkill(content, bookName, bookAuthor, modelToUse);
       }
       setResult(data);
       toast.success(`成功提取 ${data.methodologies?.length || 0} 个方法论`);
@@ -296,7 +406,7 @@ const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
           </h2>
 
           {/* Mode toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setMode('text')}
               className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all ${
@@ -315,6 +425,47 @@ const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
             </button>
           </div>
 
+          {/* 专题快速选择 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Library size={14} className="text-purple-500" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">从专题提取</span>
+            </div>
+            <select
+              value={selectedTopic}
+              onChange={(e) => setSelectedTopic(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none"
+            >
+              <option value="">-- 选择专题 --</option>
+              {topics.map((t: any) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* LLM 增强开关 */}
+          {selectedTopic && (
+            <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800 space-y-2">
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} className="text-purple-500" />
+                <span className="text-xs font-medium text-purple-700 dark:text-purple-300">LLM 增强提取</span>
+                <label className="flex items-center gap-1.5 ml-auto cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableLLM}
+                    onChange={(e) => setEnableLLM(e.target.checked)}
+                    className="w-4 h-4 text-purple-600 rounded"
+                  />
+                  <span className="text-xs text-purple-600 dark:text-purple-400">启用</span>
+                </label>
+              </div>
+              <p className="text-[10px] text-purple-600 dark:text-purple-400">
+                💡 启用后使用 7B 模型进行增强提取
+              </p>
+            </div>
+          )}
+
+          {/* 书籍原文 / 笔记输入 */}
           <input
             type="text"
             placeholder="书籍名称（选填）"
@@ -330,12 +481,103 @@ const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none"
           />
           <textarea
-            placeholder={mode === 'text' ? "粘贴书籍核心章节内容..." : "粘贴你的四色笔记/读书总结..."}
+            placeholder={mode === 'text' ? "粘贴书籍核心章节内容..." : "从下方选择标注卡片，或直接编辑..."}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            rows={10}
+            rows={mode === 'notes' ? 4 : 10}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-yellow-500 focus:border-transparent outline-none resize-none"
           />
+          
+          {/* PDF 标注卡片选择 - 仅笔记模式显示 */}
+          {mode === 'notes' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  PDF 笔记队列 ({selectedAnnotations.size}/{pdfAnnotations.length})
+                </span>
+                <div className="flex items-center gap-2">
+                  {pdfAnnotations.length > 0 && (
+                    <button
+                      onClick={() => {
+                        localStorage.removeItem('bookskill_notes');
+                        setPdfAnnotations([]);
+                        setSelectedAnnotations(new Set());
+                        setContent('');
+                        toast.success('笔记队列已清空');
+                      }}
+                      className="text-[10px] text-red-500 hover:text-red-600"
+                    >
+                      清空
+                    </button>
+                  )}
+                  <a href="/pdf-viewer" target="_blank" className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1">
+                    去标注 PDF →
+                  </a>
+                </div>
+              </div>
+              {loadingAnnotations ? (
+                <div className="text-center py-4 text-xs text-gray-400"><Loader size={14} className="animate-spin inline mr-1" />加载中...</div>
+              ) : pdfAnnotations.length === 0 ? (
+                <div className="text-center py-4 text-xs text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                  <p>笔记队列空着</p>
+                  <p className="mt-1">在 PDF 预览页面勾选卡片 → 添加到笔记</p>
+                  <a href="/pdf-viewer" target="_blank" className="inline-block mt-2 px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600">
+                    去添加笔记
+                  </a>
+                </div>
+              ) : (
+                <div className="max-h-60 overflow-y-auto space-y-1.5 border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+                  {pdfAnnotations.map((ann: any, idx: number) => {
+                    const isSelected = selectedAnnotations.has(ann.id || idx);
+                    const colorClass = ann.card_type === 'blue' ? 'border-l-blue-400 bg-blue-50 dark:bg-blue-900/20' :
+                                       ann.card_type === 'green' ? 'border-l-green-400 bg-green-50 dark:bg-green-900/20' :
+                                       ann.card_type === 'yellow' ? 'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20' :
+                                       ann.card_type === 'red' ? 'border-l-red-400 bg-red-50 dark:bg-red-900/20' :
+                                       'border-l-gray-400 bg-gray-50 dark:bg-gray-800';
+                    return (
+                      <div key={ann.id || idx} className="relative group">
+                        <button
+                          onClick={() => toggleAnnotation(ann.id || String(idx))}
+                          className={`w-full text-left p-2.5 rounded border cursor-pointer border-l-4 transition-all ${colorClass} ${
+                            isSelected ? 'ring-2 ring-blue-400 ring-offset-1' : 'border-gray-100 dark:border-gray-700'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            <input type="checkbox" checked={isSelected} onChange={() => {}}
+                              className="mt-0.5 w-3.5 h-3.5 rounded text-amber-500 cursor-pointer" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">{ann.title}</p>
+                              <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1 mt-0.5">{ann.content}</p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const id = ann.id || String(idx);
+                                const newSet = new Set(selectedAnnotations);
+                                newSet.delete(id);
+                                setSelectedAnnotations(newSet);
+                                const filtered = pdfAnnotations.filter((a: any, i: number) => (a.id || String(i)) !== id);
+                                setPdfAnnotations(filtered);
+                                localStorage.setItem('bookskill_notes', JSON.stringify(filtered));
+                                toast.success('已移除');
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-opacity"
+                            >
+                              <X size={12} className="text-gray-400" />
+                            </button>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-[10px] text-gray-400 text-center">
+                勾选卡片自动填充到文本框，点击 ❌ 从队列移除
+              </p>
+            </div>
+          )}
+          
           <button
             onClick={handleExtract}
             disabled={loading || !content.trim()}
@@ -352,6 +594,81 @@ const ExtractPanel: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
 
       {/* Results */}
       <div>
+        {/* 专题卡片预览 */}
+        {!result && selectedTopic && topicCards.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <Library size={18} className="text-purple-500" />
+                专题卡片预览
+              </h2>
+              <span className="text-xs px-2 py-0.5 bg-purple-100 dark:bg-purple-800 rounded text-purple-600 dark:text-purple-300">
+                {topicCards.length} 张
+              </span>
+            </div>
+            
+            {/* 按书籍分组显示卡片 */}
+            <div className="space-y-4 max-h-[500px] overflow-y-auto">
+              {booksInTopic.map((book, bi) => (
+                <div key={bi} className="space-y-2">
+                  {/* 书籍标题 - 可点击 */}
+                  <button
+                    onClick={() => {
+                      const combinedContent = book.cards.map((c: any) => 
+                        `【${c.title || '无标题'}】\n${c.content || ''}`
+                      ).join('\n\n---\n\n');
+                      setContent(combinedContent);
+                      setBookName(book.name);
+                    }}
+                    className="w-full text-left p-3 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700 hover:from-yellow-100 hover:to-orange-100 dark:hover:from-yellow-900/40 dark:hover:to-orange-900/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Book size={16} className="text-yellow-600 dark:text-yellow-400" />
+                        <span className="font-medium text-yellow-700 dark:text-yellow-300">{book.name}</span>
+                      </div>
+                      <span className="text-xs text-yellow-500 dark:text-yellow-400">
+                        {book.count} 张卡片
+                      </span>
+                    </div>
+                  </button>
+                  
+                  {/* 卡片列表 - 带颜色的卡片 */}
+                  <div className="pl-4 space-y-2">
+                    {book.cards.map((c: any, ci: number) => {
+                      const colorClass = c.card_type === 'blue' ? 'border-l-blue-400 bg-blue-50 dark:bg-blue-900/20' :
+                                         c.card_type === 'green' ? 'border-l-green-400 bg-green-50 dark:bg-green-900/20' :
+                                         c.card_type === 'red' ? 'border-l-red-400 bg-red-50 dark:bg-red-900/20' :
+                                         'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20';
+                      return (
+                        <button
+                          key={ci}
+                          onClick={() => {
+                            setContent(`【${c.title || '无标题'}】\n${c.content || ''}`);
+                            setBookName(book.name);
+                          }}
+                          className={`w-full text-left p-3 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer ${colorClass} hover:shadow-md transition-shadow`}
+                        >
+                          <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{c.title}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{c.content}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <p className="text-xs text-gray-400 text-center">
+              点击书籍或卡片填充内容
+            </p>
+          </motion.div>
+        )}
+
         {result && (
           <motion.div
             initial={{ opacity: 0, x: 20 }}

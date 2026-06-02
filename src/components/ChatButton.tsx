@@ -63,12 +63,16 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
           <motion.div
             key="chat-button"
             onMouseDown={handleMouseDown}
-            style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+            style={{ 
+              transform: `translate(${position.x}px, ${position.y}px)`,
+              right: '24px',
+              top: '50%'
+            }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             className={cn(
-              "fixed z-40 cursor-move bottom-6 right-6",
+              "fixed z-50 cursor-move",
               className
             )}
           >

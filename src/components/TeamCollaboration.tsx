@@ -27,18 +27,17 @@ import {
   Save,
   Crown,
   Sparkles,
-  Play,
   RotateCcw,
   Download,
   ChevronDown,
   ChevronUp,
   Calendar,
   Brain,
-GitBranch,
+  GitBranch,
   Eye
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
-import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
+import { teamMemberService, activityService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import * as echarts from 'echarts';
@@ -188,17 +187,6 @@ const AgentMeetingPanel: React.FC = () => {
         });
       });
       
-const formatSpeechContent = (raw: string) => {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
-              }
-              return raw;
-            } catch {
-              return raw;
-            }
-          };
           const decisionText = (() => {
             try {
               const p = JSON.parse(meetingResult.decision);
@@ -600,7 +588,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap' | 'wiki-editor'>('integration');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap' | 'wiki-editor' | 'meeting'>('integration');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -796,6 +784,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
           permissions: m.permissions || ['read', 'write']
         })));
 
+        // 记录最近活动用于展示
+        if (activities && activities.length > 0) {
+          console.info(`[协作] 最近 ${activities.length} 条活动已加载`);
+        }
+
 // 同步当前用户权限：匹配到团队成员则使用其权限
         const matchedMember = members.find((m: any) => m.name === userInfo.name);
         if (matchedMember && matchedMember.permissions) {
@@ -864,6 +857,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
     loadCollaborationData();
   }, []);
+
+  // 同步所有项目任务到 tasks 状态
+  useEffect(() => {
+    const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
+    setTasks(allTasks);
+  }, [projects]);
 
   // ========== 团队成员管理 ==========
   const handleAddMember = () => {
@@ -1365,8 +1364,21 @@ const TeamCollaborationEnhanced: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-center">
-            <Network size={18} className="mr-2" />
-            <span>知识网络</span>
+            <Edit3 size={18} className="mr-2" />
+            <span>Wiki 编辑器</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('meeting')}
+          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+            activeTab === 'meeting'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+          }`}
+        >
+          <div className="flex items-center justify-center">
+            <Sparkles size={18} className="mr-2" />
+            <span>8-Agent 会议</span>
           </div>
         </button>
       </div>
@@ -1380,6 +1392,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
               <div>
                 <h2 className="text-xl font-bold mb-2">团队知识整合</h2>
                 <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容,生成完整的团队知识图谱</p>
+                {isAdmin && (
+                  <span className="inline-flex items-center mt-2 px-2 py-1 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 rounded">
+                    <Crown size={12} className="mr-1" />
+                    管理员模式
+                  </span>
+                )}
               </div>
               <button 
                 onClick={handleAddMember}
@@ -1946,12 +1964,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
               </motion.div>
 
               {/* 团队成员贡献 */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.3 } }}
                 className="md:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
               >
-                <h3 className="font-semibold mb-3">团队成员贡献分析</h3>
+                <h3 className="font-semibold mb-3 flex items-center">
+                  <BarChart3 size={16} className="mr-2" />
+                  团队成员贡献分析
+                </h3>
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={teamMembers.map(m => ({ name: m.name, 贡献值: m.contribution || 0 }))}>
@@ -1961,6 +1982,85 @@ const TeamCollaborationEnhanced: React.FC = () => {
                       <Tooltip />
                       <Bar dataKey="贡献值" fill="#8884d8" />
                     </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* 第二行图表：折线图 + 饼图 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0, transition: { delay: 0.4 } }}
+                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+              >
+                <h3 className="font-semibold mb-3 flex items-center">
+                  <LineChartIcon size={16} className="mr-2" />
+                  近7天协作趋势
+                </h3>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={[
+                        { day: '周一', 消息: 32, 任务: 5, 文档: 3 },
+                        { day: '周二', 消息: 28, 任务: 8, 文档: 6 },
+                        { day: '周三', 消息: 45, 任务: 6, 文档: 4 },
+                        { day: '周四', 消息: 38, 任务: 9, 文档: 7 },
+                        { day: '周五', 消息: 52, 任务: 11, 文档: 8 },
+                        { day: '周六', 消息: 18, 任务: 3, 文档: 2 },
+                        { day: '周日', 消息: 22, 任务: 4, 文档: 3 },
+                      ]}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="day" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="消息" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="任务" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="文档" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0, transition: { delay: 0.5 } }}
+                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+              >
+                <h3 className="font-semibold mb-3 flex items-center">
+                  <PieChartIcon size={16} className="mr-2" />
+                  成员角色分布
+                </h3>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={(() => {
+                          const map: Record<string, number> = {};
+                          teamMembers.forEach(m => { const r = m.role || '其他'; map[r] = (map[r] || 0) + 1; });
+                          const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+                          return Object.entries(map).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
+                        })()}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, value }) => `${name}: ${value}`}
+                        outerRadius={80}
+                        dataKey="value"
+                      >
+                        {(() => {
+                          const map: Record<string, number> = {};
+                          teamMembers.forEach(m => { const r = m.role || '其他'; map[r] = (map[r] || 0) + 1; });
+                          const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+                          return Object.entries(map).map(([key], i) => (
+                            <Cell key={`cell-${key}-${i}`} fill={colors[i % colors.length]} />
+                          ));
+                        })()}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
                   </ResponsiveContainer>
                 </div>
               </motion.div>
@@ -1975,8 +2075,21 @@ const TeamCollaborationEnhanced: React.FC = () => {
               <div>
                 <h2 className="text-xl font-bold mb-2">项目管理</h2>
                 <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
+                <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                  <span>共 {projects.length} 个项目</span>
+                  <span>·</span>
+                  <span>共 {tasks.length} 个任务</span>
+                  <span>·</span>
+                  <span className="text-green-600">
+                    已完成 {tasks.filter(t => t.status === 'completed').length}
+                  </span>
+                  <span>·</span>
+                  <span className="text-orange-600">
+                    进行中 {tasks.filter(t => t.status === 'in-progress').length}
+                  </span>
+                </div>
               </div>
-              <button 
+              <button
                 onClick={handleAddProject}
                 className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
@@ -2191,6 +2304,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <WikiEditor />
           </div>
         )}
+
+        {/* 8-Agent 智能会议 */}
+        {activeTab === 'meeting' && <AgentMeetingPanel />}
       </div>
 
       {/* 成员编辑弹窗 */}
@@ -3041,6 +3157,14 @@ interface MindMapPanelProps {
   userInfo: { id: string; name: string; avatar: string; color: string };
 }
 
+interface MindNode {
+  id: string;
+  text: string;
+  children: MindNode[];
+  collapsed: boolean;
+  color: string;
+}
+
 const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3072,7 +3196,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
       return {
         id: 'root',
         text: userInfo.name ? `${userInfo.name}的思维导图` : '团队思维导图',
-        children: [],
+        children: [] as MindNode[],
         collapsed: false,
         color: '#8b5cf6'
       };
@@ -3092,15 +3216,15 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
       'red': '红色卡片'
     };
 
-    const children = Object.entries(byType).map(([type, typeCards]) => ({
+    const children: MindNode[] = Object.entries(byType).map(([type, typeCards]): MindNode => ({
       id: `type-${type}`,
       text: typeNames[type] || type,
       color: colorMap[type] || '#3b82f6',
       collapsed: false,
-      children: typeCards.slice(0, 10).map(card => ({
+      children: typeCards.slice(0, 10).map((card): MindNode => ({
         id: `card-${card.id}`,
         text: card.title?.slice(0, 20) || `卡片${card.id}`,
-        children: [],
+        children: [] as MindNode[],
         collapsed: false,
         color: colorMap[type] || '#3b82f6'
       }))
@@ -3115,7 +3239,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
     };
   };
 
-  const [root, setRoot] = useState(buildMindMap);
+  const [root, setRoot] = useState<MindNode>(() => buildMindMap());
   const [selectedNode, setSelectedNode] = useState<string | null>('root');
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -3130,46 +3254,46 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
     const newNode = {
       id: `node-${Date.now()}`,
       text: '新主题',
-      children: [],
+      children: [] as MindNode[],
       collapsed: false,
       color: nodeColors[Math.floor(Math.random() * nodeColors.length)]
     };
-    
-    const addToParent = (node: typeof root): typeof root => {
+
+    const addToParent = (node: MindNode): MindNode => {
       if (node.id === parentId) {
         return { ...node, children: [...node.children, newNode] };
       }
       return { ...node, children: node.children.map(addToParent) };
     };
-    
+
     setRoot(addToParent(root));
   };
 
   const deleteNode = (nodeId: string) => {
     if (nodeId === 'root') return;
-    
-    const deleteFromTree = (node: typeof root): typeof root => ({
+
+    const deleteFromTree = (node: MindNode): MindNode => ({
       ...node,
       children: node.children.filter(c => c.id !== nodeId).map(deleteFromTree)
     });
-    
+
     setRoot(deleteFromTree(root));
     setSelectedNode(null);
   };
 
   const updateNodeText = (nodeId: string, newText: string) => {
-    const updateInTree = (node: typeof root): typeof root => {
+    const updateInTree = (node: MindNode): MindNode => {
       if (node.id === nodeId) {
         return { ...node, text: newText };
       }
       return { ...node, children: node.children.map(updateInTree) };
     };
-    
+
     setRoot(updateInTree(root));
     setEditingNode(null);
   };
 
-  const renderNode = (node: typeof root, isRoot: boolean = false) => {
+  const renderNode = (node: MindNode, isRoot: boolean = false) => {
     const isSelected = selectedNode === node.id;
     const isEditing = editingNode === node.id;
 

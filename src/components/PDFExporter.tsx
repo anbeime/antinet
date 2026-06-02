@@ -250,6 +250,13 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    };
+  }, []);
 
   if (cards.length === 0) {
     return (
@@ -276,7 +283,7 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
                   disabled
                   className="bg-blue-400 text-white px-4 py-2 rounded-lg cursor-wait"
                 >
-                  生成中...
+                  {isGenerating ? '准备中...' : '生成中...'}
                 </button>
               );
             }
@@ -292,10 +299,26 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
               );
             }
 
+            if (url && url !== urlRef.current) {
+              urlRef.current = url;
+              setIsGenerating(true);
+              fetch(url).then(r => r.blob()).then(b => {
+                setPdfBlob(b);
+                setIsGenerating(false);
+              }).catch(() => setIsGenerating(false));
+            }
+
             return (
-              <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
-                {children || '导出 PDF'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
+                  {children || '导出 PDF'}
+                </button>
+                {pdfBlob && (
+                  <span className="text-xs text-green-600 dark:text-green-400">
+                    ✓ {Math.round(pdfBlob.size / 1024)}KB
+                  </span>
+                )}
+              </div>
             );
           }}
         </PDFDownloadLink>

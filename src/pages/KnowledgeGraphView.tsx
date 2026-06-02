@@ -11,6 +11,7 @@ import {
   Maximize2, Minimize2
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import AppHeader from '@/components/AppHeader';
 
 const API_BASE = getApiBaseUrl()
 
@@ -808,7 +809,9 @@ useEffect(() => {
   };
 
 return (
-    <div className="flex h-screen relative">
+    <div className="flex flex-col h-screen">
+    <AppHeader />
+    <div className="flex flex-1 min-h-0 relative">
       {/* Mobile toggle */}
       <button onClick={() => setSidebarOpen(!sidebarOpen)}
         className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
@@ -1361,12 +1364,12 @@ return (
                         {card.content && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
                             {card.content.substring(0, 60)}{card.content.length > 60 ? '...' : ''}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })
-              )}
+        </p>
+        )}
+        </div>
+        );
+      })
+      )}
             </div>
           </div>
         </div>
@@ -1443,10 +1446,11 @@ return (
               )}
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+</div>
+)}
+);
+
+
 };
 
 export default KnowledgeGraphView;

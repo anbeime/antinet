@@ -33,9 +33,10 @@ const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ conten
       if (part.startsWith('```')) {
         const lines = part.slice(3, -3).split('\n');
         const lang = lines[0]?.trim();
-        const code = lines.slice(1).join('\n');
+        const code = lines.slice(lang ? 1 : 0).join('\n');
         return (
           <pre key={i} className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 text-xs overflow-x-auto">
+            {lang && <div className="text-gray-400 text-xs mb-1">{lang}</div>}
             <code>{code}</code>
           </pre>
         );

@@ -9,10 +9,8 @@
  */
 
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import { 
-  evolvingChatService, 
-  EvolvingChatRequest, 
-  EvolvingChatResponse 
+import {
+  evolvingChatService,
 } from './evolvingChatService';
 
 const HERMES_API_BASE = getApiBaseUrl() + '/api/hermes';
@@ -159,8 +157,6 @@ export async function unifiedChat(
   });
 
   return {
-    response: evolvingResult.response,
-    cards: evolvingResult.cards || [],
     provider: 'evolving',
     ...evolvingResult,
   };

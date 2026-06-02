@@ -119,20 +119,20 @@ const WikiGraphView: React.FC<WikiGraphViewProps> = ({ nodes, edges, onNodeClick
       .join('g')
       .attr('cursor', 'pointer')
       .call(d3.drag<SVGGElement, GraphNode>()
-        .on('start', (event, d) => {
-          if (!event.active) simulation.alphaTarget(0.3).restart();
-          d.fx = d.x;
-          d.fy = d.y;
-        })
-        .on('drag', (event, d) => {
-          d.fx = event.x;
-          d.fy = event.y;
-        })
-        .on('end', (event, d) => {
-          if (!event.active) simulation.alphaTarget(0);
-          d.fx = null;
-          d.fy = null;
-        }));
+      .on('start', (event: any, d: GraphNode) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on('drag', (event: any, d: GraphNode) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on('end', (event: any, d: GraphNode) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      }) as any);
 
     nodeGroup.append('circle')
       .attr('r', d => 12 + Math.min(d.title.length / 2, 8))
@@ -191,23 +191,23 @@ const WikiGraphView: React.FC<WikiGraphViewProps> = ({ nodes, edges, onNodeClick
 
   const allTags = Array.from(new Set(nodes.flatMap(n => n.tags)));
 
-  const focusNode = (nodeId: string) => {
+  const focusNode = useCallback((nodeId: string) => {
     const node = filteredNodes.find(n => n.id === nodeId);
     if (!node || !svgRef.current) return;
 
     const svg = d3.select(svgRef.current);
-    const width = svg.attr('width');
-    const height = svg.attr('height');
+    const width = Number(svg.attr('width')) || 800;
+    const height = Number(svg.attr('height')) || 600;
 
     svg.transition()
       .duration(750)
       .call(
         d3.zoom<SVGSVGElement, unknown>().transform as any,
-        d3.zoomIdentity.translate(width! / 2 - (node.x || 0), height! / 2 - (node.y || 0)).scale(1.5)
+        d3.zoomIdentity.translate(width / 2 - (node.x || 0), height / 2 - (node.y || 0)).scale(1.5)
       );
 
     setSelectedNode(node);
-  };
+  }, [filteredNodes]);
 
   return (
     <div className="flex h-full">
@@ -281,19 +281,25 @@ const WikiGraphView: React.FC<WikiGraphViewProps> = ({ nodes, edges, onNodeClick
           </div>
         </div>
 
-        {selectedNode && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-gray-800 mb-2">{selectedNode.title}</h4>
-            <div className="text-xs text-gray-500 mb-2">类型: {selectedNode.type}</div>
-            <div className="flex flex-wrap gap-1">
-              {selectedNode.tags.map(tag => (
-                <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+      {selectedNode && (
+      <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+        <h4 className="font-medium text-gray-800 mb-2">{selectedNode.title}</h4>
+        <div className="text-xs text-gray-500 mb-2">类型: {selectedNode.type}</div>
+        <div className="flex flex-wrap gap-1">
+          {selectedNode.tags.map(tag => (
+            <span key={tag} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+              {tag}
+            </span>
+          ))}
+        </div>
+        <button
+          onClick={() => focusNode(selectedNode.id)}
+          className="mt-2 text-xs text-blue-600 hover:underline"
+        >
+          聚焦此节点
+        </button>
+      </div>
+      )}
       </div>
 
       <div ref={containerRef} className="flex-1 bg-gray-50 relative">

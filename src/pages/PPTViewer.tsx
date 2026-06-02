@@ -4,14 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Presentation, Upload, Download, ChevronLeft, ChevronRight,
-  Play, Pause, Maximize2, Grid, List, FilePlus, Edit3, Save,
-  RotateCcw, Type, Palette, Eye, Sparkles
+  Play, Pause, Grid, List, Edit3, Save,
+  RotateCcw
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import type {
   PPTPreviewData, SlideData, SlideShape,
-  DesignTheme, BrandStyle, ThemeColors
+  DesignTheme, BrandStyle
 } from '@/types/designSystem';
 
 const API_BASE = getApiBaseUrl();
@@ -124,7 +124,7 @@ const PPTViewer: React.FC = () => {
         const content = await zip.file(sf)?.async('string');
         if (!content) continue;
         const lines: string[] = [];
-        let title = '';
+        let _title = '';
         const textElements = content.match(/<a:t[^>]*>([^<]+)<\/a:t>/g);
         if (textElements) {
           for (let i = 0; i < textElements.length; i++) {
@@ -132,7 +132,7 @@ const PPTViewer: React.FC = () => {
             if (m?.[1]) {
               const t = m[1].trim();
               if (t) {
-                if (i === 0) title = t;
+                if (i === 0) _title = t;
                 else lines.push(t);
               }
             }
@@ -140,6 +140,7 @@ const PPTViewer: React.FC = () => {
         }
         parsedSlides.push({
           index: parsedSlides.length + 1,
+          title: _title || `幻灯片 ${parsedSlides.length + 1}`,
           shapes: [{ type: 'PARAGRAPH', left: 40, top: 40, width: 880, height: 460, text: lines.join('\n'), font_size: 18, font_color: '#333' } as SlideShape],
           background: '#ffffff',
         });
@@ -234,8 +235,7 @@ const PPTViewer: React.FC = () => {
   };
 
   const colors = brandStyle.theme.colors;
-  const slideBg = current?.background || colors.background;
-
+  const _slideBg = current?.background || colors.background;
   const renderSlideContent = (sd: SlideData) => {
     if (!sd) return null;
     const origW = preview?.slide_width || 960;
@@ -245,7 +245,7 @@ const PPTViewer: React.FC = () => {
 
     return (
       <div style={{
-        width: '100%', height: '100%', background: sd.background || '#ffffff',
+        width: '100%', height: '100%', background: sd.background || _slideBg,
         position: 'relative', overflow: 'hidden',
       }}>
         {sd.shapes.map((shape, i) => {
@@ -332,7 +332,7 @@ const PPTViewer: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900">
+    <div ref={containerRef} className="flex flex-col h-screen bg-gray-900">
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center space-x-3">
           <Presentation className="w-5 h-5 text-blue-400" />

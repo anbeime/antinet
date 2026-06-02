@@ -48,6 +48,15 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [jumpPageInput, setJumpPageInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredAnnotations = annotations.filter(ann => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (ann.title || '').toLowerCase().includes(q) ||
+      (ann.content_preview || '').toLowerCase().includes(q) ||
+      String(ann.card_id).includes(q);
+  });
 
   // 加载 PDF
   useEffect(() => {
@@ -335,6 +344,13 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
           >
             <Download size={16} />
           </button>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 text-gray-500"
+            title="关闭"
+          >
+            <X size={16} />
+          </button>
         </div>
       </div>
 
@@ -355,12 +371,32 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
         <div className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-3">
           <div className="flex items-center gap-2 mb-2">
             <MapPin size={14} className="text-purple-500" />
-            <span className="text-xs font-semibold text-gray-500 uppercase">
-              卡片标注 · 共 {annotations.length} 张卡片 · 匹配 {searchResults.size} 页
-            </span>
+            <div className="flex items-center gap-1 flex-1">
+              <span className="text-xs font-semibold text-gray-500 uppercase">
+                卡片标注 · 共 {annotations.length} 张卡片 · 匹配 {searchResults.size} 页
+              </span>
+              <div className="flex items-center gap-1 ml-auto">
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="搜索..."
+                  className="text-xs px-2 py-0.5 border rounded bg-white dark:bg-gray-700 dark:border-gray-600 w-16 outline-none"
+                />
+                <Search size={12} className="text-gray-400 shrink-0" />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    title="清除搜索"
+                  >
+                    <ArrowDown size={12} className="text-gray-400" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto">
-            {annotations.map(ann => {
+            {filteredAnnotations.map(ann => {
               const isCurrent = String(ann.card_id) === String(currentCardId);
               const hasPageMatch = [...searchResults.entries()].some(
                 ([_, as]) => as.some(a => a.card_id === ann.card_id)
@@ -374,11 +410,7 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
               return (
                 <button
                   key={ann.card_id}
-                  onClick={() => {
-                    if (matchPage) {
-                      goToPage(matchPage);
-                    }
-                  }}
+                  onClick={() => locateAnnotation(ann)}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-all ${
                     isCurrent
                       ? 'bg-purple-200 text-purple-800 dark:bg-purple-800 dark:text-purple-200 ring-2 ring-purple-400'

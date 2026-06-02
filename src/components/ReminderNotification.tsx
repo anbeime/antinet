@@ -205,6 +205,9 @@ export const useNotifications = () => {
 
 export const ReminderNotification: React.FC = () => {
   const { showNotification, voiceEnabled, toggleVoice } = useNotifications();
+  const [currentReminder, setCurrentReminder] = useState<{ id: number; title: string; due_date?: string; remind_at?: string } | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const dismissedToday = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const checkReminders = async () => {
@@ -212,18 +215,21 @@ export const ReminderNotification: React.FC = () => {
         const response = await fetch(getApiBaseUrl() + '/api/data/gtd/reminders/pending');
         if (response.ok) {
           const data = await response.json();
-          if (data.reminders && data.reminders.length > 0) {
-            data.reminders.forEach((reminder: { id: number; title: string; due_date?: string; remind_at?: string }) => {
-              const body = reminder.due_date 
-                ? `${reminder.title} - 到期: ${reminder.due_date}`
-                : `${reminder.title}`;
-              
-              showNotification(
-                '🔔 任务提醒',
-                body,
-                reminder.id
-              );
-            });
+          const reminders = data.reminders || [];
+          
+          // 找出未忽略的提醒
+          const activeReminder = reminders.find((r: any) => !dismissedToday.current.has(r.id));
+          
+          if (activeReminder) {
+            setCurrentReminder(activeReminder);
+            setIsVisible(true);
+            
+            // 自动播放语音提醒
+            if (voiceEnabled && 'speechSynthesis' in window) {
+              const utterance = new SpeechSynthesisUtterance(`提醒：${activeReminder.title}`);
+              utterance.lang = 'zh-CN';
+              speechSynthesis.speak(utterance);
+            }
           }
         }
       } catch (error) {
@@ -231,25 +237,75 @@ export const ReminderNotification: React.FC = () => {
       }
     };
 
-    const interval = setInterval(checkReminders, 86400000);
+    // 立即检查一次
     checkReminders();
+    // 然后每小时检查一次
+    const interval = setInterval(checkReminders, 3600000);
 
     return () => clearInterval(interval);
-  }, [showNotification]);
+  }, [voiceEnabled]);
+
+  const dismissToday = () => {
+    if (currentReminder) {
+      dismissedToday.current.add(currentReminder.id);
+    }
+    setIsVisible(false);
+    setCurrentReminder(null);
+  };
+
+  const viewNow = () => {
+    if (currentReminder) {
+      showNotification('🔔 任务提醒', currentReminder.title, currentReminder.id);
+    }
+    setIsVisible(false);
+    setCurrentReminder(null);
+  };
+
+  if (!isVisible || !currentReminder) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-4">
-        <span className="text-sm font-medium">🔔 提醒</span>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={voiceEnabled}
-            onChange={(e) => toggleVoice(e.target.checked)}
-            className="w-4 h-4 text-blue-600 rounded"
-          />
-          <span className="text-sm">语音</span>
-        </label>
+    <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4 duration-300">
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 p-4 w-80">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+            <span className="text-xl">🔔</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm text-gray-900 dark:text-gray-100">
+              {currentReminder.title}
+            </h3>
+            {currentReminder.due_date && (
+              <p className="text-xs text-gray-500 mt-1">
+                📅 {currentReminder.due_date}
+              </p>
+            )}
+            <div className="flex items-center justify-between mt-3">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={voiceEnabled}
+                  onChange={(e) => toggleVoice(e.target.checked)}
+                  className="w-3.5 h-3.5 text-blue-600 rounded"
+                />
+                <span className="text-xs text-gray-500">语音播报</span>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={dismissToday}
+                  className="px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                >
+                  今日不再提醒
+                </button>
+                <button
+                  onClick={viewNow}
+                  className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  立即查看
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

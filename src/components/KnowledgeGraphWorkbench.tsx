@@ -6,14 +6,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
 import {
-  Search, Filter, List, Network, Edit3, Eye, Copy, Download,
+  Search, Filter, List, Network, Edit3, Eye, Download,
   ZoomIn, ZoomOut, Maximize2, RefreshCw, Link2, ChevronRight,
   ChevronDown, X, Plus, Trash2, ExternalLink, FileText,
   Calendar, SortAsc, SortDesc, Copy as CopyIcon, FileDown, Image,
-  Presentation, Menu
+  Presentation, Menu, Hash
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import ReactMarkdown from 'react-markdown';
 import { 
@@ -196,7 +195,10 @@ useEffect(() => {
   
   // 是否使用样本数据（后端不可用时的降级）
   const [isSampleData, setIsSampleData] = useState(false);
-  
+
+  // 导出菜单显示状态
+  const [showExportMenu, setShowExportMenu] = useState(false);
+
   // ============ 带超时的 fetch ============
   const fetchWithTimeout = useCallback(async (url: string, options?: RequestInit, timeoutMs = 8000) => {
     const controller = new AbortController();
@@ -901,6 +903,81 @@ result = result.filter(card => {
               </span>
             )}
           </h2>
+
+          {/* 快捷操作栏 */}
+          <div className="flex gap-1 mb-3 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowNewCardModal(true)}
+              title="新建卡片"
+              className="flex-1 min-w-0"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (selectedCard) {
+                  setCardToDelete(selectedCard.id);
+                  setShowDeleteConfirm(true);
+                } else {
+                  toast.info('请先选中一张卡片');
+                }
+              }}
+              title="删除选中卡片"
+              className="flex-1 min-w-0"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const sorted = [...cards].sort((a, b) => {
+                  const ad = new Date(a.created_at || 0).getTime();
+                  const bd = new Date(b.created_at || 0).getTime();
+                  return bd - ad;
+                });
+                toast.info(`最新卡片: ${sorted[0]?.title || '无'}`);
+              }}
+              title="最新卡片"
+              className="flex-1 min-w-0"
+            >
+              <Calendar className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toast.info(`共 ${cards.length} 张卡片`)}
+              title="筛选统计"
+              className="flex-1 min-w-0"
+            >
+              <Filter className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {loading && (
+            <div className="text-xs text-blue-500 dark:text-blue-400 mb-2 flex items-center gap-1">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              正在加载数据...
+            </div>
+          )}
+
+          {selectedNodeId && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+              <Hash className="w-3 h-3" />
+              已选中节点: {selectedNodeId}
+              <button
+                onClick={() => setSelectedNodeId(null)}
+                className="ml-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           
           {/* 视图切换 */}
           <div className="flex gap-2 mb-4">
@@ -1086,6 +1163,12 @@ result = result.filter(card => {
               <h2 className="font-semibold text-lg truncate">
                 {selectedCard.title || '无标题'}
               </h2>
+              {isEditing && (
+                <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 shrink-0">
+                  <Edit3 className="w-3 h-3 inline mr-1" />
+                  编辑中
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {/* 编辑模式切换 */}
@@ -1121,6 +1204,92 @@ result = result.filter(card => {
               <Button variant="outline" size="sm" onClick={() => setSelectedCard(null)}>
                 <X className="w-4 h-4" />
               </Button>
+
+              {/* 导出菜单 */}
+              <div className="relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  title="导出选项"
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
+                <AnimatePresence>
+                  {showExportMenu && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1"
+                    >
+                      <button
+                        onClick={() => { handleCopyRichText(); setShowExportMenu(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <CopyIcon className="w-4 h-4" />
+                        复制富文本
+                      </button>
+                      <button
+                        onClick={() => { handleCopyMarkdown(); setShowExportMenu(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <FileText className="w-4 h-4" />
+                        复制 Markdown
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      <button
+                        onClick={() => { handleExportHTML(); setShowExportMenu(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <FileDown className="w-4 h-4" />
+                        导出 HTML
+                      </button>
+                      <button
+                        onClick={() => { handleExportPNG(); setShowExportMenu(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <Image className="w-4 h-4" />
+                        导出 PNG
+                      </button>
+                      <button
+                        onClick={() => { handleExportPPT(); setShowExportMenu(false); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <Presentation className="w-4 h-4" />
+                        导出 PPT
+                      </button>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      <button
+                        onClick={() => {
+                          if (selectedCard) {
+                            const url = `${window.location.origin}/knowledge-graph?card=${selectedCard.id}`;
+                            navigator.clipboard.writeText(url);
+                            toast.success('链接已复制');
+                          }
+                          setShowExportMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <Link2 className="w-4 h-4" />
+                        复制链接
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (selectedCard) {
+                            window.open(`/knowledge-graph?card=${selectedCard.id}`, '_blank');
+                          }
+                          setShowExportMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        在新窗口打开
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
 
@@ -1274,12 +1443,67 @@ result = result.filter(card => {
           )}
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-400">
-          <div className="text-center p-8">
-            <button className="md:hidden mb-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm" onClick={() => setSidebarOpen(true)}>
-              打开卡片列表
-            </button>
+        <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
+          {/* 图谱工具栏 */}
+          <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+            <div className="flex items-center gap-2">
+              <Network className="w-4 h-4 text-blue-500" />
+              <span className="text-sm font-medium">知识图谱视图</span>
+              {graphData && (
+                <span className="text-xs text-gray-500">
+                  ({graphData.nodes.length} 节点 / {graphData.edges.length} 边)
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => chartInstance.current?.dispatchAction({ type: 'graphRoam', zoom: 1.2 })}
+                title="放大"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => chartInstance.current?.dispatchAction({ type: 'graphRoam', zoom: 0.8 })}
+                title="缩小"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  loadGraphData();
+                  loadCards();
+                }}
+                title="刷新"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (chartRef.current) {
+                    if (chartRef.current.requestFullscreen) {
+                      chartRef.current.requestFullscreen();
+                    }
+                  }
+                }}
+                title="全屏"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
+          {/* 图谱容器 */}
+          <div
+            ref={chartRef}
+            className="flex-1 min-h-[400px] bg-white dark:bg-gray-900"
+          />
         </div>
       )}
       </div>

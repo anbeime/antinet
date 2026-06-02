@@ -29,6 +29,10 @@ class HermesGatewayClient {
   private url: string;
   private sessionId: string = '';
   private messageHistory: HermesMessage[] = [];
+
+  public getMessageHistory(): HermesMessage[] {
+    return this.messageHistory;
+  }
   private streamCallbacks: StreamCallback[] = [];
   private errorCallbacks: ErrorCallback[] = [];
   private pendingRequests: Map<string, { resolve: (data: any) => void; reject: (err: Error) => void }> = new Map();
@@ -162,7 +166,7 @@ class HermesGatewayClient {
   }
 
   // 调用RPC方法（同步等待响应）
-  private async call(method: string, params: any = {}): Promise<any> {
+  async call(method: string, params: any = {}): Promise<any> {
     return new Promise((resolve, reject) => {
       const id = `req_${++this.requestId}`;
       const request = {

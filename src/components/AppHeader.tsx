@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Brain, Database, Briefcase, ListTodo, Users, FolderOpen, FileText, Presentation, Table, Cpu, Bot, Sparkles, ChevronDown, Menu, BookOpen } from 'lucide-react';
+import { Brain, Database, Briefcase, ListTodo, Users, FolderOpen, FileText, Presentation, Table, Cpu, Bot, Sparkles, ChevronDown, Menu, BookOpen, Network } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 const AppHeader: React.FC = () => {
@@ -15,6 +15,7 @@ const AppHeader: React.FC = () => {
   const navItems = [
     { path: '/', label: '概览', icon: <Database size={18} /> },
     { path: '/?tab=cards-management', label: '知识管理', icon: <Briefcase size={18} /> },
+    { path: '/knowledge-graph', label: '知识图谱', icon: <Network size={18} /> },
     { path: '/?tab=data-management', label: '任务管理', icon: <ListTodo size={18} /> },
     { path: '/?tab=virtual-office-meeting', label: '智能协作会议', icon: <Users size={18} /> },
   ];
@@ -133,10 +134,13 @@ const AppHeader: React.FC = () => {
               <button onClick={() => handleNav('/')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
                 <Database size={16} /><span>概览</span>
               </button>
-              <button onClick={() => handleNav('/?tab=cards-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Briefcase size={16} /><span>知识管理</span>
-              </button>
-              <button onClick={() => handleNav('/?tab=data-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
+        <button onClick={() => handleNav('/?tab=cards-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
+          <Briefcase size={16} /><span>知识管理</span>
+        </button>
+        <button onClick={() => handleNav('/knowledge-graph')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
+          <Network size={16} /><span>知识图谱</span>
+        </button>
+        <button onClick={() => handleNav('/?tab=data-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
                 <ListTodo size={16} /><span>任务管理</span>
               </button>
               <button onClick={() => handleNav('/?tab=virtual-office-meeting')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">

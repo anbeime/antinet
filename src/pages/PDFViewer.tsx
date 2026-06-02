@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Upload, Download, ZoomIn, ZoomOut,
   ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
-  Maximize2, Minimize2, AlertCircle, Bookmark, Plus, Save, Trash2
+  Maximize2, Minimize2, AlertCircle, Bookmark, Plus, Save, Trash2, BookmarkPlus, Check
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
 
 const API_BASE = getApiBaseUrl();
@@ -62,6 +63,7 @@ const PDFViewer: React.FC = () => {
   const [isNewCard, setIsNewCard] = useState(false);
   const [saving, setSaving] = useState(false);
   const [cardFilter, setCardFilter] = useState('');
+  const [notesSelectedIds, setNotesSelectedIds] = useState<Set<string>>(new Set()); // 选中的卡片ID
 
   // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
   const [activeView, setActiveView] = useState<'pdf' | 'source'>('pdf');
@@ -242,6 +244,43 @@ const PDFViewer: React.FC = () => {
       setSelectedCard(null); setIsNewCard(false); setActiveView(pdfUrl ? 'pdf' : 'source');
       loadCards();
     } catch {}
+  };
+
+  // 切换卡片选中状态（用于添加到笔记）
+  const toggleNotesSelection = (cardId: string) => {
+    const newSet = new Set(notesSelectedIds);
+    if (newSet.has(cardId)) {
+      newSet.delete(cardId);
+    } else {
+      newSet.add(cardId);
+    }
+    setNotesSelectedIds(newSet);
+  };
+
+  // 将选中卡片保存到笔记队列
+  const addToNotes = () => {
+    const selectedCards = cards.filter(c => notesSelectedIds.has(c.id));
+    if (selectedCards.length === 0) {
+      toast.warning('请先勾选要添加到笔记的卡片');
+      return;
+    }
+    // 保存到 localStorage
+    const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+    const merged = [...existing];
+    selectedCards.forEach(card => {
+      if (!merged.find((m: any) => m.id === card.id)) {
+        merged.push({
+          id: card.id,
+          title: card.title || '无标题',
+          content: card.content || '',
+          card_type: card.card_type || card.type || 'blue',
+          addedAt: new Date().toISOString()
+        });
+      }
+    });
+    localStorage.setItem('bookskill_notes', JSON.stringify(merged));
+    setNotesSelectedIds(new Set());
+    toast.success(`已添加 ${selectedCards.length} 张卡片到笔记`);
   };
 
   const filteredCards = cards.filter((c: any) => {
@@ -502,12 +541,12 @@ const PDFViewer: React.FC = () => {
               <>
                 <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
                   className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronLeft size={16} /></button>
-                <span className="text-xs text-gray-500">{currentPage}/{totalPages}</span>
+                <span className="text-xs text-gray-500 flex items-center gap-1"><Hash size={12} className="text-gray-400" />{currentPage}/{totalPages}</span>
                 <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
                   className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronRight size={16} /></button>
-                <button onClick={() => setScale(s => Math.max(0.5, s - 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs">-</button>
+                <button onClick={() => setScale(s => Math.max(0.5, s - 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><ZoomOut size={14} /></button>
                 <span className="text-xs text-gray-500 w-10 text-center">{Math.round(scale * 100)}%</span>
-                <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs">+</button>
+                <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><ZoomIn size={14} /></button>
               </>
             )}
             {fileName && <span className="text-xs text-gray-400 truncate max-w-[200px]">{fileName}</span>}
@@ -557,10 +596,21 @@ const PDFViewer: React.FC = () => {
             <div className="p-3 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold flex items-center gap-1"><Bookmark className="w-4 h-4 text-green-500" />知识卡片</h3>
-                <button onClick={handleNewCard} className="flex items-center gap-1 px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"><Plus className="w-3 h-3" />新建</button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setShowCardPanel(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="隐藏面板"><Eye size={14} className="text-gray-400" /></button>
+                  <button onClick={() => setShowCardPanel(false)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="关闭面板"><X size={14} className="text-gray-400" /></button>
+                  <button onClick={handleNewCard} className="flex items-center gap-1 px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600"><Plus className="w-3 h-3" />新建</button>
+                </div>
               </div>
               <input value={cardFilter} onChange={e => setCardFilter(e.target.value)}
                 className="w-full px-2 py-1 text-xs border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-1 focus:ring-green-400" placeholder="搜索卡片..." />
+              {/* 添加到笔记按钮 */}
+              {notesSelectedIds.size > 0 && (
+                <button onClick={addToNotes}
+                  className="w-full mt-2 flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-500 text-white rounded text-xs hover:bg-amber-600 transition-colors">
+                  <BookmarkPlus className="w-3 h-3" />添加到笔记 ({notesSelectedIds.size})
+                </button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {cardsLoading ? (
@@ -570,11 +620,20 @@ const PDFViewer: React.FC = () => {
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
                   {filteredCards.map((card: any) => (
-                    <div key={card.id} onClick={() => selectCard(card)}
-                      className={`px-3 py-2 cursor-pointer border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${CARD_COLORS[card.card_type || card.type || 'blue']} ${selectedCard?.id === card.id ? 'ring-1 ring-green-400' : ''}`}>
-                      <div className="text-xs font-medium truncate">{card.title || '无标题'}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5 line-clamp-2">{card.content || ''}</div>
-                      <div className="text-[10px] text-gray-400 mt-0.5">{CARD_TYPE_LABELS[card.card_type || card.type || 'blue']}</div>
+                    <div key={card.id} className="relative group">
+                      {/* 选中复选框 */}
+                      <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10"
+                        onClick={(e) => { e.stopPropagation(); toggleNotesSelection(card.id); }}>
+                        <input type="checkbox" checked={notesSelectedIds.has(card.id)}
+                          onChange={() => {}}
+                          className="w-3.5 h-3.5 rounded text-amber-500 cursor-pointer" />
+                      </div>
+                      <div onClick={() => selectCard(card)}
+                        className={`pl-7 pr-3 py-2 cursor-pointer border-l-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${CARD_COLORS[card.card_type || card.type || 'blue']} ${selectedCard?.id === card.id ? 'ring-1 ring-green-400' : ''} ${notesSelectedIds.has(card.id) ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
+                        <div className="text-xs font-medium truncate">{card.title || '无标题'}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 line-clamp-2">{card.content || ''}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">{CARD_TYPE_LABELS[card.card_type || card.type || 'blue']}</div>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -146,6 +146,7 @@ const MessageBubble: React.FC<{
 }> = ({ message, cards, skillResult, sceneType, onClose, onCardClick, onSpeak, isSpeaking }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
+  const [cardsCollapsed, setCardsCollapsed] = useState(false);
 
   return (
     <motion.div
@@ -220,41 +221,55 @@ const MessageBubble: React.FC<{
           />
         )}
 
-        {/* 卡片展示 - 保持原有漂亮样式，仅微调边框色 */}
+        {/* 卡片展示 - 可折叠，先推送显示 */}
         {cards && cards.length > 0 && (
-          <div className="space-y-2 mt-2">
-            {cards.slice(0, 3).map((card, idx) => (
-              <div
-                key={card.id || idx}
-                className={`rounded-lg shadow transition-all ${onCardClick ? 'cursor-pointer hover:shadow-md' : ''}`}
-                style={{
-                  backgroundColor: '#fff9f3',
-                  borderLeft: '4px solid #d4a574',
-                  border: '1px solid #e8ddd0',
-                  borderLeftWidth: '4px',
-                  borderLeftColor: '#d4a574'
-                }}
-                onClick={() => onCardClick?.(card)}
-              >
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}>
-                      {enhancedChatService.formatCardType(card.card_type)}
-                    </span>
-                    <span className="text-xs" style={{ color: '#8b7355' }}>
-                      {enhancedChatService.formatSimilarity(card.match_score)}
-                    </span>
+          <div className="mt-2">
+            <button
+              onClick={() => setCardsCollapsed(!cardsCollapsed)}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors mb-2"
+              style={{ backgroundColor: '#f5e6d3', color: '#8b4513' }}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>相关卡片 {cards.length} 张</span>
+              <ChevronRight className={cn("w-3 h-3 transition-transform", cardsCollapsed && "-rotate-90")} />
+              <span className="ml-1 opacity-60">{cardsCollapsed ? '展开' : '收起'}</span>
+            </button>
+            {!cardsCollapsed && (
+              <div className="space-y-2">
+                {cards.slice(0, 3).map((card, idx) => (
+                  <div
+                    key={card.id || idx}
+                    className={`rounded-lg shadow transition-all ${onCardClick ? 'cursor-pointer hover:shadow-md' : ''}`}
+                    style={{
+                      backgroundColor: '#fff9f3',
+                      borderLeft: '4px solid #d4a574',
+                      border: '1px solid #e8ddd0',
+                      borderLeftWidth: '4px',
+                      borderLeftColor: '#d4a574'
+                    }}
+                    onClick={() => onCardClick?.(card)}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}>
+                          {enhancedChatService.formatCardType(card.card_type)}
+                        </span>
+                        <span className="text-xs" style={{ color: '#8b7355' }}>
+                          {enhancedChatService.formatSimilarity(card.match_score)}
+                        </span>
+                      </div>
+                      <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: '#8b4513' }}>{card.title}</h4>
+                      <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
+                        {card.content}
+                      </p>
+                    </CardContent>
                   </div>
-                  <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: '#8b4513' }}>{card.title}</h4>
-                  <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
-                    {card.content}
-                  </p>
-                </CardContent>
-              </div>
-            ))}
-            {cards.length > 3 && (
-              <div className="text-xs text-center" style={{ color: '#8b7355' }}>
-                还有 {cards.length - 3} 张相关卡片
+                ))}
+                {cards.length > 3 && (
+                  <div className="text-xs text-center" style={{ color: '#8b7355' }}>
+                    还有 {cards.length - 3} 张相关卡片
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -482,6 +497,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     confidence: number;
   } | null>(null);
   
+  // 快捷操作展开状态
+  const [showQuickActions, setShowQuickActions] = useState(false);
+  
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -541,7 +559,21 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
   // 自动滚动到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, isLoading]);
+
+  // 监听消息内容变化时也滚动
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant' && lastMessage.content) {
+      // 有新内容时延迟滚动，确保 DOM 已更新
+      const timer = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
   }, [messages]);
 
   // 聚焦输入框
@@ -948,13 +980,31 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 try {
                   const d = JSON.parse(dataStr);
                   if (d.cards) {
-                    setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, metadata: { ...m.metadata, cards: d.cards } }; return u; });
+                    // 转换卡片数据，确保有 match_score 和其他必要字段
+                    const transformedCards = d.cards.map((c: any) => ({
+                      id: c.id || c.card_id || '',
+                      card_type: c.card_type || 'blue',
+                      title: c.title || '',
+                      content: c.content || '',
+                      match_score: c.match_score ?? c.similarity ?? 0,
+                      color: c.color || 'blue'
+                    }));
+                    setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, metadata: { ...m.metadata, cards: transformedCards } }; return u; });
                   }
                 } catch {}
               } else if (eventType === 'done') {
                 try {
                   const d = JSON.parse(dataStr);
-                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: d.full_text || fullContent, metadata: { scene_type: d.scene_type, cards: d.cards || [], skill_result: d.skill_result } }; return u; });
+                  // 转换卡片数据
+                  const transformedCards = (d.cards || []).map((c: any) => ({
+                    id: c.id || c.card_id || '',
+                    card_type: c.card_type || 'blue',
+                    title: c.title || '',
+                    content: c.content || '',
+                    match_score: c.match_score ?? c.similarity ?? 0,
+                    color: c.color || 'blue'
+                  }));
+                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: d.full_text || fullContent, metadata: { scene_type: d.scene_type, cards: transformedCards, skill_result: d.skill_result } }; return u; });
                   setSuggestedQuestions(generateLocalSuggestions(query, !!imgData, messages).slice(0, 3));
                   if (autoSpeak && fullContent) {
                     synthRef.current?.cancel();
@@ -1268,7 +1318,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           </div>
 
           {/* 消息区域 */}
-          <div className="flex-1 p-4 overflow-y-auto" style={{ backgroundColor: '#faf8f5' }}>
+          <div className="flex-1 p-4 overflow-y-auto pb-36" style={{ backgroundColor: '#faf8f5' }}>
             <div className="space-y-4">
               {messages.map((message, index) => (
                 <MessageBubble
@@ -1368,19 +1418,32 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {/* 快捷操作 */}
-          <div className="hidden md:block px-4 py-2" style={{ borderTop: '1px solid #e8ddd0' }}>
-            <div className="flex flex-wrap gap-2">
-              {quickActions.map((action, index) => (
-                <QuickAction
-                  key={index}
-                  icon={action.icon}
-                  label={action.label}
-                  onClick={action.onClick}
-                  color={action.color}
-                />
-              ))}
-            </div>
+          {/* 快捷操作 - 可折叠 */}
+          <div className="hidden md:block border-t" style={{ borderColor: '#e8ddd0' }}>
+            <button
+              onClick={() => setShowQuickActions(!showQuickActions)}
+              className="w-full px-4 py-2 flex items-center justify-between text-xs transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+              style={{ color: '#8b4513', backgroundColor: '#fef3e2' }}
+            >
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                快捷操作
+              </span>
+              <ChevronRight className={cn("w-4 h-4 transition-transform", showQuickActions && "rotate-90")} />
+            </button>
+            {showQuickActions && (
+              <div className="px-4 py-3 flex flex-wrap gap-2" style={{ backgroundColor: '#faf8f5' }}>
+                {quickActions.map((action, index) => (
+                  <QuickAction
+                    key={index}
+                    icon={action.icon}
+                    label={action.label}
+                    onClick={action.onClick}
+                    color={action.color}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 输入区域 */}

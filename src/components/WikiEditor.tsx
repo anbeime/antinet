@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, BarChart3, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import WikiGraphView from './WikiGraphView';
 import KnowledgeGraph from './KnowledgeGraph';
-import { renderMarkdown } from '@/lib/utils';
+import { renderMarkdown as renderMarkdownUtil } from '@/lib/utils';
 
 interface WikiPage {
   id: string;
@@ -71,7 +71,7 @@ const WikiEditor = () => {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [activeTab, setActiveTab] = useState<'editor' | 'graph' | 'search'>('editor');
-  const [graphSubTab, setGraphSubTab] = useState<'wiki' | 'cards'>('wiki');
+  const [graphSubTab, setGraphSubTab] = useState<'wiki' | 'cards' | 'visual'>('wiki');
   const [graphNodes, setGraphNodes] = useState<WikiNode[]>([]);
   const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -171,6 +171,16 @@ const WikiEditor = () => {
       setCopied(true);
       toast.success('排版内容已复制到剪贴板');
       setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error('复制失败');
+    }
+  };
+
+  const copyMarkdownSource = async () => {
+    try {
+      const utilRendered = renderMarkdownUtil(content);
+      await navigator.clipboard.writeText(utilRendered);
+      toast.success('Markdown 排版已复制');
     } catch {
       toast.error('复制失败');
     }
@@ -294,6 +304,16 @@ const WikiEditor = () => {
             <Plus className="w-4 h-4" />
             新建页面
           </button>
+          <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-1">
+            <span className="flex items-center gap-1">
+              <Users className="w-3 h-3" />
+              {pages.length} 个页面
+            </span>
+            <span className="flex items-center gap-1">
+              <Network className="w-3 h-3" />
+              {graphNodes.length} 节点
+            </span>
+          </div>
         </div>
 
         <div className="p-2 border-b border-gray-200">
@@ -383,6 +403,13 @@ const WikiEditor = () => {
           >
             {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
           </button>
+          <button
+            onClick={copyMarkdownSource}
+            className="p-2 rounded-lg hover:bg-gray-100"
+            title="复制 Markdown 源码"
+          >
+            <FileText className="w-5 h-5" />
+          </button>
           <div className="h-6 w-px bg-gray-300" />
           <button
             onClick={() => setActiveTab('editor')}
@@ -471,6 +498,14 @@ const WikiEditor = () => {
                     )}
                     {editMode ? (
                       <>
+                        <button
+                          onClick={() => insertLink(title || '新链接')}
+                          className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-100"
+                          title="插入链接"
+                        >
+                          <Link className="w-4 h-4" />
+                          插入链接
+                        </button>
                         <button onClick={savePage} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">
                           <Save className="w-4 h-4" />
                           保存
@@ -486,13 +521,25 @@ const WikiEditor = () => {
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => setEditMode(true)}
-                        className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                        编辑
-                      </button>
+                      <>
+                        {currentPage && (
+                          <button
+                            onClick={() => deletePage(currentPage.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                            title="删除页面"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            删除
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setEditMode(true)}
+                          className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                          编辑
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -617,6 +664,17 @@ const WikiEditor = () => {
                 <Network className="w-4 h-4 inline mr-1" />
                 卡片知识网络
               </button>
+              <button
+                onClick={() => setGraphSubTab('visual')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  graphSubTab === 'visual'
+                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                    : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 inline mr-1" />
+                可视化图谱
+              </button>
             </div>
 
             {graphSubTab === 'wiki' ? (
@@ -643,9 +701,17 @@ const WikiEditor = () => {
                   </div>
                 )}
               </div>
-            ) : (
+            ) : graphSubTab === 'cards' ? (
               <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex-1 overflow-hidden">
                 <KnowledgeGraph />
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex-1 overflow-hidden">
+                <WikiGraphView
+                  nodes={graphNodes as any}
+                  edges={graphEdges as any}
+                  onNodeClick={(id) => loadPage(id)}
+                />
               </div>
             )}
           </div>

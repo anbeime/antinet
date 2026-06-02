@@ -17,7 +17,6 @@ import {
   X,
   Image,
   FileImage,
-  Minimize2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
@@ -480,6 +479,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
 
               <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-red-400 dark:hover:border-red-500 transition-colors">
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept={activeFeature === 'fromImages' ? ".jpg,.jpeg,.png,.bmp,.tiff" : ".pdf"}
                   onChange={activeFeature === 'fromImages' ? handleImageUpload : handleFileUpload}

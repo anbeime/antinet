@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video, History, BookOpen } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, Network, Brain, Layers, Search, Film, History, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
@@ -390,7 +390,7 @@ const PPTAnalysis: React.FC = () => {
     }
   };
 
-  const [themes, setThemes] = useState([
+  const [_themes, setThemes] = useState([
     { id: 'professional', name: 'Professional', icon: '💼', desc: '专业商务', colors: ['#1C2833', '#3498DB', '#F1C40F'] },
     { id: 'creative', name: 'Creative', icon: '🎨', desc: '创意活泼', colors: ['#9B59B6', '#3498DB', '#E67E22'] },
     { id: 'minimal', name: 'Minimal', icon: '✨', desc: '简约现代', colors: ['#2C3E50', '#95A5A6', '#3498DB'] },
@@ -417,7 +417,6 @@ const PPTAnalysis: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <AppHeader />
       <div className="p-4 md:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
@@ -658,7 +657,50 @@ const PPTAnalysis: React.FC = () => {
               </button>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+              {selectedProject && (
+                <>
+                  {projectCardsLoading ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 flex items-center justify-center h-48">
+                      <Loader className="w-8 h-8 animate-spin text-purple-500" />
+                      <span className="ml-3 text-gray-500">加载卡片中...</span>
+                    </div>
+                  ) : projectCards.length > 0 ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold flex items-center"><Layers className="w-5 h-5 mr-2 text-purple-500" />专题卡片 ({projectCards.length})</h3>
+                        <button
+                          onClick={() => setShowGraph(!showGraph)}
+                          className={`flex items-center gap-1 px-3 py-1 rounded text-sm ${showGraph ? 'bg-purple-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                        >
+                          <Network className="w-4 h-4" />
+                          {showGraph ? '隐藏' : '显示'}关系图
+                        </button>
+                      </div>
+                      {showGraph && (
+                        <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <KnowledgeGraph filterProjectId={selectedProject} />
+                        </div>
+                      )}
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {projectCards.slice(0, 10).map((card: any, i: number) => (
+                          <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                            <p className="text-sm font-medium truncate">{card.title || card.content?.slice(0, 50) || '无标题'}</p>
+                          </div>
+                        ))}
+                        {projectCards.length > 10 && (
+                          <p className="text-xs text-gray-500 text-center">还有 {projectCards.length - 10} 张卡片...</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-500">
+                      <Brain className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>该专题暂无卡片</p>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 mt-6">
                 <h3 className="text-lg font-semibold mb-4 flex items-center"><Eye className="w-5 h-5 mr-2 text-purple-500" />功能说明</h3>
                 <div className="space-y-4">
                   <div className="bg-blue-50 rounded-lg p-4"><h4 className="font-semibold text-blue-700 mb-2">📚 专题导出</h4><p className="text-sm">从专题一键生成完整PPT</p></div>
