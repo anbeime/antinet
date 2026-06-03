@@ -985,6 +985,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   {[
                     { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
                     { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-amber-500 to-yellow-400' },
+                    { icon: <BookOpen size={20} />, title: '书籍技能', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
                     { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-pink-500 to-rose-400' },
                     { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
                     { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
@@ -992,10 +993,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
-                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
+                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
                     { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
                     { icon: <GitBranch size={20} />, title: '知识图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
-                    { icon: <BookOpen size={20} />, title: '书籍技能', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
+
                   ].map((item, i) => (
                     <motion.div
                       key={i}
@@ -1007,6 +1008,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                           localStorage.setItem('openInvoiceManager', 'true');
                         } else if ((item as any).subFeature === 'calendar') {
                           localStorage.setItem('openCalendarFullscreen', 'true');
+                        } else if ((item as any).subFeature === 'tasks') {
+                          localStorage.setItem('virtualOfficeActiveTab', 'tasks');
                         }
                         item.link.startsWith('tab:') ? setActiveTab(item.link.slice(4) as any) : navigate(item.link);
                       }}

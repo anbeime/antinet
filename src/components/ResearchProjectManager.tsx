@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
@@ -173,7 +173,7 @@ const ResearchCardDetailModal: React.FC<{
   allProjects?: ResearchProject[];
   onRelatedCardClick?: (cardId: number) => void;
   onSaveSuccess?: () => void;
-}> = ({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick, onSaveSuccess }) => {
+}> = React.memo(({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick, onSaveSuccess }) => {
   const typeConfig = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(card.title);
@@ -230,12 +230,16 @@ const ResearchCardDetailModal: React.FC<{
   }, [card.id]);
   
   // 过滤可关联的卡片
-  const availableCards = allCards.filter(c => 
-    c.id !== card.id && 
-    !relatedCards.includes(c.id) &&
-    (c.title.toLowerCase().includes(relatedSearch.toLowerCase()) || 
-     c.content.toLowerCase().includes(relatedSearch.toLowerCase()))
-  ).slice(0, 20);
+  const availableCards = useMemo(() => {
+    if (!relatedSearch) return [];
+    const q = relatedSearch.toLowerCase();
+    return allCards.filter(c => 
+      c.id !== card.id && 
+      !relatedCards.includes(c.id) &&
+      (c.title.toLowerCase().includes(q) || 
+       c.content.toLowerCase().includes(q))
+    ).slice(0, 20);
+  }, [allCards, card.id, relatedCards, relatedSearch]);
   
   // 添加关联
   const addRelatedCard = (targetId: number) => {
@@ -752,7 +756,7 @@ const ResearchCardDetailModal: React.FC<{
       </div>
     </Portal>
   );
-};
+});
 
 // ========== 专题详情全屏面板 ==========
 const ProjectDetailPanel: React.FC<{
@@ -760,7 +764,7 @@ const ProjectDetailPanel: React.FC<{
   onClose: () => void;
   onConvertCardToTask: (cardId: number) => void;
   allProjects?: ResearchProject[];
-}> = ({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
+}> = React.memo(({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
   const allProjectsList = allProjects;
   const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'network'>('cards');
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
@@ -1059,8 +1063,11 @@ const ProjectDetailPanel: React.FC<{
     finally { setSavingTask(false); }
   };
 
-  const cardStats = { blue: 0, green: 0, yellow: 0, red: 0 };
-  cards.forEach(c => { if (cardStats.hasOwnProperty(c.card_type)) cardStats[c.card_type as keyof typeof cardStats]++; });
+  const cardStats = useMemo(() => {
+    const stats = { blue: 0, green: 0, yellow: 0, red: 0 };
+    cards.forEach(c => { if (stats.hasOwnProperty(c.card_type)) stats[c.card_type as keyof typeof stats]++; });
+    return stats;
+  }, [cards]);
 
   return (
     <Portal>
@@ -1747,7 +1754,7 @@ const ProjectDetailPanel: React.FC<{
       </div>
     </Portal>
   );
-};
+});
 
 // 注册中文字体（本地文件，不依赖外部CDN）
 const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;

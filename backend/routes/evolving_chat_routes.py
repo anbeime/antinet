@@ -553,8 +553,8 @@ class EvolvingChatEngine:
         
         # 调用LLM生成回答
         try:
-            from services.ai import AIServiceFactory
-            llm_service = AIServiceFactory.get_default()
+            from services.ai import get_sensenova_service
+            llm_service = get_sensenova_service()
             if llm_service:
                 result = llm_service.chat(prompt)
                 if result and hasattr(result, 'content'):

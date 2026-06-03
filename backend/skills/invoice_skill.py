@@ -72,8 +72,9 @@ async def _call_genie_vl(image_b64: str, prompt: str) -> str:
         "size": 2048,
         "seed": 42,
         "temp": 0.1,
-        "top_k": 1,
-        "top_p": 1.0
+        "top_k": 40,
+        "top_p": 0.9,
+        "max_tokens": 2048
     }
     async with httpx.AsyncClient(timeout=120.0, proxy=None) as client:
         resp = await client.post(

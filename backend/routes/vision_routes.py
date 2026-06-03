@@ -114,8 +114,9 @@ async def call_qwen_vl_service(
                 "size": 2048,
                 "seed": 42,
                 "temp": 0.7,
-                "top_k": 1,
-                "top_p": 1.0
+                "top_k": 40,
+                "top_p": 0.9,
+                "max_tokens": 2048
             }
         else:
             # ========== LLM (纯文本) 模式 ==========
@@ -137,8 +138,9 @@ async def call_qwen_vl_service(
                 "size": 2048,
                 "seed": 42,
                 "temp": 0.7,
-                "top_k": 1,
-                "top_p": 1.0
+                "top_k": 40,
+                "top_p": 0.9,
+                "max_tokens": 2048
             }
         
         logger.info(f"[VisionRoutes] 调用 Qwen VL 服务: {QWEN_VL_SERVICE_URL}")

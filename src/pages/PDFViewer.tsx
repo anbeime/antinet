@@ -65,6 +65,7 @@ const PDFViewer: React.FC = () => {
   const [cardFilter, setCardFilter] = useState('');
   const [notesSelectedIds, setNotesSelectedIds] = useState<Set<string>>(new Set()); // 选中的卡片ID
   const [currentTopic, setCurrentTopic] = useState(''); // 来自 URL 的专题参数
+  const [fromNotes, setFromNotes] = useState(false); // 是否来自笔记队列
 
   // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
   const [activeView, setActiveView] = useState<'pdf' | 'source'>('pdf');
@@ -79,12 +80,22 @@ const PDFViewer: React.FC = () => {
   useEffect(() => {
     const urlParam = searchParams.get('url');
     const topicParam = searchParams.get('topic');
+    const notesParam = searchParams.get('notes');
     if (urlParam) {
       loadPDFFromURL(urlParam);
     } else if (topicParam) {
       setFileName(`专题: ${topicParam}`);
       setCurrentTopic(topicParam);
       setShowCardPanel(true);
+    } else if (notesParam === 'true') {
+      setFileName(`来自笔记 (${(() => { try { return JSON.parse(localStorage.getItem('bookskill_notes') || '[]').length; } catch { return 0; } })()})`);
+      setFromNotes(true);
+      // 从 localStorage 加载笔记作为卡片-阻止 loadCards 覆盖
+      try {
+        const saved = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+        setCards(saved.map((n: any, i: number) => ({ ...n, id: n.id || `note-${i}` })));
+        setShowCardPanel(true);
+      } catch {}
     }
   }, []);
 
@@ -201,17 +212,78 @@ const PDFViewer: React.FC = () => {
     } catch (e: any) { setSourcePdfError(e.message || 'PDF 生成失败'); } finally { setSourcePdfGenerating(false); }
   };
 
-// ========== 知识卡片 CRUD ==========
+  // ========== 知识卡片 CRUD ==========
   const loadCards = async () => {
     setCardsLoading(true);
     try {
+      if (currentTopic) {
+        // 有专题时，尝试从专题 API 加载卡片
+        try {
+          const projRes = await fetch(`${API_BASE}/api/research/projects`);
+          if (projRes.ok) {
+            const projects = await projRes.json();
+            const project = projects.find((p: any) => p.name === currentTopic);
+            if (project?.id) {
+              const cardsRes = await fetch(`${API_BASE}/api/research/projects/${project.id}/cards`);
+              if (cardsRes.ok) { const d = await cardsRes.json(); setCards(d || []); setCardsLoading(false); return; }
+            }
+          }
+        } catch {}
+      }
+      // 降级：从知识库加载全部卡片
       const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=500`);
       if (res.ok) { const d = await res.json(); setCards(d.cards || d || []); }
     } catch {} finally { setCardsLoading(false); }
   };
 
+  useEffect(() => { if (currentTopic) { setShowCardPanel(true); loadCards(); } }, [currentTopic]);
+  // 无专题且非来自笔记时，手动打开卡片面板才加载
+  useEffect(() => { if (showCardPanel && !currentTopic && !fromNotes) loadCards(); }, [showCardPanel]);
+
+  const selectCard = (card: any) => {
+    setSelectedCard(card);
+    setIsNewCard(false);
+    setActiveView('source');
+    setSourceViewMode('pdf');
+    setCardTitle(card.title || '');
+    setCardContent(card.content || '');
+    setCardType(card.card_type || card.type || 'blue');
+    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+  };
+
+  const handleNewCard = () => {
+    setSelectedCard(null); setIsNewCard(true); setActiveView('source'); setSourceViewMode('markdown');
+    setCardTitle(''); setCardContent(''); setCardType('blue');
+    if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
+  };
+
+  const handleSaveCard = async () => {
+    if (!cardContent.trim() && !cardTitle.trim()) return;
+    setSaving(true);
+    try {
+      const body = { title: cardTitle || '无标题', content: cardContent, type: cardType };
+      if (isNewCard) {
+        const res = await fetch(`${API_BASE}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (res.ok) { const saved = await res.json(); setSelectedCard(saved); setIsNewCard(false); loadCards(); }
+      } else if (selectedCard?.id) {
+        const res = await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (res.ok) { const updated = await res.json(); setSelectedCard(updated); loadCards(); }
+      }
+    } catch {} finally { setSaving(false); }
+  };
+
+  const handleDeleteCard = async () => {
+    if (!selectedCard?.id || isNewCard) return;
+    if (!window.confirm(`确定删除卡片「${selectedCard.title}」？`)) return;
+    try {
+      await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
+      setSelectedCard(null); setIsNewCard(false); setActiveView('pdf');
+      loadCards();
+    } catch {}
+  };
+
   // 客户端按专题过滤卡片
-  const topicFilteredCards = currentTopic
+  const topicFilteredCards = fromNotes ? cards : currentTopic
     ? cards.filter(c => (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic))
     : cards;
 
@@ -220,6 +292,35 @@ const PDFViewer: React.FC = () => {
     const q = cardFilter.toLowerCase();
     return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
   });
+
+  // 切换卡片选中状态（用于添加到笔记）
+  const toggleNotesSelection = (cardId: string) => {
+    const newSet = new Set(notesSelectedIds);
+    if (newSet.has(cardId)) {
+      newSet.delete(cardId);
+    } else {
+      newSet.add(cardId);
+    }
+    setNotesSelectedIds(newSet);
+  };
+
+  // 将选中卡片保存到笔记队列
+  const addAllToNotes = () => {
+    const selectedCards = filteredCards.filter(c => notesSelectedIds.has(c.id));
+    if (selectedCards.length > 0) {
+      const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+      const merged = [...existing];
+      selectedCards.forEach(card => {
+        if (!merged.find((m: any) => m.id === card.id)) {
+          merged.push({ id: card.id, title: card.title || '无标题', content: card.content || '', card_type: card.card_type || card.type || 'blue', addedAt: new Date().toISOString() });
+        }
+      });
+      localStorage.setItem('bookskill_notes', JSON.stringify(merged));
+      toast.success(`已添加 ${selectedCards.length} 张卡片到笔记`);
+    } else {
+      toast.warning('请先勾选要添加到笔记的卡片');
+    }
+  };
 
   // ========== 导出编辑后的 PDF（保留原样式 + 文字编辑） ==========
   const exportEditedPdf = async () => {
@@ -375,7 +476,18 @@ const PDFViewer: React.FC = () => {
                       </a>
                       <span className="text-xs text-gray-400">原始文件</span>
                     </>
-                  ) : (
+            ) : currentTopic ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-300">
+                <Library size={64} className="mb-4 opacity-30 text-purple-400" />
+                <p className="text-sm mb-1 font-medium">专题：{currentTopic}</p>
+                <p className="text-xs mb-4">上传该专题的 PDF 文档，开始批注阅读</p>
+                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+                  <Upload size={14} />上传 PDF
+                  <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+                </label>
+                <p className="text-xs text-gray-500 mt-3">右侧卡片面板已显示该专题的卡片</p>
+              </div>
+            ) : (
                     <>
                       <a href={displayUrl} download={`${cardTitle || 'export'}.pdf`}
                         className="flex items-center gap-1 px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600">

@@ -79,16 +79,21 @@ class AIServiceFactory:
 def get_ai_service(name: Optional[str] = None) -> Optional[BaseAI]:
     """
     获取 AI 服务的便捷函数
-    
+
     Args:
         name: 服务名称，None 则返回默认服务
-        
+
     Returns:
         BaseAI: AI 服务实例
     """
     if name:
         return AIServiceFactory.get(name)
     return AIServiceFactory.get_default()
+
+
+def get_sensenova_service() -> Optional[BaseAI]:
+    """获取 Sensenova 云服务（用于 chat/skill/workflow 场景）"""
+    return AIServiceFactory.get('sensenova')
 
 
 def create_ai_service(provider: str = 'npu', config: Optional[Dict[str, Any]] = None) -> Optional[BaseAI]:

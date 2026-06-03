@@ -229,11 +229,22 @@ class BookSkillGenerator:
         self._ai_service = None
 
     def _get_ai_service(self):
-        """获取 AI 服务实例"""
+        """获取 AI 服务实例（本地优先，sensenova 兜底）"""
         if self._ai_service is None:
             try:
-                from services.ai.factory import get_ai_service
+                from services.ai import get_ai_service, get_sensenova_service
+                # 优先使用本地模型（NPU）
                 self._ai_service = get_ai_service()
+                if self._ai_service and self._ai_service.is_available:
+                    logger.info("[BookSkill] 使用本地 AI 模型")
+                else:
+                    # 兜底：sensenova-6.7-flash-lite
+                    self._ai_service = get_sensenova_service()
+                    if self._ai_service and self._ai_service.is_available:
+                        logger.info("[BookSkill] 本地模型不可用，使用 Sensenova 兜底")
+                    else:
+                        self._ai_service = None
+                        logger.warning("[BookSkill] 所有 AI 服务均不可用")
             except Exception as e:
                 logger.warning(f"[BookSkill] AI 服务获取失败: {e}")
         return self._ai_service

@@ -112,10 +112,13 @@ const PDFAnalysis: React.FC = () => {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'ocr'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [ocrPresets, setOcrPresets] = useState<{ id: string; name: string; description: string }[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState<string>('general');
+  const [ocrResult, setOcrResult] = useState<string | null>(null);
   const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -451,6 +454,38 @@ const PDFAnalysis: React.FC = () => {
       setSelectedCards(new Set(generatedCards.map(c => c.id)));
     }
   };
+
+  // ============ OCR识别 ============
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+  const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+
+  const handleOcrExtract = async () => {
+    if (!ocrFile) { toast.error('请先选择图片'); return; }
+    setIsOcrProcessing(true);
+    setOcrResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', ocrFile);
+      formData.append('preset', selectedPreset);
+      const resp = await fetch(`${API_BASE}/api/ocr/extract/text`, { method: 'POST', body: formData });
+      if (!resp.ok) throw new Error(`OCR失败: ${resp.status}`);
+      const data = await resp.json();
+      setOcrResult(data.text || '(未识别到文字)');
+      toast.success('OCR识别完成');
+    } catch (e: any) {
+      toast.error(e.message || 'OCR识别失败');
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
+
+  // 加载OCR预设模板
+  React.useEffect(() => {
+    fetch(`${API_BASE}/api/ocr/presets`).then(r => r.json()).then(data => {
+      if (data.presets) setOcrPresets(data.presets);
+    }).catch(() => {});
+  }, []);
 
   // PDF 合并
   const handleMergePDF = async () => {
@@ -851,6 +886,17 @@ const PDFAnalysis: React.FC = () => {
       inactiveBorder: 'border-blue-200 dark:border-blue-800',
       inactiveText: 'text-blue-600 dark:text-blue-400',
       hoverBg: 'hover:bg-blue-100 dark:hover:bg-blue-900/30',
+    },
+    {
+      id: 'ocr' as const,
+      name: 'OCR识别',
+      icon: <FileText size={20} />,
+      description: 'AI图片文字识别（支持发票等预设模板）',
+      color: 'from-teal-500 to-emerald-500',
+      inactiveBg: 'bg-teal-50 dark:bg-teal-900/20',
+      inactiveBorder: 'border-teal-200 dark:border-teal-800',
+      inactiveText: 'text-teal-600 dark:text-teal-400',
+      hoverBg: 'hover:bg-teal-100 dark:hover:bg-teal-900/30',
     },
     {
       id: 'generate' as const,
@@ -1480,6 +1526,103 @@ const PDFAnalysis: React.FC = () => {
                       {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileText className="w-5 h-5 mr-2" />}
                       提取文本
                     </button>
+                  )}
+
+                  {activeFeature === 'ocr' && (
+                    <div className="space-y-3">
+                      <div
+                        className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-teal-400 transition-colors"
+                        onClick={() => ocrFileInputRef.current?.click()}
+                      >
+                        {ocrFile ? (
+                          <div className="text-sm">
+                            <FileImage className="w-8 h-8 mx-auto text-teal-500 mb-2" />
+                            <p className="text-gray-700 dark:text-gray-300 font-medium">{ocrFile.name}</p>
+                            <p className="text-gray-500 text-xs mt-1">点击重新选择</p>
+                          </div>
+                        ) : (
+                          <>
+                            <FileImage className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                            <p className="text-gray-500 text-sm">点击选择图片</p>
+                          </>
+                        )}
+                        <input
+                          ref={ocrFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => setOcrFile(e.target.files?.[0] || null)}
+                        />
+                      </div>
+
+                      {ocrPresets.length > 0 && (
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">识别模板</label>
+                          <select
+                            value={selectedPreset}
+                            onChange={e => setSelectedPreset(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                          >
+                            {ocrPresets.map(p => (
+                              <option key={p.id} value={p.id}>{p.name} — {p.description}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleOcrExtract}
+                        disabled={!ocrFile || isOcrProcessing}
+                        className="w-full py-3 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      >
+                        {isOcrProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileText className="w-5 h-5 mr-2" />}
+                        {isOcrProcessing ? '识别中...' : '开始OCR识别'}
+                      </button>
+
+                      {ocrResult && (
+                        <div className="rounded-lg border border-teal-200 dark:border-teal-800 p-4 bg-teal-50 dark:bg-teal-900/20">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-teal-600 dark:text-teal-400 font-medium">识别结果：</span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  if (!ocrResult) return;
+                                  try {
+                                    const formData = new FormData();
+                                    formData.append('json_text', ocrResult);
+                                    formData.append('preset', selectedPreset);
+                                    formData.append('format', 'xlsx');
+                                    const resp = await fetch(`${API_BASE}/api/ocr/export`, { method: 'POST', body: formData });
+                                    if (!resp.ok) throw new Error('导出失败');
+                                    const data = await resp.json();
+                                    if (data.download_url) {
+                                      const a = document.createElement('a');
+                                      a.href = `${API_BASE}${data.download_url}`;
+                                      a.download = data.filename;
+                                      a.click();
+                                      toast.success('Excel导出成功');
+                                    }
+                                  } catch (e: any) {
+                                    toast.error(e.message || '导出失败');
+                                  }
+                                }}
+                                className="text-xs px-2 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white transition-colors flex items-center gap-1"
+                              >
+                                <Download className="w-3 h-3" />
+                                导出Excel
+                              </button>
+                              <button
+                                onClick={() => { navigator.clipboard.writeText(ocrResult); toast.success('已复制'); }}
+                                className="text-xs px-2 py-1 rounded bg-gray-600 hover:bg-gray-500 text-white transition-colors"
+                              >
+                                复制
+                              </button>
+                            </div>
+                          </div>
+                          <pre className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words max-h-80 overflow-y-auto">{ocrResult}</pre>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {activeFeature === 'generate' && (

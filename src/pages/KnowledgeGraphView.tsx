@@ -1148,12 +1148,12 @@ return (
                         {n.title || n.name || n.id}
                       </span>
                     ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
+</div>
+</div>
+)}
+</div>
+) : (
+<div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
               <div className="text-center">
                 <FileText className="w-12 h-12 mb-3 mx-auto opacity-40" />
                 <p className="text-sm">从左侧选择一张卡片查看详情</p>
