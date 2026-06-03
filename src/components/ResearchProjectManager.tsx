@@ -42,6 +42,7 @@ import {
 import CreateCardModal from './CreateCardModal';
 import KnowledgeGraph from './KnowledgeGraph';
 import CardDetailModal from '@/components/CardDetailModal';
+import KanbanBoard from './KanbanBoard';
 
 // 类型转换：将ProjectCard转换为KnowledgeCard格式
 interface KnowledgeCardForDetail {
@@ -796,7 +797,7 @@ const ProjectDetailPanel: React.FC<{
   allProjects?: ResearchProject[];
 }> = React.memo(({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
   const allProjectsList = allProjects;
-  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'network'>('cards');
+  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'kanban' | 'network'>('cards');
   const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
   const [tasks, setTasks] = useState<GtdTask[]>([]);
   const [cards, setCards] = useState<ProjectCard[]>([]);
@@ -1237,6 +1238,17 @@ const ProjectDetailPanel: React.FC<{
                 工作流概览
               </button>
               <button
+                onClick={() => setActiveTab('kanban')}
+                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'kanban'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <ListTodo className="w-4 h-4 mr-2" />
+                看板视图
+              </button>
+              <button
                 onClick={() => setActiveTab('network')}
                 className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'network'
@@ -1593,6 +1605,28 @@ const ProjectDetailPanel: React.FC<{
                         完整闭环：事实 → 解释 → 风险 → 行动 → 任务执行，通过双向链接和日历事件串联所有环节
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {/* ===== 看板视图 Tab ===== */}
+                {activeTab === 'kanban' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">看板视图</h2>
+                    </div>
+                    {tasks.length === 0 ? (
+                      <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+                        <ListTodo className="w-16 h-16 mx-auto mb-4 text-gray-200 dark:text-gray-600" />
+                        <p className="text-gray-500 dark:text-gray-400 text-lg">暂无任务</p>
+                        <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">创建任务或将红色卡片转换为任务后将显示在看板中</p>
+                      </div>
+                    ) : (
+                      <KanbanBoard
+                        tasks={tasks}
+                        projectId={project.id}
+                        onTasksChange={() => loadData()}
+                      />
+                    )}
                   </div>
                 )}
 

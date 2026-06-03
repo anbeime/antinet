@@ -562,10 +562,25 @@ def _format_8agent_result(data: Dict[str, Any], query: str = "") -> str:
 
 @router.get("/status")
 async def get_agent_status():
-    """获取所有 Agent 状态"""
+    """获取所有 Agent 状态（含名称/角色/能力）"""
+    all_agents = {**ANALYSIS_AGENTS, **SUPPORT_AGENTS}
+    agents_list = []
+    for aid in ALL_AGENT_IDS:
+        cfg = all_agents.get(aid, {})
+        agents_list.append({
+            "id": aid,
+            "name": cfg.get("name", aid),
+            "role": cfg.get("title", ""),
+            "description": cfg.get("system_prompt", "")[:100] if "system_prompt" in cfg else "",
+            "status": agent_status.get(aid, "idle"),
+            "capabilities": [cfg.get("title", "")] if cfg.get("title") else [],
+            "current_task": None,
+            "last_active": None,
+            "tasks_today": 0
+        })
     return {
         "system_initialized": True,
-        "agents": agent_status,
+        "agents": agents_list,
         "agent_count": len(ALL_AGENT_IDS),
         "active_tasks": len([s for s in agent_status.values() if s == "executing"]),
         "timestamp": datetime.now().isoformat()

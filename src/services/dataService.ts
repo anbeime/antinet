@@ -232,6 +232,7 @@ export interface GtdTask {
   project_id?: number;   // 关联的专题ID
   assigned_to?: number;
   assigned_to_name?: string;
+  kanban_status?: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done';
 }
 
 export const gtdTaskService = {

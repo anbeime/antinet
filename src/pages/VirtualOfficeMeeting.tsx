@@ -120,7 +120,26 @@ const generateMockDiscussion = (_topic: string, rounds: number) => {
 };
 
 // ==================== 后端 API 配置 ====================
-const BACKEND_URL = getApiBaseUrl() + '/api/meeting';
+// 开发环境走 Vite 代理，生产环境直连后端
+const BACKEND_URL = import.meta.env.DEV ? '/api/meeting' : `${getApiBaseUrl()}/api/meeting`;
+
+// WebSocket 配置 - 开发环境通过 Vite 代理，生产环境直连
+const getCollabWsUrl = (userId: string) => {
+  const params = new URLSearchParams();
+  const collabUserName = localStorage.getItem('collabUserName') || '';
+  const userAvatar = localStorage.getItem('collabAvatar') || '';
+  if (collabUserName) params.set('nickname', collabUserName);
+  if (userAvatar) params.set('avatar', userAvatar);
+  
+  if (import.meta.env.DEV) {
+    // 开发环境：通过 Vite 代理（ws 代理会重写路径）
+    return `ws://${window.location.host}/ws/collaboration/${userId}?${params.toString()}`;
+  } else {
+    // 生产环境：直连后端 WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.hostname}:8000/api/ws/collaboration/${userId}?${params.toString()}`;
+  }
+};
 
 // ==================== 像素办公室 Canvas 组件 ====================
 const PixelOfficeCanvas: React.FC<{
@@ -1043,19 +1062,7 @@ useEffect(() => {
   useEffect(() => {
     // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
-    const userAvatar = (() => {
-      try {
-        const user = JSON.parse(localStorage.getItem('zhiyi_user') || '{}');
-        return user.avatar || '👤';
-      } catch { return '👤'; }
-    })();
-    const params = new URLSearchParams();
-    if (collabUserName) params.set('nickname', collabUserName);
-    if (userAvatar) params.set('avatar', userAvatar);
-    // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
-    const wsUrl = import.meta.env.DEV
-      ? `ws://localhost:8000/api/ws/collaboration/${userId}?${params.toString()}`
-      : `ws://${window.location.host}/api/ws/collaboration/${userId}?${params.toString()}`;
+    const wsUrl = getCollabWsUrl(userId);
     
     console.log('[Collab] 连接 WebSocket:', wsUrl);
     setCollabStatus('connecting');
@@ -1110,6 +1117,7 @@ useEffect(() => {
     
     ws.onerror = (e) => {
       console.error('[Collab] WebSocket 错误:', e);
+      // 静默失败，不影响主功能
     };
     
     return () => {

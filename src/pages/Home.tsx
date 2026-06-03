@@ -51,6 +51,7 @@ import GeniePlayground from '@/pages/GeniePlayground';
 import GenieNPUTest from '@/pages/GenieNPUTest';
 import FormatConverter from '@/pages/FormatConverter';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
+import TeamCollaboration from '@/components/TeamCollaboration';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import ChatButton from '@/components/ChatButton';
 import WikiEditor from '@/components/WikiEditor';
@@ -705,20 +706,20 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   
   return (
-    <div className={`flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300`}>
+    <div className={`flex flex-col min-h-screen bg-paper dark:bg-dark-bg text-ink-main dark:text-dark-text transition-colors duration-300`}>
       {/* 顶部导航栏 */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-800">
+      <header className="sticky top-0 z-50 backdrop-blur-md bg-wood/95 dark:bg-dark-soft border-b border-border">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <motion.div 
               initial={{ rotate: 0 }}
               animate={{ rotate: 360 }}
               transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center"
+              className="w-8 h-8 rounded-full bg-gradient-to-tr from-wood to-wood-dark flex items-center justify-center"
             >
-              <Brain className="w-5 h-5 text-white" />
+              <Brain className="w-5 h-5 text-ink-main" />
             </motion.div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <h1 className="text-xl font-bold bg-gradient-to-r from-ink-main to-wood bg-clip-text text-transparent">
               知易智能知识管家
             </h1>
           </div>
@@ -728,7 +729,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 概览 */}
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'dashboard' ? 'border-wood text-ink-main' : 'border-transparent hover:text-ink-main'}`}
             >
               <Database size={18} />
               <span>概览</span>
@@ -737,7 +738,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 知识管理（卡片管理） */}
             <button
               onClick={() => setActiveTab('cards-management')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'cards-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'cards-management' ? 'border-wood text-ink-main' : 'border-transparent hover:text-ink-main'}`}
 >
               <Briefcase size={18} />
               <span>知识管理</span>
@@ -746,7 +747,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 任务管理 */}
             <button
               onClick={() => setActiveTab('data-management')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'data-management' ? 'border-wood text-ink-main' : 'border-transparent hover:text-ink-main'}`}
             >
             <ListTodo size={18} />
               <span>任务管理</span>
@@ -755,7 +756,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 团队协作 */}
             <button
               onClick={() => setActiveTab('virtual-office-meeting')}
-              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+              className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${activeTab === 'virtual-office-meeting' ? 'border-wood text-ink-main' : 'border-transparent hover:text-ink-main'}`}
             >
               <Users size={18} />
               <span>智能协作会议</span>
@@ -764,31 +765,31 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             {/* 文档处理下拉菜单 */}
             <div className="relative group">
               <button
-                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis'].includes(activeTab) ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent hover:text-blue-500'}`}
+                className={`flex items-center space-x-1 px-3 py-2 border-b-2 ${['pdf-analysis', 'ppt-analysis', 'excel-analysis'].includes(activeTab) ? 'border-wood text-ink-main' : 'border-transparent hover:text-ink-main'}`}
               >
                 <FolderOpen size={18} />
                 <span>文档处理</span>
                 <ChevronDown size={14} className="ml-1" />
               </button>
 
-<div className="absolute top-full left-0 mt-0 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+<div className="absolute top-full left-0 mt-0 w-56 bg-paper dark:bg-dark-soft rounded-card shadow-lg border border-border opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                 <button
                   onClick={() => setActiveTab('pdf-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-ink-main bg-card-blue' : ''}`}
                 >
                   <FileText size={16} />
                   <span>PDF分析器</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('ppt-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-ink-main bg-card-yellow' : ''}`}
                 >
                   <Presentation size={16} />
                   <span>PPT生成</span>
                 </button>
                 <button
                   onClick={() => setActiveTab('excel-analysis')}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-ink-main bg-card-green' : ''}`}
                 >
                   <Table size={16} />
                   <span>Excel/在线表格</span>
@@ -850,7 +851,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full flex items-center space-x-1 text-sm font-medium transition-colors"
+                className="bg-wood hover:bg-wood-soft text-ink-main px-4 py-2 rounded-full flex items-center space-x-1 text-sm font-medium transition-colors"
                 onClick={() => setActiveTab('batch-process')}
               >
                 <Upload size={16} />
@@ -868,51 +869,51 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             className="fixed inset-0 bg-black/50 z-40 md:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="fixed top-[60px] left-0 w-64 bg-white dark:bg-gray-800 shadow-xl z-50 md:hidden overflow-y-auto max-h-[calc(100vh-60px)]">
+          <div className="fixed top-[60px] left-0 w-64 bg-paper dark:bg-dark-soft shadow-xl z-50 md:hidden overflow-y-auto max-h-[calc(100vh-60px)]">
             <div className="p-2">
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <div className="px-4 py-2 text-xs font-semibold text-ink-desc uppercase tracking-wider">
                 导航菜单
               </div>
               <button onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'dashboard' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'dashboard' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <Database size={16} /><span>概览</span>
               </button>
               <button onClick={() => { setActiveTab('cards-management'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'cards-management' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'cards-management' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <Briefcase size={16} /><span>知识管理</span>
               </button>
               <button onClick={() => { setActiveTab('data-management'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'data-management' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'data-management' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <ListTodo size={16} /><span>任务管理</span>
               </button>
               <button onClick={() => { setActiveTab('virtual-office-meeting'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <Users size={16} /><span>团队会议</span>
               </button>
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
+              <div className="px-4 py-2 text-xs font-semibold text-ink-desc uppercase tracking-wider mt-2">
                 文档处理
               </div>
 <button onClick={() => { setActiveTab('pdf-analysis'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'pdf-analysis' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <FileText size={16} /><span>PDF分析器</span>
               </button>
               <button onClick={() => { setActiveTab('ppt-analysis'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'ppt-analysis' ? 'text-ink-main bg-card-yellow' : ''}`}>
                 <Presentation size={16} /><span>PPT生成</span>
               </button>
 <button onClick={() => { setActiveTab('excel-analysis'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-ink-main bg-card-green' : ''}`}>
                 <Table size={16} /><span>Excel/在线表格</span>
               </button>
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mt-2">
+              <div className="px-4 py-2 text-xs font-semibold text-ink-desc uppercase tracking-wider mt-2">
                 AI工具
               </div>
               <button onClick={() => { setActiveTab('agent-system'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'agent-system' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <Bot size={16} /><span>Agent系统</span>
               </button>
               <button onClick={() => { setActiveTab('skill-center'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : ''}`}>
+                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'skill-center' ? 'text-ink-main bg-card-blue' : ''}`}>
                 <Sparkles size={16} /><span>技能中心</span>
               </button>
             </div>
@@ -931,14 +932,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+                className="bg-paper dark:bg-dark-soft rounded-card shadow-sm border border-border p-6"
               >
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">知识概览</h2>
+                  <h2 className="text-xl font-bold text-ink-main">知识概览</h2>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-colors"
+                    className="bg-wood hover:bg-wood-soft text-ink-main px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-colors"
                     onClick={() => setShowImportModal(true)}
                   >
                     <Upload size={18} />
@@ -964,8 +965,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                           {type.icon}
                         </div>
                       </div>
-                      <p className="text-2xl font-bold">{cards.filter(c => c.color === color).length}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{type.description}</p>
+                      <p className="text-2xl font-bold text-ink-main">{cards.filter(c => c.color === color).length}</p>
+                      <p className="text-sm text-ink-desc">{type.description}</p>
                     </div>
                   ))}
                 </div>
@@ -976,33 +977,34 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.2 }}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+                className="bg-paper dark:bg-dark-soft rounded-card shadow-sm border border-border p-6"
               >
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-bold">平台功能</h2>
+                  <h2 className="text-xl font-bold text-ink-main">平台功能</h2>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-blue-500 to-cyan-400' },
-                    { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-amber-500 to-yellow-400' },
-                    { icon: <BookOpen size={20} />, title: '书籍技能', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-indigo-500 to-purple-400' },
-                    { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-pink-500 to-rose-400' },
-                    { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-orange-500 to-pink-400' },
-                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-green-500 to-emerald-400' },
-                    { icon: <Table size={20} />, title: '发票识别', desc: '发票OCR提取', link: 'tab:excel-analysis', subFeature: 'invoice', gradient: 'from-green-500 to-emerald-400' },
-                    { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
-                    { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
-                    { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
-                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
-                    { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-sky-500 to-indigo-400' },
-                    { icon: <GitBranch size={20} />, title: '知识图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-teal-500 to-emerald-400' },
+                    { icon: <FileText size={20} />, title: 'PDF分析器', desc: 'word,excel,PDF,ppt文档提取、分析、转换', link: 'tab:pdf-analysis', gradient: 'from-wood to-wood-dark' },
+                    { icon: <BookOpen size={20} />, title: 'PDF查看器', desc: 'PDF文档在线阅读与标注', link: 'tab:pdf-viewer', gradient: 'from-card-yellow to-wood' },
+                    { icon: <BookOpen size={20} />, title: '书籍技能', desc: '从书籍提取方法论，构建知识图谱', link: '/book-skill', gradient: 'from-card-blue to-card-green' },
+                    { icon: <Layers size={20} />, title: 'PPT演示', desc: 'PPT演示文稿在线播放', link: 'tab:ppt-viewer', gradient: 'from-card-red to-card-yellow' },
+                    { icon: <Presentation size={20} />, title: 'PPT生成', desc: 'AI驱动一键生成演示文稿', link: 'tab:ppt-analysis', gradient: 'from-wood to-card-yellow' },
+                    { icon: <Table size={20} />, title: 'Excel表格', desc: '数据分析与在线表格处理,发票提取', link: 'tab:excel-analysis', gradient: 'from-card-green to-card-blue' },
+                    { icon: <Table size={20} />, title: '发票识别', desc: '发票OCR提取', link: 'tab:excel-analysis', subFeature: 'invoice', gradient: 'from-card-green to-card-blue' },
+                    { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-card-blue to-card-green' },
+                    { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-card-blue to-card-green' },
+                    { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-card-red to-card-yellow' },
+                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队智能协作会议', link: 'tab:virtual-office-meeting', subFeature: 'tasks', gradient: 'from-card-red to-card-yellow' },
+                    { icon: <Briefcase size={20} />, title: '知识管理', desc: '四色卡片知识记录与检索', link: 'tab:cards-management', gradient: 'from-card-blue to-card-green' },
+                    { icon: <GitBranch size={20} />, title: '知识图谱', desc: '知识图谱可视化工作台', link: 'tab:knowledge-graph', gradient: 'from-card-green to-card-blue' },
+                    { icon: <Users size={20} />, title: '团队协作', desc: '团队协作与任务协同工作台', link: 'tab:team-collaboration', gradient: 'from-card-blue to-card-green' },
 
                   ].map((item, i) => (
                     <motion.div
                       key={i}
-                      whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(0,0,0,0.1)' }}
+                      whileHover={{ y: -3, boxShadow: '0 8px 25px rgba(105,78,51,0.1)' }}
                       whileTap={{ scale: 0.98 }}
-                      className="flex items-center gap-3 p-4 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:border-blue-300 dark:hover:border-blue-500 transition-all bg-white dark:bg-gray-700/50"
+                      className="flex items-center gap-3 p-4 rounded-card border border-border cursor-pointer hover:border-wood transition-all bg-paper dark:bg-dark-mute"
                       onClick={() => {
                         if ((item as any).subFeature === 'invoice') {
                           localStorage.setItem('openInvoiceManager', 'true');
@@ -1075,134 +1077,134 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
              <div className="space-y-6">
                {/* 知识分布图表 */}
                <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 animate={{ opacity: 1, y: 0 }}
-                 transition={{ duration: 0.5, delay: 0.3 }}
-                 className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
-               >
-                 <h2 className="text-xl font-bold mb-4">知识分布</h2>
-                 {statsLoading ? (
-                   <div className="text-center py-8">
-                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                     <p className="mt-2 text-gray-600 dark:text-gray-400">加载中...</p>
-                   </div>
-                  ) : statsError ? (
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.3 }}
+                  className="bg-paper dark:bg-dark-soft rounded-card shadow-sm border border-border p-6"
+                >
+                  <h2 className="text-xl font-bold text-ink-main mb-4">知识分布</h2>
+                  {statsLoading ? (
                     <div className="text-center py-8">
-                      <AlertCircle className="w-12 h-12 text-red-300 dark:text-red-600 mx-auto mb-2 opacity-50" />
-                      <p className="text-red-500 dark:text-red-400">{statsError}</p>
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-wood"></div>
+                      <p className="mt-2 text-ink-desc">加载中...</p>
+                    </div>
+                   ) : statsError ? (
+                    <div className="text-center py-8">
+                      <AlertCircle className="w-12 h-12 text-task-red dark:text-task-red mx-auto mb-2 opacity-50" />
+                      <p className="text-task-red dark:text-task-red">{statsError}</p>
                       <button
                         onClick={loadDashboardData}
-                        className="mt-3 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-sm hover:bg-blue-200 dark:hover:bg-blue-800/40 transition-colors"
+                        className="mt-3 px-4 py-2 bg-wood/20 dark:bg-wood/10 text-ink-main rounded-lg text-sm hover:bg-wood/30 transition-colors"
                       >
                         重试加载
                       </button>
                     </div>
-                  ) : cards.length === 0 ? (
-                   <div className="text-center py-8">
-                     <Database className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
-                     <p className="text-gray-500 dark:text-gray-400">暂无卡片数据</p>
-                   </div>
-                 ) : (
-                   <>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
-                            ]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            paddingAngle={5}
-                            dataKey="value"
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                            labelLine={false}
-                          >
-                            {[
-                              { name: '蓝色卡片', value: cards.filter(c => c.color === 'blue').length, color: '#3b82f6' },
-                              { name: '绿色卡片', value: cards.filter(c => c.color === 'green').length, color: '#22c55e' },
-                              { name: '黄色卡片', value: cards.filter(c => c.color === 'yellow').length, color: '#eab308' },
-                              { name: '红色卡片', value: cards.filter(c => c.color === 'red').length, color: '#ef4444' },
-                            ].map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
+                   ) : cards.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Database className="w-12 h-12 text-ink-desc dark:text-ink-desc mx-auto mb-2" />
+                      <p className="text-ink-desc dark:text-ink-desc">暂无卡片数据</p>
                     </div>
+                   ) : (
+                    <>
+                     <div className="h-64">
+                       <ResponsiveContainer width="100%" height="100%">
+                         <PieChart>
+                           <Pie
+                             data={[
+                               { name: '核心概念', value: cards.filter(c => c.color === 'blue').length, color: 'var(--card-blue)' },
+                               { name: '关联链接', value: cards.filter(c => c.color === 'green').length, color: 'var(--card-green)' },
+                               { name: '参考来源', value: cards.filter(c => c.color === 'yellow').length, color: 'var(--card-yellow)' },
+                               { name: '索引关键词', value: cards.filter(c => c.color === 'red').length, color: 'var(--card-red)' },
+                             ]}
+                             cx="50%"
+                             cy="50%"
+                             innerRadius={60}
+                             outerRadius={80}
+                             fill="#8884d8"
+                             paddingAngle={5}
+                             dataKey="value"
+                             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                             labelLine={false}
+                           >
+                             {[
+                               { name: '核心概念', value: cards.filter(c => c.color === 'blue').length, color: 'var(--card-blue)' },
+                               { name: '关联链接', value: cards.filter(c => c.color === 'green').length, color: 'var(--card-green)' },
+                               { name: '参考来源', value: cards.filter(c => c.color === 'yellow').length, color: 'var(--card-yellow)' },
+                               { name: '索引关键词', value: cards.filter(c => c.color === 'red').length, color: 'var(--card-red)' },
+                             ].map((entry, index) => (
+                               <Cell key={`cell-${index}`} fill={entry.color} />
+                             ))}
+                           </Pie>
+                         </PieChart>
+                       </ResponsiveContainer>
+                     </div>
 <div className="grid grid-cols-2 gap-2 mt-4">
                         {[
-                          { name: '蓝色卡片', color: '#3b82f6', cardColor: 'blue' },
-                          { name: '绿色卡片', color: '#22c55e', cardColor: 'green' },
-                          { name: '黄色卡片', color: '#eab308', cardColor: 'yellow' },
-                          { name: '红色卡片', color: '#ef4444', cardColor: 'red' },
+                          { name: '核心概念', color: 'var(--card-blue)', cardColor: 'blue' },
+                          { name: '关联链接', color: 'var(--card-green)', cardColor: 'green' },
+                          { name: '参考来源', color: 'var(--card-yellow)', cardColor: 'yellow' },
+                          { name: '索引关键词', color: 'var(--card-red)', cardColor: 'red' },
                         ].map((stat, index) => (
                           <div
                             key={index}
-                            className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded p-1 transition-colors"
+                            className="flex items-center space-x-2 cursor-pointer hover:bg-soft dark:hover:bg-dark-mute rounded p-1 transition-colors"
                             onClick={() => setActiveTab('cards-management')}
                           >
                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.color }}></div>
-                            <span className="text-sm">{stat.name}</span>
+                            <span className="text-sm text-ink-desc">{stat.name}</span>
                           </div>
                         ))}
                       </div>
-                   </>
-                 )}
-               </motion.div>
+                    </>
+                  )}
+                </motion.div>
 
-               {/* 提升知识管理效率 */}
-               <motion.div 
-                 initial={{ opacity: 0, y: 20 }}
-                 animate={{ opacity: 1, y: 0 }}
-                 transition={{ duration: 0.5, delay: 0.5 }}
-                 className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl shadow-md p-6 text-white"
-               >
-                 <h2 className="text-xl font-bold mb-2">提升知识管理效率</h2>
-                 <p className="text-blue-100 mb-4 text-sm">开始使用AI增强的卢曼卡片系统，加速团队知识发展</p>
+                {/* 提升知识管理效率 */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.5 }}
+                  className="bg-wood rounded-card shadow-md p-6 text-ink-main"
+                >
+                  <h2 className="text-xl font-bold mb-2">提升知识管理效率</h2>
+                  <p className="text-ink-desc mb-4 text-sm">开始使用AI增强的卢曼卡片系统，加速团队知识发展</p>
 <div className="space-y-2">
                     {Object.entries(cardTypeMap).map(([color, type]) => (
                       <motion.button
                         key={color}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className="w-full bg-white/20 hover:bg-white/30 rounded-lg p-3 text-left flex items-center justify-between backdrop-blur-sm transition-colors"
+                        className="w-full bg-paper/50 hover:bg-paper backdrop-blur-sm transition-colors rounded-lg p-3 text-left flex items-center justify-between"
                         onClick={() => openCreateModal(color as CardColor)}
                       >
                         <div className="flex items-center">
                           <div className={`${type.color} p-1.5 rounded-lg mr-3`}>
                             {type.icon}
                           </div>
-                          <span>创建{type.name}卡片</span>
+                          <span className="text-ink-main">创建{type.name}卡片</span>
                         </div>
-                        <ChevronRight size={16} />
+                        <ChevronRight size={16} className="text-ink-main" />
                       </motion.button>
                     ))}
                   </div>
-               </motion.div>
+                </motion.div>
 
 
-             </div>
-          </div>
+              </div>
+           </div>
 )}
 
         {/* 知识管理（卡片管理）视图 */}
         {activeTab === 'cards-management' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
             {/* 子导航标签 */}
-            <div className="flex items-center border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center border-b border-border">
               <button
                 onClick={() => setKnowledgeSubTab('cards')}
                 className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
                   knowledgeSubTab === 'cards'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'border-wood text-ink-main'
+                    : 'border-transparent text-ink-desc hover:text-ink-main'
                 }`}
               >
                 <Layers size={16} className="inline mr-1.5" />
@@ -1212,8 +1214,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 onClick={() => setKnowledgeSubTab('research')}
                 className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
                   knowledgeSubTab === 'research'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                    ? 'border-wood text-ink-main'
+                    : 'border-transparent text-ink-desc hover:text-ink-main'
                 }`}
               >
                 <BookOpen size={16} className="inline mr-1.5" />
@@ -1247,9 +1249,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <>
             {/* 页面标题 */}
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold">卡片管理</h1>
-              <button onClick={() => openCreateModal()} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center">
-                <PlusCircle size={18} className="mr-2" /> 新建卡片
+              <h1 className="text-2xl font-bold text-ink-main">卡片管理</h1>
+              <button onClick={() => openCreateModal()} className="bg-wood hover:bg-wood-soft text-ink-main px-4 py-2 rounded-lg flex items-center">
+                <PlusCircle size={18} className="mr-2 text-ink-main" /> 新建卡片
               </button>
             </div>
             
@@ -1257,26 +1259,26 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <div 
                 onClick={() => { setSelectedCardColor(null); setSearchQuery(''); setTimeFilter('all'); }}
-                className="bg-white dark:bg-gray-800 p-4 rounded-xl border cursor-pointer hover:shadow-md transition-shadow"
+                className="bg-paper dark:bg-dark-soft p-4 rounded-card border border-border cursor-pointer hover:shadow-md transition-shadow"
               >
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{cards.length}</div>
-                <div className="text-sm text-gray-500">总卡片数</div>
+                <div className="text-2xl font-bold text-ink-main">{cards.length}</div>
+                <div className="text-sm text-ink-desc">总卡片数</div>
               </div>
               {Object.entries(cardTypeMap).map(([color, type]) => (
                 <div 
                   key={color} 
                   id={`card-stat-${color}`}
                   onClick={() => setSelectedCardColor(color as CardColor)}
-                  className={`${type.bgColor} p-4 rounded-xl border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
+                  className={`${type.bgColor} p-4 rounded-card border border-border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-wood' : ''}`}
                 >
-                  <div className={`text-2xl font-bold ${type.textColor}`}>{cards.filter(c => c.color === color).length}</div>
-                  <div className={`text-sm font-medium ${type.textColor}`}>{type.name}</div>
+                  <div className={`text-2xl font-bold text-ink-main`}>{cards.filter(c => c.color === color).length}</div>
+                  <div className={`text-sm font-medium text-ink-main`}>{type.name}</div>
                 </div>
               ))}
             </div>
 
             {/* 搜索和筛选 */}
-            <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border">
+            <div className="flex flex-wrap items-center gap-2 bg-paper dark:bg-dark-soft p-3 rounded-card border border-border">
               <input
                 type="checkbox"
                 checked={filteredCards.length > 0 && selectedCardIds.size === filteredCards.slice((currentPage - 1) * pageSize, currentPage * pageSize).length}
@@ -1294,12 +1296,12 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 placeholder="搜索..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 min-w-[150px] px-3 py-1.5 text-sm border rounded-lg"
+                className="flex-1 min-w-[150px] px-3 py-1.5 text-sm border border-border rounded-lg bg-paper dark:bg-dark-mute text-ink-main"
               />
               <select 
                 value={selectedCardColor || ''} 
                 onChange={(e) => setSelectedCardColor(e.target.value as CardColor || null)}
-                className="px-3 py-1.5 text-sm border rounded-lg"
+                className="px-3 py-1.5 text-sm border border-border rounded-lg bg-paper dark:bg-dark-mute text-ink-main"
               >
                 <option value="">全部类型</option>
                 {Object.entries(cardTypeMap).map(([color, type]) => (
@@ -1599,6 +1601,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
           </ErrorBoundary>
         )}
 
+        {/* 团队协作视图 */}
+        {activeTab === 'team-collaboration' && (
+          <ErrorBoundary>
+            <TeamCollaboration />
+          </ErrorBoundary>
+        )}
+
 {/* 知识网络视图 —— 使用 WikiEditor（含编辑/图谱/搜索/智能） */}
 {activeTab === 'knowledge-network' && (
 <WikiEditor />
@@ -1700,14 +1709,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }} />
 
       {/* 页脚 */}
-      <footer className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 mt-auto">
+      <footer className="bg-soft dark:bg-dark-mute border-t border-border py-6 mt-auto">
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
-              <Brain className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              <span className="font-semibold">知易智能知识管家</span>
+              <Brain className="w-5 h-5 text-wood" />
+              <span className="font-semibold text-ink-main">知易智能知识管家</span>
             </div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <div className="text-sm text-ink-desc">
               © 2026 知易企业AI知识管理系统. 四色卡片+锦衣卫多智能体的智能解决方案.
             </div>
           </div>
@@ -1758,22 +1767,22 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
           {showAllCardsModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden m-4">
-               <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
-                 <h2 className="text-xl font-bold">全部知识卡片 ({cards.length})</h2>
+             <div className="bg-paper dark:bg-dark-soft rounded-card shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden m-4">
+               <div className="flex justify-between items-center p-4 border-b border-border">
+                 <h2 className="text-xl font-bold text-ink-main">全部知识卡片 ({cards.length})</h2>
                  <button 
                    onClick={() => setShowAllCardsModal(false)}
-                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                   className="p-2 hover:bg-soft dark:hover:bg-dark-mute rounded-lg text-ink-main"
                  >
-                   <X size={20} />
+                   <X size={20} className="text-ink-main" />
                  </button>
                </div>
                <div className="p-4 overflow-y-auto max-h-[calc(90vh-80px)]">
                  {cards.length === 0 ? (
-                   <div className="text-center py-12 text-gray-500">
-                     <Database size={48} className="mx-auto mb-4 opacity-50" />
+                   <div className="text-center py-12 text-ink-desc">
+                     <Database size={48} className="mx-auto mb-4 opacity-50 text-ink-desc" />
                      <p>暂无知识卡片</p>
-                     <p className="text-sm mt-2">点击右上角"新建卡片"开始创建</p>
+                     <p className="text-sm mt-2 text-ink-desc">点击右上角"新建卡片"开始创建</p>
                    </div>
                  ) : (
                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1781,53 +1790,53 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                        <motion.div
                          key={card.id}
                          whileHover={{ scale: 1.02, y: -2 }}
-                         className={`rounded-xl overflow-hidden border cursor-pointer hover:shadow-lg transition-all ${getCardType(card.color).borderColor}`}
+                         className={`rounded-card overflow-hidden border border-border cursor-pointer hover:shadow-lg transition-all ${getCardType(card.color).borderColor}`}
                          onClick={() => {
                            setSelectedCard(card);
                            setShowDetailModal(true);
                            setShowAllCardsModal(false);
                          }}
                        >
-                         <div className={`${getCardType(card.color).bgColor} p-3 border-b ${getCardType(card.color).borderColor}`}>
+                         <div className={`${getCardType(card.color).bgColor} p-3 border-b border-border`}>
                            <div className="flex items-center justify-between">
                              <div className="flex items-center flex-1 min-w-0">
                                <div className={`${getCardType(card.color).color} p-1.5 rounded mr-2`}>
                                  {getCardType(card.color).icon}
                                </div>
-                               <h3 className="font-semibold truncate">{card.title}</h3>
+                               <h3 className="font-semibold truncate text-ink-main">{card.title}</h3>
                              </div>
                              <div className="flex items-center gap-1">
                                <button
                                  onClick={(e) => { e.stopPropagation(); handleCopyCard(card, e as any); }}
-                                 className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                 className="p-1.5 text-ink-desc hover:text-ink-main hover:bg-soft rounded transition-colors"
                                  title="复制内容"
                                >
-                                 <Copy size={14} />
+                                 <Copy size={14} className="text-ink-desc" />
                                </button>
                                <button
                                  onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }}
-                                 className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                                 className="p-1.5 text-ink-desc hover:text-wood hover:bg-soft rounded transition-colors"
                                  title="放大查看"
                                >
-                                 <ZoomIn size={14} />
+                                 <ZoomIn size={14} className="text-ink-desc" />
                                </button>
-                               <span className={`text-xs px-2 py-0.5 rounded-full ${getCardType(card.color).color} text-white ml-1`}>
+                               <span className={`text-xs px-2 py-0.5 rounded-full bg-wood text-ink-main ml-1`}>
                                  {getCardType(card.color).name}
                                </span>
                              </div>
                            </div>
                          </div>
-                         <div className="p-3 bg-white dark:bg-gray-800">
-                           <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 mb-2">{card.content}</p>
-                           <div className="flex items-center justify-between text-xs text-gray-500">
+                         <div className="p-3 bg-paper dark:bg-dark-mute">
+                           <p className="text-sm text-ink-desc dark:text-ink-desc line-clamp-3 mb-2">{card.content}</p>
+                           <div className="flex items-center justify-between text-xs text-ink-desc">
                              <span>ID: {card.id}</span>
                              <span>{formatDate(card.createdAt)}</span>
                            </div>
                          </div>
                        </motion.div>
 ))}
-                    </div>
-                  )}
+                     </div>
+                   )}
                 </div>
               </div>
             </div>
@@ -1843,19 +1852,19 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+                className="bg-paper dark:bg-dark-soft rounded-card shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
                 onClick={e => e.stopPropagation()}
               >
                 {/* 放大模态框头部 */}
-                <div className={`${getCardType(zoomedCard.color).bgColor} p-4 border-b ${getCardType(zoomedCard.color).borderColor}`}>
+                <div className={`${getCardType(zoomedCard.color).bgColor} p-4 border-b border-border`}>
                   <div className="flex justify-between items-center">
                     <div className="flex items-center">
                       <div className={`${getCardType(zoomedCard.color).color} p-2 rounded-lg mr-3`}>
                         {getCardType(zoomedCard.color).icon}
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold">{zoomedCard.title}</h2>
-                        <span className={`text-xs ${getCardType(zoomedCard.color).textColor}`}>
+                        <h2 className="text-xl font-bold text-ink-main">{zoomedCard.title}</h2>
+                        <span className={`text-xs text-ink-desc`}>
                           {getCardType(zoomedCard.color).name}
                         </span>
                       </div>
@@ -1863,16 +1872,16 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => handleCopyCard(zoomedCard, e as any)}
-                        className="p-2 text-gray-500 hover:text-blue-600 rounded-full hover:bg-blue-50 transition-colors"
+                        className="p-2 text-ink-desc hover:text-ink-main rounded-full hover:bg-soft transition-colors"
                         title="复制内容"
                       >
-                        <Copy size={20} />
+                        <Copy size={20} className="text-ink-desc" />
                       </button>
                       <button
                         onClick={() => setZoomedCard(null)}
-                        className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        className="p-2 rounded-full hover:bg-soft dark:hover:bg-dark-mute transition-colors"
                       >
-                        <X size={24} />
+                        <X size={24} className="text-ink-main" />
                       </button>
                     </div>
                   </div>
@@ -1880,20 +1889,20 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 
                 {/* 放大后的卡片内容 */}
                 <div className="flex-1 overflow-y-auto p-8">
-                  <div className={`${getCardType(zoomedCard.color).bgColor} border ${getCardType(zoomedCard.color).borderColor} rounded-xl p-6`}>
+                  <div className={`${getCardType(zoomedCard.color).bgColor} border border-border rounded-card p-6`}>
                     <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
                       <ReactMarkdown>{zoomedCard.content}</ReactMarkdown>
                     </div>
                   </div>
                   
                   {/* 元信息 */}
-                  <div className="mt-6 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                  <div className="mt-6 flex items-center justify-between text-sm text-ink-desc dark:text-ink-desc">
                     <div className="flex items-center">
                       <span>ID: {zoomedCard.id}</span>
                       <span className="mx-2">·</span>
                       <span>创建于 {formatDate(zoomedCard.createdAt)}</span>
                     </div>
-                    <div className={`${getCardType(zoomedCard.color).color} text-white px-3 py-1 rounded-full`}>
+                    <div className={`bg-wood text-ink-main px-3 py-1 rounded-full text-sm`}>
                       {zoomedCard.address}
                     </div>
                   </div>

@@ -34,6 +34,7 @@ const AgentSystem: React.FC = () => {
     idleAgents: 8
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
 
   const agents: Agent[] = [
     {
@@ -118,13 +119,16 @@ const AgentSystem: React.FC = () => {
     }
   ];
 
-  // 获取系统统计数据
+  // 获取系统统计数据 + Agent 状态
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(getApiBaseUrl() + '/api/skill/stats');
-        if (response.ok) {
-          const data = await response.json();
+        const [statsRes, agentRes] = await Promise.all([
+          fetch(getApiBaseUrl() + '/api/skill/stats'),
+          fetch(getApiBaseUrl() + '/api/agent/status')
+        ]);
+        if (statsRes.ok) {
+          const data = await statsRes.json();
           const taskStats = data.task_stats || {};
           setSystemStats({
             taskCompletionRate: taskStats.task_completion_rate || 0,
@@ -135,9 +139,16 @@ const AgentSystem: React.FC = () => {
             idleAgents: 8 - Math.min(8, taskStats.active_tasks || 0)
           });
         }
+        if (agentRes.ok) {
+          const agentData = await agentRes.json();
+          const statusMap: Record<string, string> = {};
+          (agentData.agents || []).forEach((a: any) => {
+            statusMap[a.id] = a.status;
+          });
+          setAgentStatuses(statusMap);
+        }
       } catch (error) {
         console.error('获取系统统计失败:', error);
-        // 使用模拟数据
         setSystemStats({
           taskCompletionRate: 98.5,
           avgResponseTime: '1.2s',
@@ -152,11 +163,15 @@ const AgentSystem: React.FC = () => {
     };
     
     fetchStats();
-    const interval = setInterval(fetchStats, 5000); // 每5秒刷新（更频繁获取真实数据）
+    const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const selectedAgentData = agents.find(a => a.id === selectedAgent)!;
+  const agentsWithStatus = agents.map(a => ({
+    ...a,
+    status: (agentStatuses[a.id] || a.status) as 'running' | 'idle' | 'busy'
+  }));
+  const selectedAgentData = agentsWithStatus.find(a => a.id === selectedAgent)!;
   const Icon = selectedAgentData.icon;
 
   return (
@@ -230,7 +245,7 @@ const AgentSystem: React.FC = () => {
           {/* 左侧：Agent列表 */}
           <div className="lg:col-span-1 space-y-4">
             <h2 className="text-lg font-semibold mb-4">智能体列表</h2>
-            {agents.map((agent, index) => {
+            {agentsWithStatus.map((agent, index) => {
               const AgentIcon = agent.icon;
               return (
                 <motion.div

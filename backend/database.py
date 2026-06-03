@@ -229,6 +229,10 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN source_card_id INTEGER")
             except:
                 pass
+            try:
+                cursor.execute("ALTER TABLE gtd_tasks ADD COLUMN kanban_status TEXT DEFAULT 'backlog'")
+            except:
+                pass
 
             # 9. 专题研究表
             cursor.execute("""
