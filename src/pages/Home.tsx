@@ -95,51 +95,51 @@ const cardTypeMap: Record<CardColor, {
   name: string; 
   description: string;
   icon: React.ReactNode;
-  color: string;
-  hoverColor: string;
-  textColor: string;
-  bgColor: string;
-  borderColor: string;
+  color: string;        // 图标圆圈背景色（保持原高饱和色）
+  hoverColor: string;   // hover 图标圆圈背景色
+  textColor: string;    // 文字颜色
+  bgColor: string;      // 卡片背景色（低饱和）
+  borderColor: string;  // 边框色
 }> = {
   blue: { 
     name: '核心概念', 
     description: '记录重要的想法、理论和主要观点',
     icon: <Brain size={20} />,
-    color: 'bg-blue-500',
+    color: 'bg-blue-500',       // 保持原深蓝色圆圈
     hoverColor: 'bg-blue-600',
     textColor: 'text-blue-800',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-    borderColor: 'border-blue-200 dark:border-blue-800'
+    bgColor: 'bg-card-blue',    // 低饱和淡石青卡片背景
+    borderColor: 'border-border'
   },
   green: { 
     name: '关联链接', 
     description: '连接不同概念，发现隐性知识联系',
     icon: <Network size={20} />,
-    color: 'bg-green-500',
+    color: 'bg-green-500',      // 保持原深绿色圆圈
     hoverColor: 'bg-green-600',
     textColor: 'text-green-800',
-    bgColor: 'bg-green-50 dark:bg-green-950/40',
-    borderColor: 'border-green-200 dark:border-green-800'
+    bgColor: 'bg-card-green',   // 低饱和浅竹绿卡片背景
+    borderColor: 'border-border'
   },
   yellow: { 
     name: '参考来源', 
     description: '保存资料、文档和外部资源链接',
     icon: <Database size={20} />,
-    color: 'bg-yellow-500',
+    color: 'bg-yellow-500',     // 保持原深黄色圆圈
     hoverColor: 'bg-yellow-600',
     textColor: 'text-yellow-800',
-    bgColor: 'bg-yellow-50 dark:bg-yellow-950/40',
-    borderColor: 'border-yellow-200 dark:border-yellow-800'
+    bgColor: 'bg-card-yellow',  // 低饱和古籍米黄卡片背景
+    borderColor: 'border-border'
   },
   red: { 
     name: '索引关键词', 
     description: '标记重要术语，便于快速检索和导航',
     icon: <Search size={20} />,
-    color: 'bg-red-500',
+    color: 'bg-red-500',        // 保持原深红色圆圈
     hoverColor: 'bg-red-600',
     textColor: 'text-red-800',
-    bgColor: 'bg-red-50 dark:bg-red-950/40',
-    borderColor: 'border-red-200 dark:border-red-800'
+    bgColor: 'bg-card-red',     // 低饱和朱砂浅红卡片背景
+    borderColor: 'border-border'
   }
 };
 
@@ -1111,10 +1111,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                          <PieChart>
                            <Pie
                              data={[
-                               { name: '核心概念', value: cards.filter(c => c.color === 'blue').length, color: 'var(--card-blue)' },
-                               { name: '关联链接', value: cards.filter(c => c.color === 'green').length, color: 'var(--card-green)' },
-                               { name: '参考来源', value: cards.filter(c => c.color === 'yellow').length, color: 'var(--card-yellow)' },
-                               { name: '索引关键词', value: cards.filter(c => c.color === 'red').length, color: 'var(--card-red)' },
+                               { name: '核心概念', value: cards.filter(c => c.color === 'blue').length },
+                               { name: '关联链接', value: cards.filter(c => c.color === 'green').length },
+                               { name: '参考来源', value: cards.filter(c => c.color === 'yellow').length },
+                               { name: '索引关键词', value: cards.filter(c => c.color === 'red').length },
                              ]}
                              cx="50%"
                              cy="50%"
@@ -1127,10 +1127,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                              labelLine={false}
                            >
                              {[
-                               { name: '核心概念', value: cards.filter(c => c.color === 'blue').length, color: 'var(--card-blue)' },
-                               { name: '关联链接', value: cards.filter(c => c.color === 'green').length, color: 'var(--card-green)' },
-                               { name: '参考来源', value: cards.filter(c => c.color === 'yellow').length, color: 'var(--card-yellow)' },
-                               { name: '索引关键词', value: cards.filter(c => c.color === 'red').length, color: 'var(--card-red)' },
+                               { name: '核心概念', color: '#3b82f6' },
+                               { name: '关联链接', color: '#22c55e' },
+                               { name: '参考来源', color: '#eab308' },
+                               { name: '索引关键词', color: '#ef4444' },
                              ].map((entry, index) => (
                                <Cell key={`cell-${index}`} fill={entry.color} />
                              ))}
@@ -1140,10 +1140,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                      </div>
 <div className="grid grid-cols-2 gap-2 mt-4">
                         {[
-                          { name: '核心概念', color: 'var(--card-blue)', cardColor: 'blue' },
-                          { name: '关联链接', color: 'var(--card-green)', cardColor: 'green' },
-                          { name: '参考来源', color: 'var(--card-yellow)', cardColor: 'yellow' },
-                          { name: '索引关键词', color: 'var(--card-red)', cardColor: 'red' },
+                          { name: '核心概念', color: '#3b82f6', cardColor: 'blue' },
+                          { name: '关联链接', color: '#22c55e', cardColor: 'green' },
+                          { name: '参考来源', color: '#eab308', cardColor: 'yellow' },
+                          { name: '索引关键词', color: '#ef4444', cardColor: 'red' },
                         ].map((stat, index) => (
                           <div
                             key={index}

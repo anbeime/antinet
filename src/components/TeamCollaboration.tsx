@@ -588,7 +588,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap' | 'wiki-editor' | 'meeting'>('integration');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('integration');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -1330,16 +1330,16 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         </button>
         <button
-          onClick={() => setActiveTab('knowledge-graph')}
+          onClick={() => setActiveTab('wiki-editor')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'knowledge-graph'
+            activeTab === 'wiki-editor'
               ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
               : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
           }`}
         >
           <div className="flex items-center justify-center">
-            <GitBranch size={18} className="mr-2" />
-            <span>知识图谱</span>
+            <Edit3 size={18} className="mr-2" />
+            <span>Wiki 编辑器</span>
           </div>
         </button>
         <button
@@ -1366,19 +1366,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <Edit3 size={18} className="mr-2" />
             <span>Wiki 编辑器</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('meeting')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'meeting'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Sparkles size={18} className="mr-2" />
-            <span>8-Agent 会议</span>
           </div>
         </button>
       </div>
@@ -2292,21 +2279,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-        {/* 知识图谱 */}
-        {activeTab === 'knowledge-graph' && <KnowledgeGraphPanel userInfo={userInfo} />}
-        
         {/* 思维导图 */}
         {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
 
-        {/* 知识网络/wiki编辑器 */}
+        {/* Wiki编辑器 */}
         {activeTab === 'wiki-editor' && (
           <div className="h-[calc(100vh-200px)]">
             <WikiEditor />
           </div>
         )}
-
-        {/* 8-Agent 智能会议 */}
-        {activeTab === 'meeting' && <AgentMeetingPanel />}
       </div>
 
       {/* 成员编辑弹窗 */}
@@ -3130,15 +3111,18 @@ return (
                       <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
                         {selectedCard.content || '暂无内容'}
                       </div>
-                      {selectedCard.tags?.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-3">
-                          {(selectedCard.tags as string[]).map((tag: string) => (
-                            <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {(() => {
+                        const tags = Array.isArray(selectedCard.tags) ? selectedCard.tags : (typeof selectedCard.tags === 'string' ? selectedCard.tags.split(/[,，\s]+/).filter(Boolean) : []);
+                        return tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-3">
+                            {tags.map((tag: string) => (
+                              <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="text-sm text-gray-400 text-center py-8">预览已隐藏</div>
