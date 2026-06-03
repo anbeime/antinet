@@ -95,7 +95,8 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
   const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
   const [projects, setProjects] = useState<Array<{id: number; name: string; color: string}>>([]);
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | null>(filterProjectId || null);
-  const [isFreeDragMode, setIsFreeDragMode] = useState(false);  // 自由拖拽模式
+  type LayoutMode = 'force' | 'hierarchical' | 'free';
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('force');
 
   // 按专题过滤 + 移除孤立节点（共享给渲染和空状态判断）
   const filteredGraph = useMemo(() => {
@@ -258,8 +259,22 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
     const displayNodes = graph.nodes;
     const displayEdges = graph.edges;
 
+    const layerOrder = ['blue', 'green', 'yellow', 'red'];
+    const layerCounts: Record<string, number> = {};
+    displayNodes.forEach(n => {
+      const t = n.type || 'blue';
+      layerCounts[t] = (layerCounts[t] || 0) + 1;
+    });
+    const layerPositions: Record<string, number> = {};
+    layerOrder.forEach(l => { layerPositions[l] = 0; });
+
     const nodes = displayNodes.map(node => {
       const isHighlighted = highlightedNodes.size === 0 || highlightedNodes.has(node.id);
+      const nodeType = (node.type || 'blue') as keyof typeof typeColors;
+      const layerIdx = layerOrder.indexOf(nodeType);
+      const totalInLayer = layerCounts[nodeType] || 1;
+      const posInLayer = layerPositions[nodeType]++;
+
       return {
         id: node.id,
         name: node.label,
@@ -267,8 +282,10 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
         value: node.importance || 0,
         category: node.type,
         project_id: node.project_id,
+        x: layoutMode === 'hierarchical' ? 120 + layerIdx * 250 : undefined,
+        y: layoutMode === 'hierarchical' ? 200 + (posInLayer - (totalInLayer - 1) / 2) * 70 : undefined,
         itemStyle: {
-          color: typeColors[node.type as keyof typeof typeColors] || '#999',
+          color: typeColors[nodeType] || '#999',
           opacity: isHighlighted ? 1 : 0.2,
         },
         label: {
@@ -332,25 +349,25 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
       ],
       series: [{
         type: 'graph',
-        layout: isFreeDragMode ? 'none' : 'force',
+        layout: layoutMode === 'force' ? 'force' : 'none',
         data: nodes,
         links: links,
         categories: [{ name: 'blue' }, { name: 'green' }, { name: 'yellow' }, { name: 'red' }],
         roam: true,
-        draggable: true,
+        draggable: layoutMode !== 'hierarchical',
         label: { show: true, position: 'right', formatter: '{b}' },
         labelLayout: { hideOverlap: true },
         scaleLimit: { min: 0.2, max: 3 },
         lineStyle: { color: 'source', curveness: 0.3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-        force: isFreeDragMode ? undefined : {
+        force: layoutMode === 'force' ? {
           // 自适应力导向布局：节点少时降低排斥力 + 增强引力，避免散开
           repulsion: Math.max(100, Math.min(600, displayNodes.length * 30)),
           gravity: displayNodes.length > 15 ? 0.03 : displayNodes.length > 5 ? 0.08 : 0.2,
           edgeLength: [60, 150],
           layoutAnimation: true,
           friction: 0.1
-        }
+        } : undefined
       }]
     };
 
@@ -430,22 +447,22 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
       ],
       series: [{
         type: 'graph',
-        layout: isFreeDragMode ? 'none' : 'force',
+        layout: layoutMode === 'force' ? 'force' : 'none',
         data: nodes,
         links: links,
         roam: true,
-        draggable: true,
+        draggable: layoutMode !== 'hierarchical',
         label: { show: true, position: 'right', formatter: '{b}' },
         labelLayout: { hideOverlap: true },
         scaleLimit: { min: 0.2, max: 3 },
         emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-        force: isFreeDragMode ? undefined : {
+        force: layoutMode === 'force' ? {
           // 自适应力导向布局参数
           repulsion: Math.max(200, Math.min(600, nodes.length * 40)),
           gravity: nodes.length > 10 ? 0.03 : 0.15,  // 节点少时增加中心引力
           edgeLength: [60, 150],
           layoutAnimation: true
-        }
+        } : undefined
       }]
     };
 
@@ -588,14 +605,22 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ focusCardId, filterProj
               <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
               刷新
             </Button>
-            <Button
-              variant={isFreeDragMode ? "default" : "outline"}
-              size="sm"
-              onClick={() => setIsFreeDragMode(!isFreeDragMode)}
-              title={isFreeDragMode ? "切换到力导向布局" : "切换到自由拖拽模式"}
-            >
-              {isFreeDragMode ? "🔒 锁定布局" : "✋ 自由拖拽"}
-            </Button>
+            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+              {(['force', 'hierarchical', 'free'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setLayoutMode(m)}
+                  className={`px-2 py-1 text-xs rounded-md transition-colors ${
+                    layoutMode === m
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                  }`}
+                  title={m === 'force' ? '力导向布局' : m === 'hierarchical' ? '层级布局' : '自由拖拽'}
+                >
+                  {m === 'force' ? '⚡力导向' : m === 'hierarchical' ? '⊞层级' : '✋自由'}
+                </button>
+              ))}
+            </div>
             <Button variant="outline" size="sm" onClick={handleZoomIn}>
               <ZoomIn className="w-4 h-4" />
             </Button>

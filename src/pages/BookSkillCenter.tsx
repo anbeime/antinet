@@ -6,11 +6,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  BookOpen, BookMarked, Search, MessageSquare, Plus,
-  ArrowRight, Save, FileText, BrainCircuit, Sparkles,
+  BookOpen, BookMarked, Search, Plus,
+  ArrowRight, FileText, BrainCircuit, Sparkles,
   Library, Lightbulb, TrendingUp, CheckCircle, Zap,
-  Loader, AlertCircle, ChevronRight, Star, Clock,
-  Book, FileUp, Download, Link2, X, ExternalLink, Filter,
+  Loader, ChevronRight, Clock,
+  Book, FileUp, Link2, X, ExternalLink,
   Trash2, Edit3
 } from 'lucide-react';
 import { skillService } from '@/services/skillService';
@@ -417,6 +417,7 @@ loadTopicBooks();
             <div className="flex items-center gap-2">
               <Library size={14} className="text-purple-500" />
               <span className="text-xs text-gray-600 dark:text-gray-400">从专题提取</span>
+              {loadingTopics && <Loader size={12} className="animate-spin text-purple-500 ml-1" />}
             </div>
             <select
               value={selectedTopic}
@@ -847,7 +848,7 @@ const NotesPanel: React.FC = () => {
             <span className="text-xs text-gray-400">共 {selectedIds.size} 条</span>
           </h3>
           <textarea readOnly rows={8}
-            value={filtered.filter((_, i) => selectedIds.has(notes.findIndex((n: any, j: number) => (n.id || String(j)) === (notes.find((_, k: number) => (notes[k]?.id || String(k)) === (notes[i]?.id || String(i))))?.id || String(notes.indexOf(_)))))
+            value={filtered.filter((_, i) => selectedIds.has(String(notes.findIndex((n: any, j: number) => (n.id || String(j)) === (notes.find((_, k: number) => (notes[k]?.id || String(k)) === (notes[i]?.id || String(i))))?.id || String(notes.indexOf(_))))))
               .map(n => `【${n.title || '无标题'}】\n${n.content || ''}`).join('\n\n---\n\n')}
             className="w-full p-3 text-sm font-mono border rounded-lg bg-gray-50 dark:bg-gray-700 resize-none outline-none" />
           <p className="text-xs text-gray-400 text-center">勾选笔记 → 上方自动生成 Markdown 文本</p>

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Upload, Download, ZoomIn, ZoomOut,
   ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
-  Maximize2, Minimize2, AlertCircle, Bookmark, Plus, Save, Trash2, BookmarkPlus, Check
+  Maximize2, Minimize2, AlertCircle, Bookmark, Library, Plus, Save, Trash2, BookmarkPlus, Check
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';

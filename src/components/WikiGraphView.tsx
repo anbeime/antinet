@@ -95,6 +95,86 @@ const WikiGraphView: React.FC<WikiGraphViewProps> = ({ nodes, edges, onNodeClick
       .attr('d', 'M 0,-5 L 10 ,0 L 0,5')
       .attr('fill', '#94a3b8');
 
+    if (layout === 'hierarchical') {
+      const layerOrder = ['concept', 'entity', 'note', 'query', 'comparison', 'article', 'default'];
+      const layerCounts: Record<string, number> = {};
+      filteredNodes.forEach(n => {
+        const t = layerOrder.includes(n.type) ? n.type : 'default';
+        layerCounts[t] = (layerCounts[t] || 0) + 1;
+      });
+      const posInLayer: Record<string, number> = {};
+      Object.keys(layerCounts).forEach(k => { posInLayer[k] = 0; });
+
+      const layerSpacing = height / (layerOrder.length + 1);
+
+      filteredNodes.forEach(n => {
+        const t = layerOrder.includes(n.type) ? n.type : 'default';
+        const layerIdx = layerOrder.indexOf(t);
+        const total = layerCounts[t] || 1;
+        const pos = posInLayer[t]++;
+        n.x = width / 2 + (pos - (total - 1) / 2) * 80;
+        n.y = layerSpacing * (layerIdx + 1);
+      });
+
+      g.append('g')
+        .attr('class', 'links')
+        .selectAll('line')
+        .data(filteredEdges)
+        .join('line')
+        .attr('x1', d => (typeof d.source === 'object' ? (d.source as GraphNode).x! : 0))
+        .attr('y1', d => (typeof d.source === 'object' ? (d.source as GraphNode).y! : 0))
+        .attr('x2', d => (typeof d.target === 'object' ? (d.target as GraphNode).x! : 0))
+        .attr('y2', d => (typeof d.target === 'object' ? (d.target as GraphNode).y! : 0))
+        .attr('stroke', '#cbd5e1')
+        .attr('stroke-width', d => Math.sqrt(d.weight))
+        .attr('marker-end', 'url(#arrowhead)');
+
+      const nodeGroup = g.append('g')
+        .attr('class', 'nodes')
+        .selectAll('g')
+        .data(filteredNodes)
+        .join('g')
+        .attr('cursor', 'pointer')
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+
+      nodeGroup.append('circle')
+        .attr('r', d => 12 + Math.min(d.title.length / 2, 8))
+        .attr('fill', d => nodeColors[d.type] || nodeColors.default)
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2);
+
+      nodeGroup.append('text')
+        .text(d => d.title.length > 12 ? d.title.substring(0, 12) + '...' : d.title)
+        .attr('text-anchor', 'middle')
+        .attr('dy', d => 12 + Math.min(d.title.length / 2, 8) + 15)
+        .attr('font-size', '11px')
+        .attr('fill', '#475569')
+        .attr('pointer-events', 'none');
+
+      nodeGroup.on('click', (event, d) => {
+        event.stopPropagation();
+        setSelectedNode(d);
+        onNodeClick?.(d.id);
+      });
+
+      nodeGroup.on('mouseenter', (event, d) => {
+        onNodeHover?.(d);
+        d3.select(event.currentTarget).select('circle')
+          .transition().duration(200)
+          .attr('r', parseFloat(d3.select(event.currentTarget).select('circle').attr('r')) + 5);
+      });
+
+      nodeGroup.on('mouseleave', (event, d) => {
+        onNodeHover?.(null);
+        d3.select(event.currentTarget).select('circle')
+          .transition().duration(200)
+          .attr('r', 12 + Math.min(d.title.length / 2, 8));
+      });
+
+      svg.on('click', () => setSelectedNode(null));
+      return;
+    }
+
     const simulation = d3.forceSimulation<GraphNode>(filteredNodes)
       .force('link', d3.forceLink<GraphNode, GraphEdge>(filteredEdges)
         .id(d => d.id)
@@ -187,7 +267,7 @@ const WikiGraphView: React.FC<WikiGraphViewProps> = ({ nodes, edges, onNodeClick
     return () => {
       simulation.stop();
     };
-  }, [filteredNodes, filteredEdges]);
+  }, [filteredNodes, filteredEdges, layout]);
 
   const allTags = Array.from(new Set(nodes.flatMap(n => n.tags)));
 

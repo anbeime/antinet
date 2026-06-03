@@ -229,19 +229,20 @@ class BookSkillGenerator:
         self._ai_service = None
 
     def _get_ai_service(self):
-        """获取 AI 服务实例（本地优先，sensenova 兜底）"""
+        """获取 AI 服务实例（sensenova 优先用于方法论提取，NPU 兜底）"""
         if self._ai_service is None:
             try:
                 from services.ai import get_ai_service, get_sensenova_service
-                # 优先使用本地模型（NPU）
-                self._ai_service = get_ai_service()
-                if self._ai_service and self._ai_service.is_available:
-                    logger.info("[BookSkill] 使用本地 AI 模型")
+                # 优先使用 sensenova（专为方法论提取任务优化）
+                sensenova = get_sensenova_service()
+                if sensenova and sensenova.is_available:
+                    self._ai_service = sensenova
+                    logger.info("[BookSkill] 使用 Sensenova 进行方法论提取")
                 else:
-                    # 兜底：sensenova-6.7-flash-lite
-                    self._ai_service = get_sensenova_service()
+                    # 兜底：本地模型（NPU）
+                    self._ai_service = get_ai_service()
                     if self._ai_service and self._ai_service.is_available:
-                        logger.info("[BookSkill] 本地模型不可用，使用 Sensenova 兜底")
+                        logger.info("[BookSkill] Sensenova 不可用，使用本地 NPU 模型")
                     else:
                         self._ai_service = None
                         logger.warning("[BookSkill] 所有 AI 服务均不可用")

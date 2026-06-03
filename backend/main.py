@@ -119,7 +119,7 @@ print("[OK] 数据库初始化完成")
 # ============================================================
 # 6. AI 服务初始化（使用新的 AI 服务模块）
 # ============================================================
-from services.ai import AIServiceFactory
+from services.ai.factory import AIServiceFactory, create_ai_service
 
 AIServiceFactory.create_default_services()
 
@@ -133,7 +133,7 @@ _sensenova_cfg = {
     'max_tokens': 2048,
     'temperature': 1.0,
 }
-_sensenova = AIServiceFactory.create_ai_service('openai', _sensenova_cfg)
+_sensenova = create_ai_service('openai', _sensenova_cfg)
 if _sensenova:
     AIServiceFactory.register('sensenova', _sensenova, set_default=False)
     print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")

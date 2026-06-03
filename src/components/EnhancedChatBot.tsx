@@ -30,6 +30,7 @@ import type {
 import { fileToBase64 } from '@/services/visionService';
 import { CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import CardDetailModal from '@/components/CardDetailModal';
 
 interface EnhancedChatBotProps {
   isOpen: boolean;
@@ -239,7 +240,7 @@ const MessageBubble: React.FC<{
                 {cards.slice(0, 3).map((card, idx) => (
                   <div
                     key={card.id || idx}
-                    className={`rounded-lg shadow transition-all ${onCardClick ? 'cursor-pointer hover:shadow-md' : ''}`}
+                    className="rounded-lg shadow transition-all cursor-pointer hover:shadow-md"
                     style={{
                       backgroundColor: '#fff9f3',
                       borderLeft: '4px solid #d4a574',
@@ -262,6 +263,10 @@ const MessageBubble: React.FC<{
                       <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
                         {card.content}
                       </p>
+                      <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                        <Eye className="w-3 h-3" />
+                        <span>点击查看卡片详情</span>
+                      </div>
                     </CardContent>
                   </div>
                 ))}
@@ -496,6 +501,10 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     emoji: string;
     confidence: number;
   } | null>(null);
+  
+  // 卡片详情弹窗状态
+  const [selectedCard, setSelectedCard] = useState<CardReference | null>(null);
+  const [showCardDetail, setShowCardDetail] = useState(false);
   
   // 快捷操作展开状态
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -1063,6 +1072,12 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     textareaRef.current?.focus();
   };
 
+  // 关闭卡片详情弹窗
+  const handleCloseCardDetail = () => {
+    setShowCardDetail(false);
+    setSelectedCard(null);
+  };
+
   // 快捷操作 - 直接跳转到对应页面
   const quickActions = [
     {
@@ -1525,6 +1540,30 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             )}
           </div>
         </motion.div>
+
+        {/* 卡片详情弹窗 */}
+        {showCardDetail && selectedCard && (
+          <CardDetailModal
+            isOpen={showCardDetail}
+            onClose={handleCloseCardDetail}
+            card={{
+              id: selectedCard.id,
+              color: selectedCard.color as 'blue' | 'green' | 'yellow' | 'red',
+              title: selectedCard.title,
+              content: selectedCard.content,
+              address: '',
+              createdAt: new Date().toISOString(),
+              relatedCards: [],
+              projectId: undefined,
+            }}
+            allCards={[]}
+            onDelete={() => {}}
+            onRelatedCardClick={() => {}}
+            onUpdateCard={() => {}}
+            onCreateRecommendedCard={() => {}}
+            refreshTrigger={0}
+          />
+        )}
       </motion.div>
     </AnimatePresence>
   );

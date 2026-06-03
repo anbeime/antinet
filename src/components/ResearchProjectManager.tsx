@@ -30,6 +30,7 @@ import {
   UserPlus,
   ListTodo,
   Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -187,17 +188,36 @@ const ResearchCardDetailModal: React.FC<{
   const [allCards, setAllCards] = useState<ProjectCard[]>([]);
   const [relatedSearch, setRelatedSearch] = useState('');
   const [suggestedCards, setSuggestedCards] = useState<{id: number; title: string; card_type: string; category?: string; reason: string; score: number}[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState('');
   
-  // 加载所有卡片 + backlink 数据 + 联想推荐
+  // 按需加载联想推荐（避免每次打开自动生成，耗时且有副作用）
+  const loadSuggestions = useCallback(async () => {
+    if (suggestionsLoading || suggestedCards.length > 0) return;
+    setSuggestionsLoading(true);
+    setSuggestionsError('');
+    try {
+      const sugRes = await fetch(getApiBaseUrl() + `/api/research/cards/${card.id}/suggested-relations?limit=8`);
+      if (!sugRes.ok) throw new Error(`API错误: ${sugRes.status}`);
+      const sugData = await sugRes.json();
+      setSuggestedCards(sugData.suggestions || []);
+    } catch (e) {
+      setSuggestionsError('加载失败');
+      console.warn('加载联想推荐失败:', e);
+    } finally {
+      setSuggestionsLoading(false);
+    }
+  }, [card.id, suggestedCards.length, suggestionsLoading]);
+  
+  // 加载所有卡片 + backlink 数据（无 LLM 生成，速度快）
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 加载所有卡片
         const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
         const data: AllCardsResponse = await res.json();
         setAllCards(data.cards || []);
         
-        // 从 backlinks 表补充关联（确保关闭重开不丢）
+        // 从 backlinks 表补充关联
         try {
           const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/backlinks`);
           const backlinks = await blRes.json();
@@ -207,20 +227,10 @@ const ResearchCardDetailModal: React.FC<{
           const forwardlinks = await flRes.json();
           const flIds = forwardlinks.map((f: any) => f.id);
           
-          // 合并：related_cards字段 + backlinks + forwardlinks
           const allRelatedIds = new Set([...(card.related_cards || []), ...blIds, ...flIds]);
           setRelatedCards([...allRelatedIds]);
         } catch (e) {
           console.warn('加载backlink数据失败，使用原有related_cards:', e);
-        }
-        
-        // 加载联想推荐
-        try {
-          const sugRes = await fetch(getApiBaseUrl() + `/api/research/cards/${card.id}/suggested-relations?limit=8`);
-          const sugData = await sugRes.json();
-          setSuggestedCards(sugData.suggestions || []);
-        } catch (e) {
-          console.warn('加载联想推荐失败:', e);
         }
       } catch (e) {
         console.error('加载卡片失败:', e);
@@ -588,41 +598,61 @@ const ResearchCardDetailModal: React.FC<{
                   </div>
                 )}
                 
-                {/* 联想推荐区 */}
-                {suggestedCards.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mb-2 flex items-center">
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      联想推荐
+                {/* 联想推荐区：按需加载，不自动生成 */}
+                <div className="mb-4">
+                  {suggestionsLoading ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center">
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                      正在联想推荐...
                     </p>
-                    <div className="space-y-1">
-                      {suggestedCards
-                        .filter(s => !relatedCards.includes(s.id))
-                        .slice(0, 6)
-                        .map(s => (
-                        <div key={s.id} className="flex items-center justify-between px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800/40 text-sm">
-                          <div className="flex items-center flex-1 min-w-0">
-                            <span className={`w-2 h-2 rounded-full mr-1.5 flex-shrink-0 ${
-                              s.card_type === 'blue' ? 'bg-blue-500' :
-                              s.card_type === 'green' ? 'bg-green-500' :
-                              s.card_type === 'yellow' ? 'bg-yellow-500' :
-                              s.card_type === 'red' ? 'bg-red-500' : 'bg-gray-400'
-                            }`} />
-                            <span className="truncate">{s.title}</span>
-                            <span className="ml-2 text-xs text-amber-500 flex-shrink-0">{s.reason}</span>
+                  ) : suggestionsError ? (
+                    <p className="text-xs text-red-500 flex items-center">
+                      <AlertCircle className="w-3 h-3 mr-1" />
+                      联想推荐加载失败
+                    </p>
+                  ) : suggestedCards.length > 0 ? (
+                    <>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mb-2 flex items-center">
+                        <TrendingUp className="w-3 h-3 mr-1" />
+                        联想推荐
+                      </p>
+                      <div className="space-y-1">
+                        {suggestedCards
+                          .filter(s => !relatedCards.includes(s.id))
+                          .slice(0, 6)
+                          .map(s => (
+                          <div key={s.id} className="flex items-center justify-between px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800/40 text-sm">
+                            <div className="flex items-center flex-1 min-w-0">
+                              <span className={`w-2 h-2 rounded-full mr-1.5 flex-shrink-0 ${
+                                s.card_type === 'blue' ? 'bg-blue-500' :
+                                s.card_type === 'green' ? 'bg-green-500' :
+                                s.card_type === 'yellow' ? 'bg-yellow-500' :
+                                s.card_type === 'red' ? 'bg-red-500' : 'bg-gray-400'
+                              }`} />
+                              <span className="truncate">{s.title}</span>
+                              <span className="ml-2 text-xs text-amber-500 flex-shrink-0">{s.reason}</span>
+                            </div>
+                            <button
+                              onClick={() => addRelatedCard(s.id)}
+                              className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0"
+                              title="添加关联"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => addRelatedCard(s.id)}
-                            className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0"
-                            title="添加关联"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      onClick={loadSuggestions}
+                      className="w-full px-3 py-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors flex items-center justify-center gap-1"
+                    >
+                      <TrendingUp className="w-3 h-3" />
+                      显示联想推荐
+                    </button>
+                  )}
+                </div>
                 
                 {/* 手动搜索添加关联 */}
                 <div>

@@ -79,13 +79,16 @@ class KnowledgeGraphVisualizationSkill:
     def _extract_nodes(self, cards: List[Dict]) -> List[Dict]:
         """提取节点"""
         nodes = []
+        layer_map = {"blue": 1, "green": 2, "yellow": 3, "red": 4}
         
         for card in cards:
+            card_type = card.get("type", card.get("card_type", "blue"))
             node = {
                 "id": card.get("id", card.get("card_id", f"card_{len(nodes)}")),
                 "label": card.get("title", card.get("name", "未命名")),
-                "type": card.get("type", card.get("card_type", "blue")),
-                "category": self._get_category_by_type(card.get("type", "blue")),
+                "type": card_type,
+                "category": self._get_category_by_type(card_type),
+                "layer": layer_map.get(card_type, 0),
                 "content": card.get("content", {}),
                 "tags": card.get("tags", []),
                 "created_at": card.get("created_at", card.get("timestamp", "")),

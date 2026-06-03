@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
@@ -274,6 +274,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [tasksLoading, setTasksLoading] = useState(false);
   const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());  // 已展开的任务ID
 
+  // 维度2: 链词关联状态
+  const [chainWordSuggestions, setChainWordSuggestions] = useState<Array<{
+    card_id: string;
+    title: string;
+    content: string;
+    card_type: string;
+    relation: string;
+    strength: number;
+    chain_word: string;
+    reason: string;
+  }>>([]);
+  const [chainWordLoading, setChainWordLoading] = useState(false);
+
   // 任务编辑弹窗（点击关联任务卡片打开）
   const [editingTask, setEditingTask] = useState<any>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
@@ -300,7 +313,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [creatingEvent, setCreatingEvent] = useState(false);
 
   // Tab 切换
-  const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks'>('relations');
+  const [activeTab, setActiveTab] = useState<'relations' | 'backlinks' | 'tasks' | 'chainwords'>('relations');
 
 // 复制和放大功能
   const [isZoomed, setIsZoomed] = useState(false);
@@ -514,6 +527,24 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card]);
 
+  // 维度2: 加载链词关联推荐
+  const loadChainWordSuggestions = useCallback(async () => {
+    if (!card) return;
+    const cardId = card.id;
+    setChainWordLoading(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/chat/enhanced/chain/suggest/${cardId}?top_k=5`);
+      if (res.ok) {
+        const data = await res.json();
+        setChainWordSuggestions(data.suggestions || []);
+      }
+    } catch (err) {
+      console.error('加载链词推荐失败:', err);
+    } finally {
+      setChainWordLoading(false);
+    }
+  }, [card]);
+
   // 加载源文件溯源信息
   const loadSourceFileInfo = useCallback(async () => {
     if (!card) return;
@@ -625,11 +656,12 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       loadCardIntegrations();
       loadSourceFileInfo();
       loadSiblingCards();
+      loadChainWordSuggestions();  // 维度2: 加载链词推荐
       setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
       setSourceFullscreen(false);
       if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
     }
-  }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards]);
+  }, [isOpen, card, loadBacklinks, loadCardIntegrations, loadSourceFileInfo, loadSiblingCards, loadChainWordSuggestions]);
 
   // 切换到 PDF 标签时自动生成 PDF
   useEffect(() => {
@@ -1176,6 +1208,18 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
                   {card.address}
                 </div>
+                {/* 维度2: 编辑卡片按钮 - 复用知识管理功能 */}
+                <button
+                  className="text-xs text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                  onClick={() => {
+                    // 打开知识管理页面的编辑模式
+                    window.open(`/knowledge-management?editCard=${card.id}`, '_blank');
+                  }}
+                  title="编辑卡片（在新窗口打开知识管理）"
+                >
+                  <Edit2 size={12} />
+                  编辑
+                </button>
                 {/* 源文件溯源按钮（含 Markdown 查看选项） */}
                 {sourceFileLoading && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-0.5 flex items-center gap-1">
@@ -1383,6 +1427,25 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 {(cardTasks.length + cardEvents.length) > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300 text-xs rounded-full">
                     {cardTasks.length + cardEvents.length}
+                  </span>
+                )}
+              </span>
+            </button>
+            {/* 维度2: 链词关联标签 */}
+            <button
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'chainwords'
+                  ? 'border-purple-500 text-purple-600 dark:text-purple-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+              }`}
+              onClick={() => setActiveTab('chainwords')}
+            >
+              <span className="flex items-center gap-1">
+                <GitBranch size={14} />
+                链词关联
+                {chainWordSuggestions.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 text-xs rounded-full">
+                    {chainWordSuggestions.length}
                   </span>
                 )}
               </span>
@@ -1866,6 +1929,87 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               )}
             </div>
 
+          )}
+
+          {/* 维度2: 链词关联标签内容 */}
+          {activeTab === 'chainwords' && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <GitBranch size={18} className="text-purple-500" />
+                  链词关联推荐
+                </h3>
+                <button
+                  className="text-sm text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+                  onClick={loadChainWordSuggestions}
+                  disabled={chainWordLoading}
+                >
+                  <RefreshCw size={14} className={chainWordLoading ? 'animate-spin' : ''} />
+                  刷新
+                </button>
+              </div>
+
+              {chainWordLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 size={24} className="animate-spin text-purple-500" />
+                  <span className="ml-2 text-gray-500">正在分析链词关联...</span>
+                </div>
+              ) : chainWordSuggestions.length > 0 ? (
+                <div className="space-y-3">
+                  {chainWordSuggestions.map((suggestion, idx) => (
+                    <motion.div
+                      key={idx}
+                      whileHover={{ x: 5 }}
+                      className="border border-purple-200 dark:border-purple-800 rounded-lg p-4 cursor-pointer hover:shadow-md transition-all bg-purple-50/30 dark:bg-purple-900/10"
+                      onClick={() => onRelatedCardClick(suggestion.card_id)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              suggestion.card_type === 'blue' ? 'bg-blue-100 text-blue-700' :
+                              suggestion.card_type === 'green' ? 'bg-green-100 text-green-700' :
+                              suggestion.card_type === 'yellow' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {suggestion.card_type === 'blue' ? '事实' :
+                               suggestion.card_type === 'green' ? '解释' :
+                               suggestion.card_type === 'yellow' ? '风险' : '行动'}
+                            </span>
+                            <span className="text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                              <GitBranch size={12} />
+                              {suggestion.chain_word}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              关联强度: {(suggestion.strength * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <h4 className="font-medium text-sm mb-1">{suggestion.title}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{suggestion.content}</p>
+                          <p className="text-xs text-purple-500 mt-2">{suggestion.reason}</p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-400 flex-shrink-0 ml-3" />
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 border border-dashed border-purple-300 dark:border-purple-700 rounded-lg text-center">
+                  <GitBranch size={32} className="mx-auto text-purple-400 mb-2" />
+                  <p className="text-gray-500 dark:text-gray-400">暂无链词关联推荐</p>
+                  <p className="text-sm text-gray-400 mt-1">点击刷新重新分析</p>
+                </div>
+              )}
+
+              {/* 链词说明 */}
+              <div className="mt-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-100 dark:border-purple-800">
+                <h4 className="text-sm font-semibold text-purple-700 dark:text-purple-300 mb-2">关于链词关联</h4>
+                <p className="text-sm text-purple-600 dark:text-purple-400">
+                  链词关联通过自动分析卡片内容中的关键词和语义关系，发现卡片之间的潜在联系。
+                  例如："风险" → "应对策略"、"需求" → "解决方案"。
+                </p>
+              </div>
+            </div>
           )}
 
           {/* AI分析建议 */}
