@@ -1000,7 +1000,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             ) : (
               <>
                 {/* P0: 红卡一键转任务按钮 */}
-                {color === 'red' && (
+                {card.color === 'red' && (
                   <button
                     className="p-2 text-green-600 hover:text-green-700 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
                     aria-label="创建任务"

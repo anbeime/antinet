@@ -265,6 +265,107 @@ class DatabaseManager:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 11. 协作文档表（维度2：智能关联 + 维度5：架构扩展性）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS collaborative_documents (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    space_id TEXT,  -- 关联的知识空间ID
+                    owner_id TEXT NOT NULL,
+                    last_edited_by TEXT NOT NULL,
+                    last_edited_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    version INTEGER DEFAULT 1,
+                    is_locked BOOLEAN DEFAULT 0,
+                    lock_by TEXT,  -- 锁定用户ID
+                    lock_at TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    metadata TEXT  -- JSON: 访问控制、标签等
+                )
+            """)
+
+            # 12. 文档版本历史表（支持回滚）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS document_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    edited_by TEXT NOT NULL,
+                    edited_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    change_summary TEXT,  -- 变更说明
+                    parent_version INTEGER,  -- 父版本ID（用于回滚）
+                    operation_type TEXT DEFAULT 'edit',  -- edit/rollback/merge
+                    FOREIGN KEY (doc_id) REFERENCES collaborative_documents(id)
+                )
+            """)
+
+            # 13. 文档操作日志表（OT/CRDT 操作记录）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS document_operations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    operation_type TEXT NOT NULL,  -- insert/delete/replace/lock/unlock
+                    position INTEGER,  -- 操作位置（字符索引）
+                    content TEXT,  -- 插入/删除的内容
+                    length INTEGER,  -- 操作长度
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                    vector_clock TEXT,  -- OT 向量时钟
+                    FOREIGN KEY (doc_id) REFERENCES collaborative_documents(id)
+                )
+            """)
+
+            # 14. 文档访问权限表（基于知识空间的权限控制）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS document_permissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    permission TEXT CHECK(permission IN ('read', 'edit', 'admin')),
+                    granted_by TEXT,
+                    granted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TEXT,  -- 过期时间（NULL=永久）
+                    FOREIGN KEY (doc_id) REFERENCES collaborative_documents(id)
+                )
+            """)
+
+            # 15. 文档评论表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS document_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    user_avatar TEXT,
+                    content TEXT NOT NULL,
+                    position INTEGER,  -- 评论位置（字符索引）
+                    parent_id INTEGER,  -- 回复的评论ID
+                    is_resolved BOOLEAN DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (doc_id) REFERENCES collaborative_documents(id)
+                )
+            """)
+
+            # 16. 远程光标位置表（临时存储，用于断线重连后恢复）
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cursor_positions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    doc_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    user_avatar TEXT,
+                    selection_start INTEGER,
+                    selection_end INTEGER,
+                    color TEXT,
+                    last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (doc_id) REFERENCES collaborative_documents(id)
+                )
+            """)
             
             # 检查并添加 knowledge_cards 表的缺失字段
             try:
@@ -2271,3 +2372,331 @@ class DatabaseManager:
     def load_knowledge_graph(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """加载指定工作流生成的图谱"""
         return self.load_graph_state(f"kg_{workflow_id}")
+
+    # ========== 协作文档管理 ==========
+    
+    def get_collab_documents(self, space_id: Optional[str] = None, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取协作文档列表，可按知识空间或用户过滤"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM collaborative_documents WHERE 1=1"
+            params = []
+            if space_id:
+                query += " AND space_id = ?"
+                params.append(space_id)
+            if user_id:
+                query += " AND (owner_id = ? OR id IN (SELECT doc_id FROM document_permissions WHERE user_id = ?))"
+                params.extend([user_id, user_id])
+            query += " ORDER BY last_edited_at DESC"
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    def get_collab_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """获取单个协作文档"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM collaborative_documents WHERE id = ?", (doc_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def create_collab_document(self, doc_id: str, title: str, content: str, space_id: str, owner_id: str, metadata: Optional[Dict] = None) -> Dict[str, Any]:
+        """创建协作文档"""
+        now = datetime.now().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO collaborative_documents 
+                (id, title, content, space_id, owner_id, last_edited_by, last_edited_at, version, created_at, updated_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, title, content, space_id, owner_id, owner_id, now, 1, now, now, json.dumps(metadata or {})))
+            conn.commit()
+            # 创建初始版本记录
+            self.create_document_version(doc_id, 1, content, owner_id, "初始创建", None, "create")
+            cursor.execute("SELECT * FROM collaborative_documents WHERE id = ?", (doc_id,))
+            return dict(cursor.fetchone())
+
+    def update_collab_document(self, doc_id: str, content: str, edited_by: str, change_summary: str = "") -> Dict[str, Any]:
+        """更新协作文档内容（创建新版本）"""
+        now = datetime.now().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 获取当前版本
+            cursor.execute("SELECT version FROM collaborative_documents WHERE id = ?", (doc_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError("文档不存在")
+            new_version = row["version"] + 1
+            
+            # 更新文档
+            cursor.execute("""
+                UPDATE collaborative_documents 
+                SET content = ?, last_edited_by = ?, last_edited_at = ?, version = ?, updated_at = ?
+                WHERE id = ?
+            """, (content, edited_by, now, new_version, now, doc_id))
+            
+            # 创建版本记录
+            self.create_document_version(doc_id, new_version, content, edited_by, change_summary, new_version - 1, "edit")
+            
+            conn.commit()
+            cursor.execute("SELECT * FROM collaborative_documents WHERE id = ?", (doc_id))
+            return dict(cursor.fetchone())
+
+    def lock_document(self, doc_id: str, user_id: str, user_name: str) -> bool:
+        """锁定文档"""
+        now = datetime.now().isoformat()
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE collaborative_documents SET is_locked = 1, lock_by = ?, lock_at = ? WHERE id = ?
+            """, (user_id, now, doc_id))
+            conn.commit()
+            # 记录操作
+            self.log_document_operation(doc_id, user_id, user_name, "lock", None, None, None)
+            return cursor.rowcount > 0
+
+    def unlock_document(self, doc_id: str, user_id: str, user_name: str) -> bool:
+        """解锁文档"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE collaborative_documents SET is_locked = 0, lock_by = NULL, lock_at = NULL WHERE id = ?
+            """, (doc_id,))
+            conn.commit()
+            self.log_document_operation(doc_id, user_id, user_name, "unlock", None, None, None)
+            return cursor.rowcount > 0
+
+    def delete_collab_document(self, doc_id: str) -> bool:
+        """删除协作文档"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM collaborative_documents WHERE id = ?", (doc_id,))
+            cursor.execute("DELETE FROM document_versions WHERE doc_id = ?", (doc_id,))
+            cursor.execute("DELETE FROM document_operations WHERE doc_id = ?", (doc_id,))
+            cursor.execute("DELETE FROM document_permissions WHERE doc_id = ?", (doc_id,))
+            cursor.execute("DELETE FROM document_comments WHERE doc_id = ?", (doc_id,))
+            cursor.execute("DELETE FROM cursor_positions WHERE doc_id = ?", (doc_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 文档版本历史 ==========
+
+    def create_document_version(self, doc_id: str, version: int, content: str, edited_by: str, 
+                                 change_summary: str, parent_version: Optional[int], operation_type: str = "edit") -> int:
+        """创建文档版本记录"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO document_versions (doc_id, version, content, edited_by, change_summary, parent_version, operation_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, version, content, edited_by, change_summary, parent_version, operation_type))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_document_versions(self, doc_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """获取文档版本历史"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM document_versions WHERE doc_id = ? ORDER BY version DESC LIMIT ?
+            """, (doc_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_document_version(self, doc_id: str, version: int) -> Optional[Dict[str, Any]]:
+        """获取特定版本"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM document_versions WHERE doc_id = ? AND version = ?
+            """, (doc_id, version))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def rollback_document(self, doc_id: str, target_version: int, user_id: str, user_name: str) -> Dict[str, Any]:
+        """回滚到指定版本"""
+        target = self.get_document_version(doc_id, target_version)
+        if not target:
+            raise ValueError(f"版本 {target_version} 不存在")
+        
+        # 获取当前版本
+        current = self.get_collab_document(doc_id)
+        if not current:
+            raise ValueError("文档不存在")
+        
+        # 更新文档内容
+        new_version = current["version"] + 1
+        now = datetime.now().isoformat()
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE collaborative_documents 
+                SET content = ?, last_edited_by = ?, last_edited_at = ?, version = ?, updated_at = ?
+                WHERE id = ?
+            """, (target["content"], user_id, now, new_version, now, doc_id))
+            
+            # 创建回滚版本记录
+            self.create_document_version(doc_id, new_version, target["content"], user_id, 
+                                         f"回滚到版本 {target_version}", new_version - 1, "rollback")
+            conn.commit()
+            
+            # 记录操作
+            self.log_document_operation(doc_id, user_id, user_name, "rollback", None, None, 
+                                       json.dumps({"target_version": target_version}))
+            
+            cursor.execute("SELECT * FROM collaborative_documents WHERE id = ?", (doc_id,))
+            return dict(cursor.fetchone())
+
+    # ========== 文档操作日志（OT/CRDT）==========
+
+    def log_document_operation(self, doc_id: str, user_id: str, user_name: str, 
+                                operation_type: str, position: Optional[int], 
+                                content: Optional[str], metadata: Optional[str]) -> int:
+        """记录文档操作（用于OT/CRDT冲突解决）"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO document_operations (doc_id, user_id, user_name, operation_type, position, content, length, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, user_id, user_name, operation_type, position, content, 
+                  len(content) if content else 0, metadata))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_document_operations(self, doc_id: str, since_timestamp: Optional[str] = None) -> List[Dict[str, Any]]:
+        """获取文档操作历史"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM document_operations WHERE doc_id = ?"
+            params = [doc_id]
+            if since_timestamp:
+                query += " AND timestamp > ?"
+                params.append(since_timestamp)
+            query += " ORDER BY timestamp ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ========== 文档权限控制 ==========
+
+    def get_document_permissions(self, doc_id: str) -> List[Dict[str, Any]]:
+        """获取文档权限列表"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM document_permissions WHERE doc_id = ?
+            """, (doc_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def check_document_permission(self, doc_id: str, user_id: str, required_permission: str = "read") -> bool:
+        """检查用户是否有权限"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # 首先检查文档是否存在
+            cursor.execute("SELECT owner_id, metadata FROM collaborative_documents WHERE id = ?", (doc_id,))
+            doc = cursor.fetchone()
+            if not doc:
+                return False
+            
+            # 文档所有者始终有权限
+            if doc["owner_id"] == user_id:
+                return True
+            
+            # 检查权限表
+            cursor.execute("""
+                SELECT permission FROM document_permissions 
+                WHERE doc_id = ? AND user_id = ? 
+                AND (expires_at IS NULL OR expires_at > ?)
+            """, (doc_id, user_id, datetime.now().isoformat()))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            
+            # 权限等级：admin > edit > read
+            permission_levels = {"read": 1, "edit": 2, "admin": 3}
+            granted_level = permission_levels.get(row["permission"], 0)
+            required_level = permission_levels.get(required_permission, 0)
+            
+            return granted_level >= required_level
+
+    def grant_document_permission(self, doc_id: str, user_id: str, permission: str, 
+                                   granted_by: str, expires_at: Optional[str] = None) -> bool:
+        """授予文档权限"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO document_permissions (doc_id, user_id, permission, granted_by, granted_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (doc_id, user_id, permission, granted_by, datetime.now().isoformat(), expires_at))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def revoke_document_permission(self, doc_id: str, user_id: str) -> bool:
+        """撤销文档权限"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM document_permissions WHERE doc_id = ? AND user_id = ?", (doc_id, user_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 文档评论 ==========
+
+    def get_document_comments(self, doc_id: str, parent_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """获取文档评论"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM document_comments WHERE doc_id = ?"
+            params = [doc_id]
+            if parent_id is not None:
+                query += " AND parent_id = ?"
+                params.append(parent_id)
+            query += " ORDER BY created_at ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def add_document_comment(self, doc_id: str, user_id: str, user_name: str, user_avatar: str,
+                              content: str, position: Optional[int] = None, 
+                              parent_id: Optional[int] = None) -> Dict[str, Any]:
+        """添加文档评论"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO document_comments (doc_id, user_id, user_name, user_avatar, content, position, parent_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, user_id, user_name, user_avatar, content, position, parent_id))
+            conn.commit()
+            cursor.execute("SELECT * FROM document_comments WHERE id = ?", (cursor.lastrowid,))
+            return dict(cursor.fetchone())
+
+    def resolve_document_comment(self, comment_id: int) -> bool:
+        """标记评论为已解决"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE document_comments SET is_resolved = 1, updated_at = ? WHERE id = ?", 
+                          (datetime.now().isoformat(), comment_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ========== 远程光标位置 ==========
+
+    def update_cursor_position(self, doc_id: str, user_id: str, user_name: str, user_avatar: str,
+                                selection_start: Optional[int], selection_end: Optional[int], color: str) -> bool:
+        """更新远程光标位置"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO cursor_positions (doc_id, user_id, user_name, user_avatar, 
+                                                         selection_start, selection_end, color, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (doc_id, user_id, user_name, user_avatar, selection_start, selection_end, color, datetime.now().isoformat()))
+            conn.commit()
+            return True
+
+    def get_cursor_positions(self, doc_id: str) -> List[Dict[str, Any]]:
+        """获取所有远程光标位置"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM cursor_positions WHERE doc_id = ? AND last_seen > ?
+            """, (doc_id, datetime.now().isoformat()))
+            return [dict(row) for row in cursor.fetchall()]

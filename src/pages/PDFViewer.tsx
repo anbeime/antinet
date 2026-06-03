@@ -9,6 +9,7 @@ import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
+import { renderMarkdown } from '@/lib/utils';
 
 const API_BASE = getApiBaseUrl();
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
@@ -43,7 +44,7 @@ const PDFViewer: React.FC = () => {
   const originalPageTextsRef = useRef<string[]>([]);
 
   // 源文件查看器（跟 CardDetailModal 一致）
-  const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'pdf'>('markdown');
+  const [sourceViewMode, setSourceViewMode] = useState<'markdown' | 'preview' | 'pdf'>('markdown');
   const [sourcePdfUrl, setSourcePdfUrl] = useState('');
   const [sourcePdfGenerating, setSourcePdfGenerating] = useState(false);
   const [sourcePdfError, setSourcePdfError] = useState('');
@@ -412,11 +413,15 @@ const PDFViewer: React.FC = () => {
             <h3 className="text-base font-bold text-gray-900 dark:text-white">{cardTitle || (selectedCard?.title || '新建文档')}</h3>
             <p className="text-xs text-gray-500">{isNewCard ? '新卡片' : selectedCard?.id ? `卡片 #${selectedCard.id}` : '临时编辑'}</p>
           </div>
-          {/* Markdown/PDF 视图切换 */}
+          {/* Markdown/预览/PDF 视图切换 */}
           <div className="flex items-center bg-white/60 dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700 ml-4">
             <button onClick={() => { setSourceViewMode('markdown'); if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); } }}
               className={`px-3 py-1.5 text-xs font-medium rounded-l-lg transition-colors ${sourceViewMode === 'markdown' ? 'bg-purple-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
               <Edit3 size={12} className="inline mr-1" />Markdown 文本
+            </button>
+            <button onClick={() => setSourceViewMode('preview')}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${sourceViewMode === 'preview' ? 'bg-emerald-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+              <Eye size={12} className="inline mr-1" />预览
             </button>
             <button onClick={() => setSourceViewMode('pdf')}
               className={`px-3 py-1.5 text-xs font-medium rounded-r-lg transition-colors ${sourceViewMode === 'pdf' ? 'bg-red-500 text-white' : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
@@ -537,6 +542,17 @@ const PDFViewer: React.FC = () => {
               </div>
             );
           })()
+        ) : sourceViewMode === 'preview' ? (
+          <div className="flex gap-4 h-full">
+            <div className="flex-1 flex flex-col">
+              <textarea value={cardContent} onChange={e => setCardContent(e.target.value)}
+                className="flex-1 p-4 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-purple-400 min-h-[400px]"
+                placeholder="# 标题&#10;&#10;在此输入 Markdown 内容..." />
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 bg-white dark:bg-gray-900 border rounded-lg">
+              <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(cardContent) }} />
+            </div>
+          </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-2">

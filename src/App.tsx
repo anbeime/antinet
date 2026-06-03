@@ -25,6 +25,7 @@ import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
+import TeamCollaboration from "@/pages/TeamCollaboration";
 
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
+          <Route path="/team-collaboration" element={<TeamCollaboration />} />
           <Route path="/remotion" element={
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
               <Home initialTab="remotion" />

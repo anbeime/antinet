@@ -201,6 +201,19 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // 非被动 wheel 监听器，避免 preventDefault 被静默忽略
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(prev => Math.min(Math.max(prev * delta, 0.1), 5));
+    };
+    container.addEventListener('wheel', wheelHandler, { passive: false });
+    return () => container.removeEventListener('wheel', wheelHandler);
+  }, []);
+
   const loadMindmaps = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/mindmap/`);
@@ -227,12 +240,6 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
 
   const handleMouseUp = () => {
     setIsDragging(false);
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.min(Math.max(prev * delta, 0.1), 5));
   };
 
   const generateFromKnowledgeNetwork = async () => {
@@ -1057,7 +1064,6 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
       >
         <div 
           className="mindmap-container min-h-full flex items-center justify-center"

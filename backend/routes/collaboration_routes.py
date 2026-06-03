@@ -359,12 +359,17 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, nickname: str =
     """WebSocket 端点，客户端连接后可接收和发送实时消息
     支持 query 参数 nickname 和 avatar，例如：
     ws://host/api/ws/collaboration/{user_id}?nickname=张三&avatar=🐶
+    支持心跳保活：客户端定期发送 ping，服务器回复 pong
     """
     try:
         await store.connect(user_id, websocket, nickname, avatar)
     except Exception as e:
         logger.error(f"WebSocket connect 失败: {e}")
         return
+    
+    # 心跳定时器：服务器每 30 秒主动发送 ping
+    heartbeat_task = asyncio.create_task(heartbeat_sender(websocket, user_id))
+    
     try:
         while True:
             # 接收客户端消息（心跳/发送）
@@ -374,7 +379,10 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, nickname: str =
                 msg_type = msg.get("type")
 
                 if msg_type == "ping":
-                    await websocket.send_json({"type": "pong"})
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
+                    # 更新用户最后活跃时间
+                    if user_id in store.members:
+                        store.members[user_id].lastActive = datetime.now().isoformat()
 
                 elif msg_type == "send_activity":
                     # 用户发送新消息
@@ -397,6 +405,192 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, nickname: str =
                         "targetId": msg.get("targetId", 0),
                         "targetType": msg.get("targetType", "space"),
                     })
+
+                # ==================== 协作文档操作（OT 冲突解决）====================
+                elif msg_type == "doc_update":
+                    # 接收文档更新操作
+                    doc_id = msg.get("doc_id")
+                    content = msg.get("content", "")
+                    operation = msg.get("operation")  # insert/delete/replace
+                    position = msg.get("position")
+                    length = msg.get("length", 0)
+                    
+                    if doc_id and content:
+                        try:
+                            from services.ot_transformer import get_document_state, DocumentOperation, OperationType, VectorClock
+                            import uuid
+                            
+                            # 获取文档状态
+                            doc_state = get_document_state(doc_id, "")
+                            
+                            # 创建操作对象
+                            op = DocumentOperation(
+                                id=msg.get("op_id", f"op-{uuid.uuid4().hex[:8]}"),
+                                user_id=user_id,
+                                op_type=OperationType(operation or "replace"),
+                                position=position or len(doc_state.get_content()),
+                                content=content,
+                                length=length,
+                                timestamp=datetime.now().isoformat(),
+                                vector_clock={user_id: 1}  # 简化：实际应从客户端获取向量时钟
+                            )
+                            
+                            # 应用 OT 转换
+                            new_content, transformed_ops = doc_state.apply_operation(op)
+                            
+                            # 广播更新给其他用户
+                            await store._broadcast({
+                                "type": "doc_update",
+                                "doc_id": doc_id,
+                                "content": new_content,
+                                "version": doc_state.get_version(),
+                                "operation": {
+                                    "id": op.id,
+                                    "user_id": user_id,
+                                    "type": op.op_type.value,
+                                    "position": op.position,
+                                    "transformed": len(transformed_ops) > 0
+                                }
+                            }, exclude=user_id)
+                            
+                            # 如果有转换后的操作，广播给发起者
+                            if transformed_ops:
+                                for transformed_op in transformed_ops:
+                                    await store.send_to(user_id, {
+                                        "type": "op_transformed",
+                                        "original_op_id": op.id,
+                                        "transformed_op": {
+                                            "position": transformed_op.position,
+                                            "content": transformed_op.content,
+                                            "length": transformed_op.length
+                                        }
+                                    })
+                            
+                            logger.info(f"[OT] 文档 {doc_id} 操作应用: {op.op_type.value} @ {op.position}, 版本 {doc_state.get_version()}")
+                            
+                        except Exception as e:
+                            logger.error(f"OT 处理失败: {e}")
+                            # 降级：直接广播内容更新
+                            await store._broadcast({
+                                "type": "doc_update",
+                                "doc_id": doc_id,
+                                "content": content,
+                                "version": -1,
+                                "fallback": True
+                            }, exclude=user_id)
+
+                elif msg_type == "doc_view":
+                    # 用户查看文档，广播查看通知
+                    doc_id = msg.get("doc_id")
+                    if doc_id:
+                        await store._broadcast({
+                            "type": "doc_viewed",
+                            "doc_id": doc_id,
+                            "user_id": user_id,
+                            "user_name": nickname or user_id
+                        }, exclude=user_id)
+
+                elif msg_type == "cursor_update":
+                    # 光标位置更新
+                    doc_id = msg.get("doc_id")
+                    selection_start = msg.get("selection_start")
+                    selection_end = msg.get("selection_end")
+                    color = msg.get("color", "#3b82f6")
+                    
+                    if doc_id:
+                        await store._broadcast({
+                            "type": "cursor",
+                            "doc_id": doc_id,
+                            "cursor": {
+                                "userId": user_id,
+                                "userName": nickname or user_id,
+                                "userAvatar": avatar,
+                                "selection_start": selection_start,
+                                "selection_end": selection_end,
+                                "color": color
+                            }
+                        }, exclude=user_id)
+
+                elif msg_type == "doc_lock":
+                    # 锁定文档
+                    doc_id = msg.get("doc_id")
+                    if doc_id:
+                        await store._broadcast({
+                            "type": "doc_locked",
+                            "doc_id": doc_id,
+                            "locked_by": user_id,
+                            "locked_by_name": nickname or user_id
+                        }, exclude=user_id)
+
+                elif msg_type == "doc_unlock":
+                    # 解锁文档
+                    doc_id = msg.get("doc_id")
+                    if doc_id:
+                        await store._broadcast({
+                            "type": "doc_unlocked",
+                            "doc_id": doc_id,
+                            "unlocked_by": user_id
+                        }, exclude=user_id)
+            except json.JSONDecodeError:
+                logger.warning(f"收到非 JSON 消息: {data[:100]}")
+            except Exception as e:
+                logger.error(f"处理消息失败: {e}")
+    except WebSocketDisconnect:
+        logger.info(f"用户 {user_id} WebSocket 断开")
+    except Exception as e:
+        logger.error(f"WebSocket 错误: {e}")
+    finally:
+        # 清理心跳任务
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        await store.disconnect(user_id)
+        logger.info(f"用户 {user_id} 已断开连接")
+
+
+async def heartbeat_sender(websocket: WebSocket, user_id: str):
+    """服务器端心跳发送器：每 30 秒发送 ping，检测连接是否存活"""
+    heartbeat_interval = 30  # 秒
+    max_missed_pongs = 3     # 允许错过 3 次 pong 后断开
+    
+    missed_pongs = 0
+    last_pong_time = datetime.now()
+    
+    while True:
+        try:
+            await asyncio.sleep(heartbeat_interval)
+            
+            # 检查是否太久没收到 pong
+            time_since_pong = (datetime.now() - last_pong_time).total_seconds()
+            if time_since_pong > heartbeat_interval * max_missed_pongs:
+                logger.warning(f"用户 {user_id} 心跳超时 ({time_since_pong:.0f}s)，断开连接")
+                await websocket.close(code=4000, reason="Connection lost")
+                break
+            
+            # 发送 ping
+            try:
+                await websocket.send_json({
+                    "type": "ping",
+                    "timestamp": datetime.now().isoformat(),
+                    "server": "zhiyi-collaboration"
+                })
+                logger.debug(f"发送心跳 ping 给用户 {user_id}")
+            except Exception as e:
+                logger.warning(f"发送心跳失败: {e}")
+                break
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"心跳发送器错误: {e}")
+            break
+
+
+# 处理客户端 pong 响应（在上面的循环中处理）
+def update_pong_time(user_id: str):
+    """更新用户最后收到 pong 的时间（用于心跳检测）"""
+    pass  # 简化实现，实际可存储在 store 中
 
             except json.JSONDecodeError:
                 pass

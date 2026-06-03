@@ -220,6 +220,7 @@ register_router("routes.pdf_edit_routes")  # PDF æ–‡æœ¬ç¼–è¾‘
 register_router("routes.design_system_routes")  # ç»Ÿä¸€è®¾è®¡ç³»ç»Ÿ
 register_router("routes.ppt_preview_routes")  # PPT é¢„è§ˆï¼ˆå¢å¼ºç‰ˆï¼‰
 register_router("routes.ppt_native_routes")  # PPT åŸç”Ÿå½¢çŠ¶ç”Ÿæˆï¼ˆSVGâ†’DrawingMLï¼‰
+register_router("routes.collab_docs_routes")  # åä½œæ–‡æ¡£ CRUD + ç‰ˆæœ¬ + æƒé™
 
 # ============================================================
 # 9. åˆå§‹åŒ–å„æ¨¡å—çš„æ•°æ®åº“è¿æ¥
@@ -297,6 +298,14 @@ try:
     print("[OK] vector_search æ•°æ®åº“å·²è¿æ¥ï¼Œembedding å·²åˆå§‹åŒ–")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
+
+# åˆå§‹åŒ–åä½œæ–‡æ¡£è·¯ç”±æ•°æ®åº“
+try:
+    from routes import collab_docs_routes
+    collab_docs_routes.set_db_manager(db_manager)
+    print("[OK] collab_docs_routes æ•°æ®åº“å·²è¿æ¥")
+except Exception as e:
+    print(f"[WARN] collab_docs_routes: {e}")
 
 try:
     from routes import collaboration_routes
@@ -386,3 +395,31 @@ if __name__ == "__main__":
         reload=False,
         log_level="info"
     )
+
+# ³õÊ¼»¯¼¼ÄÜÈÈ²å°ÎÏµÍ³
+try:
+    from services.skill_hotplug import init_hotplug_manager
+    hotplug_mgr = init_hotplug_manager()
+    hotplug_mgr.start_watching()
+    print("[OK] ¼¼ÄÜÈÈ²å°ÎÏµÍ³ÒÑ³õÊ¼»¯")
+except Exception as e:
+    print(f"[WARN] ¼¼ÄÜÈÈ²å°ÎÏµÍ³³õÊ¼»¯Ê§°Ü: {e}")
+register_router("routes.skill_hotplug_routes")  # ¼¼ÄÜÈÈ²å°Î¹ÜÀí
+register_router("routes.chain_word_routes")  # Á´´Ê»úÖÆ
+
+# ³õÊ¼»¯Á´´ÊÌáÈ¡Æ÷
+try:
+    from services.chain_word_extractor import get_chain_word_extractor
+    extractor = get_chain_word_extractor()
+    print("[OK] Á´´ÊÌáÈ¡Æ÷ÒÑ³õÊ¼»¯")
+except Exception as e:
+    print(f"[WARN] Á´´ÊÌáÈ¡Æ÷³õÊ¼»¯Ê§°Ü: {e}")
+register_router("routes.ppf_routes")  # PPF ×Ô¶¯»¯´¦ÀíÁ÷³Ì
+
+# ³õÊ¼»¯ PPF ´¦ÀíÆ÷
+try:
+    from services.ppf_processor import init_ppf_processor
+    init_ppf_processor(db_manager=db_manager)
+    print("[OK] PPF ´¦ÀíÆ÷ÒÑ³õÊ¼»¯")
+except Exception as e:
+    print(f"[WARN] PPF ´¦ÀíÆ÷³õÊ¼»¯Ê§°Ü: {e}")

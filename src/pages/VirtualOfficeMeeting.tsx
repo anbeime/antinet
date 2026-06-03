@@ -1058,9 +1058,8 @@ useEffect(() => {
     };
 }, []);
 
-  // 协作聊天 WebSocket 连接
+  // 协作聊天 WebSocket 连接（带心跳保活）
   useEffect(() => {
-    // 始终连接（不只是 tasks tab）
     const userId = collabUserId.current;
     const wsUrl = getCollabWsUrl(userId);
     
@@ -1070,14 +1069,59 @@ useEffect(() => {
     const ws = new WebSocket(wsUrl);
     collabWsRef.current = ws;
     
+    // 心跳定时器
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    const startHeartbeat = () => {
+      // 每 25 秒发送一次 ping（略小于服务器 30 秒间隔，确保安全）
+      heartbeatInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'ping',
+              timestamp: new Date().toISOString(),
+              client: 'zhiyi-web'
+            }));
+            console.log('[Collab] 发送心跳 ping');
+          } catch (e) {
+            console.error('[Collab] 发送心跳失败:', e);
+          }
+        }
+      }, 25000);
+    };
+    
     ws.onopen = () => {
       console.log('[Collab] WebSocket 已连接');
       setCollabStatus('connected');
+      startHeartbeat();
     };
     
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        
+        // 处理心跳响应
+        if (msg.type === 'pong') {
+          console.log('[Collab] 收到心跳 pong');
+          return;
+        }
+        
+        // 处理服务器 ping（服务器主动发送的心跳检测）
+        if (msg.type === 'ping') {
+          console.log('[Collab] 收到服务器 ping，回复 pong');
+          try {
+            ws.send(JSON.stringify({
+              type: 'pong',
+              timestamp: new Date().toISOString(),
+              client: 'zhiyi-web'
+            }));
+          } catch (e) {
+            console.error('[Collab] 回复 pong 失败:', e);
+          }
+          return;
+        }
+        
         if (msg.type === 'new_activity' && msg.activity) {
           const isSelf = msg.activity.userId === userId;
           setCollabMessages(prev => [...prev, {
@@ -1085,7 +1129,6 @@ useEffect(() => {
             content: msg.activity.content || '',
             self: isSelf
           }]);
-          // 如果有会议进行中，也显示到实时讨论区
           if (isLoading && msg.activity.action === '发言') {
             setLiveDiscussions(prev => [...prev, {
               type: 'speech',
@@ -1095,7 +1138,6 @@ useEffect(() => {
             }]);
           }
         } else if (msg.type === 'history' && msg.activities) {
-          // 连接后推送的历史数据（刷新后恢复记录）
           console.log(`[Collab] 收到历史数据: ${msg.activities.length} 条活动`);
           if (msg.activities.length > 0) {
             setCollabMessages(msg.activities.map((a: any) => ({
@@ -1113,18 +1155,47 @@ useEffect(() => {
     ws.onclose = () => {
       console.log('[Collab] WebSocket 断开');
       setCollabStatus('disconnected');
+      
+      // 清理定时器
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      
+      // 自动重连（指数退避）
+      if (!reconnectTimeout) {
+        const attempt = collabStatus === 'connecting' ? 1 : 2;
+        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+        reconnectTimeout = setTimeout(() => {
+          reconnectTimeout = null;
+          console.log('[Collab] 尝试自动重连...');
+          // 触发重新连接（通过重新执行 effect）
+          window.dispatchEvent(new CustomEvent('collab-reconnect'));
+        }, delay);
+      }
     };
     
     ws.onerror = (e) => {
       console.error('[Collab] WebSocket 错误:', e);
-      // 静默失败，不影响主功能
     };
     
+    // 监听重连事件
+    const handleReconnect = () => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.log('[Collab] 收到重连指令');
+        // 重新执行整个 effect
+        // 这里通过更新状态触发重新渲染
+        setCollabStatus(prev => prev === 'disconnected' ? 'connecting' : prev);
+      }
+    };
+    
+    window.addEventListener('collab-reconnect', handleReconnect);
+    
     return () => {
+      window.removeEventListener('collab-reconnect', handleReconnect);
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
       ws.close();
       collabWsRef.current = null;
     };
-  }, []);
+  }, [collabStatus]); // 依赖 collabStatus，断开时重新连接
 
   return (
     <div className="min-h-screen overflow-x-auto" style={{ background: '#121826' }}>

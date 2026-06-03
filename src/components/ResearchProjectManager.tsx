@@ -1623,7 +1623,7 @@ const ProjectDetailPanel: React.FC<{
                     ) : (
                       <KanbanBoard
                         tasks={tasks}
-                        projectId={project.id}
+                        projectId={project.id!}
                         onTasksChange={() => loadData()}
                       />
                     )}

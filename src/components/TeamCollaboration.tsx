@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Permission } from '@/contexts/authContext';
 import {
@@ -7,11 +7,9 @@ import {
   FileCheck,
   Lightbulb,
   BarChart3,
-  Search,
   Clock,
   UserPlus,
   RefreshCw,
-  MessageSquare,
   PieChart as PieChartIcon,
   LineChart as LineChartIcon,
   CheckCircle2,
@@ -26,21 +24,13 @@ import {
   Settings,
   Save,
   Crown,
-  Sparkles,
-  RotateCcw,
-  Download,
-  ChevronDown,
-  ChevronUp,
   Calendar,
-  Brain,
-  GitBranch,
-  Eye
+  Brain
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
 import { teamMemberService, activityService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
-import * as echarts from 'echarts';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   PieChart,
@@ -63,415 +53,7 @@ import {
   Radar
 } from 'recharts';
 
-// ========== 8-Agent会议面板组件(使用真实后端)==========
-const AgentMeetingPanel: React.FC = () => {
-  const [topic, setTopic] = useState('');
-  const [context, setContext] = useState('');
-  const [rounds, setRounds] = useState(3);
-  const [isLoading, setIsLoading] = useState(false);
-  const [meetingResult, setMeetingResult] = useState<any>(null);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
-
-  // 加载Agent信息
-  useEffect(() => {
-    const loadAgents = async () => {
-      try {
-        const response = await fetch(getApiBaseUrl() + '/api/meeting/agents');
-        if (response.ok) {
-          const data = await response.json();
-          setAgents(data);
-        }
-      } catch (error) {
-        console.error('加载Agent失败:', error);
-        // 使用默认数据
-        setAgents([
-          { id: 'taishige', name: '太史阁', title: '历史记录与反思官', avatar: '📚', color: 'from-blue-500 to-blue-600', description: '负责记录所有操作、决策和结果' },
-          { id: 'jinjiyu', name: '锦衣卫', title: '安全与情报收集官', avatar: '🛡️', color: 'from-red-500 to-red-600', description: '监控系统安全状态,识别潜在威胁' },
-          { id: 'tongzhengsi', name: '通政司', title: '信息与通讯中枢', avatar: '📡', color: 'from-green-500 to-green-600', description: '管理所有信息流,确保通讯畅通' },
-          { id: 'jianchayuan', name: '监察院', title: '监督与审计官', avatar: '🔍', color: 'from-purple-500 to-purple-600', description: '监督各项操作和流程的执行情况' },
-          { id: 'mijuanfang', name: '密卷房', title: '知识库与档案管理员', avatar: '📂', color: 'from-indigo-500 to-indigo-600', description: '负责非结构化知识的整理、归档' },
-          { id: 'chengxiangfu', name: '丞相府', title: '战略规划与决策支持官', avatar: '👑', color: 'from-yellow-500 to-yellow-600', description: '基于全局数据进行战略分析' },
-          { id: 'junjichu', name: '军机处', title: '任务执行与结果官', avatar: '⚔️', color: 'from-orange-500 to-orange-600', description: '执行具体任务,生成分析结果' },
-          { id: 'zhihuishi', name: '指挥使', title: '任务协调官', avatar: '🎯', color: 'from-teal-500 to-teal-600', description: '协调各部门工作,确保任务高效流转' },
-        ]);
-      }
-    };
-    loadAgents();
-  }, []);
-
-  const startMeeting = async () => {
-    if (!topic.trim()) {
-      toast.error('请输入会议主题');
-      return;
-    }
-    
-    setIsLoading(true);
-    toast.info('正在召集8-Agent进行讨论...');
-    
-    try {
-      const response = await fetch(getApiBaseUrl() + '/api/meeting/discuss', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topic.trim(),
-          context: context.trim(),
-          rounds: rounds,
-          card_ids: []
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const result = await response.json();
-      setMeetingResult(result);
-      toast.success('8-Agent协作会议完成！');
-    } catch (error) {
-      console.error('会议创建失败:', error);
-      toast.error('会议创建失败,请检查后端服务');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resetMeeting = () => {
-    setMeetingResult(null);
-    setTopic('');
-    setContext('');
-    setExpandedRounds(new Set());
-    toast.info('会议已重置');
-  };
-
-  const toggleRound = (roundNum: number) => {
-    const newExpanded = new Set(expandedRounds);
-    if (newExpanded.has(roundNum)) {
-      newExpanded.delete(roundNum);
-    } else {
-      newExpanded.add(roundNum);
-    }
-    setExpandedRounds(newExpanded);
-  };
-
-  const exportResult = (format: 'json' | 'markdown') => {
-    if (!meetingResult) return;
-    
-    let content = '';
-    let filename = '';
-    
-    if (format === 'markdown') {
-      content = `# 8-Agent协作会议记录\n\n`;
-      content += `**主题**:${meetingResult.topic}\n\n`;
-      content += `**时间**:${meetingResult.start_time}\n\n`;
-      content += `**参与人员**:${meetingResult.participants.join('、')}\n\n`;
-      content += `**耗时**:${meetingResult.duration_seconds}秒\n\n`;
-      content += `---\n\n`;
-      
-      meetingResult.rounds.forEach((round: any) => {
-        content += `## 第${round.round}轮:${round.theme}\n\n`;
-        round.speeches.forEach((speech: any) => {
-          content += `### ${speech.agent_name}(${speech.agent_title})${speech.avatar}\n\n`;
-          const formatSpeechContent = (raw: string) => {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
-              }
-              return raw;
-            } catch {
-              return raw;
-            }
-          };
-          content += `${formatSpeechContent(speech.speech)}\n\n`;
-        });
-      });
-      
-          const decisionText = (() => {
-            try {
-              const p = JSON.parse(meetingResult.decision);
-              return typeof p === 'string' ? p : JSON.stringify(p);
-            } catch { return meetingResult.decision; }
-          })();
-          let actionItems: string[] = meetingResult.action_items;
-          try {
-            if (typeof actionItems === 'string') actionItems = JSON.parse(actionItems);
-          } catch { /* use as-is */ }
-          if (!Array.isArray(actionItems)) actionItems = [actionItems];
-          content += `## 会议决策\n\n${decisionText}\n\n`;
-          content += `## 行动项\n\n`;
-          actionItems.forEach((item: string, idx: number) => {
-            content += `${idx + 1}. ${item}\n`;
-          });
-      
-      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.md`;
-    } else {
-      content = JSON.stringify(meetingResult, null, 2);
-      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.json`;
-    }
-    
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success('会议记录已导出');
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold mb-2 flex items-center">
-          <Crown className="mr-2 text-amber-600" />
-          8-Agent智能协作会议
-        </h2>
-        <p className="text-gray-600 dark:text-gray-300">
-          8位AI智能体基于后端数据库进行真实讨论,形成决策和行动方案
-        </p>
-      </div>
-
-      {/* 会议设置 */}
-      {!meetingResult && (
-        <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-          <div className="space-y-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium mb-2">会议主题 *</label>
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="输入需要讨论的主题,例如:新产品开发策略"
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">背景信息(可选)</label>
-              <textarea
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="提供相关背景信息,帮助Agent更好地理解议题..."
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">讨论轮数</label>
-              <div className="flex space-x-2">
-                {[1, 2, 3, 4, 5].map((num) => (
-                  <button
-                    key={num}
-                    onClick={() => setRounds(num)}
-                    className={`px-4 py-2 rounded-lg border transition-colors ${
-                      rounds === num
-                        ? 'bg-amber-600 text-white border-amber-600'
-                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-amber-500'
-                    }`}
-                  >
-                    {num}轮
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 参会人员 */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3">参会人员(8位Agent)</label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${agent.color} flex items-center justify-center text-white text-lg`}>
-                      {agent.avatar}
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{agent.name}</p>
-                      <p className="text-xs text-gray-500">{agent.title}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 开始按钮 */}
-          <button
-            onClick={startMeeting}
-            disabled={isLoading || !topic.trim()}
-            className="w-full py-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-semibold text-lg flex items-center justify-center transition-all"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                正在召集Agent讨论...
-              </>
-            ) : (
-              <>
-                <Sparkles size={20} className="mr-2" />
-                召开8-Agent协作会议
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* 会议结果 */}
-      {meetingResult && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          {/* 结果头部 */}
-          <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold">{meetingResult.topic}</h3>
-                <p className="text-amber-100 mt-1">
-                  {meetingResult.rounds.length}轮讨论 · {meetingResult.participants.length}位Agent参与 · 耗时{meetingResult.duration_seconds}秒
-                </p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => exportResult('markdown')}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
-                >
-                  <Download size={16} className="mr-1" />
-                  导出
-                </button>
-                <button
-                  onClick={resetMeeting}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
-                >
-                  <RotateCcw size={16} className="mr-1" />
-                  新会议
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 决策结果 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h4 className="font-semibold mb-3 flex items-center">
-              <CheckCircle2 className="mr-2 text-green-600" />
-              会议决策
-            </h4>
-            <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-              {(() => {
-                try {
-                  const parsed = JSON.parse(meetingResult.decision);
-                  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
-                } catch {
-                  return meetingResult.decision;
-                }
-              })()}
-            </p>
-          </div>
-
-          {/* 行动项 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h4 className="font-semibold mb-3 flex items-center">
-              <Award className="mr-2 text-amber-600" />
-              行动项
-            </h4>
-            <ul className="space-y-2">
-              {(() => {
-                let items: string[] = meetingResult.action_items;
-                try {
-                  if (typeof items === 'string') items = JSON.parse(items);
-                } catch { /* use as-is */ }
-                return (Array.isArray(items) ? items : [items]).map((item: string, idx: number) => (
-                  <li key={idx} className="flex items-start">
-                    <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center text-sm mr-3 flex-shrink-0">
-                      {idx + 1}
-                    </span>
-                    <span className="text-gray-700 dark:text-gray-300">{item}</span>
-                  </li>
-                ));
-              })()}
-            </ul>
-          </div>
-
-          {/* 讨论记录 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <h4 className="font-semibold flex items-center">
-                <MessageSquare className="mr-2 text-blue-600" />
-                讨论记录
-              </h4>
-            </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {meetingResult.rounds.map((round: any) => (
-                <div key={round.round} className="p-4">
-                  <button
-                    onClick={() => toggleRound(round.round)}
-                    className="w-full flex items-center justify-between text-left"
-                  >
-                    <div className="flex items-center">
-                      <span className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold mr-3">
-                        {round.round}
-                      </span>
-                      <span className="font-medium">{round.theme}</span>
-                    </div>
-                    {expandedRounds.has(round.round) ? (
-                      <ChevronUp size={20} className="text-gray-400" />
-                    ) : (
-                      <ChevronDown size={20} className="text-gray-400" />
-                    )}
-                  </button>
-                  
-                  {expandedRounds.has(round.round) && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      className="mt-4 space-y-3 pl-11"
-                    >
-                      {round.speeches.map((speech: any, idx: number) => (
-                        <div key={idx} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                          <div className="flex items-center mb-2">
-                            <span className="text-lg mr-2">{speech.avatar}</span>
-                            <span className="font-medium text-sm">{speech.agent_name}</span>
-                            <span className="text-xs text-gray-500 ml-2">{speech.agent_title}</span>
-                          </div>
-                          {(() => {
-                            try {
-                              const parsed = JSON.parse(speech.speech);
-                              if (Array.isArray(parsed)) {
-                                return parsed.map((item: any, i: number) => (
-                                  <span key={i} className={`inline-block mr-2 text-sm ${
-                                    item.color === 'red' ? 'text-red-600 dark:text-red-400' :
-                                    item.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
-                                    item.color === 'green' ? 'text-green-600 dark:text-green-400' :
-                                    item.color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400' :
-                                    'text-gray-700 dark:text-gray-300'
-                                  }`}>{item.content}</span>
-                                ));
-                              }
-                              return <span>{speech.speech}</span>;
-                            } catch {
-                              return <span>{speech.speech}</span>;
-                            }
-                          })()}
-                        </div>
-                      ))}
-                    </motion.div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </div>
-  );
-};
+// ========== 类型定义 ==========
 
 // ========== 类型定义 ==========
 interface TeamMember {
@@ -588,7 +170,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('integration');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -1265,19 +847,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
       {/* 功能标签页 */}
       <div className="border-b border-gray-200 dark:border-gray-700 flex overflow-x-auto">
         <button 
-          onClick={() => setActiveTab('integration')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'integration' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Network size={18} className="mr-2" />
-            <span>团队知识整合</span>
-          </div>
-        </button>
-        <button 
           onClick={() => setActiveTab('realtime')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
             activeTab === 'realtime' 
@@ -1288,6 +857,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <Clock size={18} className="mr-2" />
             <span>实时协作编辑</span>
+          </div>
+        </button>
+        <button 
+          onClick={() => setActiveTab('integration')}
+          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+            activeTab === 'integration' 
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
+              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+          }`}
+        >
+          <div className="flex items-center justify-center">
+            <Network size={18} className="mr-2" />
+            <span>团队知识整合</span>
           </div>
         </button>
         <button 
@@ -1353,19 +935,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <Brain size={18} className="mr-2" />
             <span>思维导图</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('wiki-editor')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'wiki-editor'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Edit3 size={18} className="mr-2" />
-            <span>Wiki 编辑器</span>
           </div>
         </button>
       </div>
@@ -2279,15 +1848,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-        {/* 思维导图 */}
-        {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
-
         {/* Wiki编辑器 */}
         {activeTab === 'wiki-editor' && (
           <div className="h-[calc(100vh-200px)]">
             <WikiEditor />
           </div>
         )}
+
+        {/* 思维导图 */}
+        {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>
 
       {/* 成员编辑弹窗 */}
@@ -2762,377 +2331,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         </div>
       </EditModal>
-    </div>
-  );
-};
-
-interface KnowledgeGraphPanelProps {
-  userInfo: { id: string; name: string; avatar: string; color: string };
-}
-
-const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) => {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
-  const [cards, setCards] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCard, setSelectedCard] = useState<any>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showPreview, setShowPreview] = useState(true);
-
-  useEffect(() => {
-    const fetchCards = async () => {
-      try {
-        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=100');
-        const data = await res.json();
-        const fetched = Array.isArray(data) ? data : (data.cards || []);
-        setCards(fetched);
-        if (fetched.length > 0 && !selectedCard) {
-          setSelectedCard(fetched[0]);
-          setEditTitle(fetched[0].title || '');
-          setEditContent(fetched[0].content || '');
-        }
-      } catch (e) {
-        console.error('Failed to load cards:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCards();
-  }, []);
-
-  const handleCardClick = (card: any) => {
-    setSelectedCard(card);
-    setEditTitle(card.title || '');
-    setEditContent(card.content || '');
-    setIsEditing(false);
-    setShowPreview(true);
-  };
-
-  const handleEditToggle = () => {
-    if (!isEditing) {
-      setEditTitle(selectedCard?.title || '');
-      setEditContent(selectedCard?.content || '');
-    }
-    setIsEditing(!isEditing);
-    setShowPreview(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!selectedCard) return;
-    try {
-      const res = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${selectedCard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editTitle, content: editContent })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setCards(prev => prev.map(c => c.id === selectedCard.id ? { ...c, ...updated } : c));
-        setSelectedCard({ ...selectedCard, title: editTitle, content: editContent });
-        setIsEditing(false);
-        toast.success('卡片已更新');
-      } else {
-        toast.error('更新失败');
-      }
-    } catch (e) {
-      toast.error('更新失败: ' + String(e));
-    }
-  };
-
-  const filteredCards = cards.filter(card =>
-    (card.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (card.content || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const colorMap: Record<string, string> = {
-    'blue': '#3b82f6',
-    'green': '#22c55e',
-    'yellow': '#eab308',
-    'red': '#ef4444'
-  };
-  const colorLabel: Record<string, string> = {
-    'blue': '蓝色',
-    'green': '绿色',
-    'yellow': '黄色',
-    'red': '红色'
-  };
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.dispose();
-    }
-
-    const chart = echarts.init(chartRef.current);
-    chartInstanceRef.current = chart;
-
-    const nodes = cards.map((card: any) => ({
-      id: String(card.id),
-      name: card.title || `卡片${card.id}`,
-      category: card.card_type || 'blue',
-      symbolSize: 40 + (card.content?.length || 0) / 50,
-      itemStyle: {
-        color: colorMap[card.card_type] || colorMap['blue']
-      }
-    }));
-
-    nodes.push({
-      id: 'user',
-      name: userInfo.name || '当前用户',
-      category: 'user',
-      symbolSize: 50,
-      itemStyle: { color: '#8b5cf6' }
-    });
-
-    const links: any[] = [];
-    for (let i = 0; i < cards.length; i++) {
-      if (i > 0 && i < cards.length) {
-        links.push({ source: String(cards[i].id), target: String(cards[Math.max(0, i-1)].id), label: '关联' });
-      }
-    }
-    const userCardIdx = Math.floor(cards.length / 2);
-    if (cards.length > 0) {
-      links.push({ source: 'user', target: String(cards[userCardIdx].id), label: '创建' });
-    }
-
-    const categories = [
-      { name: '蓝色卡片' },
-      { name: '绿色卡片' },
-      { name: '黄色卡片' },
-      { name: '红色卡片' },
-      { name: '用户' }
-    ];
-
-    const option = {
-      tooltip: { trigger: 'item', formatter: (params: any) => `${params.name}` },
-      legend: { data: categories.map(c => c.name), top: 10 },
-      series: [{
-        type: 'graph',
-        layout: 'force',
-        data: nodes.map(node => ({
-          ...node,
-          label: { show: true, fontSize: 11 }
-        })),
-        links,
-        categories,
-        roam: true,
-        forceRepulsion: 500,
-        linkDistance: 120,
-        lineStyle: { color: 'source', curveness: 0.1 }
-      }]
-    };
-
-    chart.setOption(option);
-
-    // Click on graph node to select card
-    chart.off('click');
-    chart.on('click', (params: any) => {
-      const card = cards.find(c => String(c.id) === params.name || String(c.id) === params.data?.id);
-      if (card) handleCardClick(card);
-    });
-
-    return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
-        chartInstanceRef.current = null;
-      }
-    };
-  }, [cards, userInfo]);
-
-  const typeColorBg: Record<string, string> = {
-    'blue': 'bg-blue-100 dark:bg-blue-900/30',
-    'green': 'bg-green-100 dark:bg-green-900/30',
-    'yellow': 'bg-yellow-100 dark:bg-yellow-900/30',
-    'red': 'bg-red-100 dark:bg-red-900/30'
-  };
-
-return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-bold">团队知识图谱</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">点击左侧卡片或图谱节点查看详情并编辑</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSelectedCard(null)}
-            className="flex items-center px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
-          >
-            <X size={14} className="mr-1" /> 清除选择
-          </button>
-          <button
-            onClick={() => window.location.reload()}
-            className="flex items-center px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-          >
-            <RefreshCw size={14} className="mr-1" /> 刷新图谱
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12 text-gray-400">加载中...</div>
-      ) : (
-        <div className="flex gap-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
-          {/* Left: Card list */}
-          <div className="w-64 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="搜索卡片..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex gap-1 mt-2 flex-wrap">
-                {['blue','green','yellow','red'].map(t => (
-                  <span key={t} className={`text-xs px-1.5 py-0.5 rounded ${typeColorBg[t]} font-medium`} style={{ color: colorMap[t] }}>
-                    {colorLabel[t]}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {filteredCards.length === 0 && (
-                <div className="text-center py-8 text-gray-400 text-sm">无匹配卡片</div>
-              )}
-              {filteredCards.map(card => (
-                <div
-                  key={card.id}
-                  onClick={() => handleCardClick(card)}
-                  className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                    selectedCard?.id === card.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <div
-                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                      style={{ backgroundColor: colorMap[card.card_type] || colorMap['blue'] }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{card.title || `卡片${card.id}`}</div>
-                      <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">
-                        {card.content?.slice(0, 60) || '暂无内容'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="p-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 text-center">
-              共 {filteredCards.length} 张卡片
-            </div>
-          </div>
-
-          {/* Center: Graph */}
-          <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 overflow-hidden">
-            <div ref={chartRef} className="w-full h-full" />
-          </div>
-
-          {/* Right: Detail panel */}
-          <div className="w-80 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {!selectedCard ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                <Eye size={32} className="mb-2 opacity-30" />
-                <p className="text-sm">选择左侧卡片查看详情</p>
-              </div>
-            ) : (
-              <>
-                <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: colorMap[selectedCard.card_type] || colorMap['blue'] }}
-                    />
-                    <span className="text-sm font-medium truncate max-w-[160px]">
-                      {selectedCard.title || `卡片${selectedCard.id}`}
-                    </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => setShowPreview(!showPreview)}
-                      className={`p-1.5 rounded-lg text-xs ${showPreview ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
-                      title="预览"
-                    >
-                      <Eye size={14} />
-                    </button>
-                    <button
-                      onClick={handleEditToggle}
-                      className={`p-1.5 rounded-lg text-xs ${isEditing ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
-                      title="编辑"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3">
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-gray-500 mb-1 block">标题</label>
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={e => setEditTitle(e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-500 mb-1 block">内容</label>
-                        <textarea
-                          value={editContent}
-                          onChange={e => setEditContent(e.target.value)}
-                          rows={10}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-                        />
-                      </div>
-                      <button
-                        onClick={handleSaveEdit}
-                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center justify-center gap-1"
-                      >
-                        <Save size={14} className="mr-1" /> 保存修改
-                      </button>
-                    </div>
-                  ) : showPreview ? (
-                    <div>
-                      <div className="mb-3">
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${typeColorBg[selectedCard.card_type] || ''}`} style={{ color: colorMap[selectedCard.card_type] }}>
-                          {colorLabel[selectedCard.card_type] || '蓝色'} 卡片
-                        </span>
-                      </div>
-                      <h3 className="text-base font-semibold mb-2">{selectedCard.title || `卡片${selectedCard.id}`}</h3>
-                      <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                        {selectedCard.content || '暂无内容'}
-                      </div>
-                      {(() => {
-                        const tags = Array.isArray(selectedCard.tags) ? selectedCard.tags : (typeof selectedCard.tags === 'string' ? selectedCard.tags.split(/[,，\s]+/).filter(Boolean) : []);
-                        return tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-3">
-                            {tags.map((tag: string) => (
-                              <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
-                                #{tag}
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-400 text-center py-8">预览已隐藏</div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
