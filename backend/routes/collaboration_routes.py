@@ -592,14 +592,6 @@ def update_pong_time(user_id: str):
     """更新用户最后收到 pong 的时间（用于心跳检测）"""
     pass  # 简化实现，实际可存储在 store 中
 
-            except json.JSONDecodeError:
-                pass
-
-    except WebSocketDisconnect:
-        await store.disconnect(user_id)
-    except Exception as e:
-        logger.error(f"WebSocket 连接异常: {e}")
-
 
 # ============== REST 路由 ==============
 

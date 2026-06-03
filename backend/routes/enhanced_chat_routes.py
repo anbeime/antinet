@@ -2436,23 +2436,23 @@ async def memory_stats():
         logger.error(f"è·å–å¤ªå²é˜ç»Ÿè®¡å¤±è´¥: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============ Á´´Ê»úÖÆ API£¨Î¬¶È2£ºÖÇÄÜ¹ØÁª£©============
+# ============ é“¾è¯æœºåˆ¶ APIï¼ˆç»´åº¦2ï¼šæ™ºèƒ½å…³è”ï¼‰============
 
 @router.get("/chain/stats")
 async def get_chain_stats():
-    """»ñÈ¡Á´´ÊÍ³¼ÆĞÅÏ¢"""
+    """è·å–é“¾è¯ç»Ÿè®¡ä¿¡æ¯"""
     try:
         from services.chain_word_extractor import get_chain_word_extractor
         extractor = get_chain_word_extractor()
         
-        # ´ÓÊı¾İ¿â¼ÓÔØ¿¨Æ¬
+        # ä»æ•°æ®åº“åŠ è½½å¡ç‰‡
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards ORDER BY created_at DESC LIMIT 100")
         cards = [dict(row) for row in cursor.fetchall()]
         conn.close()
         
-        # ¹¹½¨Á´´ÊË÷Òı
+        # æ„å»ºé“¾è¯ç´¢å¼•
         chain_index = extractor.build_chain_index(cards, use_llm=False, max_pairs=50)
         
         stats = extractor.get_chain_stats()
@@ -2465,38 +2465,38 @@ async def get_chain_stats():
             ]
         }
     except Exception as e:
-        logger.error(f"Á´´ÊÍ³¼ÆÊ§°Ü: {e}")
+        logger.error(f"é“¾è¯ç»Ÿè®¡å¤±è´¥: {e}")
         return {"stats": {}, "chain_index": {}, "error": str(e)}
 
 
 @router.get("/chain/suggest/{card_id}")
 async def get_chain_suggestions(card_id: str, top_k: int = 5):
-    """»ùÓÚÁ´´Ê»ñÈ¡Ïà¹Ø¿¨Æ¬ÍÆ¼ö"""
+    """åŸºäºé“¾è¯è·å–ç›¸å…³å¡ç‰‡æ¨è"""
     try:
         from services.chain_word_extractor import get_chain_word_extractor
         extractor = get_chain_word_extractor()
         
-        # »ñÈ¡µ±Ç°¿¨Æ¬
+        # è·å–å½“å‰å¡ç‰‡
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards WHERE id = ?", [card_id])
         row = cursor.fetchone()
         if not row:
-            return {"error": "¿¨Æ¬²»´æÔÚ"}
+            return {"error": "å¡ç‰‡ä¸å­˜åœ¨"}
         
         card = dict(row)
         
-        # ¹¹½¨Á´´ÊË÷Òı
+        # æ„å»ºé“¾è¯ç´¢å¼•
         cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards WHERE id != ? LIMIT 50", [card_id])
         other_cards = [dict(r) for r in cursor.fetchall()]
         conn.close()
         
         chain_index = extractor.build_chain_index([card] + other_cards, use_llm=False, max_pairs=30)
         
-        # »ñÈ¡ÍÆ¼ö
+        # è·å–æ¨è
         suggestions = extractor.suggest_related_cards(card, chain_index, top_k=top_k)
         
-        # »ñÈ¡ÍÆ¼ö¿¨Æ¬µÄÏêÏ¸ĞÅÏ¢
+        # è·å–æ¨èå¡ç‰‡çš„è¯¦ç»†ä¿¡æ¯
         if suggestions:
             card_ids = [s["card_id"] for s in suggestions]
             placeholders = ",".join(["?" for _ in card_ids])
@@ -2517,13 +2517,13 @@ async def get_chain_suggestions(card_id: str, top_k: int = 5):
             "total": len(suggestions)
         }
     except Exception as e:
-        logger.error(f"Á´´ÊÍÆ¼öÊ§°Ü: {e}")
+        logger.error(f"é“¾è¯æ¨èå¤±è´¥: {e}")
         return {"suggestions": [], "error": str(e)}
 
 
 @router.post("/chain/build")
 async def build_chain_index_force(limit: int = 100, use_llm: bool = False):
-    """Ç¿ÖÆÖØĞÂ¹¹½¨Á´´ÊË÷Òı"""
+    """å¼ºåˆ¶é‡æ–°æ„å»ºé“¾è¯ç´¢å¼•"""
     try:
         from services.chain_word_extractor import get_chain_word_extractor
         extractor = get_chain_word_extractor()
@@ -2544,5 +2544,5 @@ async def build_chain_index_force(limit: int = 100, use_llm: bool = False):
             "stats": stats
         }
     except Exception as e:
-        logger.error(f"¹¹½¨Á´´ÊË÷ÒıÊ§°Ü: {e}")
+        logger.error(f"æ„å»ºé“¾è¯ç´¢å¼•å¤±è´¥: {e}")
         raise HTTPException(status_code=500, detail=str(e))

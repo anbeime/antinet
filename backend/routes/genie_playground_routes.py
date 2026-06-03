@@ -501,7 +501,7 @@ async def genie_analyze(request: AnalyzeRequest):
 
     models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
-for model in models_to_try:
+    for model in models_to_try:
         try:
             result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",

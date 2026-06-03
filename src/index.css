@@ -1,9 +1,9 @@
+/* 导入仿古暖棕宣纸风格配色 */
+@import './styles/theme-ancient.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* 导入仿古暖棕宣纸风格配色 */
-@import './styles/theme-ancient.css';
 
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
