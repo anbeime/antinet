@@ -501,7 +501,7 @@ async def genie_analyze(request: AnalyzeRequest):
 
     models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
-    for model in models_to_try:
+for model in models_to_try:
         try:
             result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",
@@ -512,34 +512,34 @@ async def genie_analyze(request: AnalyzeRequest):
                     "temperature": 0.5
                 }
             )
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        if content:
-            cleaned = content
-            if "[Response]:" in cleaned:
-                idx = cleaned.index("[Response]:") + len("[Response]:")
-                cleaned = cleaned[idx:].strip()
-            json_match = None
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', cleaned)
-            if json_match:
-                try:
-                    parsed = json.loads(json_match.group())
-                    if all(k in parsed for k in ("summary", "importance")):
-                        return {"success": True, "response": parsed}
-                except json.JSONDecodeError:
-                    pass
-            insights = re.findall(r'\d+\.\s*\*\*(.+?)\*\*[:：]\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
-            if not insights:
-                insights = re.findall(r'\d+\.\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
-            summary = "、".join([i[0] if isinstance(i, tuple) else i for i in insights])[:30] if insights else cleaned[:30]
-            fallback = {
-                "summary": summary,
-                "importance": 50,
-                "gap": "需要深入分析",
-                "recommendations": [{"title": "深入探索此主题", "reason": "关联分析"}],
-                "raw_text": cleaned
-            }
-            return {"success": True, "response": fallback}
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            if content:
+                cleaned = content
+                if "[Response]:" in cleaned:
+                    idx = cleaned.index("[Response]:") + len("[Response]:")
+                    cleaned = cleaned[idx:].strip()
+                json_match = None
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', cleaned)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                        if all(k in parsed for k in ("summary", "importance")):
+                            return {"success": True, "response": parsed}
+                    except json.JSONDecodeError:
+                        pass
+                insights = re.findall(r'\d+\.\s*\*\*(.+?)\*\*[:：]\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
+                if not insights:
+                    insights = re.findall(r'\d+\.\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
+                summary = "、".join([i[0] if isinstance(i, tuple) else i for i in insights])[:30] if insights else cleaned[:30]
+                fallback = {
+                    "summary": summary,
+                    "importance": 50,
+                    "gap": "需要深入分析",
+                    "recommendations": [{"title": "深入探索此主题", "reason": "关联分析"}],
+                    "raw_text": cleaned
+                }
+                return {"success": True, "response": fallback}
         except Exception as e:
             last_error = f"{model}: {str(e)[:100]}"
     raise HTTPException(status_code=502, detail=f"Genie 分析失败: {last_error}")

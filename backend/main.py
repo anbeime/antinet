@@ -396,30 +396,30 @@ if __name__ == "__main__":
         log_level="info"
     )
 
-# ³õÊ¼»¯¼¼ÄÜÈÈ²å°ÎÏµÍ³
+# åˆå§‹åŒ–æŠ€èƒ½çƒ­æ’æ‹”ç³»ç»Ÿ
 try:
     from services.skill_hotplug import init_hotplug_manager
     hotplug_mgr = init_hotplug_manager()
     hotplug_mgr.start_watching()
-    print("[OK] ¼¼ÄÜÈÈ²å°ÎÏµÍ³ÒÑ³õÊ¼»¯")
+    print("[OK] æŠ€èƒ½çƒ­æ’æ‹”ç³»ç»Ÿå·²åˆå§‹åŒ–")
 except Exception as e:
-    print(f"[WARN] ¼¼ÄÜÈÈ²å°ÎÏµÍ³³õÊ¼»¯Ê§°Ü: {e}")
-register_router("routes.skill_hotplug_routes")  # ¼¼ÄÜÈÈ²å°Î¹ÜÀí
-register_router("routes.chain_word_routes")  # Á´´Ê»úÖÆ
+    print(f"[WARN] æŠ€èƒ½çƒ­æ’æ‹”ç³»ç»Ÿåˆå§‹åŒ–å¤±è´¥: {e}")
+register_router("routes.skill_hotplug_routes")  # æŠ€èƒ½çƒ­æ’æ‹”ç®¡ç†
+register_router("routes.chain_word_routes")  # é“¾è¯æœºåˆ¶
 
-# ³õÊ¼»¯Á´´ÊÌáÈ¡Æ÷
+# åˆå§‹åŒ–é“¾è¯æå–å™¨
 try:
     from services.chain_word_extractor import get_chain_word_extractor
     extractor = get_chain_word_extractor()
-    print("[OK] Á´´ÊÌáÈ¡Æ÷ÒÑ³õÊ¼»¯")
+    print("[OK] é“¾è¯æå–å™¨å·²åˆå§‹åŒ–")
 except Exception as e:
-    print(f"[WARN] Á´´ÊÌáÈ¡Æ÷³õÊ¼»¯Ê§°Ü: {e}")
-register_router("routes.ppf_routes")  # PPF ×Ô¶¯»¯´¦ÀíÁ÷³Ì
+    print(f"[WARN] é“¾è¯æå–å™¨åˆå§‹åŒ–å¤±è´¥: {e}")
+register_router("routes.ppf_routes")  # PPF è‡ªåŠ¨åŒ–å¤„ç†æµç¨‹
 
-# ³õÊ¼»¯ PPF ´¦ÀíÆ÷
+# åˆå§‹åŒ– PPF å¤„ç†å™¨
 try:
     from services.ppf_processor import init_ppf_processor
     init_ppf_processor(db_manager=db_manager)
-    print("[OK] PPF ´¦ÀíÆ÷ÒÑ³õÊ¼»¯")
+    print("[OK] PPF å¤„ç†å™¨å·²åˆå§‹åŒ–")
 except Exception as e:
-    print(f"[WARN] PPF ´¦ÀíÆ÷³õÊ¼»¯Ê§°Ü: {e}")
+    print(f"[WARN] PPF å¤„ç†å™¨åˆå§‹åŒ–å¤±è´¥: {e}")
