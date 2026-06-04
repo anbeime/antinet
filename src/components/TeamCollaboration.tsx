@@ -176,7 +176,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('realtime');
+  const [activeTab, setActiveTab] = useState<'realtime' | 'projects' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -495,6 +495,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
         }
       } else if (msg.type === 'new_activity' && msg.activity) {
         const a = msg.activity;
+        // 跳过发送者自己的消息（已在 handleSendMessage 中本地添加）
+        if (a.userId === collabUserId) return;
         setMessages(prev => [...prev, {
           id: Date.now(),
           user: a.user || '未知',
@@ -632,17 +634,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setMessages(prev => [...prev, message]);
     setNewMessage('');
     
-    // 通过 WebSocket 广播给其他人
-    collaborationService.sendActivity({
-      user: message.user,
-      userId: collabUserId,
-      avatar: message.avatar,
-      action: '发言',
-      content: message.content,
-      type: 'message'
-    });
-    
-    // 同时通过 REST API 持久化到数据库（确保刷新后不丢失）
+    // 通过 REST API 持久化到数据库并广播给所有在线用户
     collaborationREST.addActivity({
       user: message.user,
       userId: collabUserId,
@@ -969,45 +961,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <span>实时协作编辑</span>
           </div>
         </button>
-        <button 
-          onClick={() => setActiveTab('integration')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'integration' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Network size={18} className="mr-2" />
-            <span>团队知识整合</span>
-          </div>
-        </button>
-        <button 
-          onClick={() => setActiveTab('gaps')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'gaps' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Lightbulb size={18} className="mr-2" />
-            <span>知识空白识别</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'reports'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <BarChart3 size={18} className="mr-2" />
-            <span>协作分析报告</span>
-          </div>
-        </button>
         <button
           onClick={() => setActiveTab('projects')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
@@ -1019,19 +972,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <FileCheck size={18} className="mr-2" />
             <span>项目管理</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('wiki-editor')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'wiki-editor'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Edit3 size={18} className="mr-2" />
-              <span>Wiki 编辑器</span>
           </div>
         </button>
           <button
@@ -1048,168 +988,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
       {/* 内容区域 */}
       <div className="p-6">
-        {/* 团队知识整合 */}
-        {activeTab === 'integration' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">团队知识整合</h2>
-                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容，生成完整的团队知识图谱</p>
-                {isAdmin && (
-                  <span className="inline-flex items-center mt-2 px-2 py-1 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 rounded">
-                    <Crown size={12} className="mr-1" />
-                    管理员模式
-                  </span>
-                )}
-              </div>
-              <button 
-                onClick={handleAddMember}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <UserPlus size={18} className="mr-2" />
-                添加成员
-              </button>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧:整合状态和进度 */}
-              <div className="lg:col-span-1 space-y-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 border border-blue-100 dark:border-blue-800"
-                >
-                  <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">整合进度</h3>
-                  <div className="space-y-2">
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>AI分析重复内容</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>识别互补知识</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-green-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>建立知识关联</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-purple-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                  </div>
-                  <button className="mt-4 w-full flex items-center justify-center py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                    <RefreshCw size={16} className="mr-2" />
-                    <span>重新整合</span>
-                  </button>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-                >
-                  <h3 className="font-semibold mb-3">整合发现</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现事2个重复的核心概念卡片</p>
-                    </div>
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">识别出组互补的知识体系</p>
-                    </div>
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">建立事5个新的知识关联</p>
-                    </div>
-                    <div className="flex items-start">
-                      <AlertCircle size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现3个潜在的知识冲突点</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-
-              {/* 右侧:团队成员和统计图行*/}
-              <div className="lg:col-span-2 grid grid-cols-1 gap-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-                >
-                  <h3 className="font-semibold mb-3">团队成员 ({teamMembers.length})</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {teamMembers.map(member => (
-                      <div 
-                        key={member.id}
-                        className="flex items-center bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-full text-sm group relative"
-                      >
-                        <span className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-2">
-                          {member.avatar}
-                        </span>
-                        <span className="mr-2">{member.name}</span>
-                        <span className={`w-2 h-2 rounded-full ${member.online ? 'bg-green-500' : 'bg-gray-400'}`}></span>
-                        <div className="absolute right-0 top-0 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
-                          <button 
-                            onClick={() => handleEditMember(member)}
-                            className="p-1 bg-blue-500 text-white rounded-full hover:bg-blue-600"
-                          >
-                            <Edit3 size={12} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteMember(member.id)}
-                            className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.3 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[300px]"
-                >
-                  <h3 className="font-semibold mb-3">知识整合结果分布</h3>
-                  <ResponsiveContainer width="100%" height="85%">
-                    <PieChart>
-                      <Pie
-                        data={teamMembers.map(m => ({ name: m.name, value: m.contribution || 0 }))}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {teamMembers.map((_entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </motion.div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 实时协作编辑 */}
                 {activeTab === 'realtime' && (
@@ -1383,7 +1162,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                           在讨论中点击 Bookmark 按钮添加知识卡片
                         </div>
                       ) : (
-                        <MeetingCardPanel cards={discussionCards as any} />
+                        <MeetingCardPanel cards={discussionCards as any} onSaveCard={(card) => {
+                            const cardText = `${card.title}\n${card.content}`;
+                            setNewMessage(prev => prev ? `${prev}\n\n${cardText}` : cardText);
+                            toast.success('已添加到输入框');
+                          }} />
                       )}
                     </div>
                   </motion.div>
@@ -1392,399 +1175,10 @@ const TeamCollaborationEnhanced: React.FC = () => {
             </div>
           )}
 
-{activeTab === 'gaps' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">知识空白识别</h2>
-                <p className="text-gray-600 dark:text-gray-300">智能发现团队知识体系中的空白点和机会点</p>
-              </div>
-              <button 
-                onClick={handleAddGap}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <Plus size={18} className="mr-2" />
-                添加空白顶
-              </button>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧:知识空白列表 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="lg:col-span-1 space-y-4"
-              >
-                <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3 flex items-center">
-                    <FileSearch size={18} className="mr-2" />
-                    发现的知识空白({knowledgeGaps.length})
-                  </h3>
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {knowledgeGaps.map(gap => (
-                      <div 
-                        key={gap.id} 
-                        className={`p-3 rounded-lg border relative group ${
-                          gap.priority === '高' ? 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-800' :
-                          gap.priority === '中' ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800' :
-                          'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-800'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <h4 className={`font-medium text-sm ${
-                            gap.priority === '高' ? 'text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'text-amber-800 dark:text-amber-300' :
-                            'text-blue-800 dark:text-blue-300'
-                          }`}>
-                            {gap.area}
-                          </h4>
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
-                            <button 
-                              onClick={() => handleEditGap(gap)}
-                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
-                            >
-                              <Edit3 size={14} />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteGap(gap.id)}
-                              className="p-1 hover:bg-red-200 dark:hover:bg-red-800 rounded text-red-600"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-xs mt-1 opacity-80">{gap.description}</p>
-                        <div className="flex justify-between items-center mt-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            gap.priority === '高' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300' :
-                            'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
-                          }`}>
-                            {gap.priority}优先级
-                          </span>
-                          <span className="text-xs text-gray-500">缺口: {gap.gapScore}%</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">知识机会点</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">AI技术与用户体验设计的交叉应用</p>
-                    </div>
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">跨部门知识共享平台的建立</p>
-                    </div>
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">建立持续学习和知识更新的机制</p>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 右侧:知识覆盖度雷达图 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                className="lg:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">知识领域覆盖度分析</h3>
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart outerRadius={150} data={knowledgeGaps.map(g => ({ subject: g.area, A: 100 - g.gapScore, fullMark: 100 }))}>
-                      <PolarGrid stroke="#e5e7eb" />
-                      <PolarAngleAxis dataKey="subject" />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                      <Radar
-                        name="知识覆盖率"
-                        dataKey="A"
-                        stroke="#8884d8"
-                        fill="#8884d8"
-                        fillOpacity={0.5}
-                      />
-                      <Tooltip />
-                      <Legend />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <h4 className="font-medium mb-2">空白填补建议</h4>
-                    <ul className="space-y-2 text-sm">
-                      {knowledgeGaps.slice(0, 3).map(gap => (
-                        <li key={gap.id} className="flex items-start">
-                          <CheckCircle2 size={16} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                          <span>{gap.suggestions?.[0] || `加强${gap.area}能力建设`}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <h4 className="font-medium mb-2">预期效果</h4>
-                    <ul className="space-y-2 text-sm">
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>提高产品创新的准确性和成功率</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>缩短从创意到实施的周未</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>增强团队的市场竞争力</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        )}
 
         {/* 协作分析报告 */}
-        {activeTab === 'reports' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">协作分析报告</h2>
-                <p className="text-gray-600 dark:text-gray-300">可视化团队知识贡献和协作模式分析</p>
-              </div>
-              <button 
-                onClick={() => setIsReportConfigOpen(true)}
-                className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                <Settings size={18} className="mr-2" />
-                配置报告
-              </button>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 协作模式分析 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">协作模式分析</h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>同步协作</span>
-                      <span>{reportConfig.syncCollaboration}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${reportConfig.syncCollaboration}%` }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>异步协作</span>
-                      <span>{reportConfig.asyncCollaboration}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${reportConfig.asyncCollaboration}%` }}></div>
-                    </div>
-                  </div>
-                  <div className="p-3 mt-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-800">
-                    <p className="text-sm text-blue-800 dark:text-blue-300">
-                      团队倾向于异步协作模弹建议优化异步协作工具和流程提高效率.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 知识类型分布 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">知识类型分布</h3>
-                <div className="space-y-3">
-                  {[
-                    { label: '核心概念', value: reportConfig.coreConcepts, color: 'bg-blue-500' },
-                    { label: '关联链接', value: reportConfig.relatedLinks, color: 'bg-green-500' },
-                    { label:'参考来源, value: reportConfig.references', color: 'bg-yellow-500' },
-                    { label:'索引关键语, value: reportConfig.keywords', color: 'bg-red-500' }
-                  ].map(item => (
-                    <div key={item.label} className="flex items-center">
-                      <div className={`w-3 h-3 rounded-full mr-2 ${item.color}`}></div>
-                      <div className="flex-1">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>{item.label}</span>
-                          <span>{item.value}%</span>
-                        </div>
-                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${item.value}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* 协作效率指标 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">协作效率指标</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center text-green-600 dark:text-green-400 mr-3">
-                        <CheckCircle2 size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">平均响应时间</p>
-                        <p className="text-xl font-bold">{reportConfig.avgResponseTime}</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">-15%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3">
-                        <Users size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">参与库</p>
-                        <p className="text-xl font-bold">{reportConfig.participation}%</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">+8%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400 mr-3">
-                        <Network size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">知识关联库</p>
-                        <p className="text-xl font-bold">{reportConfig.knowledgeConnectivity}%</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">+12%</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 团队成员贡献 */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.3 } }}
-                className="md:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3 flex items-center">
-                  <BarChart3 size={16} className="mr-2" />
-                  团队成员贡献分析
-                </h3>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={teamMembers.map(m => ({ name: m.name, '贡献': m.contribution || 0 }))}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="贡献" fill="#8884d8" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* 第二行图表：折线团+ 饼图 */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.4 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3 flex items-center">
-                  <LineChartIcon size={16} className="mr-2" />
-                  运天协作趋加
-                </h3>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      data={[
-                        { day: '周一', 消息: 32, 任务: 5, 文档: 3 },
-                        { day: '周二', 消息: 28, 任务: 8, 文档: 6 },
-                        { day: '周三', 消息: 45, 任务: 6, 文档: 4 },
-                        { day: '周四', 消息: 38, 任务: 9, 文档: 7 },
-                        { day: '周五', 消息: 52, 任务: 11, 文档: 8 },
-                        { day: '周六', 消息: 18, 任务: 3, 文档: 2 },
-                        { day: '周日', 消息: 22, 任务: 4, 文档: 3 },
-                      ]}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="day" />
-                      <YAxis />
-                      <Tooltip />
-                      <Legend />
-                      <Line type="monotone" dataKey="消息" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                      <Line type="monotone" dataKey="任务" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} />
-                      <Line type="monotone" dataKey="文档" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.5 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3 flex items-center">
-                  <PieChartIcon size={16} className="mr-2" />
-                  成员角色分布
-                </h3>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={(() => {
-                          const map: Record<string, number> = {};
-                          teamMembers.forEach(m => { const r = m.role || '其他'; map[r] = (map[r] || 0) + 1; });
-                          const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-                          return Object.entries(map).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
-                        })()}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, value }) => `${name}: ${value}`}
-                        outerRadius={80}
-                        dataKey="value"
-                      >
-                        {(() => {
-                          const map: Record<string, number> = {};
-                          teamMembers.forEach(m => { const r = m.role || '其他'; map[r] = (map[r] || 0) + 1; });
-                          const colors = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-                          return Object.entries(map).map(([key], i) => (
-                            <Cell key={`cell-${key}-${i}`} fill={colors[i % colors.length]} />
-                          ));
-                        })()}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        )}
 
         {/* 项目管理 */}
         {activeTab === 'projects' && (
@@ -2010,12 +1404,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-          {/* Wiki编辑器*/}
-          {activeTab === 'wiki-editor' && (
-            <div className="h-[calc(100vh-200px)]">
-              <WikiEditor />
-            </div>
-          )}
           {/* 思维导图 */}
           {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>

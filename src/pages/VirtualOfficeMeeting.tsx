@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users,
   MessageSquare,
   Play,
   RotateCcw,
@@ -429,28 +428,20 @@ const VirtualOfficeMeeting: React.FC = () => {
   }, [selectedTopicObj]);
 
   // 将卡片内容添加到背景资料
-  const appendCardToContext = useCallback((card: any) => {
+  const appendCardToContext = (card: any) => {
     const cardText = `\n\n【${card.title || '无标题'}】\n${card.content || ''}`;
-    setContext(prev => {
-      const newContext = prev + cardText;
-      console.log('[VirtualOffice] 添加卡片到背景资料，长度:', newContext.length);
-      return newContext;
-    });
+    setContext(prev => prev + cardText);
     toast.success('已添加卡片到背景资料');
-  }, []);
+  };
 
   // 将整本书的卡片添加到背景资料
-  const appendBookToContext = useCallback((book: any) => {
+  const appendBookToContext = (book: any) => {
     const combinedContent = book.cards.map((c: any) => 
       `【${c.title || '无标题'}】\n${c.content || ''}`
     ).join('\n\n---\n\n');
-    setContext(prev => {
-      const newContext = prev + '\n\n' + combinedContent;
-      console.log('[VirtualOffice] 添加书籍到背景资料，卡片数:', book.cards.length, '总长度:', newContext.length);
-      return newContext;
-    });
+    setContext(prev => prev + '\n\n' + combinedContent);
     toast.success(`已添加 ${book.count} 张卡片到背景资料`);
-  }, []);
+  };
 
   // 发送人类消息（混合模式）
   const sendHumanMessage = async (msg: string) => {
@@ -675,6 +666,8 @@ useEffect(() => {
     let currentRound: any = null;
 
     try {
+      console.log('[Meeting] 开始会议，背景资料长度:', context.length);
+      console.log('[Meeting] 背景资料内容预览:', context.slice(0, 200));
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1071,9 +1064,6 @@ useEffect(() => {
     });
   };
 
-  // 计算活跃数量
-  const workingCount = Object.values(pixelState.agentStates).filter(s => s !== 'idle' && s !== 'error').length;
-
   // 同步 agentList 状态与 pixelState
   useEffect(() => {
     setAgentList(prev => prev.map(a => ({
@@ -1275,10 +1265,14 @@ useEffect(() => {
                 )}
 
                 {/* 背景资料文本框 */}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500">背景资料</span>
+                  <span className="text-xs text-purple-400">{context.length} 字符</span>
+                </div>
                 <textarea
                   value={context}
                   onChange={e => setContext(e.target.value)}
-                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题...&#10;从上方专题选择卡片自动填充，或手动输入"
+                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题...\n从上方专题选择卡片自动填充，或手动输入"
                   rows={4}
                   className="w-full px-3 py-2.5 rounded-lg text-sm text-white placeholder-gray-500 border border-gray-600/50 focus:border-blue-500 focus:outline-none transition-colors resize-none"
                   style={{ background: '#0f1729' }}
@@ -1428,49 +1422,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* 模块2: 八府成员 */}
-          <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-              <Users className="w-4 h-4 text-gray-400" />
-              <span className="text-white font-medium text-sm">八府成员</span>
-              <span className="text-xs text-gray-500 ml-auto">({workingCount}/8 活跃)</span>
-            </div>
-            <div className="p-4 grid grid-cols-2 gap-2.5">
-              {Object.entries(PIXEL_AGENTS).map(([key, agent]) => {
-                const state = pixelState.agentStates[key] || 'idle';
-                const isActive = key === pixelState.activeAgent && state !== 'idle';
-                const stateColor = PIXEL_STATE_COLORS[state];
-                return (
-                  <div
-                    key={key}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border transition-all ${
-                      isActive
-                        ? 'border-green-500/40'
-                        : 'border-transparent'
-                    }`}
-                    style={{ background: isActive ? '#0f1729' : 'transparent' }}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                      style={{ background: agent.color }}
-                    >
-                      {agent.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-white text-xs font-medium truncate">{agent.name}</div>
-                      <div className="text-gray-500 text-[10px] truncate">{agent.cnName}</div>
-                    </div>
-                    <span
-                      className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                      style={{ color: stateColor, background: `${stateColor}18` }}
-                    >
-                      {PIXEL_STATE_NAMES[state]}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* ========== 右侧栏 65% ========== */}
