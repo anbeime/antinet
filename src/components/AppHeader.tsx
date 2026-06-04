@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Brain, Database, Briefcase, ListTodo, Users, FolderOpen, FileText, Presentation, Table, Cpu, Bot, Sparkles, ChevronDown, Menu, BookOpen, Network } from 'lucide-react';
+import { Brain, Database, Briefcase, ListTodo, Users, FolderOpen, FileText, Presentation, Table, Cpu, Bot, Sparkles, ChevronDown, Menu, Network } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
 const AppHeader: React.FC = () => {
@@ -28,7 +28,6 @@ const AppHeader: React.FC = () => {
 
   const aiItems = [
     { path: '/agent-system', label: 'Agent系统', icon: <Bot size={16} /> },
-    { path: '/book-skill', label: '书籍方法论', icon: <BookOpen size={16} /> },
     { path: '/?tab=skill-center', label: '技能中心', icon: <Sparkles size={16} /> },
   ];
 
@@ -126,46 +125,28 @@ const AppHeader: React.FC = () => {
         </div>
       </div>
 
+      {/* 移动端菜单 - 只显示核心功能 */}
       {mobileMenuOpen && (
         <>
           <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
           <div className="fixed top-[60px] left-0 w-64 bg-white dark:bg-gray-800 shadow-xl z-50 md:hidden overflow-y-auto max-h-[calc(100vh-60px)]">
             <div className="p-2">
+              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">核心功能</div>
               <button onClick={() => handleNav('/')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Database size={16} /><span>概览</span>
+                <Database size={16} /><span>首页概览</span>
               </button>
-        <button onClick={() => handleNav('/?tab=cards-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-          <Briefcase size={16} /><span>知识管理</span>
-        </button>
-        <button onClick={() => handleNav('/knowledge-graph')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-          <Network size={16} /><span>知识图谱</span>
-        </button>
-        <button onClick={() => handleNav('/?tab=data-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
+              <button onClick={() => handleNav('/?tab=cards-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
+                <Briefcase size={16} /><span>知识管理</span>
+              </button>
+              <button onClick={() => handleNav('/?tab=data-management')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
                 <ListTodo size={16} /><span>任务管理</span>
               </button>
               <button onClick={() => handleNav('/?tab=virtual-office-meeting')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
                 <Users size={16} /><span>团队会议</span>
               </button>
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">文档处理</div>
-              <button onClick={() => handleNav('/?tab=pdf-analysis')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <FileText size={16} /><span>PDF分析器</span>
-              </button>
-              <button onClick={() => handleNav('/?tab=ppt-analysis')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Presentation size={16} /><span>PPT生成</span>
-              </button>
-              <button onClick={() => handleNav('/?tab=excel-analysis')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Table size={16} /><span>Excel/在线表格</span>
-              </button>
-              <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">AI工具</div>
-              <button onClick={() => handleNav('/agent-system')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Bot size={16} /><span>Agent系统</span>
-              </button>
-              <button onClick={() => handleNav('/book-skill')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <BookOpen size={16} /><span>书籍方法论</span>
-              </button>
-              <button onClick={() => handleNav('/?tab=skill-center')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Sparkles size={16} /><span>技能中心</span>
-              </button>
+              <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
+                <div className="px-4 py-2 text-xs text-gray-400">聊天机器人浮动在右下角</div>
+              </div>
             </div>
           </div>
         </>

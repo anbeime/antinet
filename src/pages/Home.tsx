@@ -1229,11 +1229,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* 知识管理（卡片管理）视图 */}
         {activeTab === 'cards-management' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            {/* 子导航标签 */}
-            <div className="flex items-center border-b border-border">
+{/* 子导航标签 */}
+            <div className="flex items-center border-b border-border overflow-x-auto">
               <button
                 onClick={() => setKnowledgeSubTab('cards')}
-                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   knowledgeSubTab === 'cards'
                     ? 'border-wood text-ink-main'
                     : 'border-transparent text-ink-desc hover:text-ink-main'
@@ -1244,7 +1244,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button
                 onClick={() => setKnowledgeSubTab('research')}
-                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   knowledgeSubTab === 'research'
                     ? 'border-wood text-ink-main'
                     : 'border-transparent text-ink-desc hover:text-ink-main'
@@ -1255,7 +1255,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button
                 onClick={() => setKnowledgeSubTab('knowledge-graph')}
-                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap hidden md:block ${
                   knowledgeSubTab === 'knowledge-graph'
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                     : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -1266,7 +1266,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button
                 onClick={() => setKnowledgeSubTab('mindmap')}
-                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors ${
+                className={`px-4 py-3 border-b-2 text-sm font-medium transition-colors whitespace-nowrap hidden md:block ${
                   knowledgeSubTab === 'mindmap'
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                     : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'

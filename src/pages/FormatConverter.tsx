@@ -29,7 +29,8 @@ import {
   ChevronRight,
   ZoomIn,
   ZoomOut,
-  History
+  History,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
@@ -789,13 +790,32 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       return;
     }
 
-    if (task.targetFormat === 'pdf' || task.targetFormat === 'markdown' || task.targetFormat === 'ppt') {
-      // PDF/PPT 转换的 PDF 使用内嵌预览
+    if (task.targetFormat === 'ppt') {
+      // PPT 转 PDF：在右侧面板显示
+      setPreviewTask(task);
+      setShowPdfPreview(true);
+      setIsPdfLoading(true);
+      
+      fetch(task.resultUrl!).then(res => res.arrayBuffer()).then(ab => {
+        const data = new Uint8Array(ab);
+        pdfjsLib.getDocument({ data }).promise.then(pdf => {
+          setPdfDoc(pdf);
+          setPdfTotalPages(pdf.numPages);
+          setPdfCurrentPage(1);
+          setPdfScale(1.0);
+          setIsPdfLoading(false);
+        }).catch(() => {
+          toast.error('加载 PDF 失败');
+          setIsPdfLoading(false);
+        });
+      });
+    } else if (task.targetFormat === 'pdf' || task.targetFormat === 'markdown') {
+      // PDF/Markdown 转换的 PDF 使用内嵌预览
       openPdfPreview(task);
     } else {
       // Word 和 Excel 直接下载
       downloadFile(task);
-      toast.info('Word/Excel 文件已下载，请在本地查看');
+      toast.info('文件已下载，请在本地查看');
     }
   };
 
@@ -835,6 +855,15 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
     setPreviewTask(null);
     setPdfDoc(null);
   };
+
+  // 当切换格式时，关闭预览
+  useEffect(() => {
+    if (selectedFormat !== 'ppt') {
+      setShowPdfPreview(false);
+      setPdfDoc(null);
+      setPreviewTask(null);
+    }
+  }, [selectedFormat]);
 
   const pdfRenderTaskRef = useRef<any>(null);
 
@@ -1314,8 +1343,151 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
           </motion.div>
         )}
 
-        {/* 文件上传区域（Markdown 格式时隐藏） */}
-        {selectedFormat !== 'markdown' && (
+        {/* PPT 转 PDF：左右分栏布局 */}
+        {selectedFormat === 'ppt' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 mb-6"
+          >
+            <div className="flex gap-6 h-[600px]">
+              {/* 左侧：选择 PPT 文件 */}
+              <div className="w-1/2 flex flex-col">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <Presentation className="w-5 h-5 text-pink-500" />
+                  选择 PPT 文件
+                </h3>
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex-1 border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
+                    isDragging
+                      ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20'
+                      : 'border-gray-300 dark:border-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pptx,.ppt"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <Upload className="w-16 h-16 mx-auto text-pink-400 mb-4" />
+                  <h4 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    点击选择 PPT 文件
+                  </h4>
+                  <p className="text-gray-500 dark:text-gray-400 mb-4">
+                    拖拽文件到此处或点击上传，自动转换为 PDF
+                  </p>
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
+                    <Presentation className="w-4 h-4" />
+                    <span>支持 .pptx / .ppt 格式</span>
+                  </div>
+                </div>
+                {/* 任务列表（左侧底部） */}
+                {tasks.length > 0 && (
+                  <div className="mt-4 max-h-[200px] overflow-y-auto space-y-2">
+                    {tasks.map((task) => {
+                      const status = getStatusDisplay(task);
+                      return (
+                        <div key={task.id} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${status.bgColor} ${status.color}`}>
+                            {status.text}
+                          </span>
+                          <span className="text-sm truncate flex-1">{task.fileName}</span>
+                          {task.status === 'completed' && task.resultUrl && (
+                            <button
+                              onClick={() => previewFile(task)}
+                              className="text-xs px-2 py-1 bg-pink-500 text-white rounded hover:bg-pink-600"
+                            >
+                              预览
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {/* 右侧：PDF 预览 */}
+              <div className="w-1/2 flex flex-col">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                  <FileOutput className="w-5 h-5 text-red-500" />
+                  PDF 预览
+                </h3>
+                <div className="flex-1 bg-gray-100 dark:bg-gray-900 rounded-xl overflow-hidden flex flex-col">
+                  {showPdfPreview && pdfDoc ? (
+                    <>
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border-b">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setPdfCurrentPage(p => Math.max(1, p - 1))} disabled={pdfCurrentPage <= 1}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-30">
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className="text-xs tabular-nums">{pdfCurrentPage} / {pdfTotalPages}</span>
+                          <button onClick={() => setPdfCurrentPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfCurrentPage >= pdfTotalPages}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-30">
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setPdfScale(s => Math.max(0.5, s - 0.2))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                            <ZoomOut size={14} />
+                          </button>
+                          <span className="text-xs w-12 text-center">{Math.round(pdfScale * 100)}%</span>
+                          <button onClick={() => setPdfScale(s => Math.min(2, s + 0.2))} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                            <ZoomIn size={14} />
+                          </button>
+                          {/* 新窗口打开 */}
+                          {previewTask?.resultUrl && (
+                            <a href={previewTask.resultUrl} target="_blank" rel="noopener noreferrer"
+                              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="在新窗口打开">
+                              <ExternalLink size={14} />
+                            </a>
+                          )}
+                          <button onClick={() => { setShowPdfPreview(false); setPdfDoc(null); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="关闭预览">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-auto flex items-center justify-center p-4">
+                        <canvas ref={pdfCanvasRef} className="shadow-lg bg-white rounded" />
+                      </div>
+                      {previewTask?.resultUrl && (
+                        <div className="p-2 bg-white dark:bg-gray-800 border-t flex justify-end gap-2">
+                          <button
+                            onClick={() => downloadFile(previewTask!)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                          >
+                            <Download size={14} />
+                            下载 PDF
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : tasks.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                      <FileOutput className="w-16 h-16 mb-4 opacity-30" />
+                      <p>选择 PPT 文件后，转换结果将显示在此处</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-gray-400">
+                      <Loader className="w-8 h-8 animate-spin" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 其他格式：文件上传区域（Markdown 格式时隐藏） */}
+        {selectedFormat !== 'markdown' && selectedFormat !== 'ppt' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1356,8 +1528,8 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
           </motion.div>
         )}
 
-        {/* 任务列表 */}
-        {tasks.length > 0 && (
+        {/* 任务列表（非 PPT 格式时显示） */}
+        {tasks.length > 0 && selectedFormat !== 'ppt' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1577,9 +1749,9 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
           </ul>
         </motion.div>
 
-        {/* PDF 预览弹窗 */}
+        {/* PDF 预览弹窗（非 PPT 模式时显示，PPT 模式在右侧内联显示） */}
         <AnimatePresence>
-          {showPdfPreview && (
+          {showPdfPreview && selectedFormat !== 'ppt' && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -1651,13 +1823,20 @@ const loadPdfJs = async (): Promise<any> => pdfjsLib;
 
                   {/* 下载按钮 */}
                   {previewTask && (
-                    <button
-                      onClick={() => downloadFile(previewTask)}
-                      className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                    >
-                      <Download className="w-4 h-4" />
-                      下载
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <a href={previewTask.resultUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                        新窗口
+                      </a>
+                      <button
+                        onClick={() => downloadFile(previewTask)}
+                        className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        下载
+                      </button>
+                    </div>
                   )}
                 </div>
 

@@ -34,6 +34,7 @@ import {
   Hash,
   Copy,
   Presentation,
+  ExternalLink,
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -1063,120 +1064,46 @@ const PDFAnalysis: React.FC = () => {
   };
 
   // ============ 渲染 PPT 转 PDF 面板 ============
-  const renderPPTConvertPanel = () => {
+const renderPPTConvertPanel = () => {
     return (
       <div className="lg:col-span-3 space-y-6">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xl font-semibold flex items-center">
               <FileDown className="w-5 h-5 mr-2 text-purple-500" />
-              PPT 转 PDF
+              PPT 转 PDF 转换
             </h3>
           </div>
-
-          <div className="border-2 border-dashed border-purple-300 dark:border-purple-600 rounded-xl p-8 text-center hover:border-purple-500 transition-colors">
-            <input
-              type="file"
-              accept=".pptx,.ppt"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setPptFile(file);
-                }
-              }}
-              className="hidden"
-              id="ppt-file-upload-main"
-            />
-            <label htmlFor="ppt-file-upload-main" className="cursor-pointer">
-              {pptFile ? (
-                <div className="flex flex-col items-center">
-                  <CheckCircle className="w-10 h-10 text-green-500 mb-2" />
-                  <p className="text-sm font-medium">{pptFile.name}</p>
-                  <p className="text-xs text-gray-500 mt-1">点击更换文件</p>
+          {convertedPdfUrl ? (
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium">PDF 预览</h4>
+                <div className="flex items-center gap-2">
+                  <a href={convertedPdfUrl} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                    <ExternalLink size={14} />
+                    新窗口
+                  </a>
+                  <a href={convertedPdfUrl} download
+                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                    <Download size={14} />
+                    下载
+                  </a>
+                  <button onClick={() => setConvertedPdfUrl(null)}
+                    className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                    <X size={16} />
+                  </button>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center">
-                  <FileDown className="w-10 h-10 text-purple-400 mb-2" />
-                  <p className="text-sm text-gray-600 dark:text-gray-400">点击选择 PPT 文件</p>
-                  <p className="text-xs text-gray-400 mt-1">支持 .pptx 格式</p>
-                </div>
-              )}
-            </label>
-          </div>
-
-          <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-            💡 需要安装 <a href="https://www.libreoffice.org/download/download/" target="_blank" className="text-purple-500 hover:underline">LibreOffice</a>
-          </p>
-
-          <button
-            onClick={async () => {
-              if (!pptFile) {
-                toast.error('请先选择 PPT 文件');
-                return;
-              }
-              setIsProcessing(true);
-              try {
-                const formData = new FormData();
-                formData.append('file', pptFile);
-                
-                const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, {
-                  method: 'POST',
-                  body: formData
-                });
-                
-                if (response.ok) {
-                  const blob = await response.blob();
-                  const url = URL.createObjectURL(blob);
-                  setConvertedPdfUrl(url);
-                  
-                  addConversionRecord(pptFile.name, 'pdf', 'completed', pptFile.size, undefined, url);
-                  
-                  // 下载
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = pptFile.name.replace(/\.(pptx?)$/, '.pdf');
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  
-                  toast.success('PDF 转换成功！', {
-                    action: {
-                      label: '在线查看',
-                      onClick: () => window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank')
-                    }
-                  });
-                } else {
-                  const error = await response.json();
-                  addConversionRecord(pptFile.name, 'pdf', 'error', pptFile.size, error.detail || '未知错误');
-                  toast.error(`转换失败: ${error.detail || '未知错误'}`);
-                }
-              } catch (error) {
-                console.error('转换失败:', error);
-                toast.error('转换失败，请安装 LibreOffice');
-              } finally {
-                setIsProcessing(false);
-              }
-            }}
-            disabled={!pptFile || isProcessing}
-            className="w-full mt-6 flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 px-4 rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-          >
-            {isProcessing ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-            <span>{isProcessing ? '转换中...' : '转换为 PDF'}</span>
-          </button>
-
-          {/* 预览已转换的 PDF */}
-          {convertedPdfUrl && (
-            <div className="mt-6">
-              <h4 className="text-sm font-medium mb-2">PDF 预览</h4>
-              <object data={convertedPdfUrl} type="application/pdf" className="w-full h-96 border border-gray-300 dark:border-gray-600 rounded-lg">
-                <embed src={convertedPdfUrl} type="application/pdf" className="w-full h-96" />
+              </div>
+              <object data={convertedPdfUrl} type="application/pdf" className="w-full h-[600px] border border-gray-300 dark:border-gray-600 rounded-lg">
+                <embed src={convertedPdfUrl} type="application/pdf" className="w-full h-full" />
               </object>
-              <button
-                onClick={() => window.open('/pdf-viewer?url=' + encodeURIComponent(convertedPdfUrl), '_blank')}
-                className="mt-2 w-full py-2 text-sm text-purple-600 dark:text-purple-400 hover:underline"
-              >
-                在新窗口打开 →
-              </button>
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <FileDown className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+              <h4 className="text-lg font-medium text-gray-500 dark:text-gray-400 mb-2">暂无预览</h4>
+              <p className="text-sm text-gray-400 dark:text-gray-500">在左侧选择 PPT 文件并转换为 PDF 后，预览将显示在这里</p>
             </div>
           )}
         </div>
@@ -1396,6 +1323,73 @@ const PDFAnalysis: React.FC = () => {
                     </button>
                   )}
                 </div>
+              ) : activeFeature === 'pptConvert' ? (
+                /* PPT 转 PDF - 左侧上传 */
+                <>
+                  <div className="border-2 border-dashed border-purple-300 dark:border-purple-600 rounded-xl p-6 text-center hover:border-purple-500 transition-colors cursor-pointer"
+                    onClick={() => document.getElementById('ppt-file-upload-main')?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && (file.name.endsWith('.ppt') || file.name.endsWith('.pptx'))) {
+                        setPptFile(file);
+                      } else {
+                        toast.error('请选择 PPT 文件');
+                      }
+                    }}
+                  >
+                    <input type="file" accept=".pptx,.ppt" id="ppt-file-upload-main" className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setPptFile(file);
+                      }}
+                    />
+                    {pptFile ? (
+                      <div className="flex flex-col items-center">
+                        <CheckCircle className="w-10 h-10 text-green-500 mb-2" />
+                        <p className="text-sm font-medium">{pptFile.name}</p>
+                        <p className="text-xs text-gray-500 mt-1">点击更换文件</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center">
+                        <Presentation className="w-10 h-10 text-purple-400 mb-2" />
+                        <p className="text-sm text-gray-600 dark:text-gray-400">点击选择 PPT 文件</p>
+                        <p className="text-xs text-gray-400 mt-1">支持 .pptx / .ppt 格式</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3 mt-6">
+                    <button
+                      onClick={async () => {
+                        if (!pptFile) { toast.error('请先选择 PPT 文件'); return; }
+                        setIsProcessing(true);
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', pptFile);
+                          const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, { method: 'POST', body: formData });
+                          if (response.ok) {
+                            const blob = await response.blob();
+                            const url = URL.createObjectURL(blob);
+                            setConvertedPdfUrl(url);
+                            addConversionRecord(pptFile.name, 'pdf', 'completed', pptFile.size, undefined, url);
+                            toast.success('PDF 转换成功！');
+                          } else {
+                            const error = await response.json();
+                            addConversionRecord(pptFile.name, 'pdf', 'error', pptFile.size, error.detail || '未知错误');
+                            toast.error(`转换失败: ${error.detail || '未知错误'}`);
+                          }
+                        } catch { toast.error('转换失败，请安装 LibreOffice'); }
+                        finally { setIsProcessing(false); }
+                      }}
+                      disabled={!pptFile || isProcessing}
+                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileDown className="w-5 h-5 mr-2" />}
+                      {isProcessing ? '转换中...' : '转换为 PDF'}
+                    </button>
+                  </div>
+                </>
               ) : (
                 /* 其他功能 - 文件上传 */
                 <>
@@ -1638,55 +1632,6 @@ const PDFAnalysis: React.FC = () => {
                     >
                       {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileImage className="w-5 h-5 mr-2" />}
                       合并为 PDF
-                    </button>
-                  )}
-
-                  {activeFeature === 'pptConvert' && (
-                    <button
-                      onClick={async () => {
-                        if (!pptFile) {
-                          toast.error('请先选择 PPT 文件');
-                          return;
-                        }
-                        setIsProcessing(true);
-                        try {
-                          const formData = new FormData();
-                          formData.append('file', pptFile);
-                          
-                          const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, {
-                            method: 'POST',
-                            body: formData
-                          });
-                          
-                          if (response.ok) {
-                            const blob = await response.blob();
-                            const url = URL.createObjectURL(blob);
-                            setConvertedPdfUrl(url);
-                            addConversionRecord(pptFile.name, 'pdf', 'completed', pptFile.size, undefined, url);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = pptFile.name.replace(/\.(pptx?)$/, '.pdf');
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            toast.success('PDF 转换成功！');
-                          } else {
-                            const error = await response.json();
-                            addConversionRecord(pptFile.name, 'pdf', 'error', pptFile.size, error.detail || '未知错误');
-                            toast.error(`转换失败: ${error.detail || '未知错误'}`);
-                          }
-                        } catch (error) {
-                          console.error('转换失败:', error);
-                          toast.error('转换失败，请安装 LibreOffice');
-                        } finally {
-                          setIsProcessing(false);
-                        }
-                      }}
-                      disabled={!pptFile || isProcessing}
-                      className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    >
-                      {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <FileDown className="w-5 h-5 mr-2" />}
-                      转换为 PDF
                     </button>
                   )}
 
@@ -1956,7 +1901,7 @@ const PDFAnalysis: React.FC = () => {
               )}
 
               {/* Empty State */}
-              {!isProcessing && !analysisResult && generatedCards.length === 0 && activeFeature !== 'convertWord' && activeFeature !== 'convertExcel' && activeFeature !== 'history' && (
+              {!isProcessing && !analysisResult && generatedCards.length === 0 && activeFeature !== 'convertWord' && activeFeature !== 'convertExcel' && activeFeature !== 'history' && activeFeature !== 'pptConvert' && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 border border-gray-200 dark:border-gray-700 text-center">
                   {activeFeature === 'merge' ? (
                     <>
@@ -1981,12 +1926,6 @@ const PDFAnalysis: React.FC = () => {
                       <Layers className="w-16 h-16 mx-auto text-purple-500 mb-4" />
                       <h3 className="text-lg font-semibold mb-2">四色知识卡片</h3>
                       <p className="text-gray-600 dark:text-gray-400">上传 PDF 文件，AI 自动生成蓝/绿/黄/红四色知识卡片</p>
-                    </>
-                  ) : activeFeature === 'pptConvert' ? (
-                    <>
-                      <FileDown className="w-16 h-16 mx-auto text-purple-500 mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">PPT 转 PDF</h3>
-                      <p className="text-gray-600 dark:text-gray-400">将 PowerPoint 演示文稿转换为 PDF</p>
                     </>
                   ) : (
                     <>

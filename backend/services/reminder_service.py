@@ -1,19 +1,66 @@
 """
 任务提醒服务
 使用 APScheduler 定时检查并触发提醒
+声音：晓晓女声语音播报（与聊天机器人同音色）
 """
 
 import sqlite3
 import logging
+import asyncio
+import threading
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
 
 from paths import DB_PATH
 
 logger = logging.getLogger(__name__)
 
+# 与聊天机器人相同的语音设置
+REMINDER_TTS_VOICE = "zh-CN-XiaoxiaoNeural"  # 晓晓女声
+
+
+async def _generate_reminder_audio(text: str) -> Optional[str]:
+    """生成提醒语音音频文件（使用 edge-tts，与聊天机器人同音色）"""
+    try:
+        from edge_tts import Communicate
+    except ImportError:
+        logger.warning("[Reminder] edge-tts 未安装，无法生成语音提醒")
+        return None
+
+    try:
+        temp_dir = Path(__file__).parent.parent.parent / "data" / "reminder_audio"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"reminder_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.mp3"
+        output_path = str(temp_dir / filename)
+        
+        communicate = Communicate(text, REMINDER_TTS_VOICE)
+        await communicate.save(output_path)
+        logger.info(f"[Reminder] 生成提醒语音: {output_path}")
+        return output_path
+    except Exception as e:
+        logger.warning(f"[Reminder] 生成语音失败: {e}")
+        return None
+
+
+def _play_audio_file(audio_path: str):
+    """播放音频文件（使用 Windows Media Player）"""
+    try:
+        import subprocess
+        subprocess.Popen(
+            ["wmplayer.exe", audio_path],
+            shell=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        logger.info(f"[Reminder] 已启动播放器: {audio_path}")
+    except Exception as e:
+        logger.warning(f"[Reminder] 音频播放失败: {e}")
+
 
 def send_windows_notification(title: str, message: str):
-    """发送 Windows Toast 通知（带系统提示音）"""
+    """发送 Windows Toast 通知"""
     try:
         from win10toast_click import ToastNotifier
         
@@ -28,16 +75,17 @@ def send_windows_notification(title: str, message: str):
         
         thread = threading.Thread(target=show_toast, daemon=True)
         thread.start()
-        logger.info(f"已发送 Windows 通知: {title}")
+        
+        logger.info(f"[Reminder] 已发送 Windows 通知: {title}")
     except Exception as e:
-        logger.warning(f"无法发送 Windows 通知: {e}")
+        logger.warning(f"[Reminder] 无法发送 Windows 通知: {e}")
 
 
 class ReminderService:
     def __init__(self):
         self.scheduler = None
         self.sent_reminders = set()  # 已发送的提醒 (task_id + remind_time)
-        self._check_interval_minutes = 1440  # 每天检查一次 (1440分钟 = 24小时)
+        self._check_interval_minutes = 1  # 每分钟检查一次
         self._load_sent_reminders()  # 从数据库加载已发送的提醒
     
     def start(self):
@@ -48,13 +96,13 @@ class ReminderService:
             
             self.scheduler = AsyncIOScheduler()
             
-            # 每天检查一次（而不是每分钟）
+            # 每分钟检查一次
             self.scheduler.add_job(
                 self.check_reminders,
                 trigger=IntervalTrigger(minutes=self._check_interval_minutes),
                 id='check_reminders',
                 replace_existing=True,
-                max_instances=1,  # 防止重复执行
+                max_instances=1,
             )
             
             self.scheduler.start()
@@ -69,6 +117,17 @@ class ReminderService:
         if self.scheduler:
             self.scheduler.shutdown()
             logger.info("[Reminder] 提醒服务已停止")
+    
+    def _normalize_time(self, time_str: str) -> str:
+        """标准化时间字符串到分钟精度（YYYY-MM-DD HH:MM 格式）"""
+        if not time_str:
+            return ""
+        # 去掉秒和更精确的部分
+        # 支持格式: "2026-06-04 14:00:00", "2026-06-04 14:00", "2026-06-04T14:00:00"
+        time_str = time_str.replace("T", " ")
+        if len(time_str) > 16:
+            time_str = time_str[:16]
+        return time_str
     
     def _load_sent_reminders(self):
         """从数据库加载已发送的提醒记录"""
@@ -87,7 +146,9 @@ class ReminderService:
             cursor.execute("SELECT task_id, remind_time FROM sent_reminders")
             rows = cursor.fetchall()
             for row in rows:
-                reminder_key = f"{row[0]}_{row[1][:16]}"
+                # 标准化加载的时间
+                remind_time = self._normalize_time(row[1])
+                reminder_key = f"{row[0]}_{remind_time}"
                 self.sent_reminders.add(reminder_key)
             conn.close()
             logger.info(f"[Reminder] 已从数据库加载 {len(self.sent_reminders)} 条已发送提醒记录")
@@ -98,8 +159,7 @@ class ReminderService:
         """保存已发送的提醒到数据库"""
         try:
             # 标准化 remind_time 到分钟精度
-            if len(remind_time) > 16:
-                remind_time = remind_time[:16]
+            remind_time = self._normalize_time(remind_time)
             
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
@@ -120,8 +180,7 @@ class ReminderService:
             cursor = conn.cursor()
             
             now = datetime.now()
-            # 查找当前时间之前1分钟到未来5分钟内的提醒
-            # 这样可以捕获所有应该触发的提醒，而不仅仅是狭窄窗口内的
+            # 只查询未来 5 分钟内的提醒（不包括已过期的）
             check_window = now + timedelta(minutes=5)
             
             cursor.execute("""
@@ -132,7 +191,7 @@ class ReminderService:
                   AND is_completed = 0
                   AND remind_at IS NOT NULL
                   AND DATETIME(remind_at) <= DATETIME(?)
-                  AND DATETIME(remind_at) >= DATETIME(?, '-1 minute')
+                  AND DATETIME(remind_at) >= DATETIME(?)
             """, (check_window.isoformat(), now.isoformat()))
             
             tasks = cursor.fetchall()
@@ -140,11 +199,8 @@ class ReminderService:
             
             for task in tasks:
                 task_id = task["id"]
-                # 标准化 remind_at 到分钟精度，避免格式不一致导致重复提醒
-                remind_at = task["remind_at"]
-                if len(remind_at) > 16:
-                    remind_at = remind_at[:16]  # 去掉秒和更精确的时间
-                remind_time = remind_at
+                # 标准化 remind_at 到分钟精度
+                remind_time = self._normalize_time(task["remind_at"])
                 reminder_key = f"{task_id}_{remind_time}"
                 
                 # 避免重复发送
@@ -164,25 +220,13 @@ class ReminderService:
             if found_count > 0:
                 logger.info(f"[Reminder] 本次检查发送了 {found_count} 个提醒")
             
-            # 防止内存泄漏 - 清理过期的已发送记录（保留最近7天的）
-            if len(self.sent_reminders) > 10000:
-                try:
-                    cursor.execute("""
-                        DELETE FROM sent_reminders
-                        WHERE sent_at < datetime('now', '-7 days')
-                    """)
-                    conn.commit()
-                    logger.info("[Reminder] 已清理7天前的已发送提醒记录")
-                except Exception as e:
-                    logger.warning(f"[Reminder] 清理过期提醒记录失败: {e}")
-                    
         except Exception as e:
             logger.error(f"[Reminder] 检查提醒失败: {e}")
         finally:
             conn.close()
     
     def send_reminder(self, task: dict):
-        """发送提醒通知"""
+        """发送提醒通知（含语音播报，与聊天机器人同音色）"""
         title = f"📅 任务提醒: {task['title']}"
         message = f"到期时间: {task.get('due_date', '未设置')}"
         if task.get('description'):
@@ -191,8 +235,16 @@ class ReminderService:
         
         logger.info(f"[Reminder] 提醒: {task['title']} (到期: {task['due_date']})")
         
-        # 发送 Windows 通知（带系统提示音）
+        # 发送 Windows 通知
         send_windows_notification(title, message)
+        
+        # 语音播报（与聊天机器人同音色：晓晓女声）
+        reminder_text = f"任务提醒：{task['title']}。{message}"
+        threading.Thread(
+            target=self._play_reminder_audio,
+            args=(reminder_text,),
+            daemon=True
+        ).start()
         
         # 记录到数据库
         try:
@@ -215,6 +267,15 @@ class ReminderService:
             conn.close()
         except Exception as e:
             logger.error(f"[Reminder] 记录提醒日志失败: {e}")
+    
+    def _play_reminder_audio(self, text: str):
+        """播放提醒语音（在后台线程中执行）"""
+        try:
+            audio_path = asyncio.run(_generate_reminder_audio(text))
+            if audio_path:
+                _play_audio_file(audio_path)
+        except Exception as e:
+            logger.warning(f"[Reminder] 语音提醒播放失败: {e}")
     
     def get_pending_reminders(self):
         """获取待提醒的任务（用于调试）"""

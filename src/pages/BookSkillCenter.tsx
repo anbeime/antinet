@@ -498,7 +498,7 @@ loadTopicBooks();
                       清空
                     </button>
                   )}
-                  <a href="/pdf-viewer" target="_blank" className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1">
+                  <a href="/pdf-viewer?notes=true" target="_blank" className="text-xs text-blue-500 hover:text-blue-600 flex items-center gap-1">
                     去标注 PDF →
                   </a>
                 </div>
@@ -509,7 +509,7 @@ loadTopicBooks();
                 <div className="text-center py-4 text-xs text-gray-400 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
                   <p>笔记队列空着</p>
                   <p className="mt-1">在 PDF 预览页面勾选卡片 → 添加到笔记</p>
-                  <a href="/pdf-viewer" target="_blank" className="inline-block mt-2 px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600">
+                  <a href="/pdf-viewer?notes=true" target="_blank" className="inline-block mt-2 px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600">
                     去添加笔记
                   </a>
                 </div>

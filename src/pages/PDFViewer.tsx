@@ -297,6 +297,12 @@ const PDFViewer: React.FC = () => {
     ? cards.filter(c => (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic))
     : cards;
 
+  const filteredCards = topicFilteredCards.filter((c: any) => {
+    if (!cardFilter) return true;
+    const q = cardFilter.toLowerCase();
+    return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
+  });
+
   // 来自笔记时，确保每张卡片都有有效的 ID
   const cardsWithIds = cards.map(c => ({
     ...c,
