@@ -112,13 +112,9 @@ const PDFAnalysis: React.FC = () => {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'ocr'>('extract');
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
-  const [ocrEnabled, setOcrEnabled] = useState(false);
-  const [ocrPresets, setOcrPresets] = useState<{ id: string; name: string; description: string }[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState<string>('general');
-  const [ocrResult, setOcrResult] = useState<string | null>(null);
   const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -454,38 +450,6 @@ const PDFAnalysis: React.FC = () => {
       setSelectedCards(new Set(generatedCards.map(c => c.id)));
     }
   };
-
-  // ============ OCR识别 ============
-  const ocrFileInputRef = useRef<HTMLInputElement>(null);
-  const [ocrFile, setOcrFile] = useState<File | null>(null);
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
-
-  const handleOcrExtract = async () => {
-    if (!ocrFile) { toast.error('请先选择图片'); return; }
-    setIsOcrProcessing(true);
-    setOcrResult(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', ocrFile);
-      formData.append('preset', selectedPreset);
-      const resp = await fetch(`${API_BASE}/api/ocr/extract/text`, { method: 'POST', body: formData });
-      if (!resp.ok) throw new Error(`OCR失败: ${resp.status}`);
-      const data = await resp.json();
-      setOcrResult(data.text || '(未识别到文字)');
-      toast.success('OCR识别完成');
-    } catch (e: any) {
-      toast.error(e.message || 'OCR识别失败');
-    } finally {
-      setIsOcrProcessing(false);
-    }
-  };
-
-  // 加载OCR预设模板
-  React.useEffect(() => {
-    fetch(`${API_BASE}/api/ocr/presets`).then(r => r.json()).then(data => {
-      if (data.presets) setOcrPresets(data.presets);
-    }).catch(() => {});
-  }, []);
 
   // PDF 合并
   const handleMergePDF = async () => {
@@ -886,17 +850,6 @@ const PDFAnalysis: React.FC = () => {
       inactiveBorder: 'border-blue-200 dark:border-blue-800',
       inactiveText: 'text-blue-600 dark:text-blue-400',
       hoverBg: 'hover:bg-blue-100 dark:hover:bg-blue-900/30',
-    },
-    {
-      id: 'ocr' as const,
-      name: 'OCR识别',
-      icon: <FileText size={20} />,
-      description: 'AI图片文字识别（支持发票等预设模板）',
-      color: 'from-teal-500 to-emerald-500',
-      inactiveBg: 'bg-teal-50 dark:bg-teal-900/20',
-      inactiveBorder: 'border-teal-200 dark:border-teal-800',
-      inactiveText: 'text-teal-600 dark:text-teal-400',
-      hoverBg: 'hover:bg-teal-100 dark:hover:bg-teal-900/30',
     },
     {
       id: 'generate' as const,

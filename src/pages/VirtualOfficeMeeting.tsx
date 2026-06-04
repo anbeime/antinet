@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -17,13 +17,19 @@ import {
   Calendar,
   Clock,
   FileText,
-  X
+  X,
+  Library,
+  Loader,
+  Book,
+  ChevronRight,
+  Search
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import MeetingCardPanel from '@/components/MeetingCardPanel';
 import MeetingCardSaveModal from '@/components/MeetingCardSaveModal';
 import type { MeetingCard } from '@/types/card';
+import { researchProjectService } from '@/services/dataService';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
@@ -122,24 +128,6 @@ const generateMockDiscussion = (_topic: string, rounds: number) => {
 // ==================== 后端 API 配置 ====================
 // 开发环境走 Vite 代理，生产环境直连后端
 const BACKEND_URL = import.meta.env.DEV ? '/api/meeting' : `${getApiBaseUrl()}/api/meeting`;
-
-// WebSocket 配置 - 开发环境通过 Vite 代理，生产环境直连
-const getCollabWsUrl = (userId: string) => {
-  const params = new URLSearchParams();
-  const collabUserName = localStorage.getItem('collabUserName') || '';
-  const userAvatar = localStorage.getItem('collabAvatar') || '';
-  if (collabUserName) params.set('nickname', collabUserName);
-  if (userAvatar) params.set('avatar', userAvatar);
-  
-  if (import.meta.env.DEV) {
-    // 开发环境：通过 Vite 代理（ws 代理会重写路径）
-    return `ws://${window.location.host}/ws/collaboration/${userId}?${params.toString()}`;
-  } else {
-    // 生产环境：直连后端 WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.hostname}:8000/api/ws/collaboration/${userId}?${params.toString()}`;
-  }
-};
 
 // ==================== 像素办公室 Canvas 组件 ====================
 const PixelOfficeCanvas: React.FC<{
@@ -340,7 +328,7 @@ const PixelOfficeCanvas: React.FC<{
 };
 
 // ==================== 主页面组件 ====================
-const VirtualOfficeMeeting: React.FC = () => {
+const VirtualOfficeMeeting: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
@@ -354,57 +342,117 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history' | 'tasks'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
   const [agentList, setAgentList] = useState<any[]>(() =>
     Object.entries(PIXEL_AGENTS).map(([id, a]) => ({ id, ...a, state: 'idle' }))
   );
-  const [taskList, setTaskList] = useState<any[]>([]);
   const [hybridMode, setHybridMode] = useState(true);
   const [meetingCards, setMeetingCards] = useState<MeetingCard[]>([]);  // 会议中积累的知识卡片
   const [saveModalOpen, setSaveModalOpen] = useState(false);              // 卡片保存弹窗
   const [saveTargetCard, setSaveTargetCard] = useState<MeetingCard | null>(null);  // 待保存的卡片
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
-  const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
-  const [collabStatus, setCollabStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [collabUserName, setCollabUserName] = useState(() => {
-    try {
-      const user = JSON.parse(localStorage.getItem('zhiyi_user') || '{}');
-      return user.name || localStorage.getItem('collabUserName') || '参与者';
-    } catch {
-      return localStorage.getItem('collabUserName') || '参与者';
-    }
-  });
-  const collabWsRef = useRef<WebSocket | null>(null);
-  const collabUserId = useRef('meeting_' + Date.now());
 
   // 简化视图模式
   const [simplifiedView, setSimplifiedView] = useState(false);
+
+  // ===== 背景资料专题选择 =====
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicObj, setSelectedTopicObj] = useState<any>(null);
+  const [booksInTopic, setBooksInTopic] = useState<any[]>([]);
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [topicSearchText, setTopicSearchText] = useState('');
+
+  // 计算选中专题的名称（用于显示）
+  const selectedTopic = selectedTopicObj?.name || '';
+
+  // 加载专题列表
+  useEffect(() => {
+    const loadTopics = async () => {
+      setLoadingTopics(true);
+      try {
+        const data = await researchProjectService.getAll();
+        setTopics(data || []);
+      } catch { /* ignore */ }
+      setLoadingTopics(false);
+    };
+    loadTopics();
+  }, []);
+
+  // 当选择专题时，加载该专题下的卡片
+  useEffect(() => {
+    const loadTopicBooks = async () => {
+      if (!selectedTopicObj?.id) {
+        setBooksInTopic([]);
+        return;
+      }
+      console.log('[VirtualOffice] 加载专题卡片:', selectedTopicObj.name, 'id:', selectedTopicObj.id);
+      try {
+        // 直接使用 fetch 调用 API，参考 BookSkillCenter 的实现
+        const res = await fetch(`/api/research/projects/${selectedTopicObj.id}/cards`);
+        console.log('[VirtualOffice] API响应状态:', res.status);
+        if (res.ok) {
+          const cards = await res.json();
+          console.log('[VirtualOffice] 获取到卡片数量:', cards?.length || 0);
+          
+          // 按书籍/来源分组
+          const bookMap = new Map<string, any[]>();
+          (cards || []).forEach((c: any) => {
+            const bookKey = c.book_name || c.source || c.category || '默认';
+            if (!bookMap.has(bookKey)) {
+              bookMap.set(bookKey, []);
+            }
+            bookMap.get(bookKey)!.push(c);
+          });
+          
+          const books = Array.from(bookMap.entries()).map(([name, cardList]) => ({
+            name,
+            count: cardList.length,
+            cards: cardList
+          }));
+          console.log('[VirtualOffice] 分组后的书籍数量:', books.length);
+          setBooksInTopic(books);
+        } else {
+          console.error('[VirtualOffice] 获取卡片失败:', res.status);
+          toast.error(`获取卡片失败: ${res.status}`);
+          setBooksInTopic([]);
+        }
+      } catch (err) {
+        console.error('[VirtualOffice] 加载专题卡片失败:', err);
+        toast.error('加载专题卡片失败');
+        setBooksInTopic([]);
+      }
+    };
+    loadTopicBooks();
+  }, [selectedTopicObj]);
+
+  // 将卡片内容添加到背景资料
+  const appendCardToContext = useCallback((card: any) => {
+    const cardText = `\n\n【${card.title || '无标题'}】\n${card.content || ''}`;
+    setContext(prev => prev + cardText);
+    toast.success('已添加卡片到背景资料');
+  }, []);
+
+  // 将整本书的卡片添加到背景资料
+  const appendBookToContext = useCallback((book: any) => {
+    const combinedContent = book.cards.map((c: any) => 
+      `【${c.title || '无标题'}】\n${c.content || ''}`
+    ).join('\n\n---\n\n');
+    setContext(prev => prev + '\n\n' + combinedContent);
+    toast.success(`已添加 ${book.count} 张卡片到背景资料`);
+  }, []);
 
   // 发送人类消息（混合模式）
   const sendHumanMessage = async (msg: string) => {
     // 本地显示人类消息
     setLiveDiscussions(prev => [...prev, {
       type: 'speech',
-      agent: { name: collabUserName, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
+      agent: { name: '参与者', title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
       message: msg,
       timestamp: new Date().toISOString()
     }]);
-    
-    // 发送 WebSocket 广播给其他用户
-    if (collabWsRef.current?.readyState === WebSocket.OPEN) {
-      collabWsRef.current.send(JSON.stringify({
-        type: 'send_activity',
-        user: collabUserName,
-        userId: collabUserId.current,
-        avatar: '👤',
-        action: '发言',
-        content: msg,
-        meetingContext: { topic, currentRound: liveDiscussions.filter(d => d.round).length }
-      }));
-    }
     
     // 如果开启混合模式，调用后端混合查询（知识卡片 + LLM）
     if (hybridMode && isLoading) {
@@ -583,22 +631,6 @@ useEffect(() => {
       fetchMeetingHistory();
       // 获取讨论模式
       fetch(`${BACKEND_URL}/modes`).then(r => r.json()).then(d => setMeetingModes(d.modes || [])).catch(console.error);
-    } else if (activeTab === 'tasks') {
-      fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
-      // 同时加载协作历史消息（REST 回退）
-      const collabHost = import.meta.env.DEV ? 'localhost:8000' : window.location.host;
-      fetch(`http://${collabHost}/api/activities?limit=30`)
-        .then(r => r.json())
-        .then(activities => {
-          if (Array.isArray(activities) && activities.length > 0) {
-            setCollabMessages(activities.map((a: any) => ({
-              user: a.user || '未知',
-              content: a.content || '',
-              self: a.userId === collabUserId.current,
-            })));
-          }
-        })
-        .catch(() => {}); // WS 连接后会通过 history 消息补全，静默失败
     }
   }, [activeTab]);
 
@@ -1058,147 +1090,8 @@ useEffect(() => {
     };
 }, []);
 
-  // 协作聊天 WebSocket 连接（带心跳保活）
-  useEffect(() => {
-    const userId = collabUserId.current;
-    const wsUrl = getCollabWsUrl(userId);
-    
-    console.log('[Collab] 连接 WebSocket:', wsUrl);
-    setCollabStatus('connecting');
-    
-    const ws = new WebSocket(wsUrl);
-    collabWsRef.current = ws;
-    
-    // 心跳定时器
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    
-    const startHeartbeat = () => {
-      // 每 25 秒发送一次 ping（略小于服务器 30 秒间隔，确保安全）
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({
-              type: 'ping',
-              timestamp: new Date().toISOString(),
-              client: 'zhiyi-web'
-            }));
-            console.log('[Collab] 发送心跳 ping');
-          } catch (e) {
-            console.error('[Collab] 发送心跳失败:', e);
-          }
-        }
-      }, 25000);
-    };
-    
-    ws.onopen = () => {
-      console.log('[Collab] WebSocket 已连接');
-      setCollabStatus('connected');
-      startHeartbeat();
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        
-        // 处理心跳响应
-        if (msg.type === 'pong') {
-          console.log('[Collab] 收到心跳 pong');
-          return;
-        }
-        
-        // 处理服务器 ping（服务器主动发送的心跳检测）
-        if (msg.type === 'ping') {
-          console.log('[Collab] 收到服务器 ping，回复 pong');
-          try {
-            ws.send(JSON.stringify({
-              type: 'pong',
-              timestamp: new Date().toISOString(),
-              client: 'zhiyi-web'
-            }));
-          } catch (e) {
-            console.error('[Collab] 回复 pong 失败:', e);
-          }
-          return;
-        }
-        
-        if (msg.type === 'new_activity' && msg.activity) {
-          const isSelf = msg.activity.userId === userId;
-          setCollabMessages(prev => [...prev, {
-            user: msg.activity.user || '未知',
-            content: msg.activity.content || '',
-            self: isSelf
-          }]);
-          if (isLoading && msg.activity.action === '发言') {
-            setLiveDiscussions(prev => [...prev, {
-              type: 'speech',
-              agent: { name: msg.activity.user, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
-              message: msg.activity.content,
-              timestamp: new Date().toISOString()
-            }]);
-          }
-        } else if (msg.type === 'history' && msg.activities) {
-          console.log(`[Collab] 收到历史数据: ${msg.activities.length} 条活动`);
-          if (msg.activities.length > 0) {
-            setCollabMessages(msg.activities.map((a: any) => ({
-              user: a.user || '未知',
-              content: a.content || '',
-              self: a.userId === userId,
-            })));
-          }
-        }
-      } catch (e) {
-        console.error('[Collab] 解析消息失败:', e);
-      }
-    };
-    
-    ws.onclose = () => {
-      console.log('[Collab] WebSocket 断开');
-      setCollabStatus('disconnected');
-      
-      // 清理定时器
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-      
-      // 自动重连（指数退避）
-      if (!reconnectTimeout) {
-        const attempt = collabStatus === 'connecting' ? 1 : 2;
-        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-        reconnectTimeout = setTimeout(() => {
-          reconnectTimeout = null;
-          console.log('[Collab] 尝试自动重连...');
-          // 触发重新连接（通过重新执行 effect）
-          window.dispatchEvent(new CustomEvent('collab-reconnect'));
-        }, delay);
-      }
-    };
-    
-    ws.onerror = (e) => {
-      console.error('[Collab] WebSocket 错误:', e);
-    };
-    
-    // 监听重连事件
-    const handleReconnect = () => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        console.log('[Collab] 收到重连指令');
-        // 重新执行整个 effect
-        // 这里通过更新状态触发重新渲染
-        setCollabStatus(prev => prev === 'disconnected' ? 'connecting' : prev);
-      }
-    };
-    
-    window.addEventListener('collab-reconnect', handleReconnect);
-    
-    return () => {
-      window.removeEventListener('collab-reconnect', handleReconnect);
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      ws.close();
-      collabWsRef.current = null;
-    };
-  }, [collabStatus]); // 依赖 collabStatus，断开时重新连接
-
   return (
-    <div className="min-h-screen overflow-x-auto" style={{ background: '#121826' }}>
+    <div className={`${embedded ? 'h-full' : 'min-h-screen'} overflow-x-auto`} style={{ background: '#121826' }}>
       {/* ==================== 页面标题区 ==================== */}
       <div className="px-3 md:px-6 py-3 md:py-5 border-b border-gray-800">
         <div className="flex items-center gap-3 flex-wrap">
@@ -1249,13 +1142,135 @@ useEffect(() => {
                 />
               </div>
 
-              {/* 背景资料 */}
+              {/* 背景资料 - 专题/卡片选择 */}
               <div>
-                <label className="block text-sm text-gray-300 mb-1.5">背景资料</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm text-gray-300">背景资料</label>
+                  <div className="flex items-center gap-2">
+                    {loadingTopics && <Loader size={12} className="animate-spin text-purple-400" />}
+                    <span className="text-xs text-purple-400">{selectedTopic ? `已选专题: ${selectedTopic}` : '选择专题添加卡片'}</span>
+                  </div>
+                </div>
+                
+                {/* 专题选择下拉框 */}
+                <div className="mb-2">
+                  <div className="relative">
+                    <Library size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" />
+                    <select
+                      value={selectedTopic}
+                      onChange={(e) => {
+                        const topicName = e.target.value;
+                        const topic = topics.find((t: any) => t.name === topicName);
+                        setSelectedTopicObj(topic || null);
+                      }}
+                      className="w-full pl-8 pr-3 py-2 rounded-lg text-sm text-white border border-gray-600/50 focus:border-purple-500 focus:outline-none transition-colors appearance-none"
+                      style={{ background: '#0f1729' }}
+                    >
+                      <option value="" className="text-gray-500">-- 选择专题 --</option>
+                      {topics.map((t: any) => (
+                        <option key={t.id} value={t.name} className="text-white">{t.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 专题卡片预览 */}
+                {selectedTopic && (
+                  <div className="mb-2 p-3 rounded-lg border border-purple-700/30" style={{ background: '#0f1729', maxHeight: '200px', overflowY: 'auto' }}>
+                    {/* 搜索过滤 - 放在卡片预览内部顶部 */}
+                    {booksInTopic.length > 0 && (
+                      <div className="mb-2 relative">
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          value={topicSearchText}
+                          onChange={(e) => setTopicSearchText(e.target.value)}
+                          placeholder="搜索卡片..."
+                          className="w-full pl-7 pr-3 py-1.5 rounded text-xs text-white placeholder-gray-500 border border-gray-600/30 focus:border-purple-500 focus:outline-none"
+                          style={{ background: '#0f1729' }}
+                        />
+                      </div>
+                    )}
+                    {booksInTopic.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500 text-xs">
+                        该专题暂无卡片
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* 根据搜索文本过滤卡片 */}
+                        {(() => {
+                          const filteredBooks = topicSearchText.trim()
+                            ? booksInTopic.map(book => ({
+                                ...book,
+                                cards: book.cards.filter((c: any) =>
+                                  c.title?.toLowerCase().includes(topicSearchText.toLowerCase()) ||
+                                  c.content?.toLowerCase().includes(topicSearchText.toLowerCase())
+                                )
+                              })).filter(book => book.cards.length > 0)
+                            : booksInTopic;
+                          
+                          if (filteredBooks.length === 0 && topicSearchText.trim()) {
+                            return (
+                              <div className="text-center py-4 text-gray-500 text-xs">
+                                未找到匹配的卡片
+                              </div>
+                            );
+                          }
+                          
+                          return filteredBooks.map((book: any, bi: number) => (
+                            <div key={bi} className="space-y-1.5">
+                              {/* 书籍标题 - 可点击添加 */}
+                              <button
+                                onClick={() => appendBookToContext(book)}
+                                className="w-full text-left p-2 bg-gradient-to-r from-yellow-900/30 to-orange-900/30 rounded-lg border border-yellow-700/30 hover:from-yellow-900/50 hover:to-orange-900/50 transition-colors"
+                                title="点击添加所有卡片到背景资料"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Book size={12} className="text-yellow-500" />
+                                    <span className="text-yellow-300 text-xs font-medium">{book.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-yellow-500 text-[10px]">{book.cards.length} 张</span>
+                                    <ChevronRight size={10} className="text-yellow-500" />
+                                  </div>
+                                </div>
+                              </button>
+                              
+                              {/* 卡片列表 */}
+                              <div className="pl-3 space-y-1">
+                                {book.cards.map((c: any, ci: number) => {
+                                  const colorClass = c.card_type === 'blue' ? 'border-l-blue-400 bg-blue-900/20' :
+                                                     c.card_type === 'green' ? 'border-l-green-400 bg-green-900/20' :
+                                                     c.card_type === 'red' ? 'border-l-red-400 bg-red-900/20' :
+                                                     'border-l-yellow-400 bg-yellow-900/20';
+                                  return (
+                                    <button
+                                      key={ci}
+                                      onClick={() => appendCardToContext(c)}
+                                      className={`w-full text-left p-2 rounded border border-l-4 cursor-pointer hover:opacity-80 ${colorClass}`}
+                                      title="点击添加此卡片到背景资料"
+                                    >
+                                      <p className="text-white text-xs font-medium truncate">{c.title}</p>
+                                      <p className="text-gray-400 text-[10px] line-clamp-1 mt-0.5">{c.content}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 背景资料文本框 */}
                 <textarea
                   value={context}
                   onChange={e => setContext(e.target.value)}
-                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题..."
+                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题...&#10;从上方专题选择卡片自动填充，或手动输入"
                   rows={4}
                   className="w-full px-3 py-2.5 rounded-lg text-sm text-white placeholder-gray-500 border border-gray-600/50 focus:border-blue-500 focus:outline-none transition-colors resize-none"
                   style={{ background: '#0f1729' }}
@@ -1471,15 +1486,6 @@ useEffect(() => {
               <History className="w-4 h-4" />
               历史会议
             </button>
-            <button
-              onClick={() => setActiveTab('tasks')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              团队协作
-            </button>
           </div>
 
           {activeTab === 'history' && (
@@ -1557,130 +1563,6 @@ useEffect(() => {
                     </div>
                   ))
                 )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'tasks' && (
-            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', minHeight: '0', flex: '1 1 0' }}>
-              {/* 任务列表区 */}
-              <div className="px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-gray-400" />
-                  <span className="text-white font-medium text-sm">团队协作</span>
-                  <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个任务</span>
-                </div>
-              </div>
-              <div className="p-4 space-y-3 overflow-y-auto flex-shrink-0" style={{ maxHeight: '220px', scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
-                {taskList.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-4">暂无协作任务</div>
-                ) : (
-                  taskList.map((task: any) => (
-                    <div key={task.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="text-white font-medium">{task.title}</div>
-                        <span className={`px-2 py-0.5 rounded text-xs ${
-                          task.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                          task.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-gray-500/20 text-gray-400'
-                        }`}>
-                          {task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待处理'}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-gray-400 text-sm">{task.description}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {/* 实时讨论区 —— 沉底，占满剩余空间 */}
-              <div className="border-t border-gray-700/50 flex flex-col flex-1 min-h-0" style={{ marginTop: 'auto' }}>
-                {/* 讨论头部 */}
-                <div className="px-4 py-2.5 flex items-center gap-2 flex-shrink-0">
-                  <Users className="w-4 h-4 text-blue-400" />
-                  <span className="text-gray-300 text-sm font-medium">实时讨论</span>
-                  <input
-                    id="collab-username"
-                    type="text"
-                    placeholder="你的名字"
-                    value={collabUserName}
-                    onChange={(e) => {
-                      setCollabUserName(e.target.value);
-                      localStorage.setItem('collabUserName', e.target.value);
-                    }}
-                    className="ml-2 w-24 bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
-                  />
-                  <span className={`ml-auto text-xs ${
-                    collabStatus === 'connected' ? 'text-green-400' :
-                    collabStatus === 'connecting' ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                    {collabStatus === 'connected' ? '✓ 已连接' :
-                     collabStatus === 'connecting' ? '连接中...' : '✗ 断开'}
-                  </span>
-                </div>
-                {/* 消息列表 —— 自动填充剩余高度 */}
-                <div className="flex-1 overflow-y-auto px-4 space-y-2 text-sm min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
-                  {collabMessages.length === 0 ? (
-                    <div className="text-gray-400 text-xs text-center py-6">
-                      {collabStatus === 'connected' ? '开始聊天吧' : '连接中...'}
-                    </div>
-                  ) : (
-                    collabMessages.map((msg, idx) => (
-                      <div key={idx} className={`p-2 rounded ${msg.self ? 'bg-blue-900/30' : 'bg-gray-800/50'}`}>
-                        <span className={msg.self ? 'text-blue-300 font-bold' : 'text-blue-400'}>
-                          {msg.user}:
-                        </span>
-                        <span className="text-white ml-1">{msg.content}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {/* 输入框 —— 始终在底部 */}
-                <div className="px-4 py-3 flex gap-2 flex-shrink-0 border-t border-gray-700/30">
-                  <input
-                    id="collab-input"
-                    type="text"
-                    placeholder="输入消息... (回车发送)"
-                    className="flex-1 bg-gray-800 text-white text-sm px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && collabWsRef.current) {
-                        const msg = (e.target as HTMLInputElement).value.trim();
-                        if (msg) {
-                          collabWsRef.current.send(JSON.stringify({
-                            type: 'send_activity',
-                            user: collabUserName,
-                            userId: collabUserId.current,
-                            avatar: '👤',
-                            action: '发言',
-                            content: msg
-                          }));
-                          setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
-                          (e.target as HTMLInputElement).value = '';
-                        }
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const input = document.getElementById('collab-input') as HTMLInputElement;
-                      const msg = input?.value.trim();
-                      if (msg && collabWsRef.current) {
-                        collabWsRef.current.send(JSON.stringify({
-                          type: 'send_activity',
-                          user: collabUserName,
-                          userId: collabUserId.current,
-                          avatar: '👤',
-                          action: '发言',
-                          content: msg
-                        }));
-                        setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
-                        input.value = '';
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex-shrink-0"
-                  >
-                    发送
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -1831,7 +1713,7 @@ useEffect(() => {
 {/* 人类发言入口 */}
               <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
                 <span className="text-green-400 text-xs font-medium whitespace-nowrap">
-                  {collabUserName}:
+                  参与者:
                 </span>
                 <input
                   id="meeting-human-input"

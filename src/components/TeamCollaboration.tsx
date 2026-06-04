@@ -25,9 +25,10 @@ import {
   Save,
   Crown,
   Calendar,
-  Brain
+  Monitor
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
+import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import { teamMemberService, activityService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
@@ -170,7 +171,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 // ========== 主组件 ==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('realtime');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'virtual-meeting' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -924,19 +925,27 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <span>Wiki 编辑器</span>
           </div>
         </button>
-        <button
-          onClick={() => setActiveTab('mindmap')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'mindmap'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Brain size={18} className="mr-2" />
-            <span>思维导图</span>
-          </div>
-        </button>
+          <button
+            onClick={() => setActiveTab('virtual-meeting')}
+            className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+              activeTab === 'virtual-meeting'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+                : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+            }`}
+          >
+            <Monitor className="w-4 h-4 inline-block mr-1.5" />
+            虚拟办公室
+          </button>
+          <button
+            onClick={() => setActiveTab('mindmap')}
+            className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+              activeTab === 'mindmap'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+                : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+            }`}
+          >
+            思维导图
+          </button>
       </div>
 
       {/* 内容区域 */}
@@ -1848,15 +1857,20 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-        {/* Wiki编辑器 */}
-        {activeTab === 'wiki-editor' && (
-          <div className="h-[calc(100vh-200px)]">
-            <WikiEditor />
-          </div>
-        )}
-
-        {/* 思维导图 */}
-        {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
+          {/* Wiki编辑器 */}
+          {activeTab === 'wiki-editor' && (
+            <div className="h-[calc(100vh-200px)]">
+              <WikiEditor />
+            </div>
+          )}
+          {/* 虚拟办公室会议 */}
+          {activeTab === 'virtual-meeting' && (
+            <div className="h-[calc(100vh-200px)] overflow-hidden rounded-lg">
+              <VirtualOfficeMeeting />
+            </div>
+          )}
+          {/* 思维导图 */}
+          {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>
 
       {/* 成员编辑弹窗 */}
