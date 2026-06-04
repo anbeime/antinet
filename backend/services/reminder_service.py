@@ -2,11 +2,13 @@
 任务提醒服务 - 修复版
 使用 APScheduler 定时检查并触发提醒
 修复：每分钟检查，查找最近5分钟内的提醒
+新增：使用 edge-tts 语音合成（与聊天机器人同音色：晓晓女声）
 """
 
 import sqlite3
 import logging
 import asyncio
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -14,6 +16,69 @@ from typing import Optional
 from paths import DB_PATH
 
 logger = logging.getLogger(__name__)
+
+# 与聊天机器人相同的语音设置
+REMINDER_TTS_VOICE = "zh-CN-XiaoxiaoNeural"  # 晓晓女声
+REMINDER_TTS_RATE = "+0%"  # 语速
+REMINDER_TTS_VOLUME = "+0%"  # 音量
+
+
+def _play_audio_file(audio_path: str):
+    """播放音频文件（使用 Windows 原生方式，支持 mp3）"""
+    try:
+        # 尝试用 playsound（最简单，支持 mp3）
+        try:
+            from playsound import playsound
+            playsound(audio_path)
+            logger.info(f"[Reminder] 音频播放完成: {audio_path}")
+            return
+        except ImportError:
+            pass
+        
+        # playsound 未安装，尝试用 pygame
+        try:
+            import pygame
+            pygame.mixer.init()
+            pygame.mixer.music.load(audio_path)
+            pygame.mixer.music.play()
+            import time
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.1)
+            logger.info(f"[Reminder] 音频播放完成: {audio_path}")
+            return
+        except ImportError:
+            pass
+        
+        # 最后尝试用 Windows Media Player
+        import subprocess
+        subprocess.Popen(["start", "", audio_path], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        logger.info(f"[Reminder] 已用系统默认播放器打开音频: {audio_path}")
+    except Exception as e:
+        logger.warning(f"[Reminder] 音频播放失败: {e}")
+
+
+async def _generate_reminder_audio(text: str) -> Optional[str]:
+    """生成提醒语音音频文件（使用 edge-tts，与聊天机器人同音色）"""
+    try:
+        from edge_tts import Communicate
+    except ImportError:
+        logger.warning("[Reminder] edge-tts 未安装，无法生成语音提醒")
+        return None
+
+    try:
+        temp_dir = Path(__file__).parent.parent.parent / "data" / "reminder_audio"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"reminder_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+        output_path = str(temp_dir / filename)
+        
+        communicate = Communicate(text, REMINDER_TTS_VOICE)
+        await communicate.save(output_path)
+        logger.info(f"[Reminder] 生成提醒语音: {output_path}")
+        return output_path
+    except Exception as e:
+        logger.warning(f"[Reminder] 生成语音失败: {e}")
+        return None
 
 
 def send_windows_notification(title: str, message: str):
@@ -187,7 +252,7 @@ class ReminderService:
             conn.close()
     
     def send_reminder(self, task: dict):
-        """发送提醒通知"""
+        """发送提醒通知（包含语音播报，与聊天机器人同音色）"""
         title = f"📅 任务提醒: {task['title']}"
         message = f"到期时间: {task.get('due_date', '未设置')}"
         if task.get('description'):
@@ -198,6 +263,14 @@ class ReminderService:
         
         # 发送 Windows 通知
         send_windows_notification(title, message)
+        
+        # 生成并播放语音提醒（与聊天机器人同音色：晓晓女声）
+        reminder_text = f"任务提醒：{task['title']}。{message}"
+        threading.Thread(
+            target=self._play_reminder_audio,
+            args=(reminder_text,),
+            daemon=True
+        ).start()
         
         # 记录到数据库
         try:
@@ -220,6 +293,16 @@ class ReminderService:
             conn.close()
         except Exception as e:
             logger.error(f"[Reminder] 记录提醒日志失败: {e}")
+    
+    def _play_reminder_audio(self, text: str):
+        """播放提醒语音（在后台线程中执行）"""
+        try:
+            # 异步生成音频
+            audio_path = asyncio.run(_generate_reminder_audio(text))
+            if audio_path:
+                _play_audio_file(audio_path)
+        except Exception as e:
+            logger.warning(f"[Reminder] 语音提醒播放失败: {e}")
     
     def get_pending_reminders(self):
         """获取待提醒的任务（用于调试）"""
