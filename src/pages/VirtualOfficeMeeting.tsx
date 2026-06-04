@@ -328,7 +328,7 @@ const PixelOfficeCanvas: React.FC<{
 };
 
 // ==================== 主页面组件 ====================
-const VirtualOfficeMeeting: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+const VirtualOfficeMeeting: React.FC = () => {
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
@@ -431,7 +431,11 @@ const VirtualOfficeMeeting: React.FC<{ embedded?: boolean }> = ({ embedded = fal
   // 将卡片内容添加到背景资料
   const appendCardToContext = useCallback((card: any) => {
     const cardText = `\n\n【${card.title || '无标题'}】\n${card.content || ''}`;
-    setContext(prev => prev + cardText);
+    setContext(prev => {
+      const newContext = prev + cardText;
+      console.log('[VirtualOffice] 添加卡片到背景资料，长度:', newContext.length);
+      return newContext;
+    });
     toast.success('已添加卡片到背景资料');
   }, []);
 
@@ -440,7 +444,11 @@ const VirtualOfficeMeeting: React.FC<{ embedded?: boolean }> = ({ embedded = fal
     const combinedContent = book.cards.map((c: any) => 
       `【${c.title || '无标题'}】\n${c.content || ''}`
     ).join('\n\n---\n\n');
-    setContext(prev => prev + '\n\n' + combinedContent);
+    setContext(prev => {
+      const newContext = prev + '\n\n' + combinedContent;
+      console.log('[VirtualOffice] 添加书籍到背景资料，卡片数:', book.cards.length, '总长度:', newContext.length);
+      return newContext;
+    });
     toast.success(`已添加 ${book.count} 张卡片到背景资料`);
   }, []);
 
@@ -1091,7 +1099,7 @@ useEffect(() => {
 }, []);
 
   return (
-    <div className={`${embedded ? 'h-full' : 'min-h-screen'} overflow-x-auto`} style={{ background: '#121826' }}>
+    <div className="min-h-screen overflow-x-auto" style={{ background: '#121826' }}>
       {/* ==================== 页面标题区 ==================== */}
       <div className="px-3 md:px-6 py-3 md:py-5 border-b border-gray-800">
         <div className="flex items-center gap-3 flex-wrap">

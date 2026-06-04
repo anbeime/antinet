@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Permission } from '@/contexts/authContext';
 import {
@@ -25,10 +25,15 @@ import {
   Save,
   Crown,
   Calendar,
-  Monitor
+  Brain,
+  Library,
+  Bookmark,
+  Paperclip,
+  MessageSquare
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
-import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
+import MeetingCardPanel from './MeetingCardPanel';
+import { collaborationService, collaborationREST } from '../services/collaborationService';
 import { teamMemberService, activityService, projectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
@@ -74,7 +79,7 @@ interface KnowledgeGap {
   id: number;
   area: string;
   gapScore: number;
-  priority: '高' | '中' | '低';
+  priority: '�? | '�? | '�?;
   description?: string;
   suggestions?: string[];
 }
@@ -168,10 +173,10 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
   );
 };
 
-// ========== 主组件 ==========
+// ========== 主组�?==========
 const TeamCollaborationEnhanced: React.FC = () => {
   const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'virtual-meeting' | 'mindmap'>('realtime');
+  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'wiki-editor' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -186,7 +191,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     };
   }, []);
   
-  // 数据状态
+  // 数据状�?
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [knowledgeGaps, setKnowledgeGaps] = useState<KnowledgeGap[]>([]);
   const [messages, setMessages] = useState<CollaborationMessage[]>([]);
@@ -203,8 +208,23 @@ const TeamCollaborationEnhanced: React.FC = () => {
   });
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  
-  // 加载状态
+
+  // WebSocket 协作状�?
+  const [collabUserId] = useState(() => {
+    let id = localStorage.getItem('collab_user_id');
+    if (!id) {
+      id = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      localStorage.setItem('collab_user_id', id);
+    }
+    return id;
+  });
+  const [connected, setConnected] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [discussionCards, setDiscussionCards] = useState<any[]>([]);
+  const [showCardPanel, setShowCardPanel] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 加载状�?
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -212,7 +232,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const getDefaultProjects = (): Project[] => [
     {
       id: 1,
-      name: 'AI助手系统开发',
+      name: 'AI助手系统开�?,
       description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
       status: 'active',
       priority: 'high',
@@ -223,7 +243,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       tasks: [
         {
           id: 1,
-          title: '需求分析',
+          title: '需求分�?,
           description: '分析用户需求和系统功能',
           status: 'completed',
           priority: 'high',
@@ -235,7 +255,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {
           id: 2,
           title: 'UI设计',
-          description: '设计用户界面和交互流程',
+          description: '设计用户界面和交互流�?,
           status: 'in-progress',
           priority: 'medium',
           assignedTo: 2,
@@ -247,8 +267,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
     },
     {
       id: 2,
-      name: '知识库重构',
-      description: '重新设计和实现企业知识库系统，支持多模态内容管理',
+      name: '知识库重�?,
+      description: '重新设计和实现企业知识库系统，支持多模态内容管�?,
       status: 'planning',
       priority: 'medium',
       startDate: '2026-03-01',
@@ -259,7 +279,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {
           id: 3,
           title: '架构设计',
-          description: '设计新的知识库架构',
+          description: '设计新的知识库架�?,
           status: 'todo',
           priority: 'high',
           assignedTo: 2,
@@ -272,7 +292,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     {
       id: 3,
       name: '用户体验优化',
-      description: '基于用户反馈优化产品界面和交互流程',
+      description: '基于用户反馈优化产品界面和交互流�?,
       status: 'completed',
       priority: 'medium',
       startDate: '2025-11-01',
@@ -283,7 +303,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {
           id: 4,
           title: '用户调研',
-          description: '收集用户反馈和使用数据',
+          description: '收集用户反馈和使用数�?,
           status: 'completed',
           priority: 'medium',
           assignedTo: 3,
@@ -306,7 +326,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     }
   ];
   
-  // 编辑状态
+  // 编辑状�?
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
   const [editingGap, setEditingGap] = useState<KnowledgeGap | null>(null);
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -316,7 +336,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
-  // 项目管理状态
+  // 项目管理状�?
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
@@ -367,9 +387,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
           permissions: m.permissions || ['read', 'write']
         })));
 
-        // 记录最近活动用于展示
+        // 记录最近活动用于展�?
         if (activities && activities.length > 0) {
-          console.info(`[协作] 最近 ${activities.length} 条活动已加载`);
+          console.info(`[协作] 最�?${activities.length} 条活动已加载`);
         }
 
 // 同步当前用户权限：匹配到团队成员则使用其权限
@@ -378,7 +398,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
           updatePermissions(matchedMember.permissions as Permission[], matchedMember.role, matchedMember.id);
         }
 
-        // 从后端加载项目数据
+        // 从后端加载项目数�?
         try {
           const projectsData = await projectService.getAll();
           if (projectsData && projectsData.length > 0) {
@@ -408,7 +428,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             }));
             setProjects(mappedProjects);
           } else {
-            // 如果没有数据，使用默认示例项目
+            // 如果没有数据，使用默认示例项�?
             setProjects(getDefaultProjects());
           }
         } catch (projectErr) {
@@ -416,22 +436,31 @@ const TeamCollaborationEnhanced: React.FC = () => {
           setProjects(getDefaultProjects());
         }
 
-        // 初始化知识缺口数据
+        // 初始化知识缺口数�?
         setKnowledgeGaps([
-          { id: 1, area: 'API设计', gapScore: 85, priority: '高', description: '团队缺乏系统性的API设计规范和最佳实践', suggestions: ['建立API设计规范文档', '开展API设计培训'] },
-          { id: 2, area: 'UI/UX', gapScore: 72, priority: '中', description: '用户体验设计能力需要提升', suggestions: ['引入设计系统', '增加用户研究环节'] },
-          { id: 3, area: '性能优化', gapScore: 68, priority: '中', description: '应用性能优化知识不够系统', suggestions: ['建立性能监控体系', '分享性能优化案例'] },
-          { id: 4, area: '测试覆盖', gapScore: 60, priority: '低', description: '测试覆盖率有待提高', suggestions: ['制定测试规范', '引入自动化测试'] }
+          { id: 1, area: 'API设计', gapScore: 85, priority: '�?, description: '团队缺乏系统性的API设计规范和最佳实�?, suggestions: ['建立API设计规范文档', '开展API设计培训'] },
+          { id: 2, area: 'UI/UX', gapScore: 72, priority: '�?, description: '用户体验设计能力需要提�?, suggestions: ['引入设计系统', '增加用户研究环节'] },
+          { id: 3, area: '性能优化', gapScore: 68, priority: '�?, description: '应用性能优化知识不够系统', suggestions: ['建立性能监控体系', '分享性能优化案例'] },
+          { id: 4, area: '测试覆盖', gapScore: 60, priority: '�?, description: '测试覆盖率有待提�?, suggestions: ['制定测试规范', '引入自动化测�?] }
         ]);
 
-        // 初始化协作消息
-        setMessages([
-          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略,结合AI技术和用户体验研究的最新成果.', timestamp: '2026-02-20 10:30' },
-          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手,识别关键痛点和机会点,然后用AI技术来优化这些环节.', timestamp: '2026-02-20 10:35', replies: [
-            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研,收集一些初步反馈.', timestamp: '2026-02-20 10:40' }
-          ]},
-          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
-        ]);
+        // 通过 WebSocket REST 加载历史活动
+        try {
+          const activities = await collaborationREST.getActivities(50);
+          if (activities && activities.length > 0) {
+            setMessages(activities.map((a: any, idx: number) => ({
+              id: idx + 1,
+              user: a.user || '未知',
+              avatar: a.avatar || '👤',
+              content: a.content || '',
+              timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '',
+              replies: []
+            })));
+            console.info(`[协作] 加载�?${activities.length} 条历史消息`);
+          }
+        } catch (e) {
+          console.info('[协作] 无历史消息记录，开始新的协作会�?);
+        }
 
       } finally {
         setLoading(false);
@@ -441,7 +470,54 @@ const TeamCollaborationEnhanced: React.FC = () => {
     loadCollaborationData();
   }, []);
 
-  // 同步所有项目任务到 tasks 状态
+  // ========== WebSocket 实时协作连接 ==========
+  useEffect(() => {
+    if (!collabUserId) return;
+    
+    collaborationService.connect(collabUserId, userInfo.name, userInfo.avatar);
+    setConnected(true);
+    
+    const unsubscribe = collaborationService.onMessage((msg) => {
+      if (msg.type === 'history') {
+        console.log(`[协作] 收到历史数据: ${msg.activities?.length || 0} 条活�? ${msg.members?.length || 0} 名成员`);
+        if (msg.activities && msg.activities.length > 0) {
+          setMessages(msg.activities.map((a: any, idx: number) => ({
+            id: idx + 1,
+            user: a.user || '未知',
+            avatar: a.avatar || '👤',
+            content: a.content || '',
+            timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '',
+            replies: []
+          })));
+        }
+        if (msg.members) {
+          setOnlineCount(msg.members.filter((m: any) => m.status === 'online').length);
+        }
+      } else if (msg.type === 'new_activity' && msg.activity) {
+        const a = msg.activity;
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          user: a.user || '未知',
+          avatar: a.avatar || '👤',
+          content: a.content || '',
+          timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
+          replies: []
+        }]);
+        // 滚动到底�?
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } else if (msg.type === 'user_online' || msg.type === 'user_offline') {
+        setOnlineCount(prev => msg.type === 'user_online' ? prev + 1 : Math.max(0, prev - 1));
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+      collaborationService.disconnect();
+      setConnected(false);
+    };
+  }, [collabUserId]);
+
+  // 同步所有项目任务到 tasks 状�?
   useEffect(() => {
     const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
     setTasks(allTasks);
@@ -471,7 +547,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     
     try {
       if (editingMember.id === 0) {
-        // 添加新成员
+        // 添加新成�?
         const newMember = await teamMemberService.add(editingMember, userInfo.name);
         setTeamMembers([...teamMembers, { ...newMember, id: newMember.id || Date.now() }]);
         toast.success('成员添加成功');
@@ -497,7 +573,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       toast.error('权限不足：仅管理员可删除成员');
       return;
     }
-    if (!confirm('确定要删除这个成员吗？')) return;
+    if (!confirm('确定要删除这个成员吗�?)) return;
     
     try {
       await teamMemberService.delete(id, userInfo.name);
@@ -510,7 +586,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
   // ========== 知识缺口管理 ==========
   const handleAddGap = () => {
-    setEditingGap({ id: 0, area: '', gapScore: 50, priority: '中', description: '', suggestions: [] });
+    setEditingGap({ id: 0, area: '', gapScore: 50, priority: '�?, description: '', suggestions: [] });
     setIsGapModalOpen(true);
   };
 
@@ -535,7 +611,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   };
 
   const handleDeleteGap = (id: number) => {
-    if (!confirm('确定要删除这个知识缺口吗？')) return;
+    if (!confirm('确定要删除这个知识缺口吗�?)) return;
     setKnowledgeGaps(knowledgeGaps.filter(g => g.id !== id));
     toast.success('知识缺口删除成功');
   };
@@ -552,9 +628,22 @@ const TeamCollaborationEnhanced: React.FC = () => {
       timestamp: new Date().toLocaleString('zh-CN')
     };
     
-    setMessages([...messages, message]);
+    // 本地立即显示
+    setMessages(prev => [...prev, message]);
     setNewMessage('');
-    toast.success('消息发送成功');
+    
+    // 通过 WebSocket 广播给其他人
+    collaborationService.sendActivity({
+      user: message.user,
+      userId: collabUserId,
+      avatar: message.avatar,
+      action: '发言',
+      content: message.content,
+      type: 'message'
+    });
+    
+    // 滚动到底�?
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
   const handleReply = (messageId: number) => {
@@ -580,15 +669,25 @@ const TeamCollaborationEnhanced: React.FC = () => {
       return m;
     }));
     
+    // 通过 WebSocket 发送评�?
+    collaborationService.sendComment({
+      user: reply.user,
+      userId: collabUserId,
+      avatar: reply.avatar,
+      content: reply.content,
+      parentId: parentId,
+      targetId: parentId,
+      targetType: 'message'
+    });
+    
     setReplyingTo(null);
     setReplyContent('');
-    toast.success('回复发送成功');
   };
 
   // ========== 报告配置 ==========
   const handleSaveReportConfig = () => {
-    // 这里可以保存到后端
-    toast.success('报告配置已保存');
+    // 这里可以保存到后�?
+    toast.success('报告配置已保�?);
     setIsReportConfigOpen(false);
   };
 
@@ -688,7 +787,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   };
 
   const handleDeleteProject = async (id: number) => {
-    if (!confirm('确定要删除这个项目吗？删除后所有相关任务也将被删除。')) return;
+    if (!confirm('确定要删除这个项目吗？删除后所有相关任务也将被删除�?)) return;
     try {
       await projectService.delete(id);
       setProjects(projects.filter(p => p.id !== id));
@@ -761,7 +860,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   };
 
   const handleDeleteTask = (taskId: number) => {
-    if (!confirm('确定要删除这个任务吗？')) return;
+    if (!confirm('确定要删除这个任务吗�?)) return;
     
     setProjects(projects.map(project => {
       if (project.tasks.some(t => t.id === taskId)) {
@@ -812,19 +911,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
     }
   };
 
-  // 渲染加载状态
+  // 渲染加载状�?
   if (loading) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">加载协作数据中...</p>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载协作数据�?..</p>
         </div>
       </div>
     );
   }
 
-  // 渲染错误状态
+  // 渲染错误状�?
   if (error) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
@@ -845,7 +944,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      {/* 功能标签页 */}
+      {/* 功能标签�?*/}
       <div className="border-b border-gray-200 dark:border-gray-700 flex overflow-x-auto">
         <button 
           onClick={() => setActiveTab('realtime')}
@@ -922,20 +1021,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
         >
           <div className="flex items-center justify-center">
             <Edit3 size={18} className="mr-2" />
-            <span>Wiki 编辑器</span>
+            <span>Wiki 编辑�?/span>
           </div>
         </button>
-          <button
-            onClick={() => setActiveTab('virtual-meeting')}
-            className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-              activeTab === 'virtual-meeting'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-                : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-            }`}
-          >
-            <Monitor className="w-4 h-4 inline-block mr-1.5" />
-            虚拟办公室
-          </button>
           <button
             onClick={() => setActiveTab('mindmap')}
             className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
@@ -956,11 +1044,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold mb-2">团队知识整合</h2>
-                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容,生成完整的团队知识图谱</p>
+                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内�?生成完整的团队知识图�?/p>
                 {isAdmin && (
                   <span className="inline-flex items-center mt-2 px-2 py-1 text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 rounded">
                     <Crown size={12} className="mr-1" />
-                    管理员模式
+                    管理员模�?
                   </span>
                 )}
               </div>
@@ -1026,25 +1114,25 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   <div className="space-y-3">
                     <div className="flex items-start">
                       <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现了12个重复的核心概念卡片</p>
+                      <p className="text-sm">发现�?2个重复的核心概念卡片</p>
                     </div>
                     <div className="flex items-start">
                       <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">识别出8组互补的知识体系</p>
+                      <p className="text-sm">识别�?组互补的知识体系</p>
                     </div>
                     <div className="flex items-start">
                       <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">建立了25个新的知识关联</p>
+                      <p className="text-sm">建立�?5个新的知识关�?/p>
                     </div>
                     <div className="flex items-start">
                       <AlertCircle size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现3个潜在的知识冲突点</p>
+                      <p className="text-sm">发现3个潜在的知识冲突�?/p>
                     </div>
                   </div>
                 </motion.div>
               </div>
 
-              {/* 右侧:团队成员和统计图表 */}
+              {/* 右侧:团队成员和统计图�?*/}
               <div className="lg:col-span-2 grid grid-cols-1 gap-4">
                 <motion.div 
                   initial={{ opacity: 0, y: 20 }}
@@ -1114,144 +1202,199 @@ const TeamCollaborationEnhanced: React.FC = () => {
         )}
 
         {/* 实时协作编辑 */}
-        {activeTab === 'realtime' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold mb-2">实时协作编辑</h2>
-              <p className="text-gray-600 dark:text-gray-300">多人同时编辑和评论,加速知识发展过程</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col"
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                      <FileCheck size={16} />
-                    </div>
-                    <h3 className="font-semibold">产品创新策略讨论</h3>
-                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-0.5 rounded-full flex items-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>
-                      {teamMembers.filter(m => m.online).length}人在线
-                    </span>
-                  </div>
+                {activeTab === 'realtime' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold mb-1">实时协作编辑</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">多人同时编辑和评论，加速知识发展过�?/p>
                 </div>
+                <div className="flex items-center gap-3">
+                  <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${connected ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+                    <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                    {connected ? `${onlineCount}人在线` : '未连�?}
+                  </span>
+                  <button
+                    onClick={() => setShowCardPanel(!showCardPanel)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors ${showCardPanel ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                  >
+                    <Library size={14} />
+                    知识卡片
+                  </button>
+                </div>
+              </div>
 
-                <div className="flex-1 bg-gray-50 dark:bg-gray-750 rounded-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto">
-                  <div className="space-y-4">
-                    {messages.map(message => (
-                      <div key={message.id} className="relative">
-                        <div className="flex items-start space-x-3">
-                          <span className="text-2xl">{message.avatar}</span>
-                          <div className="flex-1">
-                            <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
-                              <div className="flex justify-between items-center mb-1">
-                                <span className="font-medium text-sm">{message.user}</span>
-                                <span className="text-xs text-gray-500">{message.timestamp}</span>
+              <div className={`grid gap-6 ${showCardPanel ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                {/* 聊天面板 */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col ${showCardPanel ? 'lg:col-span-2' : ''}`}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                        <MessageSquare size={16} />
+                      </div>
+                      <h3 className="font-semibold">协作讨论</h3>
+                      <span className="text-xs text-gray-500">{messages.length} 条消�?/span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 bg-gray-50 dark:bg-gray-750 rounded-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto">
+                    <div className="space-y-4">
+                      {messages.length === 0 && (
+                        <div className="text-center text-gray-400 py-8 text-sm">
+                          暂无消息，开始协作讨论吧
+                        </div>
+                      )}
+                      {messages.map(message => (
+                        <div key={message.id} className="relative">
+                          <div className="flex items-start space-x-3">
+                            <span className="text-2xl flex-shrink-0">{message.avatar}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="font-medium text-sm">{message.user}</span>
+                                  <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{message.timestamp}</span>
+                                </div>
+                                <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap break-words">{message.content}</p>
                               </div>
-                              <p className="text-gray-700 dark:text-gray-300">{message.content}</p>
-                            </div>
-                            <button 
-                              onClick={() => handleReply(message.id)}
-                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
-                            >
-                              回复
-                            </button>
-                            
-                            {/* 回复输入框 */}
-                            {replyingTo === message.id && (
-                              <div className="mt-2 flex items-center space-x-2">
-                                <input
-                                  type="text"
-                                  value={replyContent}
-                                  onChange={(e) => setReplyContent(e.target.value)}
-                                  placeholder="输入回复..."
-                                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-                                  autoFocus
-                                />
-                                <button 
-                                  onClick={() => handleSendReply(message.id)}
-                                  className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                >
-                                  <Send size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => setReplyingTo(null)}
-                                  className="p-1.5 text-gray-500 hover:text-gray-700"
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            )}
-                            
-                            {/* 回复列表 */}
-                            {message.replies && message.replies.length > 0 && (
-                              <div className="mt-3 ml-4 space-y-3 border-l-2 border-gray-200 dark:border-gray-600 pl-4">
-                                {message.replies.map(reply => (
-                                  <div key={reply.id} className="flex items-start space-x-3">
-                                    <span className="text-xl">{reply.avatar}</span>
-                                    <div className="flex-1 bg-gray-100 dark:bg-gray-600 rounded-lg p-2">
-                                      <div className="flex justify-between items-center mb-1">
-                                        <span className="font-medium text-sm">{reply.user}</span>
-                                        <span className="text-xs text-gray-500">{reply.timestamp}</span>
+                              <button
+                                onClick={() => handleReply(message.id)}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 ml-1"
+                              >
+                                回复
+                              </button>
+
+                              {replyingTo === message.id && (
+                                <div className="mt-2 flex items-center space-x-2">
+                                  <input
+                                    type="text"
+                                    value={replyContent}
+                                    onChange={(e) => setReplyContent(e.target.value)}
+                                    placeholder="输入回复..."
+                                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => handleSendReply(message.id)}
+                                    className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                  >
+                                    <Send size={14} />
+                                  </button>
+                                  <button
+                                    onClick={() => setReplyingTo(null)}
+                                    className="p-1.5 text-gray-500 hover:text-gray-700"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              )}
+
+                              {message.replies && message.replies.length > 0 && (
+                                <div className="mt-3 ml-4 space-y-3 border-l-2 border-gray-200 dark:border-gray-600 pl-4">
+                                  {message.replies.map(reply => (
+                                    <div key={reply.id} className="flex items-start space-x-3">
+                                      <span className="text-xl flex-shrink-0">{reply.avatar}</span>
+                                      <div className="flex-1 bg-gray-100 dark:bg-gray-600 rounded-lg p-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <span className="font-medium text-sm">{reply.user}</span>
+                                          <span className="text-xs text-gray-500">{reply.timestamp}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{reply.content}</p>
                                       </div>
-                                      <p className="text-sm text-gray-700 dark:text-gray-300">{reply.content}</p>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex items-end gap-2">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                      {userInfo.name?.charAt(0) || '?'}
+                    </div>
+                    <div className="flex-1 flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                        placeholder="输入想法或建�?.."
+                        className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                      />
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const fakeCard = { id: 'card_' + Date.now(), title: '新知识卡�?, content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                            setDiscussionCards(prev => [...prev, fakeCard]);
+                            toast.success('已添加到知识卡片');
+                          }}
+                          disabled={!newMessage.trim()}
+                          className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                          title="添加为知识卡�?
+                        >
+                          <Bookmark size={16} />
+                        </button>
+                        <button
+                          onClick={handleSendMessage}
+                          disabled={!newMessage.trim()}
+                          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
+                        >
+                          <Send size={16} />
+                        </button>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
+                </motion.div>
 
-                <div className="mt-4 flex">
-                  <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-2 flex-shrink-0">
-                    👤
-                  </div>
-                  <div className="flex-1 flex items-center space-x-2">
-                    <input 
-                      type="text" 
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                      placeholder="添加你的想法或评论..." 
-                      className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
-                    />
-                    <button 
-                      onClick={handleSendMessage}
-                      disabled={!newMessage.trim()}
-                      className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
-                    >
-                      <Send size={16} />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
+                {showCardPanel && (
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col"
+                  >
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Library size={16} className="text-blue-500" />
+                        知识卡片
+                      </h3>
+                      <span className="text-xs text-gray-500">{discussionCards.length} �?/span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      {discussionCards.length === 0 ? (
+                        <div className="text-center text-gray-400 py-8 text-sm">
+                          在讨论中点击 Bookmark 按钮添加知识卡片
+                        </div>
+                      ) : (
+                        <MeetingCardPanel cards={discussionCards as any} />
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* 知识空白识别 */}
-        {activeTab === 'gaps' && (
+{activeTab === 'gaps' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-xl font-bold mb-2">知识空白识别</h2>
-                <p className="text-gray-600 dark:text-gray-300">智能发现团队知识体系中的空白点和机会点</p>
+                <p className="text-gray-600 dark:text-gray-300">智能发现团队知识体系中的空白点和机会�?/p>
               </div>
               <button 
                 onClick={handleAddGap}
                 className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
                 <Plus size={18} className="mr-2" />
-                添加空白项
+                添加空白�?
               </button>
             </div>
 
@@ -1265,22 +1408,22 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
                   <h3 className="font-semibold mb-3 flex items-center">
                     <FileSearch size={18} className="mr-2" />
-                    发现的知识空白 ({knowledgeGaps.length})
+                    发现的知识空�?({knowledgeGaps.length})
                   </h3>
                   <div className="space-y-3 max-h-[400px] overflow-y-auto">
                     {knowledgeGaps.map(gap => (
                       <div 
                         key={gap.id} 
                         className={`p-3 rounded-lg border relative group ${
-                          gap.priority === '高' ? 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-800' :
-                          gap.priority === '中' ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800' :
+                          gap.priority === '�? ? 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-800' :
+                          gap.priority === '�? ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800' :
                           'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-800'
                         }`}
                       >
                         <div className="flex justify-between items-start">
                           <h4 className={`font-medium text-sm ${
-                            gap.priority === '高' ? 'text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'text-amber-800 dark:text-amber-300' :
+                            gap.priority === '�? ? 'text-red-800 dark:text-red-300' :
+                            gap.priority === '�? ? 'text-amber-800 dark:text-amber-300' :
                             'text-blue-800 dark:text-blue-300'
                           }`}>
                             {gap.area}
@@ -1303,11 +1446,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         <p className="text-xs mt-1 opacity-80">{gap.description}</p>
                         <div className="flex justify-between items-center mt-2">
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            gap.priority === '高' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300' :
+                            gap.priority === '�? ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300' :
+                            gap.priority === '�? ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300' :
                             'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
                           }`}>
-                            {gap.priority}优先级
+                            {gap.priority}优先�?
                           </span>
                           <span className="text-xs text-gray-500">缺口: {gap.gapScore}%</span>
                         </div>
@@ -1317,11 +1460,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 </div>
 
                 <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">知识机会点</h3>
+                  <h3 className="font-semibold mb-3">知识机会�?/h3>
                   <div className="space-y-3">
                     <div className="flex items-start">
                       <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">AI技术与用户体验设计的交叉应用</p>
+                      <p className="text-sm">AI技术与用户体验设计的交叉应�?/p>
                     </div>
                     <div className="flex items-start">
                       <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
@@ -1341,7 +1484,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
                 className="lg:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
               >
-                <h3 className="font-semibold mb-3">知识领域覆盖度分析</h3>
+                <h3 className="font-semibold mb-3">知识领域覆盖度分�?/h3>
                 <div className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <RadarChart outerRadius={150} data={knowledgeGaps.map(g => ({ subject: g.area, A: 100 - g.gapScore, fullMark: 100 }))}>
@@ -1349,7 +1492,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                       <PolarAngleAxis dataKey="subject" />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} />
                       <Radar
-                        name="知识覆盖度"
+                        name="知识覆盖�?
                         dataKey="A"
                         stroke="#8884d8"
                         fill="#8884d8"
@@ -1379,11 +1522,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                     <ul className="space-y-2 text-sm">
                       <li className="flex items-start">
                         <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>提高产品创新的准确性和成功率</span>
+                        <span>提高产品创新的准确性和成功�?/span>
                       </li>
                       <li className="flex items-start">
                         <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>缩短从创意到实施的周期</span>
+                        <span>缩短从创意到实施的周�?/span>
                       </li>
                       <li className="flex items-start">
                         <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
@@ -1443,7 +1586,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   </div>
                   <div className="p-3 mt-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-800">
                     <p className="text-sm text-blue-800 dark:text-blue-300">
-                      团队倾向于异步协作模式,建议优化异步协作工具和流程,提高效率.
+                      团队倾向于异步协作模�?建议优化异步协作工具和流�?提高效率.
                     </p>
                   </div>
                 </div>
@@ -1460,8 +1603,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   {[
                     { label: '核心概念', value: reportConfig.coreConcepts, color: 'bg-blue-500' },
                     { label: '关联链接', value: reportConfig.relatedLinks, color: 'bg-green-500' },
-                    { label: '参考来源', value: reportConfig.references, color: 'bg-yellow-500' },
-                    { label: '索引关键词', value: reportConfig.keywords, color: 'bg-red-500' }
+                    { label: '参考来�?, value: reportConfig.references, color: 'bg-yellow-500' },
+                    { label: '索引关键�?, value: reportConfig.keywords, color: 'bg-red-500' }
                   ].map(item => (
                     <div key={item.label} className="flex items-center">
                       <div className={`w-3 h-3 rounded-full mr-2 ${item.color}`}></div>
@@ -1507,7 +1650,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         <Users size={20} />
                       </div>
                       <div>
-                        <p className="text-sm">参与度</p>
+                        <p className="text-sm">参与�?/p>
                         <p className="text-xl font-bold">{reportConfig.participation}%</p>
                       </div>
                     </div>
@@ -1519,7 +1662,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         <Network size={20} />
                       </div>
                       <div>
-                        <p className="text-sm">知识关联度</p>
+                        <p className="text-sm">知识关联�?/p>
                         <p className="text-xl font-bold">{reportConfig.knowledgeConnectivity}%</p>
                       </div>
                     </div>
@@ -1540,19 +1683,19 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 </h3>
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={teamMembers.map(m => ({ name: m.name, 贡献值: m.contribution || 0 }))}>
+                    <BarChart data={teamMembers.map(m => ({ name: m.name, 贡献�? m.contribution || 0 }))}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                       <XAxis dataKey="name" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="贡献值" fill="#8884d8" />
+                      <Bar dataKey="贡献�? fill="#8884d8" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </motion.div>
             </div>
 
-            {/* 第二行图表：折线图 + 饼图 */}
+            {/* 第二行图表：折线�?+ 饼图 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -1561,7 +1704,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
               >
                 <h3 className="font-semibold mb-3 flex items-center">
                   <LineChartIcon size={16} className="mr-2" />
-                  近7天协作趋势
+                  �?天协作趋�?
                 </h3>
                 <div className="h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
@@ -1641,16 +1784,16 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 <h2 className="text-xl font-bold mb-2">项目管理</h2>
                 <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
                 <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
-                  <span>共 {projects.length} 个项目</span>
+                  <span>�?{projects.length} 个项�?/span>
                   <span>·</span>
-                  <span>共 {tasks.length} 个任务</span>
+                  <span>�?{tasks.length} 个任�?/span>
                   <span>·</span>
                   <span className="text-green-600">
-                    已完成 {tasks.filter(t => t.status === 'completed').length}
+                    已完�?{tasks.filter(t => t.status === 'completed').length}
                   </span>
                   <span>·</span>
                   <span className="text-orange-600">
-                    进行中 {tasks.filter(t => t.status === 'in-progress').length}
+                    进行�?{tasks.filter(t => t.status === 'in-progress').length}
                   </span>
                 </div>
               </div>
@@ -1690,12 +1833,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
                             project.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
                             'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
                           }`}>
-                            {project.status === 'completed' ? '已完成' : 
-                             project.status === 'in-progress' ? '进行中' : '待开始'}
+                            {project.status === 'completed' ? '已完�? : 
+                             project.status === 'in-progress' ? '进行�? : '待开�?}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>{project.tasks.length} 个任务</span>
+                          <span>{project.tasks.length} 个任�?/span>
                           <span>{new Date(project.endDate).toLocaleDateString()}</span>
                         </div>
                         <div className="mt-2">
@@ -1722,7 +1865,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 </div>
               </motion.div>
 
-              {/* 中间:项目详情和任务 */}
+              {/* 中间:项目详情和任�?*/}
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
@@ -1760,11 +1903,11 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
-                          <div className="text-xs text-gray-500">已完成任务</div>
+                          <div className="text-xs text-gray-500">已完成任�?/div>
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
-                          <div className="text-xs text-gray-500">进行中任务</div>
+                          <div className="text-xs text-gray-500">进行中任�?/div>
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
@@ -1779,7 +1922,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         </div>
                         <div className="flex items-center space-x-2">
                           <Users size={16} className="text-gray-500" />
-                          <span>{selectedProject.assignedMembers.length} 人参与</span>
+                          <span>{selectedProject.assignedMembers.length} 人参�?/span>
                         </div>
                       </div>
                     </div>
@@ -1817,12 +1960,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
                                     task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
                                     'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
                                   }`}>
-                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                    {task.priority === 'high' ? '�? : task.priority === 'medium' ? '�? : '�?}
                                   </span>
                                 </div>
                                 <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
-                                  <span>分配给: {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
-                                  {task.dueDate && <span>• 截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                                  <span>分配�? {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分�?}</span>
+                                  {task.dueDate && <span>�?截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
                                 </div>
                               </div>
                             </div>
@@ -1849,7 +1992,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 text-center">
                     <FileCheck size={48} className="mx-auto text-gray-400 mb-4" />
                     <h3 className="text-lg font-medium text-gray-600 dark:text-gray-300 mb-2">选择项目查看详情</h3>
-                    <p className="text-gray-500 dark:text-gray-400">从左侧列表中选择一个项目来查看任务和进度详情</p>
+                    <p className="text-gray-500 dark:text-gray-400">从左侧列表中选择一个项目来查看任务和进度详�?/p>
                   </div>
                 )}
               </motion.div>
@@ -1857,16 +2000,10 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-          {/* Wiki编辑器 */}
+          {/* Wiki编辑�?*/}
           {activeTab === 'wiki-editor' && (
             <div className="h-[calc(100vh-200px)]">
               <WikiEditor />
-            </div>
-          )}
-          {/* 虚拟办公室会议 */}
-          {activeTab === 'virtual-meeting' && (
-            <div className="h-[calc(100vh-200px)] overflow-hidden rounded-lg">
-              <VirtualOfficeMeeting />
             </div>
           )}
           {/* 思维导图 */}
@@ -1918,10 +2055,10 @@ const TeamCollaborationEnhanced: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
             >
               <option value="👤">👤 默认</option>
-              <option value="👨‍💼">👨‍💼 经理</option>
-              <option value="👩‍💻">👩‍💻 开发</option>
-              <option value="👨‍🎨">👨‍🎨 设计</option>
-              <option value="👩‍🔬">👩‍🔬 研究</option>
+              <option value="👨‍�?>👨‍�?经理</option>
+              <option value="👩‍�?>👩‍�?开�?/option>
+              <option value="👨‍�?>👨‍�?设计</option>
+              <option value="👩‍�?>👩‍�?研究</option>
             </select>
           </div>
           <div className="flex items-center">
@@ -1932,17 +2069,17 @@ const TeamCollaborationEnhanced: React.FC = () => {
               onChange={(e) => setEditingMember(prev => prev ? { ...prev, online: e.target.checked } : null)}
               className="mr-2"
             />
-            <label htmlFor="online" className="text-sm">在线状态</label>
+            <label htmlFor="online" className="text-sm">在线状�?/label>
           </div>
           {/* 权限设置 */}
           <div>
             <label className="block text-sm font-medium mb-2">权限设置</label>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { key: 'read', label: '查看', desc: '可查看内容' },
-                { key: 'write', label: '编辑', desc: '可编辑内容' },
-                { key: 'comment', label: '评论', desc: '可发表评论' },
-                { key: 'admin', label: '管理', desc: '完全控制权' },
+                { key: 'read', label: '查看', desc: '可查看内�? },
+                { key: 'write', label: '编辑', desc: '可编辑内�? },
+                { key: 'comment', label: '评论', desc: '可发表评�? },
+                { key: 'admin', label: '管理', desc: '完全控制�? },
               ].map(perm => (
                 <label key={perm.key} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors
                   ${(editingMember?.permissions || ['read', 'write']).includes(perm.key) 
@@ -2020,15 +2157,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">优先级</label>
+            <label className="block text-sm font-medium mb-1">优先�?/label>
             <select
-              value={editingGap?.priority || '中'}
-              onChange={(e) => setEditingGap(prev => prev ? { ...prev, priority: e.target.value as '高' | '中' | '低' } : null)}
+              value={editingGap?.priority || '�?}
+              onChange={(e) => setEditingGap(prev => prev ? { ...prev, priority: e.target.value as '�? | '�? | '�? } : null)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
             >
-              <option value="高">高</option>
-              <option value="中">中</option>
-              <option value="低">低</option>
+              <option value="�?>�?/option>
+              <option value="�?>�?/option>
+              <option value="�?>�?/option>
             </select>
           </div>
           <div>
@@ -2121,7 +2258,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">参与度 (%)</label>
+            <label className="block text-sm font-medium mb-1">参与�?(%)</label>
             <input
               type="number"
               min="0"
@@ -2177,20 +2314,20 @@ const TeamCollaborationEnhanced: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">状态</label>
+            <label className="block text-sm font-medium mb-1">状�?/label>
             <select
               value={editingProject?.status || 'pending'}
               onChange={(e) => setEditingProject(prev => prev ? { ...prev, status: e.target.value as Project['status'] } : null)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
             >
-              <option value="pending">待开始</option>
-              <option value="in-progress">进行中</option>
-              <option value="completed">已完成</option>
+              <option value="pending">待开�?/option>
+              <option value="in-progress">进行�?/option>
+              <option value="completed">已完�?/option>
             </select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">开始日期</label>
+              <label className="block text-sm font-medium mb-1">开始日�?/label>
               <input
                 type="date"
                 value={editingProject?.startDate || ''}
@@ -2282,27 +2419,27 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">状态</label>
+              <label className="block text-sm font-medium mb-1">状�?/label>
               <select
                 value={editingTask?.status || 'pending'}
                 onChange={(e) => setEditingTask(prev => prev ? { ...prev, status: e.target.value as Task['status'] } : null)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
               >
-                <option value="pending">待开始</option>
-                <option value="in-progress">进行中</option>
-                <option value="completed">已完成</option>
+                <option value="pending">待开�?/option>
+                <option value="in-progress">进行�?/option>
+                <option value="completed">已完�?/option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">优先级</label>
+              <label className="block text-sm font-medium mb-1">优先�?/label>
               <select
                 value={editingTask?.priority || 'medium'}
                 onChange={(e) => setEditingTask(prev => prev ? { ...prev, priority: e.target.value as Task['priority'] } : null)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
               >
-                <option value="high">高</option>
-                <option value="medium">中</option>
-                <option value="low">低</option>
+                <option value="high">�?/option>
+                <option value="medium">�?/option>
+                <option value="low">�?/option>
               </select>
             </div>
           </div>
@@ -2322,7 +2459,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
               onChange={(e) => setEditingTask(prev => prev ? { ...prev, assignedTo: parseInt(e.target.value) || 0 } : null)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
             >
-              <option value="">未分配</option>
+              <option value="">未分�?/option>
               {teamMembers.map(member => (
                 <option key={member.id} value={member.id}>{member.name}</option>
               ))}
@@ -2449,7 +2586,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
   const addChildNode = (parentId: string) => {
     const newNode = {
       id: `node-${Date.now()}`,
-      text: '新主题',
+      text: '新主�?,
       children: [] as MindNode[],
       collapsed: false,
       color: nodeColors[Math.floor(Math.random() * nodeColors.length)]
@@ -2534,7 +2671,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
               onClick={() => addChildNode(node.id)}
               className="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
             >
-              + 子节点
+              + 子节�?
             </button>
             <button
               onClick={() => deleteNode(node.id)}
@@ -2570,7 +2707,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
       </div>
       
       {loading ? (
-        <div className="text-center py-8">加载中...</div>
+        <div className="text-center py-8">加载�?..</div>
       ) : (
         <>
           <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 min-h-[500px] overflow-auto">
@@ -2580,8 +2717,8 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
           </div>
           
           <div className="flex items-center justify-between text-sm text-gray-500">
-            <p>💡 双击节点编辑文字，点击节点添加/删除子节点</p>
-            <span>共 {cards.length} 张知识卡片</span>
+            <p>💡 双击节点编辑文字，点击节点添�?删除子节�?/p>
+            <span>�?{cards.length} 张知识卡�?/span>
           </div>
         </>
       )}
@@ -2618,13 +2755,13 @@ const UnifiedResearchList: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4 text-sm text-gray-400">加载中...</div>;
+    return <div className="text-center py-4 text-sm text-gray-400">加载�?..</div>;
   }
 
   if (researchProjects.length === 0) {
     return (
       <div className="text-center py-4 text-sm text-gray-400">
-        暂无专题研究，请在 GTD → 专题研究中创建
+        暂无专题研究，请�?GTD �?专题研究中创�?
       </div>
     );
   }
@@ -2635,7 +2772,7 @@ const UnifiedResearchList: React.FC = () => {
         <div
           key={`research-${project.id}`}
           onClick={() => {
-            // 导航到 GTD 中的专题研究
+            // 导航�?GTD 中的专题研究
             const event = new CustomEvent('navigateToResearch', { detail: { projectId: project.id } });
             window.dispatchEvent(event);
           }}
