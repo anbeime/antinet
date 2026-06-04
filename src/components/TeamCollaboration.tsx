@@ -954,7 +954,49 @@ const TeamCollaborationEnhanced: React.FC = () => {
     );
   }
 
-  // 渲染错误状态
+  const renderMessageContent = (text: string) => {
+    const allCards = [...topicCards, ...discussionCards];
+    const parts: Array<{ type: 'text' | 'card'; content: string; card?: any }> = [];
+    const regex = /@\[([^\]]+)\]/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+      }
+      const title = match[1];
+      const card = allCards.find(c => (c.title || c.name) === title);
+      if (card) {
+        parts.push({ type: 'card', content: title, card });
+      } else {
+        parts.push({ type: 'text', content: `@[${title}]` });
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.slice(lastIndex) });
+    }
+
+    if (parts.length === 0) return text;
+
+    return parts.map((part, i) => {
+      if (part.type === 'card') {
+        return (
+          <span
+            key={i}
+            onClick={() => setPreviewCard(part.card)}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors text-xs font-medium"
+            title="点击查看卡片详情"
+          >
+            📌 {part.content}
+          </span>
+        );
+      }
+      return <span key={i}>{part.content}</span>;
+    });
+  };
+
   if (error) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
@@ -1076,7 +1118,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                                   <span className="font-medium text-sm">{message.user}</span>
                                   <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{message.timestamp}</span>
                                 </div>
-                                <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                                <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap break-words">{renderMessageContent(message.content)}</p>
                               </div>
                               <button
                                 onClick={() => handleReply(message.id)}
@@ -1120,7 +1162,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                                           <span className="font-medium text-sm">{reply.user}</span>
                                           <span className="text-xs text-gray-500">{reply.timestamp}</span>
                                         </div>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{reply.content}</p>
+                                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{renderMessageContent(reply.content)}</p>
                                       </div>
                                     </div>
                                   ))}
