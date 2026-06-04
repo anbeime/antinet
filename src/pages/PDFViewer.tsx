@@ -94,7 +94,15 @@ const PDFViewer: React.FC = () => {
       // 从 localStorage 加载笔记作为卡片-阻止 loadCards 覆盖
       try {
         const saved = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
-        setCards(saved.map((n: any, i: number) => ({ ...n, id: n.id || `note-${i}` })));
+        setCards(saved.map((n: any, i: number) => ({
+          ...n,
+          id: n.id || `note-${Date.now()}-${i}`,
+          title: n.title || '无标题',
+          content: n.content || '',
+          card_type: n.card_type || 'blue',
+          type: n.card_type || 'blue',
+          addedAt: n.addedAt || new Date().toISOString()
+        })));
         setShowCardPanel(true);
       } catch {}
     }
@@ -284,15 +292,19 @@ const PDFViewer: React.FC = () => {
   };
 
   // 客户端按专题过滤卡片
+  // 来自笔记时，直接显示所有卡片（不应用专题过滤）
   const topicFilteredCards = fromNotes ? cards : currentTopic
     ? cards.filter(c => (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic))
     : cards;
 
-  const filteredCards = topicFilteredCards.filter((c: any) => {
-    if (!cardFilter) return true;
-    const q = cardFilter.toLowerCase();
-    return (c.title || '').toLowerCase().includes(q) || (c.content || '').toLowerCase().includes(q);
-  });
+  // 来自笔记时，确保每张卡片都有有效的 ID
+  const cardsWithIds = cards.map(c => ({
+    ...c,
+    id: c.id || `card-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  }));
+
+  // 使用带 ID 的卡片列表
+  const displayCards = cardsWithIds;
 
   // 切换卡片选中状态（用于添加到笔记）
   const toggleNotesSelection = (cardId: string) => {
@@ -307,7 +319,7 @@ const PDFViewer: React.FC = () => {
 
   // 将选中卡片保存到笔记队列
   const addAllToNotes = () => {
-    const selectedCards = filteredCards.filter(c => notesSelectedIds.has(c.id));
+    const selectedCards = displayCards.filter(c => notesSelectedIds.has(c.id));
     if (selectedCards.length > 0) {
       const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
       const merged = [...existing];
@@ -706,7 +718,7 @@ const PDFViewer: React.FC = () => {
                 <p className="text-xs text-gray-400 text-center py-8">{cardFilter ? '无匹配卡片' : '暂无卡片，点击"新建"创建'}</p>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {filteredCards.map((card: any) => (
+                  {displayCards.map((card: any) => (
                     <div key={card.id} className="relative group">
                       {/* 选中复选框 */}
                       <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10"

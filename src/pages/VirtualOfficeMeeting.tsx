@@ -354,6 +354,9 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
 
+  // 会议请求锁，防止重复启动
+  const meetingStartLockRef = useRef(false);
+
   // 简化视图模式
   const [simplifiedView, setSimplifiedView] = useState(false);
 
@@ -443,8 +446,16 @@ const VirtualOfficeMeeting: React.FC = () => {
     toast.success(`已添加 ${book.count} 张卡片到背景资料`);
   };
 
-  // 发送人类消息（混合模式）
+  // 发送人类消息（混合模式）- 带请求锁避免重复
+  const humanMsgLockRef = useRef(false);
+  
   const sendHumanMessage = async (msg: string) => {
+    if (humanMsgLockRef.current) {
+      console.log('[Hybrid] 请求锁定中，忽略重复请求');
+      return;
+    }
+    humanMsgLockRef.current = true;
+    
     // 本地显示人类消息
     setLiveDiscussions(prev => [...prev, {
       type: 'speech',
@@ -496,7 +507,11 @@ const VirtualOfficeMeeting: React.FC = () => {
         }
       } catch (err) {
         console.error('[Hybrid] 获取响应失败:', err);
+      } finally {
+        humanMsgLockRef.current = false;
       }
+    } else {
+      humanMsgLockRef.current = false;
     }
   };
   
@@ -640,6 +655,10 @@ useEffect(() => {
 
   // 启动会议 —— 使用 SSE 流式接口，实时驱动像素小人
   const startMeeting = async () => {
+    if (meetingStartLockRef.current) {
+      toast.error('会议正在启动中，请勿重复点击');
+      return;
+    }
     if (!topic.trim()) {
       toast.error('请输入会议主题');
       return;
@@ -647,6 +666,7 @@ useEffect(() => {
 
     setIsLoading(true);
     setShowResults(false);
+    meetingStartLockRef.current = true;
     setMeetingResult(null);
     setLiveDiscussions([]);
 
@@ -879,11 +899,13 @@ useEffect(() => {
         setPixelState(prev => ({ ...prev, detail: '会议完成', progress: 100 }));
       }
 
+      meetingStartLockRef.current = false;
       abortControllerRef.current = null;
       return;
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Meeting SSE aborted by user');
+        meetingStartLockRef.current = false;
         return;
       }
       console.error('SSE stream error:', error);
@@ -922,6 +944,7 @@ useEffect(() => {
       }
     }
 
+    meetingStartLockRef.current = false;
     abortControllerRef.current = null;
 
     // SSE 不可用 → 降级到本地模拟动画
@@ -1567,6 +1590,7 @@ useEffect(() => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
+                {/* 密信按钮暂隐藏 - 代码保留
                 <button
                   onClick={() => setShowMessageModal(true)}
                   className="text-xs px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 transition-colors"
@@ -1574,6 +1598,7 @@ useEffect(() => {
                 >
                   密信
                 </button>
+                */}
               </div>
             </div>
           </div>
@@ -2012,8 +2037,8 @@ useEffect(() => {
         }}
       />
 
-      {/* 密信模态框 */}
-      {showMessageModal && (
+      {/* 密信模态框（代码保留，等待后续使用） */}
+      {/*showMessageModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowMessageModal(false)}>
           <div className="rounded-xl border border-gray-700/50 w-full max-w-md p-5" style={{ background: '#1a2235' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -2082,7 +2107,7 @@ useEffect(() => {
             </div>
           </div>
         </div>
-      )}
+      )*/}
     </div>
   );
 };

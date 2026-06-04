@@ -32,9 +32,9 @@ import {
   MessageSquare
 } from 'lucide-react';
 import WikiEditor from './WikiEditor';
-import MeetingCardPanel from './MeetingCardPanel';
+import MeetingCardPanel, { CardDetailPopup } from './MeetingCardPanel';
 import { collaborationService, collaborationREST } from '../services/collaborationService';
-import { teamMemberService, activityService, projectService } from '../services/dataService';
+import { teamMemberService, activityService, projectService, researchProjectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -222,7 +222,14 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [onlineCount, setOnlineCount] = useState(0);
   const [discussionCards, setDiscussionCards] = useState<any[]>([]);
   const [showCardPanel, setShowCardPanel] = useState(false);
+  const [referencedCards, setReferencedCards] = useState<any[]>([]);
+  const [previewCard, setPreviewCard] = useState<any | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 知识库卡片选择
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
+  const [topicCards, setTopicCards] = useState<any[]>([]);
 
   // 加载状态
   const [loading, setLoading] = useState(true);
@@ -470,6 +477,24 @@ const TeamCollaborationEnhanced: React.FC = () => {
     loadCollaborationData();
   }, []);
 
+  // 加载研究专题列表（用于知识卡片选择）
+  useEffect(() => {
+    researchProjectService.getAll().then(data => {
+      if (data && data.length > 0) {
+        setTopics(data);
+        setSelectedTopicId(data[0].id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // 当选择专题变化时加载卡片
+  useEffect(() => {
+    if (!selectedTopicId) { setTopicCards([]); return; }
+    researchProjectService.getCards(selectedTopicId).then(cards => {
+      setTopicCards(cards || []);
+    }).catch(() => setTopicCards([]));
+  }, [selectedTopicId]);
+
   // ========== WebSocket 实时协作连接 ==========
   useEffect(() => {
     if (!collabUserId) return;
@@ -622,17 +647,21 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const handleSendMessage = () => {
     if (!newMessage.trim()) return;
     
+    const refs = referencedCards.map(c => `@[${c.title || c.name || '卡片'}]`).join(' ');
+    const fullContent = refs ? `${refs} ${newMessage}` : newMessage;
+    
     const message: CollaborationMessage = {
       id: Date.now(),
       user: userInfo.name || '匿名用户',
       avatar: userInfo.avatar || '👤',
-      content: newMessage,
+      content: fullContent,
       timestamp: new Date().toLocaleString('zh-CN')
     };
     
     // 本地立即显示
     setMessages(prev => [...prev, message]);
     setNewMessage('');
+    setReferencedCards([]);
     
     // 通过 REST API 持久化到数据库并广播给所有在线用户
     collaborationREST.addActivity({
@@ -1105,43 +1134,58 @@ const TeamCollaborationEnhanced: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-end gap-2">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
-                      {userInfo.name?.charAt(0) || '?'}
-                    </div>
-                    <div className="flex-1 flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
-                        placeholder="输入想法或建认.."
-                        className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
-                      />
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
-                            setDiscussionCards(prev => [...prev, fakeCard]);
-                            toast.success('已添加到知识卡片');
-                          }}
-                          disabled={!newMessage.trim()}
-                          className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
-                          title="添加为知识卡片"
-                        >
-                          <Bookmark size={16} />
-                        </button>
-                        <button
-                          onClick={handleSendMessage}
-                          disabled={!newMessage.trim()}
-                          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
-                        >
-                          <Send size={16} />
-                        </button>
+                    {referencedCards.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2 px-1">
+                        {referencedCards.map((card, idx) => (
+                          <span
+                            key={idx}
+                            onClick={() => setPreviewCard(card)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors"
+                            title="点击查看卡片详情"
+                          >
+                            📌 {card.title || card.name || '卡片'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex items-end gap-2">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                        {userInfo.name?.charAt(0) || '?'}
+                      </div>
+                      <div className="flex-1 flex items-center space-x-2">
+                        <input
+                          type="text"
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                          placeholder="输入想法或建议.."
+                          className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                        />
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => {
+                              const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                              setDiscussionCards(prev => [...prev, fakeCard]);
+                              toast.success('已添加到知识卡片');
+                            }}
+                            disabled={!newMessage.trim()}
+                            className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                            title="添加为知识卡片"
+                          >
+                            <Bookmark size={16} />
+                          </button>
+                          <button
+                            onClick={handleSendMessage}
+                            disabled={!newMessage.trim()}
+                            className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
+                          >
+                            <Send size={16} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </motion.div>
+                  </motion.div>
 
                 {showCardPanel && (
                   <motion.div
@@ -1154,18 +1198,28 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         <Library size={16} className="text-blue-500" />
                         知识卡片
                       </h3>
-                      <span className="text-xs text-gray-500">{discussionCards.length} 弹</span>
+                      <span className="text-xs text-gray-500">{topicCards.length + discussionCards.length} 张</span>
                     </div>
+                    {topics.length > 0 && (
+                      <select
+                        value={selectedTopicId ?? ''}
+                        onChange={e => setSelectedTopicId(Number(e.target.value) || null)}
+                        className="mb-3 px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                      >
+                        {topics.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <div className="flex-1 overflow-y-auto">
-                      {discussionCards.length === 0 ? (
+                      {topicCards.length === 0 && discussionCards.length === 0 ? (
                         <div className="text-center text-gray-400 py-8 text-sm">
-                          在讨论中点击 Bookmark 按钮添加知识卡片
+                          选择上方专题加载卡片，或在讨论中点击 Bookmark 按钮添加知识卡片
                         </div>
                       ) : (
-                        <MeetingCardPanel cards={discussionCards as any} onSaveCard={(card) => {
-                            const cardText = `${card.title}\n${card.content}`;
-                            setNewMessage(prev => prev ? `${prev}\n\n${cardText}` : cardText);
-                            toast.success('已添加到输入框');
+                        <MeetingCardPanel cards={[...topicCards, ...discussionCards] as any} onSaveCard={(card) => {
+                            setReferencedCards(prev => [...prev, card]);
+                            toast.success('已添加卡片引用');
                           }} />
                       )}
                     </div>
@@ -1407,6 +1461,14 @@ const TeamCollaborationEnhanced: React.FC = () => {
           {/* 思维导图 */}
           {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>
+
+      {/* 卡片详情预览弹窗 */}
+      {previewCard && (
+        <CardDetailPopup
+          card={previewCard as any}
+          onClose={() => setPreviewCard(null)}
+        />
+      )}
 
       {/* 成员编辑弹窗 */}
       <EditModal 

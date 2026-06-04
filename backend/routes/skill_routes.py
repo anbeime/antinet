@@ -642,6 +642,18 @@ async def book_skill_list():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/book-skill/stats")
+async def book_skill_stats():
+    """获取 Book Skill 统计信息"""
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        return generator.get_statistics()
+    except Exception as e:
+        logger.error(f"[BookSkill] 获取统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/book-skill/{book_name}")
 async def book_skill_get(book_name: str):
     """获取指定书籍的技能详情"""
@@ -656,18 +668,6 @@ async def book_skill_get(book_name: str):
         raise
     except Exception as e:
         logger.error(f"[BookSkill] 获取失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/book-skill/stats")
-async def book_skill_stats():
-    """获取 Book Skill 统计信息"""
-    try:
-        from skills.book_skill import get_book_skill_generator
-        generator = get_book_skill_generator()
-        return generator.get_statistics()
-    except Exception as e:
-        logger.error(f"[BookSkill] 获取统计失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
