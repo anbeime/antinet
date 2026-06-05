@@ -264,15 +264,15 @@ class SkillService {
     bookAuthor?: string
   ): Promise<any> {
     try {
-      const params = new URLSearchParams();
-      if (bookName) params.append('book_name', bookName);
-      if (bookAuthor) params.append('book_author', bookAuthor);
+      const body: any = { notes };
+      if (bookName) body.book_name = bookName;
+      if (bookAuthor) body.book_author = bookAuthor;
       const response = await fetch(
-        `${API_BASE}/skill/book-skill/extract-from-notes?${params}`,
+        `${API_BASE}/skill/book-skill/extract-from-notes`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(notes),
+          body: JSON.stringify(body),
         }
       );
       if (!response.ok) throw new Error('从笔记提取方法论失败');

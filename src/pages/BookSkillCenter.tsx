@@ -11,14 +11,14 @@ import {
   Library, Lightbulb, TrendingUp, CheckCircle, Zap,
   Loader, ChevronRight, Clock,
   Book, FileUp, Link2, X, ExternalLink,
-  Trash2, Edit3
+  Trash2, Edit3, BookmarkPlus
 } from 'lucide-react';
 import { skillService } from '@/services/skillService';
 import { researchProjectService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
 import AppHeader from '@/components/AppHeader';
 import { CardDetailPopup } from '@/components/MeetingCardPanel';
+import { bookshelfService } from '@/services/bookshelfService';
 
 // ============ Types ============
 interface BookMethodology {
@@ -173,15 +173,6 @@ const BookSkillCenter: React.FC = () => {
           ))}
         </div>
       </motion.div>
-
-      {/* Color Legend */}
-      <div className="hidden md:flex items-center justify-center gap-3 text-[10px] text-gray-400">
-        {Object.entries(CARD_COLOR_MAP).map(([key, val]) => (
-          <span key={key} className={`flex items-center gap-1 px-2 py-0.5 rounded ${CARD_COLOR_CSS[key as keyof typeof CARD_COLOR_CSS] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}>
-            {val} ({key})
-          </span>
-        ))}
-      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
@@ -381,6 +372,37 @@ loadTopicBooks();
       toast.error(err.message || '提取失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveMethodologyToNotes = (m: BookMethodology) => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
+      // 按 methodology_id 去重
+      if (existing.find((n: any) => n.id === m.methodology_id)) {
+        toast.info('该方法论已在笔记中');
+        return;
+      }
+      const formattedContent = [
+        m.description ? `**核心内容**：${m.description}` : '',
+        m.trigger_scenario ? `**触发场景**：${m.trigger_scenario}` : '',
+        m.steps && m.steps.length > 0 ? `**执行步骤**：\n${m.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}` : '',
+        m.examples ? `**案例**：${m.examples}` : '',
+        m.output_format ? `**产出**：${m.output_format}` : '',
+        m.command_name ? `\`${m.command_name}\`` : '',
+      ].filter(Boolean).join('\n\n');
+      const note = {
+        id: m.methodology_id,
+        title: `[方法论] ${m.name_cn}`,
+        content: formattedContent,
+        card_type: 'yellow',
+        addedAt: new Date().toISOString(),
+      };
+      existing.push(note);
+      localStorage.setItem('bookskill_notes', JSON.stringify(existing));
+      toast.success(`「${m.name_cn}」已加入笔记`);
+    } catch {
+      toast.error('保存笔记失败');
     }
   };
 
@@ -670,35 +692,130 @@ loadTopicBooks();
             </h2>
             <p className="text-sm text-gray-500">
               从《{result.book_skill?.book_name || bookName}》提取了 <strong className="text-yellow-600">{result.methodologies?.length || 0}</strong> 个方法论
+              {result.ai_source === '8-agent-pipeline' && (
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-purple-100 dark:bg-purple-800 rounded text-purple-600 dark:text-purple-300">
+                  🏯 锦衣卫·八智能体
+                </span>
+              )}
+              {result.ai_source && result.ai_source !== 'rule-based' && result.ai_source !== '8-agent-pipeline' && (
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-green-100 dark:bg-green-800 rounded text-green-600 dark:text-green-300">
+                  🤖 AI: {result.ai_source}
+                </span>
+              )}
+              {result.ai_source === 'rule-based' && (
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-800 rounded text-orange-600 dark:text-orange-300">
+                  📋 规则提取
+                </span>
+              )}
+              {result.ai_error && (
+                <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 rounded text-red-500 dark:text-red-400 cursor-help" title={result.ai_error}>
+                  ⚠️ AI不可用
+                </span>
+              )}
             </p>
 
-            {/* Four-color sync indicator */}
-            {result.yellow_cards_synced > 0 && (
-              <div className="px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
-                <CheckCircle size={14} />
-                已同步 {result.yellow_cards_synced} 个方法论到四色系统🟡黄色卡片
+            {/* Four-color card breakdown */}
+            {result.cards_statistics && result.cards_statistics.total > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: 'yellow', label: '方法论', emoji: '🟡', cls: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700' },
+                  { key: 'blue', label: '事实', emoji: '🔵', cls: 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700' },
+                  { key: 'green', label: '解释', emoji: '🟢', cls: 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-700' },
+                  { key: 'red', label: '行动', emoji: '🔴', cls: 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700' },
+                ].map(item => (
+                  <div key={item.key} className={`flex-1 min-w-[60px] px-2 py-2 border rounded-lg text-center ${item.cls}`}>
+                    <p className="text-[10px]">{item.emoji} {item.label}</p>
+                    <p className="text-base font-bold text-gray-700 dark:text-gray-200">
+                      {result.cards_statistics[item.key] || 0}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
 
+            {/* 已同步指示 */}
+            {result.yellow_cards_synced > 0 && (
+              <div className="px-3 py-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+                <CheckCircle size={14} />
+                已同步 {result.cards_statistics?.total || result.yellow_cards_synced} 张卡片到四色系统
+              </div>
+            )}
+
+            {/* 关联关系概览 */}
+            {result.relations && result.relations.length > 0 && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 font-medium">
+                  🔗 发现 {result.relations.length} 条关联关系
+                </summary>
+                <div className="mt-2 max-h-[200px] overflow-y-auto space-y-1 pl-2 border-l-2 border-gray-200 dark:border-gray-600">
+                  {result.relations.map((rel: any, ri: number) => (
+                    <p key={ri} className="text-[10px] text-gray-500 dark:text-gray-400">
+                      {rel.label || rel.relation}： {rel.from_methodology || rel.from_card} → {rel.to_card}
+                    </p>
+                  ))}
+                </div>
+              </details>
+            )}
+
+            {/* 方法论列表 */}
             <div className="space-y-3 max-h-[500px] overflow-y-auto">
+              <div className="flex items-center justify-between sticky top-0 bg-white/80 dark:bg-gray-800/80 py-1 z-10">
+                <p className="text-xs font-medium text-gray-500">
+                  🟡 核心方法论（{result.methodologies?.length || 0}）
+                </p>
+                {(result.methodologies || []).length > 0 && (
+                  <button
+                    onClick={() => {
+                      (result.methodologies || []).forEach((m: BookMethodology) => saveMethodologyToNotes(m));
+                    }}
+                    className="text-[10px] px-2 py-1 bg-amber-100 dark:bg-amber-900/30 hover:bg-amber-200 dark:hover:bg-amber-800/40 text-amber-700 dark:text-amber-300 rounded flex items-center gap-1 transition-colors"
+                  >
+                    <BookmarkPlus size={11} /> 全部加入笔记
+                  </button>
+                )}
+              </div>
               {(result.methodologies || []).map((m: BookMethodology, i: number) => (
                 <div key={m.methodology_id} className="p-3 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/30 rounded-lg">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <span className="text-xs font-medium text-yellow-600 dark:text-yellow-400">#{i + 1}</span>
                       <h3 className="font-medium text-gray-900 dark:text-white text-sm mt-0.5">{m.name_cn}</h3>
                       <p className="text-xs text-gray-500 mt-0.5">{m.name_en}</p>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-200 dark:bg-yellow-800 text-yellow-700 dark:text-yellow-300 font-medium">🟡 方法论</span>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => saveMethodologyToNotes(m)}
+                        className="p-1 rounded hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-500 hover:text-amber-600 transition-colors"
+                        title="加入笔记"
+                      >
+                        <BookmarkPlus size={14} />
+                      </button>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-yellow-200 dark:bg-yellow-800 text-yellow-700 dark:text-yellow-300 font-medium whitespace-nowrap">🟡 方法论</span>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">{m.trigger_scenario}</p>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {(m.steps || []).slice(0, 3).map((step, si) => (
-                      <span key={si} className="text-[10px] px-1.5 py-0.5 bg-white dark:bg-gray-700 rounded text-gray-500">
-                        {si + 1}. {step.slice(0, 20)}...
-                      </span>
-                    ))}
-                  </div>
+                  {m.description && (
+                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{m.description}</p>
+                  )}
+                  {m.trigger_scenario && (
+                    <p className="text-[11px] text-yellow-700 dark:text-yellow-400 mt-1.5 flex items-center gap-1">
+                      <span className="text-[10px]">🎯</span> {m.trigger_scenario}
+                    </p>
+                  )}
+                  {(m.steps || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      <span className="text-[10px] font-medium text-gray-500">执行步骤：</span>
+                      {(m.steps || []).map((step, si) => (
+                        <p key={si} className="text-[10px] text-gray-500 pl-3 border-l-2 border-yellow-200 dark:border-yellow-700">
+                          {si + 1}. {step}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {m.output_format && (
+                    <p className="text-[10px] text-gray-400 mt-1.5">
+                      📤 产出：{m.output_format}
+                    </p>
+                  )}
                   <p className="text-[10px] text-gray-400 mt-2 font-mono">{m.command_name}</p>
                 </div>
               ))}
@@ -1093,10 +1210,55 @@ const TopicsPanel: React.FC = () => {
 
 const BooksPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [books, setBooks] = useState<any[]>([]);
 
-  useEffect(() => {
+  const loadBooks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const list = await bookshelfService.getAll();
+      setBooks(list.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime()));
+    } catch { setBooks([]); }
     setLoading(false);
   }, []);
+
+  useEffect(() => { loadBooks(); }, [loadBooks]);
+
+  const handleAddPdf = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      try {
+        const ab = await file.arrayBuffer();
+        await bookshelfService.add({
+          title: file.name.replace(/\.pdf$/i, ''),
+          fileName: file.name,
+          fileType: file.type,
+          fileData: ab,
+          pageCount: 0,
+        });
+        toast.success(`已添加「${file.name}」到书架`);
+        loadBooks();
+      } catch (err: any) {
+        toast.error(err.message || '添加失败');
+      }
+    };
+    input.click();
+  };
+
+  const handleDelete = async (id: string, title: string) => {
+    if (!window.confirm(`确定从书架删除「${title}」？`)) return;
+    await bookshelfService.remove(id);
+    toast.success('已删除');
+    loadBooks();
+  };
+
+  const handleOpenPdf = async (id: string) => {
+    const url = await bookshelfService.getBlobUrl(id);
+    if (url) window.open(`/pdf-viewer?url=${encodeURIComponent(url)}`, '_blank');
+  };
 
   if (loading) return <div className="text-center py-12"><Loader size={24} className="animate-spin mx-auto text-blue-500" /></div>;
 
@@ -1104,26 +1266,53 @@ const BooksPanel: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold flex items-center gap-2"><Book size={18} className="text-blue-500" />我的书架</h2>
-          <a href="/pdf-viewer" target="_blank"
+          <h2 className="font-semibold flex items-center gap-2"><Book size={18} className="text-blue-500" />我的书架 ({books.length})</h2>
+          <button onClick={handleAddPdf}
             className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600">
             <Plus size={12} /> 添加书籍 PDF
-          </a>
+          </button>
         </div>
-        <div className="text-center py-12 text-gray-400 border border-dashed rounded-lg">
-          <Book size={48} className="mx-auto mb-3 opacity-40" />
-          <p>可选择以下方式阅读批注</p>
-          <div className="flex gap-3 justify-center mt-4">
-            <a href="/pdf-viewer" target="_blank"
-              className="flex items-center gap-1 px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
-              <FileText size={14} /> PDF 批注阅读
-            </a>
-            <a href="/pdf-viewer?mode=markdown" target="_blank"
-              className="flex items-center gap-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600">
-              <FileText size={14} /> Markdown 编辑
-            </a>
+
+        {books.length === 0 ? (
+          <div className="text-center py-12 text-gray-400 border border-dashed rounded-lg">
+            <Book size={48} className="mx-auto mb-3 opacity-40" />
+            <p>书架为空，点击上方按钮添加 PDF 书籍</p>
           </div>
-        </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {books.map((book) => (
+              <div key={book.id}
+                className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-700 rounded-xl p-4 hover:shadow-md transition-all">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-12 bg-blue-100 dark:bg-blue-800 rounded flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <FileText size={20} className="text-blue-600 dark:text-blue-300" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{book.title}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{book.fileName}</p>
+                    <p className="text-[10px] text-gray-400">{new Date(book.addedAt).toLocaleString('zh-CN')}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 mt-3">
+                  <button onClick={() => handleOpenPdf(book.id)}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-500 text-white rounded text-[10px] hover:bg-blue-600 transition-colors">
+                    <FileText size={10} /> PDF 批注阅读
+                  </button>
+                  <button onClick={() => {
+                    window.open(`/pdf-viewer?mode=markdown&book=${book.id}`, '_blank');
+                  }}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-500 text-white rounded text-[10px] hover:bg-green-600 transition-colors">
+                    <Edit3 size={10} /> Markdown 编辑
+                  </button>
+                  <button onClick={() => handleDelete(book.id, book.title)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors opacity-0 group-hover:opacity-100">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 提供技能管理和调用的 API
 """
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -568,12 +568,14 @@ async def book_skill_extract(request: BookExtractRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BookNotesExtractRequest(BaseModel):
+    notes: str = Field(..., description="笔记文本内容")
+    book_name: str = Field(default="", description="书籍名称")
+    book_author: str = Field(default="", description="书籍作者")
+
+
 @router.post("/book-skill/extract-from-notes")
-async def book_skill_extract_from_notes(
-    notes: str,
-    book_name: str = "",
-    book_author: str = ""
-):
+async def book_skill_extract_from_notes(request: BookNotesExtractRequest):
     """
     从用户笔记/总结中提取方法论
     适用于用户已经有四色笔记的情况
@@ -582,9 +584,9 @@ async def book_skill_extract_from_notes(
         from skills.book_skill import get_book_skill_generator
         generator = get_book_skill_generator()
         result = generator.extract_from_notes(
-            notes=notes,
-            book_name=book_name,
-            book_author=book_author
+            notes=request.notes,
+            book_name=request.book_name,
+            book_author=request.book_author
         )
         return result
     except Exception as e:

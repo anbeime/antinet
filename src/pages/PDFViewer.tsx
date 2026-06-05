@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText, Upload, Download, ZoomIn, ZoomOut,
   ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
-  Maximize2, Minimize2, AlertCircle, Bookmark, Library, Plus, Save, Trash2, BookmarkPlus, Check
+  Maximize2, Minimize2, AlertCircle, Bookmark, Library, Plus, Save, Trash2, BookmarkPlus, Check, Book
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { useSearchParams } from 'react-router-dom';
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
 import { renderMarkdown } from '@/lib/utils';
+import { bookshelfService } from '@/services/bookshelfService';
 
 const API_BASE = getApiBaseUrl();
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
@@ -39,6 +40,8 @@ const PDFViewer: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfjsRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
+  const pdfBufferRef = useRef<ArrayBuffer | null>(null);
+  const pdfFileNameRef = useRef<string>('');
 
   // 文本项位置存储（用于导出编辑后的 PDF）
   const textItemsByPageRef = useRef<Map<number, any[]>>(new Map());
@@ -125,6 +128,7 @@ const PDFViewer: React.FC = () => {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const ab = await res.arrayBuffer();
+      pdfBufferRef.current = ab;
       const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
@@ -191,6 +195,8 @@ const PDFViewer: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const ab = ev.target?.result as ArrayBuffer;
+      pdfBufferRef.current = ab;
+      pdfFileNameRef.current = file.name;
       setPdfUrl(URL.createObjectURL(new Blob([ab], { type: 'application/pdf' })));
       try {
         const pjs = await loadPDFJS();
@@ -260,7 +266,7 @@ const PDFViewer: React.FC = () => {
     setSelectedCard(card);
     setIsNewCard(false);
     setActiveView('source');
-    setSourceViewMode('pdf');
+    setSourceViewMode(card.contentHtml ? 'preview' : 'pdf');
     setCardTitle(card.title || '');
     setCardContent(card.content || '');
     setCardType(card.card_type || card.type || 'blue');
@@ -545,7 +551,7 @@ const PDFViewer: React.FC = () => {
                       const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
                       const id = selectedCard?.id || `note-${Date.now()}`;
                       if (!existing.find((m: any) => m.id === id)) {
-                        existing.push({ id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() });
+                        existing.push({ id, title: cardTitle || '无标题', content: cardContent, contentHtml: renderMarkdown(cardContent), card_type: cardType, addedAt: new Date().toISOString() });
                         localStorage.setItem('bookskill_notes', JSON.stringify(existing));
                         toast.success('已保存到笔记');
                       } else {
@@ -578,7 +584,7 @@ const PDFViewer: React.FC = () => {
                 placeholder="# 标题&#10;&#10;在此输入 Markdown 内容..." />
             </div>
             <div className="flex-1 overflow-y-auto p-4 bg-white dark:bg-gray-900 border rounded-lg">
-              <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(cardContent) }} />
+              <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: selectedCard?.contentHtml || renderMarkdown(cardContent) }} />
             </div>
           </div>
         ) : (
@@ -612,12 +618,13 @@ const PDFViewer: React.FC = () => {
                 if (!cardContent.trim()) { toast.warning('内容为空'); return; }
                 const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
                 const id = selectedCard?.id || `note-${Date.now()}`;
+                const noteData = { id, title: cardTitle || '无标题', content: cardContent, contentHtml: renderMarkdown(cardContent), card_type: cardType, addedAt: new Date().toISOString() };
                 if (!existing.find((m: any) => m.id === id)) {
-                  existing.push({ id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() });
+                  existing.push(noteData);
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
                   toast.success('已保存到笔记');
                 } else {
-                  existing[existing.findIndex((m: any) => m.id === id)] = { id, title: cardTitle || '无标题', content: cardContent, card_type: cardType, addedAt: new Date().toISOString() };
+                  existing[existing.findIndex((m: any) => m.id === id)] = noteData;
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
                   toast.success('笔记已更新');
                 }
@@ -664,6 +671,28 @@ const PDFViewer: React.FC = () => {
               className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${showCardPanel ? 'bg-green-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
               <Bookmark size={14} />卡片
             </button>
+            {pdfBufferRef.current && (
+              <button onClick={async () => {
+                const ab = pdfBufferRef.current;
+                if (!ab) return;
+                try {
+                  const name = pdfFileNameRef.current || fileName || '未命名文档';
+                  await bookshelfService.add({
+                    title: name.replace(/\.pdf$/i, ''),
+                    fileName: name,
+                    fileType: 'application/pdf',
+                    fileData: ab,
+                    pageCount: totalPages,
+                  });
+                  toast.success(`已保存「${name}」到书架`);
+                } catch (err: any) {
+                  toast.error(err.message || '保存失败');
+                }
+              }}
+                className="flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-blue-500 text-white hover:bg-blue-600">
+                <Book size={14} />保存到书架
+              </button>
+            )}
           </div>
         </div>
       </header>
