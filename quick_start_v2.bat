@@ -55,7 +55,7 @@ REM ========================================
 REM [2/6] Zhiyi Backend (port 8000)
 REM ========================================
 echo [2/6] Starting Zhiyi Backend...
-REM start "Zhiyi Backend" cmd /k "C:\D\zhiyi\venv_arm64\Scripts\python.exe C:\D\zhiyi\backend\main.py"
+start "Zhiyi Backend" cmd /k "C:\D\zhiyi\venv_arm64\Scripts\python.exe C:\D\zhiyi\backend\main.py"
 timeout /t 8 /nobreak >nul
 
 REM ========================================
