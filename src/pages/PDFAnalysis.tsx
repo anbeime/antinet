@@ -40,12 +40,10 @@ import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
 import PDFExporter from '@/components/PDFExporter';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
 
-// 配置 PDF.js worker 使用本地打包的文件（无需CDN）
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
-).toString();
+// 配置 PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 interface ProcessingStatus {
   stage: string;
@@ -113,11 +111,39 @@ const PDFAnalysis: React.FC = () => {
   const [selectedCards, setSelectedCards] = useState<Set<string>>(new Set());
   const [savedCardIds, setSavedCardIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history'>('extract');
+  const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'ocr'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
   const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // OCR 识别相关状态
+  const [ocrEnabled, setOcrEnabled] = useState(false);
+  const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [ocrPresets] = useState<{ id: string; name: string; description: string }[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState('');
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrResult, setOcrResult] = useState<string | null>(null);
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleOcrExtract = async () => {
+    if (!ocrFile) return;
+    setIsOcrProcessing(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', ocrFile);
+      if (selectedPreset) formData.append('preset', selectedPreset);
+      const resp = await fetch(`${API_BASE}/api/ocr/extract`, { method: 'POST', body: formData });
+      if (!resp.ok) throw new Error('OCR 识别失败');
+      const data = await resp.json();
+      setOcrResult(data.text || JSON.stringify(data, null, 2));
+      toast.success('OCR 识别完成');
+    } catch (e: any) {
+      toast.error(e.message || 'OCR 识别失败');
+    } finally {
+      setIsOcrProcessing(false);
+    }
+  };
 
   // 格式转换相关状态
   const [conversionTasks, setConversionTasks] = useState<ConversionTask[]>([]);

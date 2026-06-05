@@ -1590,7 +1590,6 @@ useEffect(() => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
-                {/* 密信按钮暂隐藏 - 代码保留
                 <button
                   onClick={() => setShowMessageModal(true)}
                   className="text-xs px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 transition-colors"
@@ -1598,7 +1597,6 @@ useEffect(() => {
                 >
                   密信
                 </button>
-                */}
               </div>
             </div>
           </div>
@@ -2038,7 +2036,7 @@ useEffect(() => {
       />
 
       {/* 密信模态框（代码保留，等待后续使用） */}
-      {/*showMessageModal && (
+      {showMessageModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowMessageModal(false)}>
           <div className="rounded-xl border border-gray-700/50 w-full max-w-md p-5" style={{ background: '#1a2235' }} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -2107,7 +2105,7 @@ useEffect(() => {
             </div>
           </div>
         </div>
-      )*/}
+      )}
     </div>
   );
 };

@@ -1253,18 +1253,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         >
           {/* 头部 - 中国风 */}
           <div className="flex items-center justify-between px-4 py-3" style={{ background: 'linear-gradient(135deg, #8b4513, #d4a574)', borderBottom: '2px solid #d4a574' }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
                 <Bot className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>小易</h3>
-                <p className="text-xs text-white/80">
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-white truncate" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>小易</h3>
+                <p className="text-xs text-white/80 hidden sm:block">
                   知识库查询 · 技能调用 · 深度思考
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 className="p-2 rounded-lg text-white/60 hover:bg-white/20 transition-colors"
                 onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1272,50 +1272,52 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               >
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
               </button>
-<button
-                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${evolutionMode ? 'bg-purple-500/50' : 'text-white/60 hover:bg-white/20'}`}
-                onClick={() => {
-                  const newVal = !evolutionMode;
-                  setEvolutionMode(newVal);
-                  localStorage.setItem('evolutionMode', String(newVal));
-                  toast.success(newVal ? '已开启自进化模式 (8-Agent+四色卡片)' : '已关闭自进化模式', { duration: 2000 });
-                }}
-                title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
-              >
-                <Brain className="w-5 h-5" />
-              </button>
-              <button
-                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${workflowMode ? 'bg-green-500/50' : 'text-white/60 hover:bg-white/20'}`}
-                onClick={() => {
-                  const newVal = !workflowMode;
-                  setWorkflowMode(newVal);
-                  localStorage.setItem('workflowMode', String(newVal));
-                  toast.success(newVal ? '已开启工作流模式 (智能编排)' : '已关闭工作流模式', { duration: 2000 });
-                }}
-                title={workflowMode ? '关闭工作流模式' : '开启工作流模式 - 自动识别意图并编排工作流'}
-              >
-                <GitBranch className="w-5 h-5" />
-              </button>
-              <button
-                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
-                onClick={() => {
-                  const newVal = !autoSpeak;
-                  setAutoSpeak(newVal);
-                  localStorage.setItem('autoSpeak', String(newVal));
-                  if (!newVal) {
-                    synthRef.current?.cancel();
-                    if (currentAudioRef.current) {
-                      currentAudioRef.current.pause();
-                      currentAudioRef.current = null;
+              <span className="hidden sm:inline-flex items-center gap-1">
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${evolutionMode ? 'bg-purple-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !evolutionMode;
+                    setEvolutionMode(newVal);
+                    localStorage.setItem('evolutionMode', String(newVal));
+                    toast.success(newVal ? '已开启自进化模式 (8-Agent+四色卡片)' : '已关闭自进化模式', { duration: 2000 });
+                  }}
+                  title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
+                >
+                  <Brain className="w-5 h-5" />
+                </button>
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${workflowMode ? 'bg-green-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !workflowMode;
+                    setWorkflowMode(newVal);
+                    localStorage.setItem('workflowMode', String(newVal));
+                    toast.success(newVal ? '已开启工作流模式 (智能编排)' : '已关闭工作流模式', { duration: 2000 });
+                  }}
+                  title={workflowMode ? '关闭工作流模式' : '开启工作流模式 - 自动识别意图并编排工作流'}
+                >
+                  <GitBranch className="w-5 h-5" />
+                </button>
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !autoSpeak;
+                    setAutoSpeak(newVal);
+                    localStorage.setItem('autoSpeak', String(newVal));
+                    if (!newVal) {
+                      synthRef.current?.cancel();
+                      if (currentAudioRef.current) {
+                        currentAudioRef.current.pause();
+                        currentAudioRef.current = null;
+                      }
+                      setIsSpeaking(false);
                     }
-                    setIsSpeaking(false);
-                  }
-                  toast.success(newVal ? '已开启自动朗读' : '已关闭自动朗读', { duration: 1500 });
-                }}
-                title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
-              >
-                {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-              </button>
+                    toast.success(newVal ? '已开启自动朗读' : '已关闭自动朗读', { duration: 1500 });
+                  }}
+                  title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
+                >
+                  {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                </button>
+              </span>
               <button
                 className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                 onClick={handleClear}

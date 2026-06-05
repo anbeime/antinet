@@ -9,10 +9,11 @@ import { useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
 import { renderMarkdown } from '@/lib/utils';
 
 const API_BASE = getApiBaseUrl();
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 const CARD_COLORS: Record<string, string> = {
   blue: 'border-l-blue-500 bg-blue-50 dark:bg-blue-900/20',
@@ -66,6 +67,7 @@ const PDFViewer: React.FC = () => {
   const [cardFilter, setCardFilter] = useState('');
   const [notesSelectedIds, setNotesSelectedIds] = useState<Set<string>>(new Set()); // 选中的卡片ID
   const [currentTopic, setCurrentTopic] = useState(''); // 来自 URL 的专题参数
+  const [currentProjectId, setCurrentProjectId] = useState<number | null>(null); // 找到的专题ID
   const [fromNotes, setFromNotes] = useState(false); // 是否来自笔记队列
 
   // 当前激活的视图: 'pdf'=原生PDF渲染, 'source'=卡片源文件查看器
@@ -233,13 +235,18 @@ const PDFViewer: React.FC = () => {
             const projects = await projRes.json();
             const project = projects.find((p: any) => p.name === currentTopic);
             if (project?.id) {
+              setCurrentProjectId(project.id);
               const cardsRes = await fetch(`${API_BASE}/api/research/projects/${project.id}/cards`);
               if (cardsRes.ok) { const d = await cardsRes.json(); setCards(d || []); setCardsLoading(false); return; }
             }
           }
         } catch {}
       }
-      // 降级：从知识库加载全部卡片
+      // 降级：按专题ID或从知识库加载全部卡片
+      if (currentProjectId) {
+        const topicRes = await fetch(`${API_BASE}/api/knowledge/cards/by-topic/${currentProjectId}`);
+        if (topicRes.ok) { const d = await topicRes.json(); setCards(d.cards || d || []); setCardsLoading(false); return; }
+      }
       const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=500`);
       if (res.ok) { const d = await res.json(); setCards(d.cards || d || []); }
     } catch {} finally { setCardsLoading(false); }
@@ -294,7 +301,10 @@ const PDFViewer: React.FC = () => {
   // 客户端按专题过滤卡片
   // 来自笔记时，直接显示所有卡片（不应用专题过滤）
   const topicFilteredCards = fromNotes ? cards : currentTopic
-    ? cards.filter(c => (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic))
+    ? cards.filter(c => {
+        if (currentProjectId) return c.project_id === currentProjectId;
+        return (c.topic || c.category || c.project || c.book_name || '').includes(currentTopic);
+      })
     : cards;
 
   const filteredCards = topicFilteredCards.filter((c: any) => {
@@ -724,7 +734,7 @@ const PDFViewer: React.FC = () => {
                 <p className="text-xs text-gray-400 text-center py-8">{cardFilter ? '无匹配卡片' : '暂无卡片，点击"新建"创建'}</p>
               ) : (
                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {displayCards.map((card: any) => (
+                  {filteredCards.map((card: any) => (
                     <div key={card.id} className="relative group">
                       {/* 选中复选框 */}
                       <div className="absolute left-1 top-1/2 -translate-y-1/2 z-10"

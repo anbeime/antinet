@@ -61,6 +61,7 @@ import RemotionGenerator from '@/components/remotion/RemotionGenerator';
 import PDFViewer from '@/pages/PDFViewer';
 import PPTViewer from '@/pages/PPTViewer';
 import OfficeDocs from '@/pages/OfficeDocs';
+import { GtdTask } from '@/types/card';
 
 
 
@@ -176,6 +177,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [showAllCardsModal, setShowAllCardsModal] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
+  const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
+  const [gtdTasks, setGtdTasks] = useState<GtdTask[]>([]);
   
   const toggleExpandCard = (id: string) => {
     setExpandedCardIds(prev => {
@@ -216,7 +219,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 提取内容摘要（首句或前60字）
   const extractSummary = (content: string, maxLen = 60): string => {
-    const cleaned = content.replace(/!\[.*?\]\(.*?\)/g, '').replace(/[#*>\-\[\]]/g, '').trim();
+    const cleaned = content.replace(/!\[.*?]\(.*?\)/g, '').replace(/[][#*>\-]/g, '').trim();
     const match = cleaned.match(/^.*?[。！？.!?]/);
     if (match && match[0].length <= maxLen) return match[0].trim();
     return cleaned.length > maxLen ? cleaned.slice(0, maxLen) + '...' : cleaned;
@@ -304,7 +307,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       });
 
       if (!response.ok) {
-        throw new Error('创建失败');
+        toast.error('创建失败，请检查后端服务', {
+          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+        });
+        return;
       }
 
       const newCard = await response.json();
@@ -375,7 +381,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             });
           } else {
             const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || '文本导入服务异常');
+            console.error('文本导入失败:', errData.detail || '文本导入服务异常');
+            toast(`文本导入失败: ${errData.detail || '文本导入服务异常'}`, {
+              className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+            });
+            return;
           }
         } catch (e: any) {
           console.error('文本导入失败:', e);
@@ -546,7 +556,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       });
 
       if (!response.ok) {
-        throw new Error('删除失败');
+        toast.error('删除失败，请检查后端服务', {
+          className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+        });
+        return;
       }
 
       // 从列表中移除卡片
@@ -606,7 +619,26 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       }
     };
     
-    loadCardsFromAPI();
+    void loadCardsFromAPI();
+    return () => { isMounted = false; };
+  }, []);
+
+  // 加载 GTD 任务
+  React.useEffect(() => {
+    let isMounted = true;
+    const loadGtdTasks = async () => {
+      try {
+        const resp = await fetch(getApiBaseUrl() + '/api/data/gtd/tasks');
+        if (!isMounted) return;
+        if (resp.ok) {
+          const data = await resp.json();
+          setGtdTasks(data.tasks || data || []);
+        }
+      } catch {
+        // 静默失败，不影响主页使用
+      }
+    };
+    void loadGtdTasks();
     return () => { isMounted = false; };
   }, []);
 
@@ -622,13 +654,19 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       // 从知识卡片API获取真实数据
       const response = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=50');
       if (!isMounted) return;
-      if (!response.ok) throw new Error('API请求失败');
+      if (!response.ok) {
+        if (isMounted) setStatsError('API请求失败');
+        setStatsLoading(false);
+        return;
+      }
       const data = await response.json();
       const rawCards = data.cards || data || [];
       
       if (!Array.isArray(rawCards)) {
         console.error('API返回格式错误:', data);
-        throw new Error('数据格式错误');
+        if (isMounted) setStatsError('数据格式错误');
+        setStatsLoading(false);
+        return;
       }
       
       const fetchedCards = rawCards.map((c: any) => ({
@@ -656,7 +694,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   useEffect(() => {
     if (activeTab === 'dashboard') {
-      loadDashboardData();
+      void loadDashboardData();
     }
   }, [activeTab, loadDashboardData]);
 
@@ -969,15 +1007,35 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               >
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-bold text-ink-main">知识概览</h2>
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-wood hover:bg-wood-soft text-ink-main px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-colors"
-                    onClick={() => setShowImportModal(true)}
-                  >
-                    <Upload size={18} />
-                    <span>导入知识记录</span>
-                  </motion.button>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-desc" />
+                      <input
+                        type="text"
+                        placeholder="搜索知识卡片/任务..."
+                        value={dashboardSearchQuery}
+                        onChange={e => setDashboardSearchQuery(e.target.value)}
+                        className="w-52 pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-bg-soft dark:bg-dark-soft focus:outline-none focus:ring-2 focus:ring-wood focus:border-transparent transition-all"
+                      />
+                      {dashboardSearchQuery && (
+                        <button
+                          onClick={() => setDashboardSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-desc hover:text-ink-main"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-wood hover:bg-wood-soft text-ink-main px-4 py-2 rounded-lg flex items-center space-x-2 text-sm font-medium transition-colors"
+                      onClick={() => setShowImportModal(true)}
+                    >
+                      <Upload size={18} />
+                      <span>导入知识记录</span>
+                    </motion.button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   {Object.entries(cardTypeMap).map(([color, type]) => (
@@ -1003,6 +1061,83 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     </div>
                   ))}
                 </div>
+                {/* 全局搜索结果 */}
+                {dashboardSearchQuery.trim() && (() => {
+                  const q = dashboardSearchQuery.toLowerCase();
+                  const matchedCards = cards.filter(c =>
+                    c.title.toLowerCase().includes(q) ||
+                    c.content.toLowerCase().includes(q) ||
+                    c.address.toLowerCase().includes(q)
+                  );
+                  const matchedTasks = gtdTasks.filter(t =>
+                    t.title.toLowerCase().includes(q) ||
+                    (t.description || '').toLowerCase().includes(q)
+                  );
+                  const total = matchedCards.length + matchedTasks.length;
+                  return (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm text-ink-desc">
+                          搜索结果 ({total} 条) — 知识卡片 {matchedCards.length} · 任务 {matchedTasks.length}
+                        </span>
+                        <button
+                          onClick={() => setDashboardSearchQuery('')}
+                          className="text-xs text-wood hover:underline"
+                        >
+                          清除
+                        </button>
+                      </div>
+                      {total === 0 ? (
+                        <p className="text-sm text-ink-desc py-4 text-center">没有找到匹配的结果</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {matchedCards.slice(0, 10).map(card => (
+                            <div
+                              key={`card-${card.id}`}
+                              className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-bg-soft dark:hover:bg-dark-mute cursor-pointer transition-colors border border-transparent hover:border-border"
+                              onClick={() => {
+                                setSelectedCard(card);
+                                setShowDetailModal(true);
+                              }}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-xs font-medium text-wood/80 bg-wood/10 px-1.5 py-0.5 rounded">卡片</span>
+                                <span className="text-sm text-ink-main truncate">{card.title}</span>
+                              </div>
+                              <ChevronRight size={14} className="text-ink-desc flex-shrink-0" />
+                            </div>
+                          ))}
+                          {matchedTasks.slice(0, 10).map(task => (
+                            <div
+                              key={`task-${task.id}`}
+                              className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-bg-soft dark:hover:bg-dark-mute cursor-pointer transition-colors border border-transparent hover:border-border"
+                              onClick={() => setActiveTab('data-management')}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                                  task.is_completed
+                                    ? 'text-green-700 bg-green-50'
+                                    : 'text-purple-700 bg-purple-50'
+                                }`}>
+                                  {task.is_completed ? '已完成' : '任务'}
+                                </span>
+                                <span className={`text-sm truncate ${task.is_completed ? 'line-through text-ink-desc' : 'text-ink-main'}`}>
+                                  {task.title}
+                                </span>
+                              </div>
+                              <ChevronRight size={14} className="text-ink-desc flex-shrink-0" />
+                            </div>
+                          ))}
+                          {total > 10 && (
+                            <p className="text-xs text-ink-desc text-center pt-1">
+                              显示前 10 条，更多结果请精确搜索词
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </motion.div>
 
               {/* 平台功能入口 */}
@@ -1125,7 +1260,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       <AlertCircle className="w-12 h-12 text-task-red dark:text-task-red mx-auto mb-2 opacity-50" />
                       <p className="text-task-red dark:text-task-red">{statsError}</p>
                       <button
-                        onClick={loadDashboardData}
+                        onClick={() => { void loadDashboardData(); }}
                         className="mt-3 px-4 py-2 bg-wood/20 dark:bg-wood/10 text-ink-main rounded-lg text-sm hover:bg-wood/30 transition-colors"
                       >
                         重试加载

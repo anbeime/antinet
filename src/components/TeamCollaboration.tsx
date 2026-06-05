@@ -3,61 +3,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Permission } from '@/contexts/authContext';
 import {
   Users,
-  Network,
   FileCheck,
-  Lightbulb,
-  BarChart3,
   Clock,
-  UserPlus,
-  RefreshCw,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  CheckCircle2,
   AlertCircle,
-  FileSearch,
-  Award,
   Edit3,
   Trash2,
   Plus,
   X,
   Send,
-  Settings,
   Save,
-  Crown,
   Calendar,
-  Brain,
   Library,
   Bookmark,
-  Paperclip,
   MessageSquare
 } from 'lucide-react';
-import WikiEditor from './WikiEditor';
 import MeetingCardPanel, { CardDetailPopup } from './MeetingCardPanel';
 import { collaborationService, collaborationREST } from '../services/collaborationService';
 import { teamMemberService, activityService, projectService, researchProjectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  LineChart,
-  Line,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar
-} from 'recharts';
+
 
 // ========== 类型定义 ==========
 
@@ -175,7 +141,7 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
 
 // ========== 主组件==========
 const TeamCollaborationEnhanced: React.FC = () => {
-  const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
+  const { userInfo, updatePermissions } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState<'realtime' | 'projects' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
@@ -368,9 +334,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
-  // 颜色配置
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-
   // 从后端API加载协作数据
   useEffect(() => {
     const loadCollaborationData = async () => {
@@ -482,7 +445,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     researchProjectService.getAll().then(data => {
       if (data && data.length > 0) {
         setTopics(data);
-        setSelectedTopicId(data[0].id);
+        setSelectedTopicId(data[0].id ?? null);
       }
     }).catch(() => {});
   }, []);
@@ -551,24 +514,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
   }, [projects]);
 
   // ========== 团队成员管理 ==========
-  const handleAddMember = () => {
-    if (!hasPermission('admin') && !hasPermission('write')) {
-      toast.error('权限不足：需要管理或编辑权限才能添加成员');
-      return;
-    }
-    setEditingMember({ id: 0, name: '', role: '', email: '', avatar: '👤', online: false, contribution: 0, permissions: ['read', 'write'] });
-    setIsMemberModalOpen(true);
-  };
-
-  const handleEditMember = (member: TeamMember) => {
-    if (!hasPermission('admin') && !hasPermission('write')) {
-      toast.error('权限不足：需要管理或编辑权限才能编辑成员');
-      return;
-    }
-    setEditingMember({ ...member });
-    setIsMemberModalOpen(true);
-  };
-
   const handleSaveMember = async () => {
     if (!editingMember) return;
     
@@ -595,33 +540,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     }
   };
 
-  const handleDeleteMember = async (id: number) => {
-    if (!hasPermission('admin')) {
-      toast.error('权限不足：仅管理员可删除成员');
-      return;
-    }
-    if (!confirm('确定要删除这个成员吗？')) return;
-    
-    try {
-      await teamMemberService.delete(id, userInfo.name);
-      setTeamMembers(teamMembers.filter(m => m.id !== id));
-      toast.success('成员删除成功');
-    } catch (err: any) {
-      toast.error(err?.message || '删除成员失败');
-    }
-  };
-
   // ========== 知识缺口管理 ==========
-  const handleAddGap = () => {
-      setEditingGap({ id: 0, area: '', gapScore: 50, priority: '中', description: '', suggestions: [] });
-    setIsGapModalOpen(true);
-  };
-
-  const handleEditGap = (gap: KnowledgeGap) => {
-    setEditingGap({ ...gap });
-    setIsGapModalOpen(true);
-  };
-
   const handleSaveGap = () => {
     if (!editingGap) return;
     
@@ -635,12 +554,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
     }
     setIsGapModalOpen(false);
     setEditingGap(null);
-  };
-
-  const handleDeleteGap = (id: number) => {
-    if (!confirm('确定要删除这个知识缺口吗？')) return;
-    setKnowledgeGaps(knowledgeGaps.filter(g => g.id !== id));
-    toast.success('知识缺口删除成功');
   };
 
   // ========== 协作消息管理 ==========

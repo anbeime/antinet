@@ -18,6 +18,7 @@ import { researchProjectService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { CARD_COLOR_MAP, CARD_COLOR_CSS } from '@/types/card';
 import AppHeader from '@/components/AppHeader';
+import { CardDetailPopup } from '@/components/MeetingCardPanel';
 
 // ============ Types ============
 interface BookMethodology {
@@ -98,7 +99,7 @@ const BookSkillCenter: React.FC = () => {
             加载统计...
           </div>
         ) : stats ? (
-          <div className="flex gap-3 flex-wrap items-center">
+          <div className="hidden md:flex gap-3 flex-wrap items-center">
             <StatBadge icon={BookOpen} value={stats.total_books} label="书籍" color="yellow" />
             <StatBadge icon={Lightbulb} value={stats.total_methodologies} label="方法论" color="yellow" />
             <StatBadge icon={CheckCircle} value={stats.total_case_studies} label="案例" color="blue" />
@@ -154,7 +155,7 @@ const BookSkillCenter: React.FC = () => {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-gradient-to-r from-yellow-50 via-blue-50 to-green-50 dark:from-yellow-900/10 dark:via-blue-900/10 dark:to-green-900/10 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
+        className="hidden md:block bg-gradient-to-r from-yellow-50 via-blue-50 to-green-50 dark:from-yellow-900/10 dark:via-blue-900/10 dark:to-green-900/10 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
       >
         <div className="flex items-center justify-center gap-2 md:gap-4 text-xs md:text-sm flex-wrap">
           {[
@@ -174,7 +175,7 @@ const BookSkillCenter: React.FC = () => {
       </motion.div>
 
       {/* Color Legend */}
-      <div className="flex items-center justify-center gap-3 text-[10px] text-gray-400">
+      <div className="hidden md:flex items-center justify-center gap-3 text-[10px] text-gray-400">
         {Object.entries(CARD_COLOR_MAP).map(([key, val]) => (
           <span key={key} className={`flex items-center gap-1 px-2 py-0.5 rounded ${CARD_COLOR_CSS[key as keyof typeof CARD_COLOR_CSS] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}>
             {val} ({key})
@@ -195,7 +196,7 @@ const BookSkillCenter: React.FC = () => {
             }`}
           >
             <tab.icon size={16} className={activeTab === tab.key ? tab.color : ''} />
-            <span className="hidden sm:inline">{tab.label}</span>
+            <span className="hidden md:inline">{tab.label}</span>
           </button>
         ))}
       </div>
@@ -865,6 +866,12 @@ const TopicsPanel: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedTopic, setSelectedTopic] = useState<any>(null);
   const [booksInTopic, setBooksInTopic] = useState<any[]>([]);
+  const [previewCard, setPreviewCard] = useState<any | null>(null);
+  const [showCreateCard, setShowCreateCard] = useState(false);
+  const [newCardTitle, setNewCardTitle] = useState('');
+  const [newCardContent, setNewCardContent] = useState('');
+  const [newCardType, setNewCardType] = useState('blue');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetch('/api/research/projects').then(r => r.ok ? r.json() : []).then(setTopics).catch(() => {}).finally(() => setLoading(false));
@@ -887,81 +894,197 @@ const TopicsPanel: React.FC = () => {
     } catch {}
   };
 
+  const handleCreateCard = async () => {
+    if (!newCardTitle.trim() || !selectedTopic) return;
+    setCreating(true);
+    try {
+      const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newCardTitle.trim(),
+          content: newCardContent.trim(),
+          card_type: newCardType,
+        })
+      });
+      if (res.ok) {
+        const card = await res.json();
+        const linkRes = await fetch(`${getApiBaseUrl()}/api/research/projects/${selectedTopic.id}/cards/${card.id || card.card_id}`, {
+          method: 'POST',
+        });
+        if (linkRes.ok) {
+          toast.success('卡片创建成功');
+          setShowCreateCard(false);
+          setNewCardTitle('');
+          setNewCardContent('');
+          setNewCardType('blue');
+          selectTopic(selectedTopic);
+        }
+      } else {
+        toast.error('创建卡片失败');
+      }
+    } catch {
+      toast.error('创建卡片失败');
+    }
+    setCreating(false);
+  };
+
   if (loading) return <div className="text-center py-12"><Loader size={24} className="animate-spin mx-auto text-purple-500" /></div>;
 
   return (
-    <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* 左侧：专题列表 */}
-      <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4">
-        <h2 className="font-semibold flex items-center gap-2"><Library size={18} className="text-purple-500" />研究专题 ({topics.length})</h2>
-        {topics.length === 0 ? (
-          <div className="text-center py-8 text-gray-400"><Library size={48} className="mx-auto mb-3 opacity-40" /><p>暂无专题</p></div>
-        ) : (
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
-            {topics.map((t: any) => (
-              <button key={t.id} onClick={() => selectTopic(t)}
-                className={`w-full text-left p-3 rounded-lg border transition-colors flex items-center justify-between gap-2 ${
-                  selectedTopic?.id === t.id ? 'border-purple-400 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
-                }`}>
-                <div className="flex items-center gap-2 min-w-0">
-                  <Library size={16} className="text-purple-500 flex-shrink-0" />
-                  <span className="font-medium text-sm truncate">{t.name}</span>
-                </div>
-                <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
-              </button>
-            ))}
-          </div>
-        )}
+    <div className="max-w-5xl mx-auto">
+      {/* 左侧专题列表 - 桌面可见，移动端隐藏 */}
+      <div className="hidden lg:block mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4">
+          <h2 className="font-semibold flex items-center gap-2"><Library size={18} className="text-purple-500" />研究专题 ({topics.length})</h2>
+          {topics.length === 0 ? (
+            <div className="text-center py-8 text-gray-400"><Library size={48} className="mx-auto mb-3 opacity-40" /><p>暂无专题</p></div>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {topics.map((t: any) => (
+                <button key={t.id} onClick={() => selectTopic(t)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors flex items-center justify-between gap-2 ${
+                    selectedTopic?.id === t.id ? 'border-purple-400 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                  }`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Library size={16} className="text-purple-500 flex-shrink-0" />
+                    <span className="font-medium text-sm truncate">{t.name}</span>
+                  </div>
+                  <ChevronRight size={14} className="text-gray-400 flex-shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 右侧：专题卡片预览 */}
-      <div>
-        {selectedTopic ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4 max-h-[600px] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold flex items-center gap-2"><BookMarked size={16} className="text-yellow-500" />{selectedTopic.name}</h3>
+      {/* 专题选择 - 移动端下拉 */}
+      <div className="lg:hidden mb-4">
+        <select
+          value={selectedTopic?.id || ''}
+          onChange={(e) => {
+            const t = topics.find((t: any) => t.id === Number(e.target.value));
+            if (t) selectTopic(t);
+          }}
+          className="w-full px-3 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm"
+        >
+          <option value="">选择专题</option>
+          {topics.map((t: any) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* 卡片内容区 */}
+      {selectedTopic ? (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4 max-h-[600px] overflow-y-auto">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold flex items-center gap-2"><BookMarked size={16} className="text-yellow-500" />{selectedTopic.name}</h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCreateCard(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600 transition-colors"
+              >
+                <Plus size={12} /> 新建卡片
+              </button>
               <a href={`/pdf-viewer?topic=${encodeURIComponent(selectedTopic.name)}`} target="_blank"
                 className="flex items-center gap-1 px-3 py-1.5 bg-purple-500 text-white rounded text-xs hover:bg-purple-600">
                 <FileText size={12} /> 去批注
               </a>
             </div>
-            {booksInTopic.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">该专题暂无卡片</p>
-            ) : (
-              <div className="space-y-4">
-                {booksInTopic.map((book, bi) => (
-                  <div key={bi} className="space-y-2">
-                    <div className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-yellow-700 dark:text-yellow-300">{book.name}</span>
-                        <span className="text-xs text-yellow-500">{book.count} 张</span>
-                      </div>
+          </div>
+
+          {/* 新建卡片表单 */}
+          {showCreateCard && (
+            <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border space-y-3">
+              <input
+                type="text"
+                value={newCardTitle}
+                onChange={(e) => setNewCardTitle(e.target.value)}
+                placeholder="卡片标题"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+              />
+              <textarea
+                value={newCardContent}
+                onChange={(e) => setNewCardContent(e.target.value)}
+                placeholder="卡片内容"
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={newCardType}
+                  onChange={(e) => setNewCardType(e.target.value)}
+                  className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm"
+                >
+                  <option value="blue">核心概念</option>
+                  <option value="green">关联链接</option>
+                  <option value="yellow">方法论</option>
+                  <option value="red">行动</option>
+                </select>
+                <button
+                  onClick={handleCreateCard}
+                  disabled={creating || !newCardTitle.trim()}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 disabled:opacity-50 transition-colors"
+                >
+                  {creating ? '创建中...' : '保存'}
+                </button>
+                <button
+                  onClick={() => { setShowCreateCard(false); setNewCardTitle(''); setNewCardContent(''); }}
+                  className="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
+
+          {booksInTopic.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-8">该专题暂无卡片</p>
+          ) : (
+            <div className="space-y-4">
+              {booksInTopic.map((book, bi) => (
+                <div key={bi} className="space-y-2">
+                  <div className="p-3 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-lg border border-yellow-200 dark:border-yellow-700">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm text-yellow-700 dark:text-yellow-300">{book.name}</span>
+                      <span className="text-xs text-yellow-500">{book.count} 张</span>
                     </div>
-                    <div className="pl-4 space-y-1.5">
-                      {book.cards.map((c: any, ci: number) => (
-                        <div key={ci} className={`p-3 rounded-lg border border-l-4 cursor-pointer ${
+                  </div>
+                  <div className="pl-4 space-y-1.5">
+                    {book.cards.map((c: any, ci: number) => (
+                      <div key={ci}
+                        onClick={() => setPreviewCard(c)}
+                        className={`p-3 rounded-lg border border-l-4 cursor-pointer hover:shadow-md transition-shadow ${
                           c.card_type === 'blue' ? 'border-l-blue-400 bg-blue-50 dark:bg-blue-900/20' :
                           c.card_type === 'green' ? 'border-l-green-400 bg-green-50 dark:bg-green-900/20' :
                           c.card_type === 'red' ? 'border-l-red-400 bg-red-50 dark:bg-red-900/20' :
                           'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20'
                         }`}>
-                          <p className="text-xs font-medium text-gray-700 dark:text-gray-200">{c.title}</p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">{c.content}</p>
-                        </div>
-                      ))}
-                    </div>
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-200">{c.title}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">{c.content}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border p-8 text-center text-gray-400">
-            <Library size={48} className="mx-auto mb-3 opacity-40" />
-            <p className="text-sm">选择一个专题查看卡片</p>
-          </div>
-        )}
-      </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border p-8 text-center text-gray-400">
+          <Library size={48} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">选择一个专题查看卡片</p>
+        </div>
+      )}
+
+      {/* 卡片详情弹窗 */}
+      {previewCard && (
+        <CardDetailPopup
+          card={previewCard as any}
+          onClose={() => setPreviewCard(null)}
+        />
+      )}
     </div>
   );
 };

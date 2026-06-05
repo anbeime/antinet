@@ -25,6 +25,18 @@ CARD_TYPE_MAP = {
     "red": {"label": "行动方案", "section": "🎯 行动方案"},
 }
 
+_INVALID_XML_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFE\uFFFF]")
+
+
+def _xml_escape(text: str) -> str:
+    text = _INVALID_XML_RE.sub("", text)
+    text = text.replace("&", "&amp;")
+    text = text.replace("<", "&lt;")
+    text = text.replace(">", "&gt;")
+    text = text.replace('"', "&quot;")
+    text = text.replace("'", "&apos;")
+    return text
+
 
 def _load_template(name: str) -> str:
     path = TEMPLATES_DIR / "base" / f"{name}.svg"
@@ -68,7 +80,7 @@ def _substitute(template: str, vars: dict[str, str]) -> str:
     return re.sub(r"{{(\w+)}}", repl, template)
 
 
-def _wrap_text(text: str, max_chars: int = 40) -> str:
+def _wrap_lines(text: str, max_chars: int = 40) -> list[str]:
     lines = []
     for paragraph in text.split("\n"):
         while len(paragraph) > max_chars:
@@ -78,9 +90,7 @@ def _wrap_text(text: str, max_chars: int = 40) -> str:
             lines.append(paragraph[:idx])
             paragraph = paragraph[idx:].strip()
         lines.append(paragraph)
-    return "<tspan xml:space='preserve'>" + "</tspan>\n    <tspan xml:space='preserve'>".join(
-        l for l in lines if l
-    ) + "</tspan>"
+    return [_xml_escape(l) for l in lines if l]
 
 
 def render_cover_svg(
@@ -90,8 +100,8 @@ def render_cover_svg(
 ) -> str:
     template = _load_template("cover")
     colors = _resolve_theme(theme_name)
-    colors["TITLE"] = title
-    colors["SUBTITLE"] = subtitle or "智能分析报告"
+    colors["TITLE"] = _xml_escape(title)
+    colors["SUBTITLE"] = _xml_escape(subtitle or "智能分析报告")
     colors["DATE"] = datetime.now().strftime("%Y-%m-%d")
     return _substitute(template, colors)
 
@@ -110,7 +120,7 @@ def render_content_svg(
     if cards:
         ctype = cards[0].get("type", "blue")
         info = CARD_TYPE_MAP.get(ctype, {})
-        section_title = info.get("section", "内容摘要")
+        section_title = _xml_escape(info.get("section", "内容摘要"))
         card_map = {"blue": "CARD_BLUE", "green": "CARD_GREEN", "yellow": "CARD_YELLOW", "red": "CARD_RED"}
         section_color = colors.get(card_map.get(ctype, "CARD_BLUE"), colors["ACCENT"])
 
@@ -118,7 +128,7 @@ def render_content_svg(
     colors["SECTION_COLOR"] = section_color
 
     card_svgs = []
-    positions = [(60, 140, 560, 180), (660, 140, 560, 180), (60, 350, 560, 180), (660, 350, 560, 180)]
+    positions = [(60, 130, 560, 200), (660, 130, 560, 200), (60, 360, 560, 200), (660, 360, 560, 200)]
 
     for i, card in enumerate(cards[:4]):
         if i >= len(positions):
@@ -129,17 +139,26 @@ def render_content_svg(
         card_color_key = card_map.get(ctype, "CARD_BLUE")
         card_color = colors[card_color_key]
 
-        title = card.get("title", "")[:40]
+        title = _xml_escape(card.get("title", "")[:40])
         content = card.get("content", "")
-        content_wrapped = _wrap_text(content, 32)
+        content_lines = _wrap_lines(content, 36)
+
+        line_svgs = []
+        LINE_H = 30
+        CONTENT_Y = 85
+        for li, line in enumerate(content_lines[:4]):
+            ly = CONTENT_Y + li * LINE_H
+            line_svgs.append(
+                f'    <text x="24" y="{ly}" font-family="{colors["BODY_FONT"]}" '
+                f'font-size="14" fill="{colors["TEXT"]}">{line}</text>'
+            )
+        content_svg = "\n".join(line_svgs)
 
         card_svg = f"""  <g transform="translate({cx}, {cy})">
     <rect width="{cw}" height="{ch}" rx="12" fill="{card_color}" opacity="0.08"/>
     <rect x="0" y="0" width="6" height="{ch}" rx="3" fill="{card_color}"/>
-    <text x="24" y="32" font-family="{colors['TITLE_FONT']}" font-size="20" font-weight="bold" fill="{colors['PRIMARY']}">{title}</text>
-    <text x="24" y="58" font-family="{colors['BODY_FONT']}" font-size="14" fill="{colors['TEXT']}">
-      {content_wrapped}
-    </text>
+    <text x="24" y="40" font-family="{colors['TITLE_FONT']}" font-size="18" font-weight="bold" fill="{colors['PRIMARY']}">{title}</text>
+    {content_svg}
   </g>"""
         card_svgs.append(card_svg)
 
@@ -154,14 +173,14 @@ def render_summary_svg(
 ) -> str:
     template = _load_template("summary")
     colors = _resolve_theme(theme_name)
-    colors["TITLE"] = title
+    colors["TITLE"] = _xml_escape(title)
 
     point_svgs = []
     y = 0
     for i, point in enumerate(points[:6]):
         point_svgs.append(f"""    <g transform="translate(0, {y})">
       <rect x="0" y="4" width="8" height="8" rx="2" fill="{colors['ACCENT']}"/>
-      <text x="24" y="16" font-family="{colors['BODY_FONT']}" font-size="20" fill="{colors['TEXT']}">{point[:80]}</text>
+      <text x="24" y="16" font-family="{colors['BODY_FONT']}" font-size="20" fill="{colors['TEXT']}">{_xml_escape(point[:80])}</text>
     </g>""")
         y += 56
 
@@ -189,7 +208,9 @@ def cards_to_svg_slides(
     type_order = ["blue", "green", "yellow", "red"]
     for t in type_order:
         if t in by_type:
-            slides.append(render_content_svg(by_type[t], theme_name))
+            group = by_type[t]
+            for i in range(0, len(group), 4):
+                slides.append(render_content_svg(group[i:i+4], theme_name))
 
     if include_summary:
         all_titles = [c.get("title", "") for c in cards[:6]]
@@ -221,15 +242,29 @@ def generate_pptx(
             fpath.write_text(svg_content, encoding="utf-8")
             svg_files.append(fpath)
 
-        success = create_pptx_with_native_svg(
-            svg_files=svg_files,
-            output_path=Path(output_path),
-            use_native_shapes=True,
-            canvas_format="ppt169",
-            verbose=False,
-        )
-        if not success:
-            raise RuntimeError("PPTX generation failed")
+        # Always dump SVGs for debugging
+        debug_dir = Path("C:/D/zhiyi/generated/svg_debug")
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        for fpath in svg_files:
+            debug_path = debug_dir / fpath.name
+            debug_path.write_text(fpath.read_text(encoding="utf-8"), encoding="utf-8")
+
+        try:
+            success = create_pptx_with_native_svg(
+                svg_files=svg_files,
+                output_path=Path(output_path),
+                use_native_shapes=True,
+                canvas_format="ppt169",
+                verbose=False,
+            )
+            if not success:
+                raise RuntimeError("PPTX generation failed")
+        except Exception:
+            for fpath in svg_files:
+                debug_path = Path("C:/D/zhiyi/generated") / f"debug_{fpath.name}"
+                debug_path.write_text(fpath.read_text(encoding="utf-8"), encoding="utf-8")
+                logger.error(f"Dumped failing SVG to {debug_path}")
+            raise
 
     logger.info(f"PPTX generated: {output_path} ({len(svg_slides)} slides)")
     return output_path

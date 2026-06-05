@@ -85,7 +85,7 @@ class ReminderService:
     def __init__(self):
         self.scheduler = None
         self.sent_reminders = set()  # 已发送的提醒 (task_id + remind_time)
-        self._check_interval_minutes = 1  # 每分钟检查一次
+        self._check_interval_minutes = 1440  # 每天检查一次 (1440分钟 = 24小时)
         self._load_sent_reminders()  # 从数据库加载已发送的提醒
     
     def start(self):

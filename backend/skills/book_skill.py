@@ -239,10 +239,16 @@ class BookSkillGenerator:
                     self._ai_service = sensenova
                     logger.info("[BookSkill] 使用 Sensenova 进行方法论提取")
                 else:
-                    # 兜底：本地模型（NPU）
-                    self._ai_service = get_ai_service()
-                    if self._ai_service and self._ai_service.is_available:
-                        logger.info("[BookSkill] Sensenova 不可用，使用本地 NPU 模型")
+                    # 兜底：本地模型（NPU）- 验证能否实际使用
+                    npu = get_ai_service()
+                    if npu and npu.is_available:
+                        # 验证 NPU 是否已初始化
+                        if npu._initialized or npu._load_model():
+                            self._ai_service = npu
+                            logger.info("[BookSkill] Sensenova 不可用，使用本地 NPU 模型")
+                        else:
+                            self._ai_service = None
+                            logger.warning("[BookSkill] NPU 模型加载失败，无法使用")
                     else:
                         self._ai_service = None
                         logger.warning("[BookSkill] 所有 AI 服务均不可用")
@@ -372,7 +378,7 @@ class BookSkillGenerator:
     # 公开 API
     # ========================================================================
 
-    def extract_from_text(self, book_content: str, book_name: str = "", book_author: str = "") -> Dict[str, Any]:
+    def extract_from_text(self, book_content: str, book_name: str = "", book_author: str = "", llm_model: Optional[str] = None) -> Dict[str, Any]:
         """
         从文本内容提取方法论
 
@@ -402,7 +408,7 @@ class BookSkillGenerator:
         ai = self._get_ai_service()
         if ai:
             prompt = BOOK_EXTRACTION_PROMPT.format(
-                book_content=book_content[:3000]  # 限制长度
+                book_content=book_content[:30000]  # 限制长度
             )
             try:
                 response = ai.chat(prompt)
@@ -413,7 +419,7 @@ class BookSkillGenerator:
 
         # AI 失败或返回空时的降级
         if not raw_methodologies:
-            raw_methodologies = self._extract_methodologies_fallback(book_content[:3000])
+            raw_methodologies = self._extract_methodologies_fallback(book_content[:30000])
 
         # 构造方法论对象
         methodologies = []

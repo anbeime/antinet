@@ -127,7 +127,7 @@ const MeetingCardItem: React.FC<{
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       className={`rounded-lg border ${style.border} ${style.bg} p-2.5 transition-all hover:border-opacity-70 cursor-pointer`}
-      onClick={() => onSave?.(card)}
+      onClick={() => onClick?.(card)}
     >
       {/* 卡片头部：类型标签 + 标题 + 详情/保存按钮 */}
       <div className="flex items-start justify-between gap-2" onClick={e => e.stopPropagation()}>

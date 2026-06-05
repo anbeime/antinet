@@ -63,23 +63,33 @@ async def generate_from_text(
     content: str = Body(...),
     theme: str = Body(default="professional"),
 ):
-    """从文本内容直接生成原生 PPTX"""
+    """从文本内容直接生成原生 PPTX（AI 结构化分页 + 多Slide）"""
     try:
-        from ppt_engine.card_renderer import render_cover_svg, render_content_svg, render_summary_svg
+        import asyncio
+        from ppt_engine.card_renderer import render_cover_svg, render_summary_svg
+        from ppt_engine.card_renderer import render_content_svg
         from ppt_engine.pptx_builder import create_pptx_with_native_svg
 
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-        sections = []
-        current_section = {"title": "", "lines": []}
-        for line in lines:
-            if line.startswith("#") or line.startswith("##"):
-                if current_section["lines"]:
-                    sections.append(current_section)
-                current_section = {"title": line.lstrip("#").strip(), "lines": []}
-            else:
-                current_section["lines"].append(line)
-        if current_section["lines"]:
-            sections.append(current_section)
+        # ── 1. AI 结构化：Sensenova 7B 将文本拆为多页 slide（异步 + 长文本并行）─
+        from services.ppt_structure_generator import async_generate_structure
+        slides = await async_generate_structure(topic, content)
+        logger.info(f"AI 结构化完成：{len(slides)} 个 slide")
+
+        # ── 2. 每页 slide → 一张卡片，类型循环 ──────────────
+        type_cycle = ["blue", "green", "yellow", "red"]
+        all_cards: list[dict] = []
+        for idx, s in enumerate(slides):
+            card_content = "\n".join(s.get("content", []))
+            all_cards.append({
+                "type": type_cycle[idx % 4],
+                "title": s.get("title", "") or f"第{idx+1}部分",
+                "content": card_content,
+            })
+
+        # ── 3. 每 4 张卡片一页 ───────────────────────────────
+        slide_groups: list[list[dict]] = []
+        for i in range(0, len(all_cards), 4):
+            slide_groups.append(all_cards[i:i+4])
 
         with tempfile.TemporaryDirectory() as tmpdir:
             svg_files = []
@@ -89,16 +99,15 @@ async def generate_from_text(
             fp.write_text(cover, encoding="utf-8")
             svg_files.append(fp)
 
-            for i, sec in enumerate(sections[:6]):
-                cards_data = [{"type": "blue", "title": sec["title"], "content": "\n".join(sec["lines"][:3])}]
-                from ppt_engine.card_renderer import render_content_svg as rcs
-                svg = rcs(cards_data, theme)
-                fp = Path(tmpdir) / f"slide_{i+2:02d}.svg"
+            for group_idx, group in enumerate(slide_groups):
+                svg = render_content_svg(group, theme)
+                fp = Path(tmpdir) / f"slide_{group_idx+2:02d}.svg"
                 fp.write_text(svg, encoding="utf-8")
                 svg_files.append(fp)
 
-            summary = render_summary_svg("要点总结", [s["title"] for s in sections[:6]], theme)
-            fp = Path(tmpdir) / f"slide_{len(sections)+2:02d}.svg"
+            summary_titles = [c["title"] for c in all_cards[:6]]
+            summary = render_summary_svg("要点总结", summary_titles, theme)
+            fp = Path(tmpdir) / f"slide_{len(svg_files)+1:02d}.svg"
             fp.write_text(summary, encoding="utf-8")
             svg_files.append(fp)
 
@@ -123,7 +132,8 @@ async def generate_from_text(
             "file_path": str(output_path),
             "filename": output_path.name,
             "slide_count": len(svg_files),
-            "message": "文本→PPTX 已生成（原生形状）",
+            "llm_slides": len(slides),
+            "message": f"AI 结构化 PPT 已生成（{len(slides)} 页内容，{len(slide_groups)} 张幻灯片）",
         }
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"ppt_engine 不可用: {e}")
