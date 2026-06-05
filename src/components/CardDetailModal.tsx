@@ -963,25 +963,25 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       >
         {/* 模态框头部 - 可拖拽 */}
         <div 
-          className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700"
+          className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 gap-2"
           onMouseDown={handleMouseDown}
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
-          <div className="flex items-center">
-            <div className={`${cardTypeMap[card.color].color} w-3 h-3 rounded-full mr-2`}></div>
+          <div className="flex items-center min-w-0 flex-1">
+            <div className={`${cardTypeMap[card.color].color} w-3 h-3 rounded-full mr-2 flex-shrink-0`}></div>
             {isEditing ? (
               <input
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none flex-1"
+                className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none flex-1 min-w-0"
                 autoFocus
               />
             ) : (
-              <h2 className="text-xl font-bold">{card.title}</h2>
+              <h2 className="text-xl font-bold truncate">{card.title}</h2>
             )}
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center gap-1 flex-shrink-0">
             {isEditing ? (
               <>
                 <button
@@ -1052,126 +1052,127 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   <Trash2 size={18} />
                 </button>
 
-                {/* 链接图谱快捷入口 */}
-                <button
-                  className="p-2 text-purple-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
-                  aria-label="链接图谱"
-                  title="查看链接图谱"
-                  onClick={() => {
-                    window.open(`/knowledge-graph?card=${card.id}`, '_blank');
-                  }}
-                >
-                  <Network size={18} />
-                </button>
-
-                {/* 双向链接快捷入口 */}
-                <button
-                  className="p-2 text-orange-500 hover:text-orange-600 dark:hover:text-orange-400 rounded-full hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors"
-                  aria-label="双向链接"
-                  title="查看双向链接"
-                  onClick={() => {
-                    setActiveTab('backlinks');
-                  }}
-                >
-                  <Link size={18} />
-                </button>
-
-                {/* 单卡导出下拉菜单 */}
-                <div className="relative">
+                {/* 链接图谱快捷入口 — 桌面端显示 */}
+                <span className="hidden sm:inline-flex items-center gap-1">
                   <button
-                    onClick={() => setShowExportMenu(!showExportMenu)}
-                    className="p-2 text-gray-500 hover:text-green-600 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
-                    aria-label="导出"
-                    title="导出"
+                    className="p-2 text-purple-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    aria-label="链接图谱"
+                    title="查看链接图谱"
+                    onClick={() => {
+                      window.open(`/knowledge-graph?card=${card.id}`, '_blank');
+                    }}
                   >
-                    <Download size={18} />
+                    <Network size={18} />
                   </button>
 
-                  {showExportMenu && (
-                    <>
-                      {/* 点击外部关闭 */}
-                      <div
-                        className="fixed inset-0 z-10"
-                        onClick={() => setShowExportMenu(false)}
-                      />
-                      {/* 下拉菜单 */}
-                      <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
-                        {/* PDF下载链接（始终渲染，点击按钮时触发） */}
-                        <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', height: 0, overflow: 'hidden' }}>
-                          {card && (
-                            <PDFDownloadLink
-                              id="single-card-pdf-link"
-                              document={<SingleCardPDFDocument card={card as KnowledgeCard} />}
-                              fileName={`${card.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`}
-                            />
-                          )}
-                        </div>
-                        <button
-                          onClick={() => {
-                            setShowExportMenu(false);
-                            if (card) {
-                              // 触发隐藏的 PDFDownloadLink
-                              const linkEl = document.getElementById('single-card-pdf-link') as HTMLAnchorElement;
-                              if (linkEl) {
-                                setTimeout(() => linkEl.click(), 80);
-                              }
-                            }
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
-                        >
-                          <FilePen className="w-5 h-5 text-red-600" />
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">PDF 文档</div>
-                            <div className="text-xs text-gray-500">精确保留格式，适合打印</div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowExportMenu(false);
-                            if (card) exportSingleCardToDOCX(card as unknown as ExportableCard);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
-                        >
-                          <FileType className="w-5 h-5 text-blue-600" />
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">Word 文档</div>
-                            <div className="text-xs text-gray-500">完美支持中文编辑</div>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowExportMenu(false);
-                            if (card) exportSingleCardToXLSX(card as unknown as ExportableCard);
-                          }}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        >
-                          <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">Excel 表格</div>
-                            <div className="text-xs text-gray-500">结构化数据格式</div>
-                          </div>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                  {/* 双向链接快捷入口 — 桌面端显示 */}
+                  <button
+                    className="p-2 text-orange-500 hover:text-orange-600 dark:hover:text-orange-400 rounded-full hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors"
+                    aria-label="双向链接"
+                    title="查看双向链接"
+                    onClick={() => {
+                      setActiveTab('backlinks');
+                    }}
+                  >
+                    <Link size={18} />
+                  </button>
 
-                <button
-                  onClick={() => setIsZoomed(!isZoomed)}
-                  className="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
-                  aria-label={isZoomed ? '退出放大' : '放大查看'}
-                  title={isZoomed ? '退出放大' : '放大查看'}
-                >
-                  {isZoomed ? <ZoomOut size={18} /> : <ZoomIn size={18} />}
-                </button>
-                <button
-                  onClick={() => setIsFullscreen(!isFullscreen)}
-                  className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
-                  aria-label={isFullscreen ? '退出全屏' : '全屏'}
-                  title={isFullscreen ? '退出全屏' : '全屏'}
-                >
-                  {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-                </button>
+                  {/* 单卡导出下拉菜单 — 桌面端显示 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="p-2 text-gray-500 hover:text-green-600 dark:hover:text-green-400 rounded-full hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                      aria-label="导出"
+                      title="导出"
+                    >
+                      <Download size={18} />
+                    </button>
+
+                    {showExportMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setShowExportMenu(false)}
+                        />
+                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                          <div style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', height: 0, overflow: 'hidden' }}>
+                            {card && (
+                              <PDFDownloadLink
+                                id="single-card-pdf-link"
+                                document={<SingleCardPDFDocument card={card as KnowledgeCard} />}
+                                fileName={`${card.title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.pdf`}
+                              />
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              if (card) {
+                                const linkEl = document.getElementById('single-card-pdf-link') as HTMLAnchorElement;
+                                if (linkEl) {
+                                  setTimeout(() => linkEl.click(), 80);
+                                }
+                              }
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
+                          >
+                            <FilePen className="w-5 h-5 text-red-600" />
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">PDF 文档</div>
+                              <div className="text-xs text-gray-500">精确保留格式，适合打印</div>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              if (card) exportSingleCardToDOCX(card as unknown as ExportableCard);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border-b border-gray-100 dark:border-gray-700"
+                          >
+                            <FileType className="w-5 h-5 text-blue-600" />
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Word 文档</div>
+                              <div className="text-xs text-gray-500">完美支持中文编辑</div>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowExportMenu(false);
+                              if (card) exportSingleCardToXLSX(card as unknown as ExportableCard);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          >
+                            <FileSpreadsheet className="w-5 h-5 text-green-600" />
+                            <div>
+                              <div className="font-medium text-gray-900 dark:text-white">Excel 表格</div>
+                              <div className="text-xs text-gray-500">结构化数据格式</div>
+                            </div>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 缩放按钮 — 桌面端显示 */}
+                  <button
+                    onClick={() => setIsZoomed(!isZoomed)}
+                    className="p-2 text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 rounded-full hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                    aria-label={isZoomed ? '退出放大' : '放大查看'}
+                    title={isZoomed ? '退出放大' : '放大查看'}
+                  >
+                    {isZoomed ? <ZoomOut size={18} /> : <ZoomIn size={18} />}
+                  </button>
+
+                  {/* 全屏按钮 — 桌面端显示 */}
+                  <button
+                    onClick={() => setIsFullscreen(!isFullscreen)}
+                    className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                    aria-label={isFullscreen ? '退出全屏' : '全屏'}
+                    title={isFullscreen ? '退出全屏' : '全屏'}
+                  >
+                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                  </button>
+                </span>
               </>
             )}
             <button
@@ -2317,15 +2318,15 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               onClick={e => e.stopPropagation()}
             >
               {/* 放大模态框头部 */}
-              <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
-                <div className="flex items-center">
-                  <div className={`${cardTypeMap[card.color].color} w-4 h-4 rounded-full mr-3`}></div>
-                  <h2 className="text-2xl font-bold">{card.title}</h2>
-                  <span className={`ml-3 ${cardTypeMap[card.color].color} text-white text-xs px-2 py-1 rounded-full`}>
+              <div className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 gap-2">
+                <div className="flex items-center min-w-0 flex-1">
+                  <div className={`${cardTypeMap[card.color].color} w-4 h-4 rounded-full mr-3 flex-shrink-0`}></div>
+                  <h2 className="text-2xl font-bold truncate">{card.title}</h2>
+                  <span className={`ml-3 hidden sm:inline ${cardTypeMap[card.color].color} text-white text-xs px-2 py-1 rounded-full flex-shrink-0`}>
                     {cardTypeMap[card.color].name}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     onClick={handleCopy}
                     className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"

@@ -1,270 +1,250 @@
 """
-Card → SVG → Native PPTX Renderer
-Bridges: four-color card data → SVG templates → ppt_engine native shapes PPTX
+Card → Direct PPTX Renderer using python-pptx (bypasses buggy SVG→DrawingML pipeline)
 """
 
-import os
 import re
-import json
 import logging
-import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from datetime import datetime
+
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu, Cm
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
 
 from design_system import DesignPresets, CardColors as DsCardColors
 
 logger = logging.getLogger(__name__)
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "ppt_templates"
-
 CARD_TYPE_MAP = {
-    "blue": {"label": "核心事实", "section": "📊 核心事实"},
-    "green": {"label": "深度解读", "section": "🔍 深度解读"},
-    "yellow": {"label": "风险警示", "section": "⚠️ 风险警示"},
-    "red": {"label": "行动方案", "section": "🎯 行动方案"},
+    "blue": {"label": "核心事实", "section": "核心事实"},
+    "green": {"label": "深度解读", "section": "深度解读"},
+    "yellow": {"label": "风险警示", "section": "风险警示"},
+    "red": {"label": "行动方案", "section": "行动方案"},
 }
 
-_INVALID_XML_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\uFFFE\uFFFF]")
+
+def _clr(hex_str: str) -> RGBColor:
+    h = hex_str.lstrip("#")
+    return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
-def _xml_escape(text: str) -> str:
-    text = _INVALID_XML_RE.sub("", text)
-    text = text.replace("&", "&amp;")
-    text = text.replace("<", "&lt;")
-    text = text.replace(">", "&gt;")
-    text = text.replace('"', "&quot;")
-    text = text.replace("'", "&apos;")
-    return text
-
-
-def _load_template(name: str) -> str:
-    path = TEMPLATES_DIR / "base" / f"{name}.svg"
-    if not path.exists():
-        raise FileNotFoundError(f"Template not found: {path}")
-    return path.read_text(encoding="utf-8")
-
-
-def _resolve_theme(theme_name: str) -> dict:
-    dt = DesignPresets.get(theme_name)
+def _theme_colors(name: str = "professional") -> dict:
+    dt = DesignPresets.get(name)
     cc = DsCardColors()
     return {
-        "PRIMARY": dt.colors.primary,
-        "SECONDARY": dt.colors.secondary,
-        "ACCENT": dt.colors.accent,
-        "BG": dt.colors.background,
-        "BG_END": _darken(dt.colors.background, 0.08),
-        "TEXT": dt.colors.text,
-        "TITLE_FONT": dt.fonts.title,
-        "BODY_FONT": dt.fonts.body,
-        "CARD_BLUE": cc.blue,
-        "CARD_GREEN": cc.green,
-        "CARD_YELLOW": cc.yellow,
-        "CARD_RED": cc.red,
+        "primary": _clr(dt.colors.primary),
+        "accent": _clr(dt.colors.accent),
+        "bg": _clr(dt.colors.background),
+        "text": _clr(dt.colors.text),
+        "title_font": dt.fonts.title,
+        "body_font": dt.fonts.body,
+        "card_blue": _clr(cc.blue),
+        "card_green": _clr(cc.green),
+        "card_yellow": _clr(cc.yellow),
+        "card_red": _clr(cc.red),
     }
 
 
-def _darken(hex_color: str, amount: float) -> str:
-    h = hex_color.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    r = max(0, int(r * (1 - amount)))
-    g = max(0, int(g * (1 - amount)))
-    b = max(0, int(b * (1 - amount)))
-    return f"#{r:02x}{g:02x}{b:02x}"
+def _card_color(card_type: str, colors: dict) -> RGBColor:
+    m = {"blue": "card_blue", "green": "card_green", "yellow": "card_yellow", "red": "card_red"}
+    return colors.get(m.get(card_type, "card_blue"), colors["card_blue"])
 
 
-def _substitute(template: str, vars: dict[str, str]) -> str:
-    def repl(m: re.Match) -> str:
-        key = m.group(1)
-        return vars.get(key, m.group(0))
-    return re.sub(r"{{(\w+)}}", repl, template)
+def _add_textbox(slide, left, top, width, height, text, font_name, font_size, color, bold=False, alignment=PP_ALIGN.LEFT):
+    txbox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+    tf = txbox.text_frame
+    tf.word_wrap = True
+    tf.auto_size = None
+    p = tf.paragraphs[0]
+    p.text = text
+    p.font.name = font_name
+    p.font.size = Pt(font_size)
+    p.font.color.rgb = color
+    p.font.bold = bold
+    p.alignment = alignment
+    p.space_after = Pt(0)
+    p.space_before = Pt(0)
+    return txbox
 
 
-def _wrap_lines(text: str, max_chars: int = 40) -> list[str]:
-    lines = []
-    for paragraph in text.split("\n"):
-        while len(paragraph) > max_chars:
-            idx = paragraph.rfind(" ", 0, max_chars)
-            if idx == -1:
-                idx = max_chars
-            lines.append(paragraph[:idx])
-            paragraph = paragraph[idx:].strip()
-        lines.append(paragraph)
-    return [_xml_escape(l) for l in lines if l]
+def _add_card(slide, left, top, w, h, card_type, title, content, colors):
+    card_clr = _card_color(card_type, colors)
+    body_font = colors["body_font"]
+    text_clr = colors["text"]
+
+    # Card background (rounded rect)
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(left), Inches(top), Inches(w), Inches(h),
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = card_clr
+    shape.fill.fore_color.brightness = 0.85
+    shape.line.fill.background()
+
+    # Left accent bar
+    bar = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(left), Inches(top), Inches(0.08), Inches(h),
+    )
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = card_clr
+    bar.line.fill.background()
+
+    # Single text frame: title (bold) + content (normal) in same frame
+    txbox = slide.shapes.add_textbox(Inches(left + 0.25), Inches(top + 0.15), Inches(w - 0.4), Inches(h - 0.3))
+    tf = txbox.text_frame
+    tf.word_wrap = True
+    tf.auto_size = None
+
+    p = tf.paragraphs[0]
+    p.text = title[:50]
+    p.font.name = colors["title_font"]
+    p.font.size = Pt(14)
+    p.font.color.rgb = card_clr
+    p.font.bold = True
+    p.space_after = Pt(6)
+
+    p2 = tf.add_paragraph()
+    p2.text = content
+    p2.font.name = body_font
+    p2.font.size = Pt(11)
+    p2.font.color.rgb = text_clr
+    p2.font.bold = False
+    p2.space_before = Pt(0)
 
 
-def render_cover_svg(
-    title: str,
-    subtitle: str = "",
-    theme_name: str = "professional",
-) -> str:
-    template = _load_template("cover")
-    colors = _resolve_theme(theme_name)
-    colors["TITLE"] = _xml_escape(title)
-    colors["SUBTITLE"] = _xml_escape(subtitle or "智能分析报告")
-    colors["DATE"] = datetime.now().strftime("%Y-%m-%d")
-    return _substitute(template, colors)
+def _add_section_header(slide, section_title, color, colors):
+    # Accent line at top
+    top_line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0), Inches(0), Inches(13.33), Inches(0.05),
+    )
+    top_line.fill.solid()
+    top_line.fill.fore_color.rgb = colors["accent"]
+    top_line.line.fill.background()
+
+    _add_textbox(slide, 0.55, 0.35, 8, 0.5, section_title,
+                 colors["title_font"], 22, colors["primary"], bold=True)
+
+    # Underline
+    ul = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        Inches(0.55), Inches(0.85), Inches(1.2), Inches(0.04),
+    )
+    ul.fill.solid()
+    ul.fill.fore_color.rgb = color
+    ul.line.fill.background()
 
 
-def render_content_svg(
-    cards: list[dict],
-    theme_name: str = "professional",
-) -> str:
-    template = _load_template("content")
-    colors = _resolve_theme(theme_name)
-
-    section_title = "内容摘要"
-    section_color = colors["ACCENT"]
-    card_color_key = "CARD_BLUE"
-
-    if cards:
-        ctype = cards[0].get("type", "blue")
-        info = CARD_TYPE_MAP.get(ctype, {})
-        section_title = _xml_escape(info.get("section", "内容摘要"))
-        card_map = {"blue": "CARD_BLUE", "green": "CARD_GREEN", "yellow": "CARD_YELLOW", "red": "CARD_RED"}
-        section_color = colors.get(card_map.get(ctype, "CARD_BLUE"), colors["ACCENT"])
-
-    colors["SECTION_TITLE"] = section_title
-    colors["SECTION_COLOR"] = section_color
-
-    card_svgs = []
-    positions = [(60, 130, 560, 200), (660, 130, 560, 200), (60, 360, 560, 200), (660, 360, 560, 200)]
-
-    for i, card in enumerate(cards[:4]):
-        if i >= len(positions):
-            break
-        cx, cy, cw, ch = positions[i]
-        ctype = card.get("type", "blue")
-        card_map = {"blue": "CARD_BLUE", "green": "CARD_GREEN", "yellow": "CARD_YELLOW", "red": "CARD_RED"}
-        card_color_key = card_map.get(ctype, "CARD_BLUE")
-        card_color = colors[card_color_key]
-
-        title = _xml_escape(card.get("title", "")[:40])
-        content = card.get("content", "")
-        content_lines = _wrap_lines(content, 36)
-
-        line_svgs = []
-        LINE_H = 30
-        CONTENT_Y = 85
-        for li, line in enumerate(content_lines[:4]):
-            ly = CONTENT_Y + li * LINE_H
-            line_svgs.append(
-                f'    <text x="24" y="{ly}" font-family="{colors["BODY_FONT"]}" '
-                f'font-size="14" fill="{colors["TEXT"]}">{line}</text>'
-            )
-        content_svg = "\n".join(line_svgs)
-
-        card_svg = f"""  <g transform="translate({cx}, {cy})">
-    <rect width="{cw}" height="{ch}" rx="12" fill="{card_color}" opacity="0.08"/>
-    <rect x="0" y="0" width="6" height="{ch}" rx="3" fill="{card_color}"/>
-    <text x="24" y="40" font-family="{colors['TITLE_FONT']}" font-size="18" font-weight="bold" fill="{colors['PRIMARY']}">{title}</text>
-    {content_svg}
-  </g>"""
-        card_svgs.append(card_svg)
-
-    colors["CARDS"] = "\n".join(card_svgs)
-    return _substitute(template, colors)
-
-
-def render_summary_svg(
-    title: str,
-    points: list[str],
-    theme_name: str = "professional",
-) -> str:
-    template = _load_template("summary")
-    colors = _resolve_theme(theme_name)
-    colors["TITLE"] = _xml_escape(title)
-
-    point_svgs = []
-    y = 0
-    for i, point in enumerate(points[:6]):
-        point_svgs.append(f"""    <g transform="translate(0, {y})">
-      <rect x="0" y="4" width="8" height="8" rx="2" fill="{colors['ACCENT']}"/>
-      <text x="24" y="16" font-family="{colors['BODY_FONT']}" font-size="20" fill="{colors['TEXT']}">{_xml_escape(point[:80])}</text>
-    </g>""")
-        y += 56
-
-    colors["POINTS"] = "\n".join(point_svgs)
-    return _substitute(template, colors)
-
-
-def cards_to_svg_slides(
+def generate_pptx_direct(
     topic: str,
     cards: list[dict],
     theme_name: str = "professional",
-    include_cover: bool = True,
-    include_summary: bool = True,
-) -> list[str]:
-    slides = []
+    output_path: Optional[str] = None,
+) -> str:
+    """Generate PPTX directly using python-pptx (NO SVG pipeline)."""
+    colors = _theme_colors(theme_name)
+    prs = Presentation()
+    prs.slide_width = Inches(13.33)
+    prs.slide_height = Inches(7.5)
 
-    if include_cover:
-        slides.append(render_cover_svg(topic, theme_name=theme_name))
+    SLIDE_W = 13.33
+    SLIDE_H = 7.5
 
+    # ── Cover slide ──
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
+    bg = slide.background
+    fill = bg.fill
+    fill.solid()
+    fill.fore_color.rgb = colors["bg"]
+
+    # Accent bar at top
+    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(SLIDE_W), Inches(0.06))
+    bar.fill.solid(); bar.fill.fore_color.rgb = colors["accent"]; bar.line.fill.background()
+
+    _add_textbox(slide, 1.5, 2.5, 10, 1.2, topic, colors["title_font"], 40, colors["primary"], bold=True, alignment=PP_ALIGN.CENTER)
+    _add_textbox(slide, 1.5, 3.8, 10, 0.6, "智能分析报告", colors["body_font"], 18, colors["text"], alignment=PP_ALIGN.CENTER)
+    _add_textbox(slide, 1.5, 5.0, 10, 0.4, datetime.now().strftime("%Y-%m-%d"), colors["body_font"], 14, colors["text"], alignment=PP_ALIGN.CENTER)
+
+    # ── Content slides ──
     by_type = {}
     for c in cards:
         t = c.get("type", "blue")
         by_type.setdefault(t, []).append(c)
 
     type_order = ["blue", "green", "yellow", "red"]
+    all_groups = []
     for t in type_order:
         if t in by_type:
-            group = by_type[t]
-            for i in range(0, len(group), 4):
-                slides.append(render_content_svg(group[i:i+4], theme_name))
+            for i in range(0, len(by_type[t]), 4):
+                all_groups.append(by_type[t][i:i+4])
 
-    if include_summary:
-        all_titles = [c.get("title", "") for c in cards[:6]]
-        slides.append(render_summary_svg("要点总结", all_titles, theme_name))
+    CARD_W = 5.8
+    CARD_H = 2.6
+    GAP_X = 0.45
+    GAP_Y = 0.35
+    START_X = 0.55
+    START_Y = 1.5
+    COL2_X = START_X + CARD_W + GAP_X
 
-    return slides
+    def add_content_slide(card_group):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        bg = slide.background; bg.fill.solid(); bg.fill.fore_color.rgb = colors["bg"]
 
+        # Section header
+        ctype = card_group[0].get("type", "blue")
+        info = CARD_TYPE_MAP.get(ctype, {})
+        section_title = info.get("section", "内容摘要")
+        section_color = _card_color(ctype, colors)
+        _add_section_header(slide, section_title, section_color, colors)
 
-def generate_pptx(
-    topic: str,
-    cards: list[dict],
-    theme_name: str = "professional",
-    output_path: Optional[str] = None,
-) -> str:
-    from ppt_engine.pptx_builder import create_pptx_with_native_svg
+        # Cards in 2x2 grid
+        positions = [
+            (START_X, START_Y),
+            (COL2_X, START_Y),
+            (START_X, START_Y + CARD_H + GAP_Y),
+            (COL2_X, START_Y + CARD_H + GAP_Y),
+        ]
+        for i, card in enumerate(card_group[:4]):
+            if i >= len(positions):
+                break
+            cx, cy = positions[i]
+            _add_card(slide, cx, cy, CARD_W, CARD_H,
+                      card.get("type", "blue"),
+                      card.get("title", ""),
+                      card.get("content", ""),
+                      colors)
 
-    svg_slides = cards_to_svg_slides(topic, cards, theme_name)
+    for group in all_groups:
+        add_content_slide(group)
 
+    # ── Summary slide ──
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    bg = slide.background; bg.fill.solid(); bg.fill.fore_color.rgb = colors["bg"]
+
+    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(SLIDE_W), Inches(0.06))
+    bar.fill.solid(); bar.fill.fore_color.rgb = colors["accent"]; bar.line.fill.background()
+
+    _add_textbox(slide, 0.6, 0.6, 10, 0.6, "要点总结", colors["title_font"], 28, colors["primary"], bold=True)
+
+    y = 1.3
+    for i, c in enumerate(cards[:8]):
+        title = c.get("title", "")[:60]
+        _add_textbox(slide, 0.9, y, 10, 0.55,
+                     f"{i+1}. {title}", colors["body_font"], 15, colors["text"])
+        y += 0.6
+
+    # Save
     if output_path is None:
         output_dir = Path("C:/D/zhiyi/generated")
         output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = str(output_dir / f"{topic}_{ts}.pptx")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        svg_files = []
-        for i, svg_content in enumerate(svg_slides):
-            fpath = Path(tmpdir) / f"slide_{i+1:02d}.svg"
-            fpath.write_text(svg_content, encoding="utf-8")
-            svg_files.append(fpath)
-
-        # Always dump SVGs for debugging
-        debug_dir = Path("C:/D/zhiyi/generated/svg_debug")
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        for fpath in svg_files:
-            debug_path = debug_dir / fpath.name
-            debug_path.write_text(fpath.read_text(encoding="utf-8"), encoding="utf-8")
-
-        try:
-            success = create_pptx_with_native_svg(
-                svg_files=svg_files,
-                output_path=Path(output_path),
-                use_native_shapes=True,
-                canvas_format="ppt169",
-                verbose=False,
-            )
-            if not success:
-                raise RuntimeError("PPTX generation failed")
-        except Exception:
-            for fpath in svg_files:
-                debug_path = Path("C:/D/zhiyi/generated") / f"debug_{fpath.name}"
-                debug_path.write_text(fpath.read_text(encoding="utf-8"), encoding="utf-8")
-                logger.error(f"Dumped failing SVG to {debug_path}")
-            raise
-
-    logger.info(f"PPTX generated: {output_path} ({len(svg_slides)} slides)")
+    prs.save(output_path)
+    logger.info(f"PPTX generated directly: {output_path} ({len(prs.slides)} slides)")
     return output_path

@@ -87,7 +87,10 @@ const PDFViewer: React.FC = () => {
     const urlParam = searchParams.get('url');
     const topicParam = searchParams.get('topic');
     const notesParam = searchParams.get('notes');
-    if (urlParam) {
+    const bookParam = searchParams.get('book');
+    if (bookParam) {
+      loadPDFFromBook(bookParam);
+    } else if (urlParam) {
       loadPDFFromURL(urlParam);
     } else if (topicParam) {
       setFileName(`专题: ${topicParam}`);
@@ -138,9 +141,29 @@ const PDFViewer: React.FC = () => {
     } finally { setPdfLoading(false); }
   };
 
+  const loadPDFFromBook = async (bookId: string) => {
+    setPdfLoading(true);
+    setPdfError('');
+    try {
+      const book = await bookshelfService.get(bookId);
+      if (!book) { setPdfError('书籍未找到'); setPdfLoading(false); return; }
+      setFileName(book.title);
+      pdfBufferRef.current = book.fileData;
+      pdfFileNameRef.current = book.fileName;
+      setPdfUrl(URL.createObjectURL(new Blob([book.fileData], { type: 'application/pdf' })));
+      const pjs = await loadPDFJS();
+      const pdf = await pjs.getDocument({ data: new Uint8Array(book.fileData), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+      setPdfDoc(pdf);
+      setTotalPages(pdf.numPages);
+      setCurrentPage(1);
+    } catch (e: any) {
+      setPdfError(e.message || '加载书籍失败');
+    } finally { setPdfLoading(false); }
+  };
+
   const switchToEditorWithExtractedText = async () => {
     if (!pdfDoc) return;
-    setIsNewCard(true); setCardType('blue'); setActiveView('source'); setSourceViewMode('pdf');
+    setIsNewCard(true); setCardType('blue');
     setCardTitle(fileName.replace(/\.pdf$/i, '') || '导入文档');
     const itemsByPage = new Map<number, any[]>();
     const pageTexts: string[] = [];
@@ -162,12 +185,6 @@ const PDFViewer: React.FC = () => {
   };
 
   useEffect(() => { if (pdfDoc && currentPage > 0) renderPage(currentPage); }, [pdfDoc, currentPage, scale]);
-
-  useEffect(() => {
-    if (pdfDoc && !pdfLoading && fileName && activeView !== 'source') {
-      switchToEditorWithExtractedText();
-    }
-  }, [pdfDoc, pdfLoading]);
 
   useEffect(() => {
     if (sourceViewMode === 'pdf' && selectedCard?.id && cardContent && !sourcePdfUrl) {
@@ -266,7 +283,7 @@ const PDFViewer: React.FC = () => {
     setSelectedCard(card);
     setIsNewCard(false);
     setActiveView('source');
-    setSourceViewMode(card.contentHtml ? 'preview' : 'pdf');
+    setSourceViewMode(card.contentHtml ? 'preview' : 'markdown');
     setCardTitle(card.title || '');
     setCardContent(card.content || '');
     setCardType(card.card_type || card.type || 'blue');
@@ -351,7 +368,9 @@ const PDFViewer: React.FC = () => {
         }
       });
       localStorage.setItem('bookskill_notes', JSON.stringify(merged));
-      toast.success(`已添加 ${selectedCards.length} 张卡片到笔记`);
+      toast.success(`已添加 ${selectedCards.length} 张卡片到笔记`, {
+        action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }
+      });
     } else {
       toast.warning('请先勾选要添加到笔记的卡片');
     }
@@ -553,7 +572,9 @@ const PDFViewer: React.FC = () => {
                       if (!existing.find((m: any) => m.id === id)) {
                         existing.push({ id, title: cardTitle || '无标题', content: cardContent, contentHtml: renderMarkdown(cardContent), card_type: cardType, addedAt: new Date().toISOString() });
                         localStorage.setItem('bookskill_notes', JSON.stringify(existing));
-                        toast.success('已保存到笔记');
+                        toast.success('已保存到笔记', {
+                          action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }
+                        });
                       } else {
                         toast.warning('该卡片已在笔记中');
                       }
@@ -622,11 +643,14 @@ const PDFViewer: React.FC = () => {
                 if (!existing.find((m: any) => m.id === id)) {
                   existing.push(noteData);
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
-                  toast.success('已保存到笔记');
-                } else {
+                  toast.success('已保存到笔记', {
+                    action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }
+                  });
                   existing[existing.findIndex((m: any) => m.id === id)] = noteData;
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
-                  toast.success('笔记已更新');
+                  toast.success('笔记已更新', {
+                    action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }
+                  });
                 }
               }}
                 className="flex items-center gap-1 px-4 py-2 bg-amber-500 text-white text-sm rounded-lg hover:bg-amber-600">
@@ -663,7 +687,15 @@ const PDFViewer: React.FC = () => {
             {fileName && <span className="text-xs text-gray-400 truncate max-w-[200px]">{fileName}</span>}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setActiveView(activeView === 'source' ? 'pdf' : 'source')}
+            <button onClick={async () => {
+              if (activeView !== 'source') {
+                if (pdfDoc && !cardContent) await switchToEditorWithExtractedText();
+                setActiveView('source');
+                setSourceViewMode('markdown');
+              } else {
+                setActiveView('pdf');
+              }
+            }}
               className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${activeView === 'source' ? 'bg-purple-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>
               <Edit3 size={14} />编辑
             </button>

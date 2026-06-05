@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, Network, Brain, Layers, Search, Film, History, BookOpen } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, Brain, Layers, Search, Film, History, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ThemeSelector from '@/components/ThemeSelector';
-import KnowledgeGraph from '@/components/KnowledgeGraph';
 
 interface KnowledgeCard {
   id: string;
@@ -68,7 +67,6 @@ const PPTAnalysis: React.FC = () => {
   const [narrativeTemplate, setNarrativeTemplate] = useState<string>('problem-analysis-solution');
   const [projectCards, setProjectCards] = useState<any[]>([]);
   const [projectCardsLoading, setProjectCardsLoading] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
   const [cardSearchQuery, setCardSearchQuery] = useState('');
   
   // 检查PPT服务状态
@@ -147,7 +145,6 @@ const PPTAnalysis: React.FC = () => {
   useEffect(() => {
     if (selectedProject) {
       loadProjectCards(selectedProject);
-      setShowGraph(false);
     } else {
       setProjectCards([]);
     }
@@ -667,19 +664,7 @@ const PPTAnalysis: React.FC = () => {
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold flex items-center"><Layers className="w-5 h-5 mr-2 text-purple-500" />专题卡片 ({projectCards.length})</h3>
-                        <button
-                          onClick={() => setShowGraph(!showGraph)}
-                          className={`flex items-center gap-1 px-3 py-1 rounded text-sm ${showGraph ? 'bg-purple-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
-                        >
-                          <Network className="w-4 h-4" />
-                          {showGraph ? '隐藏' : '显示'}关系图
-                        </button>
                       </div>
-                      {showGraph && (
-                        <div className="mb-4 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                          <KnowledgeGraph filterProjectId={selectedProject} />
-                        </div>
-                      )}
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {projectCards.slice(0, 10).map((card: any, i: number) => (
                           <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">

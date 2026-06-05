@@ -3,12 +3,13 @@
  * 四色知识管理系统集成：提取方法论(黄) → 问题匹配 → 案例回填(蓝)
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import {
   BookOpen, BookMarked, Search, Plus,
-  ArrowRight, FileText, BrainCircuit, Sparkles,
-  Library, Lightbulb, TrendingUp, CheckCircle, Zap,
+  FileText, Sparkles,
+  Library, Lightbulb, TrendingUp, CheckCircle,
   Loader, ChevronRight, Clock,
   Book, FileUp, Link2, X, ExternalLink,
   Trash2, Edit3, BookmarkPlus
@@ -48,15 +49,10 @@ const TABS = [
   { key: 'books' as TabType, label: '书籍书架', icon: Book, color: 'text-blue-500' },
 ];
 
-const FOUR_COLORS = {
-  yellow: { bg: 'bg-yellow-50 dark:bg-yellow-900/20', border: 'border-yellow-200 dark:border-yellow-700', text: 'text-yellow-700 dark:text-yellow-300', icon: Lightbulb, label: '方法论' },
-  blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-200 dark:border-blue-700', text: 'text-blue-700 dark:text-blue-300', icon: BookMarked, label: '案例' },
-  green: { bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-200 dark:border-green-700', text: 'text-green-700 dark:text-green-300', icon: BrainCircuit, label: '解释' },
-  red: { bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-200 dark:border-red-700', text: 'text-red-700 dark:text-red-300', icon: Zap, label: '行动' },
-};
-
 const BookSkillCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('extract');
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get('tab') as TabType) || 'extract';
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<any>(null);
 
@@ -149,29 +145,6 @@ const BookSkillCenter: React.FC = () => {
             </button>
           </div>
         ) : null}
-      </motion.div>
-
-      {/* Four-Color Flow Diagram */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="hidden md:block bg-gradient-to-r from-yellow-50 via-blue-50 to-green-50 dark:from-yellow-900/10 dark:via-blue-900/10 dark:to-green-900/10 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-      >
-        <div className="flex items-center justify-center gap-2 md:gap-4 text-xs md:text-sm flex-wrap">
-          {[
-            { label: '📕 书籍输入', c: 'yellow' as const },
-            { label: '🟡 提取方法论', c: 'yellow' as const },
-            { label: '🤖 AI 顾问推演', c: 'blue' as const },
-            { label: '🔵 案例沉淀', c: 'blue' as const },
-          ].map((step, i) => (
-            <React.Fragment key={step.label}>
-              {i > 0 && <ArrowRight size={16} className="text-gray-400" />}
-              <span className={`flex items-center gap-1 px-3 py-1.5 rounded-full font-medium ${FOUR_COLORS[step.c].bg} ${FOUR_COLORS[step.c].text}`}>
-                {step.label}
-              </span>
-            </React.Fragment>
-          ))}
-        </div>
       </motion.div>
 
       {/* Tabs */}
@@ -1255,9 +1228,8 @@ const BooksPanel: React.FC = () => {
     loadBooks();
   };
 
-  const handleOpenPdf = async (id: string) => {
-    const url = await bookshelfService.getBlobUrl(id);
-    if (url) window.open(`/pdf-viewer?url=${encodeURIComponent(url)}`, '_blank');
+  const handleOpenPdf = (id: string) => {
+    window.open(`/pdf-viewer?book=${id}`, '_blank');
   };
 
   if (loading) return <div className="text-center py-12"><Loader size={24} className="animate-spin mx-auto text-blue-500" /></div>;

@@ -32,12 +32,12 @@ class GenerateNativePPTRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_native_ppt(req: GenerateNativePPTRequest):
-    """从四色卡片生成原生可编辑 PPTX（SVG→DrawingML 模式）"""
+    """从四色卡片生成 PPTX（python-pptx 直出，不经过 SVG→DrawingML）"""
     try:
-        from ppt_engine.card_renderer import generate_pptx
+        from ppt_engine.card_renderer import generate_pptx_direct
 
         cards_dict = [c.model_dump() for c in req.cards]
-        output_path = generate_pptx(
+        output_path = generate_pptx_direct(
             topic=req.topic,
             cards=cards_dict,
             theme_name=req.theme,
@@ -65,10 +65,7 @@ async def generate_from_text(
 ):
     """从文本内容直接生成原生 PPTX（AI 结构化分页 + 多Slide）"""
     try:
-        import asyncio
-        from ppt_engine.card_renderer import render_cover_svg, render_summary_svg
-        from ppt_engine.card_renderer import render_content_svg
-        from ppt_engine.pptx_builder import create_pptx_with_native_svg
+        from ppt_engine.card_renderer import generate_pptx_direct
 
         # ── 1. AI 结构化：Sensenova 7B 将文本拆为多页 slide（异步 + 长文本并行）─
         from services.ppt_structure_generator import async_generate_structure
@@ -86,54 +83,27 @@ async def generate_from_text(
                 "content": card_content,
             })
 
-        # ── 3. 每 4 张卡片一页 ───────────────────────────────
-        slide_groups: list[list[dict]] = []
-        for i in range(0, len(all_cards), 4):
-            slide_groups.append(all_cards[i:i+4])
+        # ── 3. 直接通过 python-pptx 生成 ────────────────────
+        from datetime import datetime
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(output_dir / f"{topic}_{ts}.pptx")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            svg_files = []
-
-            cover = render_cover_svg(topic, theme_name=theme)
-            fp = Path(tmpdir) / "slide_01.svg"
-            fp.write_text(cover, encoding="utf-8")
-            svg_files.append(fp)
-
-            for group_idx, group in enumerate(slide_groups):
-                svg = render_content_svg(group, theme)
-                fp = Path(tmpdir) / f"slide_{group_idx+2:02d}.svg"
-                fp.write_text(svg, encoding="utf-8")
-                svg_files.append(fp)
-
-            summary_titles = [c["title"] for c in all_cards[:6]]
-            summary = render_summary_svg("要点总结", summary_titles, theme)
-            fp = Path(tmpdir) / f"slide_{len(svg_files)+1:02d}.svg"
-            fp.write_text(summary, encoding="utf-8")
-            svg_files.append(fp)
-
-            output_dir = Path("C:/D/zhiyi/generated")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            from datetime import datetime
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = output_dir / f"{topic}_{ts}.pptx"
-
-            success = create_pptx_with_native_svg(
-                svg_files=svg_files,
-                output_path=output_path,
-                use_native_shapes=True,
-                canvas_format="ppt169",
-                verbose=False,
-            )
-            if not success:
-                raise RuntimeError("PPTX generation failed")
+        generate_pptx_direct(
+            topic=topic,
+            cards=all_cards,
+            theme_name=theme,
+            output_path=output_path,
+        )
 
         return {
             "status": "success",
-            "file_path": str(output_path),
-            "filename": output_path.name,
-            "slide_count": len(svg_files),
+            "file_path": output_path,
+            "filename": Path(output_path).name,
+            "slide_count": len(all_cards) // 4 + 2,
             "llm_slides": len(slides),
-            "message": f"AI 结构化 PPT 已生成（{len(slides)} 页内容，{len(slide_groups)} 张幻灯片）",
+            "message": f"AI 结构化 PPT 已生成（{len(slides)} 页内容）",
         }
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"ppt_engine 不可用: {e}")
