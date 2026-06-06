@@ -27,10 +27,6 @@ import {
   Bookmark,
   BookmarkCheck,
   Eye,
-  ZoomIn,
-  ZoomOut,
-  ChevronLeft,
-  ChevronRight,
   Hash,
   Copy,
   Presentation,
@@ -889,28 +885,29 @@ const PDFAnalysis: React.FC = () => {
       inactiveText: 'text-purple-600 dark:text-purple-400',
       hoverBg: 'hover:bg-purple-100 dark:hover:bg-purple-900/30',
     },
-    {
-      id: 'merge' as const,
-      name: 'PDF合并',
-      icon: <Combine size={20} />,
-      description: '合并多个 PDF',
-      color: 'from-green-500 to-emerald-500',
-      inactiveBg: 'bg-green-50 dark:bg-green-900/20',
-      inactiveBorder: 'border-green-200 dark:border-green-800',
-      inactiveText: 'text-green-600 dark:text-green-400',
-      hoverBg: 'hover:bg-green-100 dark:hover:bg-green-900/30',
-    },
-    {
-      id: 'split' as const,
-      name: 'PDF拆分',
-      icon: <Scissors size={20} />,
-      description: '拆分 PDF 页面',
-      color: 'from-orange-500 to-red-500',
-      inactiveBg: 'bg-orange-50 dark:bg-orange-900/20',
-      inactiveBorder: 'border-orange-200 dark:border-orange-800',
-      inactiveText: 'text-orange-600 dark:text-orange-400',
-      hoverBg: 'hover:bg-orange-100 dark:hover:bg-orange-900/30',
-    },
+    // merge/split features commented out
+    // {
+    //   id: 'merge' as const,
+    //   name: 'PDF合并',
+    //   icon: <Combine size={20} />,
+    //   description: '合并多个 PDF',
+    //   color: 'from-green-500 to-emerald-500',
+    //   inactiveBg: 'bg-green-50 dark:bg-green-900/20',
+    //   inactiveBorder: 'border-green-200 dark:border-green-800',
+    //   inactiveText: 'text-green-600 dark:text-green-400',
+    //   hoverBg: 'hover:bg-green-100 dark:hover:bg-green-900/30',
+    // },
+    // {
+    //   id: 'split' as const,
+    //   name: 'PDF拆分',
+    //   icon: <Scissors size={20} />,
+    //   description: '拆分 PDF 页面',
+    //   color: 'from-orange-500 to-red-500',
+    //   inactiveBg: 'bg-orange-50 dark:bg-orange-900/20',
+    //   inactiveBorder: 'border-orange-200 dark:border-orange-800',
+    //   inactiveText: 'text-orange-600 dark:text-orange-400',
+    //   hoverBg: 'hover:bg-orange-100 dark:hover:bg-orange-900/30',
+    // },
     {
       id: 'fromImages' as const,
       name: '图片转PDF',
@@ -1188,19 +1185,7 @@ const renderPPTConvertPanel = () => {
                       </div>
                     )}
                     <div>
-                      {record.fileDataUrl ? (
-                        <a
-                          href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium truncate max-w-[250px] block hover:text-blue-600 dark:hover:text-blue-400 hover:underline"
-                          title="点击查看"
-                        >
-                          {record.fileName}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
-                      )}
+                      <p className="text-sm font-medium truncate max-w-[250px]">{record.fileName}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
                         转换为 {record.targetFormat === 'word' ? 'Word' : record.targetFormat === 'pdf' ? 'PDF' : 'Excel'} · {record.createdAt.toLocaleString()}
                       </p>
@@ -1210,17 +1195,6 @@ const renderPPTConvertPanel = () => {
                     {record.status === 'completed' ? (
                       <>
                         {record.fileDataUrl && (
-                          <>
-                            <a
-                              href={`/pdf-viewer?url=${encodeURIComponent(record.fileDataUrl)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1 rounded text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:underline whitespace-nowrap"
-                              title="在线查看"
-                            >
-                              <Eye className="w-3 h-3 inline mr-0.5" />
-                              查看
-                            </a>
                             <button
                               onClick={() => {
                                 const a = document.createElement('a');
@@ -1237,7 +1211,6 @@ const renderPPTConvertPanel = () => {
                               <Download className="w-3 h-3 inline mr-0.5" />
                               下载
                             </button>
-                          </>
                         )}
                         <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">成功</span>
                       </>
@@ -1628,7 +1601,8 @@ const renderPPTConvertPanel = () => {
                     </div>
                   )}
 
-                  {activeFeature === 'merge' && (
+                  {/* merge/split buttons commented out */}
+                  {/*activeFeature === 'merge' && (
                     <button
                       onClick={handleMergePDF}
                       disabled={uploadedFiles.length < 2 || isProcessing}
@@ -1637,9 +1611,9 @@ const renderPPTConvertPanel = () => {
                       {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Combine className="w-5 h-5 mr-2" />}
                       合并 PDF
                     </button>
-                  )}
+                  )*/}
 
-                  {activeFeature === 'split' && (
+                  {/*activeFeature === 'split' && (
                     <button
                       onClick={handleSplitPDF}
                       disabled={!uploadedFile || isProcessing}
@@ -1648,7 +1622,8 @@ const renderPPTConvertPanel = () => {
                       {isProcessing ? <Loader className="w-5 h-5 animate-spin mr-2" /> : <Scissors className="w-5 h-5 mr-2" />}
                       拆分 PDF
                     </button>
-                  )}
+                  )*/}
+
 
                   {activeFeature === 'fromImages' && (
                     <button
@@ -1733,16 +1708,25 @@ const renderPPTConvertPanel = () => {
                     <div className="mb-6">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">PDF 预览</h4>
-                        <button
-                          onClick={() => { if (uploadedFile) { const url = URL.createObjectURL(uploadedFile); window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); } else { window.open('/pdf-viewer', '_blank'); } }}
-                          className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
-                        >
-                          全屏查看 →
-                        </button>
                       </div>
-                      <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden h-64 bg-gray-100 dark:bg-gray-700">
-                        <PDFViewerInternal externalFile={uploadedFile} />
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = URL.createObjectURL(uploadedFile);
+                          window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank');
+                          setTimeout(() => URL.revokeObjectURL(url), 60000);
+                        }}
+                        className="group w-full border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 transition-all text-left flex items-center gap-4"
+                      >
+                        <div className="shrink-0 w-12 h-12 rounded-lg bg-white dark:bg-gray-800 flex items-center justify-center shadow-sm">
+                          <FileText className="w-6 h-6 text-blue-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{uploadedFile.name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">点击在 PDF 查看器中打开（全屏滚动 · 可编辑 · 保存为笔记）</div>
+                        </div>
+                        <ExternalLink className="shrink-0 w-5 h-5 text-blue-500 group-hover:translate-x-0.5 transition-transform" />
+                      </button>
                     </div>
                   )}
 
@@ -1929,19 +1913,9 @@ const renderPPTConvertPanel = () => {
               {/* Empty State */}
               {!isProcessing && !analysisResult && generatedCards.length === 0 && activeFeature !== 'convertWord' && activeFeature !== 'convertExcel' && activeFeature !== 'history' && activeFeature !== 'pptConvert' && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-12 border border-gray-200 dark:border-gray-700 text-center">
-                  {activeFeature === 'merge' ? (
-                    <>
-                      <Combine className="w-16 h-16 mx-auto text-green-500 mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">PDF 合并</h3>
-                      <p className="text-gray-600 dark:text-gray-400">选择多个 PDF 文件进行合并</p>
-                    </>
-                  ) : activeFeature === 'split' ? (
-                    <>
-                      <Scissors className="w-16 h-16 mx-auto text-orange-500 mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">PDF 拆分</h3>
-                      <p className="text-gray-600 dark:text-gray-400">将 PDF 拆分为多个单页文件</p>
-                    </>
-                  ) : activeFeature === 'fromImages' ? (
+                  {/* merge/split commented out */}
+                  {/*  activeFeature === 'merge' ? (...) : activeFeature === 'split' ? (...) : */}
+                  {activeFeature === 'fromImages' ? (
                     <>
                       <FileImage className="w-16 h-16 mx-auto text-teal-500 mb-4" />
                       <h3 className="text-lg font-semibold mb-2">图片转 PDF</h3>
@@ -2051,169 +2025,6 @@ const DocxPreviewModal: React.FC<{ isOpen: boolean; onClose: () => void; html: s
             style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
           />
         </div>
-      </div>
-    </div>
-  );
-};
-
-const PDFViewerInternal: React.FC<{ externalFile?: File | null }> = ({ externalFile }) => {
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [fileName, setFileName] = useState('');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const renderTaskRef = useRef<any>(null);
-
-  React.useEffect(() => {
-    if (!externalFile) return;
-    const loadExternalFile = async () => {
-      setIsLoading(true);
-      setFileName(externalFile.name);
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        try {
-          const pdfjs = getPdfJs();
-          const doc = pdfjs.getDocument({ data });
-          const realDoc = await doc.promise;
-          setPdfDoc(realDoc);
-          setTotalPages(realDoc.numPages);
-          setCurrentPage(1);
-        } catch (error) {
-          console.error('[PDF] 加载外部PDF失败:', error);
-          toast.error('加载PDF预览失败');
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      reader.readAsArrayBuffer(externalFile);
-    };
-    loadExternalFile();
-  }, [externalFile]);
-
-  React.useEffect(() => {
-    if (pdfDoc && currentPage > 0) {
-      renderPage(currentPage);
-    }
-  }, [pdfDoc, currentPage, scale]);
-
-  const getPdfJs = () => pdfjsLib;
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !file.type.includes('pdf')) {
-      toast.error('请选择PDF文件');
-      return;
-    }
-    setIsLoading(true);
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      try {
-        const pdfjs = getPdfJs();
-        const doc = pdfjs.getDocument({ data });
-        const realDoc = await doc.promise;
-        setPdfDoc(realDoc);
-        setTotalPages(realDoc.numPages);
-        setCurrentPage(1);
-      } catch (error) {
-        console.error('[PDF] 加载PDF失败:', error);
-        toast.error('加载PDF失败');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const renderPage = async (pageNum: number) => {
-    if (!pdfDoc || !canvasRef.current) return;
-    if (typeof pdfDoc.getPage !== 'function') {
-      if (pdfDoc.promise) {
-        try {
-          const realDoc = await pdfDoc.promise;
-          setPdfDoc(realDoc);
-          return;
-        } catch (err) {
-          console.error('[PDF] Failed to resolve doc promise:', err);
-          return;
-        }
-      }
-      return;
-    }
-
-    if (renderTaskRef.current) {
-      try { renderTaskRef.current.cancel(); } catch (e) { /* ignore */ }
-      renderTaskRef.current = null;
-    }
-
-    try {
-      const page = await pdfDoc.getPage(pageNum);
-      const viewport = page.getViewport({ scale });
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      if (context) {
-        const renderTask = page.render({ canvasContext: context, viewport });
-        renderTaskRef.current = renderTask;
-        await renderTask.promise;
-        renderTaskRef.current = null;
-      }
-    } catch (error: any) {
-      if (error?.name === 'RenderingCancelledException') return;
-      console.error('[PDF] 渲染页面失败:', error);
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden">
-      <div className="bg-gray-200 dark:bg-gray-800 px-3 py-2 flex items-center justify-between">
-        <label className="cursor-pointer flex items-center space-x-2 px-3 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
-          <Upload className="w-4 h-4" />
-          <span>打开PDF</span>
-          <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
-        </label>
-        {fileName && <span className="text-sm text-gray-600 dark:text-gray-400">{fileName}</span>}
-        <div className="flex items-center space-x-2">
-          <button onClick={() => setScale(Math.max(scale - 0.25, 0.5))} disabled={scale <= 0.5} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <span className="text-sm w-12 text-center">{Math.round(scale * 100)}%</span>
-          <button onClick={() => setScale(Math.min(scale + 0.25, 3))} disabled={scale >= 3} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <div className="w-px h-5 bg-gray-400 mx-1" />
-          <button onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <input type="number" min={1} max={totalPages} value={currentPage} onChange={(e) => { const p = parseInt(e.target.value); if (p >= 1 && p <= totalPages) setCurrentPage(p); }} className="w-12 px-1 py-0.5 text-center border rounded text-sm" />
-          <span className="text-gray-500 text-sm">/ {totalPages}</span>
-          <button onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages} className="p-1 hover:bg-gray-300 dark:hover:bg-gray-700 rounded disabled:opacity-50">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto flex justify-center p-2 bg-gray-200 dark:bg-gray-700">
-        {isLoading ? (
-          <div className="flex items-center justify-center">
-            <Loader className="w-8 h-8 animate-spin text-gray-500" />
-          </div>
-        ) : pdfDoc ? (
-          <div className="bg-white shadow-lg">
-            <canvas ref={canvasRef} />
-          </div>
-        ) : (
-          <div className="flex items-center justify-center text-gray-400">
-            <div className="text-center">
-              <FileText className="w-16 h-16 mx-auto mb-2" />
-              <p className="text-sm">请上传PDF文件</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
