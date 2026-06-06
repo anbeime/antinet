@@ -142,7 +142,7 @@ const AppHeader: React.FC = () => {
                 <ListTodo size={16} /><span>任务管理</span>
               </button>
               <button onClick={() => handleNav('/?tab=virtual-office-meeting')} className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2">
-                <Users size={16} /><span>团队会议</span>
+                <Users size={16} /><span>团队协作</span>
               </button>
               <div className="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
                 <div className="px-4 py-2 text-xs text-gray-400">聊天机器人浮动在右下角</div>

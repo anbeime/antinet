@@ -925,7 +925,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button onClick={() => { setActiveTab('virtual-office-meeting'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-blue-600 bg-blue-50 font-semibold' : 'text-gray-700'}`}>
-                <Users size={16} /><span>团队会议</span>
+                <Users size={16} /><span>团队协作</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">
                 文档处理
@@ -959,7 +959,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               </button>
               <button onClick={() => { setActiveTab('virtual-office-meeting'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'virtual-office-meeting' ? 'text-ink-main bg-card-blue' : ''}`}>
-                <Users size={16} /><span>团队会议</span>
+                <Users size={16} /><span>团队协作</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-ink-desc uppercase tracking-wider mt-2">
                 文档处理
@@ -1163,7 +1163,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
-                    { icon: <Users size={20} />, title: '团队会议', desc: '局域网团队协作与任务协同工作台', link: 'tab:team-collaboration', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
+                    { icon: <Users size={20} />, title: '团队协作', desc: '局域网团队协作与任务协同工作台', link: 'tab:team-collaboration', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
 
 
                   ].map((item, i) => (
