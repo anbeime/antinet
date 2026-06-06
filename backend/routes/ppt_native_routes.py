@@ -65,7 +65,8 @@ async def generate_from_text(
 ):
     """从 Markdown/文本内容直接生成 PPTX（Markdown 结构化分页 + 一页一张卡片）"""
     try:
-        from ppt_engine.card_renderer import generate_pptx_direct, MarkdownToPPTConverter
+        from ppt_engine.card_renderer import generate_pptx_direct
+        from ppt_engine.markdown_converter import MarkdownToPPTConverter
 
         # ── 1. Markdown → 结构化 slides ──────────────────────
         converter = MarkdownToPPTConverter()

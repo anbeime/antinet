@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  FileText, Upload, Download, ZoomIn, ZoomOut,
-  ChevronLeft, ChevronRight, Hash, Edit3, Eye, X, Loader,
+  FileText, Upload, Download, Hash, Edit3, Eye, X, Loader,
   Maximize2, Minimize2, AlertCircle, Bookmark, Library, Plus, Save, Trash2, BookmarkPlus, Check, Book
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
@@ -32,14 +31,10 @@ const PDFViewer: React.FC = () => {
   const [pdfUrl, setPdfUrl] = useState('');
   const [fileName, setFileName] = useState('');
   const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const pdfjsRef = useRef<any>(null);
-  const renderTaskRef = useRef<any>(null);
   const pdfBufferRef = useRef<ArrayBuffer | null>(null);
   const pdfFileNameRef = useRef<string>('');
 
@@ -119,7 +114,6 @@ const PDFViewer: React.FC = () => {
   const loadPDFFromURL = async (url: string) => {
     setPdfLoading(true);
     setPdfError('');
-    setPdfUrl(url);
     try {
       try {
         const urlObj = new URL(url, window.location.origin);
@@ -132,10 +126,10 @@ const PDFViewer: React.FC = () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const ab = await res.arrayBuffer();
       pdfBufferRef.current = ab;
+      setPdfUrl(URL.createObjectURL(new Blob([ab], { type: 'application/pdf' })));
       const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
-      setCurrentPage(1);
     } catch (e: any) {
       setPdfError(e.message || '加载PDF失败');
     } finally { setPdfLoading(false); }
@@ -155,7 +149,6 @@ const PDFViewer: React.FC = () => {
       const pdf = await pjs.getDocument({ data: new Uint8Array(book.fileData), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
-      setCurrentPage(1);
     } catch (e: any) {
       setPdfError(e.message || '加载书籍失败');
     } finally { setPdfLoading(false); }
@@ -184,26 +177,11 @@ const PDFViewer: React.FC = () => {
     if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
   };
 
-  useEffect(() => { if (pdfDoc && currentPage > 0) renderPage(currentPage); }, [pdfDoc, currentPage, scale]);
-
   useEffect(() => {
     if (sourceViewMode === 'pdf' && selectedCard?.id && cardContent && !sourcePdfUrl) {
       generateSourcePdf();
     }
   }, [sourceViewMode, selectedCard?.id]);
-
-  const renderPage = async (pageNum: number) => {
-    if (!pdfDoc || !canvasRef.current) return;
-    if (renderTaskRef.current) { try { renderTaskRef.current.cancel(); } catch {} }
-    try {
-      const page = await pdfDoc.getPage(pageNum);
-      const vp = page.getViewport({ scale });
-      const c = canvasRef.current;
-      c.height = vp.height; c.width = vp.width;
-      const ctx = c.getContext('2d');
-      if (ctx) { const t = page.render({ canvasContext: ctx, viewport: vp }); renderTaskRef.current = t; await t.promise; renderTaskRef.current = null; }
-    } catch (e: any) { if (e?.name === 'RenderingCancelledException') return; }
-  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -218,7 +196,7 @@ const PDFViewer: React.FC = () => {
       try {
         const pjs = await loadPDFJS();
         const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
-        setPdfDoc(pdf); setTotalPages(pdf.numPages); setCurrentPage(1);
+        setPdfDoc(pdf); setTotalPages(pdf.numPages);
       } catch (err: any) { setPdfError(err.message || '加载PDF失败'); } finally { setPdfLoading(false); }
     };
     reader.readAsArrayBuffer(file);
@@ -673,16 +651,7 @@ const PDFViewer: React.FC = () => {
               <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
             </label>
             {activeView === 'pdf' && pdfDoc && (
-              <>
-                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage <= 1}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronLeft size={16} /></button>
-                <span className="text-xs text-gray-500 flex items-center gap-1"><Hash size={12} className="text-gray-400" />{currentPage}/{totalPages}</span>
-                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage >= totalPages}
-                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50"><ChevronRight size={16} /></button>
-                <button onClick={() => setScale(s => Math.max(0.5, s - 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><ZoomOut size={14} /></button>
-                <span className="text-xs text-gray-500 w-10 text-center">{Math.round(scale * 100)}%</span>
-                <button onClick={() => setScale(s => Math.min(3, s + 0.25))} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"><ZoomIn size={14} /></button>
-              </>
+              <span className="text-xs text-gray-500 flex items-center gap-1"><Hash size={12} className="text-gray-400" />共 {totalPages} 页</span>
             )}
             {fileName && <span className="text-xs text-gray-400 truncate max-w-[200px]">{fileName}</span>}
           </div>
@@ -731,16 +700,16 @@ const PDFViewer: React.FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {/* 主内容 */}
-        <main className="flex-1 overflow-auto bg-gray-600">
+        <main className="flex-1 overflow-hidden bg-gray-600">
           {activeView === 'pdf' ? (
             pdfLoading ? (
               <div className="flex items-center justify-center h-full text-white"><Loader size={24} className="animate-spin mr-2" />加载中...</div>
             ) : pdfError ? (
               <div className="flex flex-col items-center justify-center h-full text-red-300"><AlertCircle size={48} className="mb-4 opacity-30" /><p>{pdfError}</p></div>
-            ) : pdfDoc ? (
-              <div className="flex justify-center p-4">
-                <div className="bg-white shadow-lg"><canvas ref={canvasRef} className="max-w-full" /></div>
-              </div>
+            ) : pdfDoc && pdfUrl ? (
+              <object data={pdfUrl} type="application/pdf" className="w-full h-full">
+                <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
+              </object>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-gray-300">
                 <FileText size={64} className="mb-4 opacity-30" />
