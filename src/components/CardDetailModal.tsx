@@ -362,6 +362,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // 同批次兄弟卡片（知识图谱子网）
   const [siblingCards, setSiblingCards] = useState<SiblingCard[]>([]);
   const [siblingSourceName, setSiblingSourceName] = useState<string>('');
+  const [siblingSourceFileId, setSiblingSourceFileId] = useState<string>('');
   const [siblingsLoading, setSiblingsLoading] = useState(false);
 
   // 内容区引用（选中文本检测）
@@ -641,6 +642,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setSiblingCards(data.siblings || []);
       if (data.source_file) {
         setSiblingSourceName(data.source_file.original_name || '');
+        setSiblingSourceFileId(data.source_file.source_file_id || '');
       }
     } catch (err) {
       console.error('加载同批次卡片失败:', err);
@@ -1232,7 +1234,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   <Edit2 size={12} />
                   编辑
                 </button>
-                {/* 源文件溯源按钮（含 Markdown 查看选项） */}
+                {/* 源文件溯源按钮 - 微信读书风格：主按钮可直接点击跳转查看，下拉菜单提供更多操作 */}
                 {sourceFileLoading && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-0.5 flex items-center gap-1">
                     <Loader2 size={12} className="animate-spin" />
@@ -1241,16 +1243,33 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 )}
                 {sourceFileInfo && sourceFileInfo.has_source && (
                   <div className="relative group">
+                    {/* 主按钮：直接点击查看源文件（带段落高亮） */}
                     <button
-                      className="text-xs text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
-                      title={`来源: ${sourceFileInfo.original_name}`}
+                      onClick={() => {
+                        if (!sourceFileInfo.source_file_id) return;
+                        // 从 location_in_source 解析段落号，如 "第3段" -> 3
+                        const paraMatch = (sourceFileInfo.location_in_source || '').match(/第(\d+)段/);
+                        const paraIdx = paraMatch ? parseInt(paraMatch[1]) : undefined;
+                        openSourceMarkdownViewer(sourceFileInfo.source_file_id!, paraIdx);
+                      }}
+                      className="text-xs text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-l-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer border-r border-blue-200 dark:border-blue-800"
+                      title={`来源: ${sourceFileInfo.original_name} - 点击查看源文件`}
                     >
                       <FileText size={12} />
                       <span>{(sourceFileInfo.original_name || '源文件').length > 12 ? (sourceFileInfo.original_name || '源文件').slice(0, 12) + '..' : (sourceFileInfo.original_name || '源文件')}</span>
+                      {sourceFileInfo.location_in_source && (
+                        <MapPin size={10} className="opacity-70 text-orange-500" />
+                      )}
+                    </button>
+                    {/* 下拉按钮：单独触发显示更多操作 */}
+                    <button
+                      className="text-xs text-blue-600 dark:text-blue-400 px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-r-full flex items-center hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                      title="更多溯源操作"
+                    >
                       <ChevronDown size={10} className="opacity-50" />
                     </button>
                     {/* 下拉菜单 */}
-                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[200px]">
+                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all min-w-[220px]">
                       <button
                         onClick={() => {
                           window.open(`/?tab=pdf-analysis`, '_blank');
@@ -1272,11 +1291,16 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                         下载原始文件
                       </button>
                       <button
-                        onClick={() => openSourceMarkdownViewer(sourceFileInfo.source_file_id!)}
-                        className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg flex items-center gap-2 text-purple-600 dark:text-purple-400"
+                        onClick={() => {
+                          if (!sourceFileInfo.source_file_id) return;
+                          const paraMatch = (sourceFileInfo.location_in_source || '').match(/第(\d+)段/);
+                          const paraIdx = paraMatch ? parseInt(paraMatch[1]) : undefined;
+                          openSourceMarkdownViewer(sourceFileInfo.source_file_id!, paraIdx);
+                        }}
+                        className="w-full text-left text-xs px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-purple-600 dark:text-purple-400"
                       >
                         <FilePen size={12} />
-                        查看 Markdown 溯源
+                        {sourceFileInfo.location_in_source ? '查看 Markdown 溯源（高亮此段）' : '查看 Markdown 溯源'}
                       </button>
                       <button
                         onClick={() => {
@@ -1610,7 +1634,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
                     <Network size={14} className="text-purple-500" />
-                    同批次导入 ({siblingSourceName || '未知来源'})
+                    同批次导入
+                    {siblingSourceFileId ? (
+                      <button
+                        onClick={() => openSourceMarkdownViewer(siblingSourceFileId)}
+                        className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1 max-w-[260px] truncate"
+                        title={`查看源文件: ${siblingSourceName}`}
+                      >
+                        <span className="truncate">({siblingSourceName || '未知来源'})</span>
+                        <ExternalLink size={11} className="opacity-60 flex-shrink-0" />
+                      </button>
+                    ) : (
+                      <span className="text-gray-500 dark:text-gray-400">({siblingSourceName || '未知来源'})</span>
+                    )}
                     <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 text-xs rounded-full">
                       {siblingCards.length} 张
                     </span>

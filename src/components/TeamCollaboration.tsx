@@ -1,4 +1,4 @@
-﻿﻿﻿import React, { useState, useEffect, useContext, useRef } from 'react';
+﻿import React, { useState, useEffect, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Permission } from '@/contexts/authContext';
 import {
@@ -992,7 +992,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       </div>
 
       {/* 内容区域 */}
-      <div className="p-6">
+      <div className="p-3 sm:p-6">
 
 
         {/* 实时协作编辑 */}
@@ -1213,30 +1213,30 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {/* 项目管理 */}
         {activeTab === 'projects' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">项目管理</h2>
-                <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
-                <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="w-full sm:w-auto">
+                <h2 className="text-lg sm:text-xl font-bold mb-1 sm:mb-2">项目管理</h2>
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 hidden sm:block">管理团队项目和任务分配，提高协作效率</p>
+                <div className="mt-1 sm:mt-2 flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[10px] sm:text-xs text-gray-500">
                   <span>共{projects.length} 个项目</span>
-                  <span>·</span>
+                  <span className="hidden sm:inline">·</span>
                   <span>共{tasks.length} 个任务</span>
-                  <span>·</span>
+                  <span className="hidden sm:inline">·</span>
                   <span className="text-green-600">
-                    已完成{tasks.filter(t => t.status === 'completed').length}
+                    ✅{tasks.filter(t => t.status === 'completed').length}
                   </span>
-                  <span>·</span>
+                  <span className="hidden sm:inline">·</span>
                   <span className="text-orange-600">
-                    进行中{tasks.filter(t => t.status === 'in-progress').length}
+                    🔄{tasks.filter(t => t.status === 'in-progress').length}
                   </span>
                 </div>
               </div>
               <button
                 onClick={handleAddProject}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex-shrink-0"
               >
-                <Plus size={18} className="mr-2" />
-                新建项目
+                <Plus size={16} className="sm:mr-2" />
+                <span className="hidden sm:inline">新建项目</span>
               </button>
             </div>
 
@@ -1308,55 +1308,55 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 {selectedProject ? (
                   <>
                     {/* 项目详情 */}
-                    <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">{selectedProject.name}</h3>
-                          <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{selectedProject.description}</p>
+                    <div className="bg-white dark:bg-gray-750 rounded-xl p-3 sm:p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex justify-between items-start mb-3 sm:mb-4">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base sm:text-lg font-semibold truncate">{selectedProject.name}</h3>
+                          <p className="text-gray-600 dark:text-gray-300 text-xs sm:text-sm mt-1 line-clamp-2">{selectedProject.description}</p>
                         </div>
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-1 sm:space-x-2 flex-shrink-0 ml-2">
                           <button 
                             onClick={() => handleEditProject(selectedProject)}
-                            className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
                           >
-                            <Edit3 size={16} />
+                            <Edit3 size={14} />
                           </button>
                           <button 
                             onClick={() => handleDeleteProject(selectedProject.id)}
-                            className="p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{selectedProject.progress}%</div>
-                          <div className="text-xs text-gray-500">完成进度</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-blue-600">{selectedProject.progress}%</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">完成进度</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
-                          <div className="text-xs text-gray-500">已完成任加</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">已完成</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
-                          <div className="text-xs text-gray-500">进行中任加</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">进行中</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
-                          <div className="text-xs text-gray-500">总任务数</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">总任务数</div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs sm:text-sm gap-2">
                         <div className="flex items-center space-x-2">
-                          <Calendar size={16} className="text-gray-500" />
-                          <span>截止日期: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
+                          <Calendar size={14} className="text-gray-500" />
+                          <span>截止: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Users size={16} className="text-gray-500" />
-                          <span>{selectedProject.assignedMembers.length} 人参中</span>
+                          <Users size={14} className="text-gray-500" />
+                          <span>{selectedProject.assignedMembers.length} 人参与</span>
                         </div>
                       </div>
                     </div>

@@ -27,6 +27,7 @@ import {
   ListTodo,
   Loader2,
   FileText,
+  Presentation,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -710,28 +711,28 @@ const ProjectDetailPanel: React.FC<{
       <div className="fixed inset-0 z-[9990] bg-gray-50 dark:bg-gray-900 flex flex-col overflow-y-auto" style={{ margin: 0 }}>
         {/* 顶部导航栏 */}
         <div className={`flex-shrink-0 ${colorOpt.bg} dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm`}>
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
               <button
                 onClick={onClose}
-                className="flex items-center px-3 py-2 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm"
+                className="flex items-center px-2 sm:px-3 py-2 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm flex-shrink-0"
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                返回列表
+                <span className="hidden sm:inline">返回列表</span>
               </button>
-              <div className="flex items-center space-x-3">
-                <span className="text-3xl">{project.icon || '📚'}</span>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+              <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                <span className="text-2xl sm:text-3xl flex-shrink-0">{project.icon || '📚'}</span>
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white truncate">{project.name}</h1>
                   {project.description && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{project.description}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">{project.description}</p>
                   )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1 sm:space-x-3 flex-wrap gap-1">
               {/* 四色统计 */}
-              <div className="hidden sm:flex items-center space-x-2 bg-white dark:bg-gray-700 rounded-lg px-3 py-1.5 shadow-sm">
+              <div className="hidden md:flex items-center space-x-2 bg-white dark:bg-gray-700 rounded-lg px-3 py-1.5 shadow-sm">
                 {Object.entries(cardTypeConfig).map(([type, config]) => (
                   <span key={type} className="flex items-center space-x-1">
                     <span className="text-sm">{config.icon}</span>
@@ -744,33 +745,34 @@ const ProjectDetailPanel: React.FC<{
 
               <button
                 onClick={() => { setActiveTab('network'); setNetworkTabOpened(true); }}
-                className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
+                className={`flex items-center px-2 sm:px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
                   activeTab === 'network'
                     ? 'text-white bg-indigo-600 hover:bg-indigo-700'
                     : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
                 }`}
                 title="查看专题知识网络"
               >
-                <Network className="w-4 h-4 mr-1" />
-                知识网络
+                <Network className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">知识网络</span>
               </button>
               <button
                 onClick={handleExportPPT}
                 disabled={exportingPPT}
-                className="flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                className="flex items-center px-2 sm:px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
                 title="导出为PPT"
               >
-                {exportingPPT ? '生成中...' : '导出PPT'}
+                {exportingPPT ? <span className="hidden sm:inline">生成中...</span> : <><Presentation className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">导出PPT</span></>}
               </button>
               {pptResult && (
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs px-2 py-1 rounded ${pptResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {pptResult.message}
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded ${pptResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {pptResult.success ? '✅' : '❌'}
+                    <span className="hidden sm:inline ml-1">{pptResult.message}</span>
                   </span>
                   {pptResult.success && pptResult.filename && (
                     <button
                       onClick={() => handleDownloadPPT(pptResult.filename)}
-                      className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                      className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
                       title="下载PPT文件"
                     >
                       下载
@@ -800,11 +802,11 @@ const ProjectDetailPanel: React.FC<{
 
           
           {/* Tab 切换 */}
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="flex space-x-1">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex space-x-1 overflow-x-auto whitespace-nowrap scrollbar-thin">
               <button
                 onClick={() => setActiveTab('cards')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'cards'
                     ? 'border-purple-500 text-purple-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -815,7 +817,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
 <button
                 onClick={() => setActiveTab('tasks')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'tasks'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -826,7 +828,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
               <button
                 onClick={() => setActiveTab('workflow')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'workflow'
                     ? 'border-green-500 text-green-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -837,7 +839,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
               <button
                 onClick={() => setActiveTab('kanban')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'kanban'
                     ? 'border-orange-500 text-orange-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -848,7 +850,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
               <button
                 onClick={() => { setActiveTab('network'); setNetworkTabOpened(true); }}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'network'
                     ? 'border-indigo-500 text-indigo-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -863,7 +865,7 @@ const ProjectDetailPanel: React.FC<{
 
         {/* 内容区域 - 可滚动 */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
             {loading ? (
               <div className="flex justify-center py-20">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
@@ -918,7 +920,7 @@ const ProjectDetailPanel: React.FC<{
                                     {tc.name}
                                   </span>
 </div>
-                                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex items-center space-x-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                   {card.card_type === 'red' && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleConvertToTask(card.id); }}
@@ -1039,21 +1041,21 @@ const ProjectDetailPanel: React.FC<{
                                 <Circle className="w-5 h-5" />
                               )}
                             </button>
-                            <div className="flex-1 min-w-0 mr-3">
-                              <h4 className={`font-medium ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                            <div className="flex-1 min-w-0 mr-2 sm:mr-3">
+                              <h4 className={`font-medium text-sm sm:text-base ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
                                 {task.title}
                               </h4>
                               {task.description && (
-                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{task.description}</p>
+                                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{task.description}</p>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                               {task.assigned_to_name && (
-                                <span className="text-xs px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
+                                <span className="hidden sm:inline text-xs px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
                                   {task.assigned_to_name}
                                 </span>
                               )}
-                              <span className={`text-xs px-2.5 py-1 rounded-full ${
+                              <span className={`text-xs px-2 sm:px-2.5 py-1 rounded-full ${
                                 task.priority === 'high' ? 'bg-red-100 text-red-700' :
                                 task.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
                                 'bg-green-100 text-green-700'
@@ -1074,7 +1076,7 @@ const ProjectDetailPanel: React.FC<{
                                     } else throw new Error();
                                   } catch { toast.error('删除失败'); }
                                 }}
-                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
                                 title="删除任务"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1182,16 +1184,16 @@ const ProjectDetailPanel: React.FC<{
                         <Layers className="w-5 h-5 mr-2" />
                         专题工作流
                       </h3>
-                      <div className="flex items-center gap-2 text-sm text-indigo-700 dark:text-indigo-300">
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/50 rounded">事实卡片</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 rounded">解释分析</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/50 rounded">风险识别</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-red-100 dark:bg-red-900/50 rounded">行动决策</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/50 rounded">GTD 任务</span>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-sm text-indigo-700 dark:text-indigo-300">
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/50 rounded text-xs sm:text-sm">事实卡片</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 rounded text-xs sm:text-sm">解释分析</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/50 rounded text-xs sm:text-sm">风险识别</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-red-100 dark:bg-red-900/50 rounded text-xs sm:text-sm">行动决策</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/50 rounded text-xs sm:text-sm">GTD 任务</span>
                       </div>
                       <p className="mt-3 text-xs text-indigo-600/70 dark:text-indigo-400/70">
                         完整闭环：事实 → 解释 → 风险 → 行动 → 任务执行，通过双向链接和日历事件串联所有环节
@@ -1224,7 +1226,7 @@ const ProjectDetailPanel: React.FC<{
 
                 {/* ===== 知识网络 Tab ===== */}
                 {activeTab === 'network' && networkTabOpened && (
-                  <div style={{ height: 'calc(100vh - 160px)' }}>
+                  <div className="min-h-[300px]" style={{ height: 'calc(100vh - 160px)', maxHeight: '80dvh' }}>
                     {cards.length > 0 ? (
                       <iframe
                         src={`/knowledge-graph?card=${cards[0]?.id || ''}`}
@@ -1289,10 +1291,10 @@ const ProjectDetailPanel: React.FC<{
 
         {/* 移动到其他专题弹窗 */}
         {showMoveCard && selectedCard && allProjectsList.length > 0 && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50" onClick={() => setShowMoveCard(false)}>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
-              <h3 className="text-lg font-semibold mb-4">移动卡片到其他专题</h3>
-              <p className="text-sm text-gray-500 mb-3">
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowMoveCard(false)}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-4 sm:p-6" onClick={e => e.stopPropagation()}>
+              <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">移动卡片到其他专题</h3>
+              <p className="text-xs sm:text-sm text-gray-500 mb-3 truncate">
                 将《{selectedCard.title}》移动到：
               </p>
               <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -1313,10 +1315,10 @@ const ProjectDetailPanel: React.FC<{
                         toast.error('移动失败');
                       }
                     }}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                    className="w-full text-left px-3 py-2.5 sm:py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
                   >
                     <span>{p.icon || '📚'}</span>
-                    <span>{p.name}</span>
+                    <span className="truncate">{p.name}</span>
                   </button>
                 ))}
               </div>
@@ -1571,10 +1573,10 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+          className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
         >
-          <Plus className="w-4 h-4 mr-1" />
-          新建专题
+          <Plus className="w-4 h-4 sm:mr-1" />
+          <span className="hidden sm:inline">新建专题</span>
         </motion.button>
       </div>
 
@@ -1627,22 +1629,22 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
                       <ExternalLink className="w-4 h-4 text-gray-500" />
                     </button>
                   )}
-                  <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+                  <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0 ml-1 sm:ml-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditingProject(project); setShowEditModal(true); }}
-                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 sm:p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       title="编辑"
                     >
-                      <Edit2 className="w-4 h-4 text-gray-500" />
+                      <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-500" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id!); }}
-                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 sm:p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       title="删除"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
                     </button>
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                   </div>
                 </div>
               </motion.div>
