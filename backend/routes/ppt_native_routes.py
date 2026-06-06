@@ -63,47 +63,33 @@ async def generate_from_text(
     content: str = Body(...),
     theme: str = Body(default="professional"),
 ):
-    """从文本内容直接生成原生 PPTX（AI 结构化分页 + 多Slide）"""
+    """从 Markdown/文本内容直接生成 PPTX（Markdown 结构化分页 + 一页一张卡片）"""
     try:
-        from ppt_engine.card_renderer import generate_pptx_direct
+        from ppt_engine.card_renderer import generate_pptx_direct, MarkdownToPPTConverter
 
-        # ── 1. AI 结构化：Sensenova 7B 将文本拆为多页 slide（异步 + 长文本并行）─
-        from services.ppt_structure_generator import async_generate_structure
-        slides = await async_generate_structure(topic, content)
-        logger.info(f"AI 结构化完成：{len(slides)} 个 slide")
+        # ── 1. Markdown → 结构化 slides ──────────────────────
+        converter = MarkdownToPPTConverter()
+        slides = converter.convert(content)
+        logger.info(f"Markdown 解析完成：{len(slides)} 个 slide")
 
-        # ── 2. 每页 slide → 一张卡片，类型循环 ──────────────
-        type_cycle = ["blue", "green", "yellow", "red"]
-        all_cards: list[dict] = []
-        for idx, s in enumerate(slides):
-            card_content = "\n".join(s.get("content", []))
-            all_cards.append({
-                "type": type_cycle[idx % 4],
-                "title": s.get("title", "") or f"第{idx+1}部分",
-                "content": card_content,
-            })
+        # ── 2. slides → 四色卡片 ─────────────────────────────
+        all_cards = converter.slides_to_cards(slides)
 
-        # ── 3. 直接通过 python-pptx 生成 ────────────────────
+        # ── 3. 生成 PPTX ─────────────────────────────────────
         from datetime import datetime
         output_dir = Path("C:/D/zhiyi/generated")
         output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = str(output_dir / f"{topic}_{ts}.pptx")
 
-        generate_pptx_direct(
-            topic=topic,
-            cards=all_cards,
-            theme_name=theme,
-            output_path=output_path,
-        )
+        generate_pptx_direct(topic=topic, cards=all_cards, theme_name=theme, output_path=output_path)
 
         return {
             "status": "success",
             "file_path": output_path,
             "filename": Path(output_path).name,
-            "slide_count": len(all_cards) // 4 + 2,
-            "llm_slides": len(slides),
-            "message": f"AI 结构化 PPT 已生成（{len(slides)} 页内容）",
+            "slide_count": len(all_cards) + 2,
+            "message": f"Markdown → PPT 已生成（{len(all_cards)} 页内容）",
         }
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"ppt_engine 不可用: {e}")

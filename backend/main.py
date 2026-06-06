@@ -123,22 +123,22 @@ from services.ai.factory import AIServiceFactory, create_ai_service
 
 AIServiceFactory.create_default_services()
 
-# 注册 Sensenova 云服务（用于特定场景：聊天/技能/工作流）
-# 注意：不设为默认，本地 NPU 仍为默认
-_sensenova_cfg = {
-    'api_key': 'sk-aMuGLXz1jMSznP9zSUxOfS4uTG7wlsFI',
-    'base_url': 'https://token.sensenova.cn/v1',
-    'model': 'sensenova-6.7-flash-lite',
-    'timeout': 60,
-    'max_tokens': 2048,
-    'temperature': 1.0,
-}
-_sensenova = create_ai_service('openai', _sensenova_cfg)
-if _sensenova:
-    AIServiceFactory.register('sensenova', _sensenova, set_default=False)
-    print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")
+# 仅本地模型 (NPU/Genie)，不再注册云端 Sensenova
+# 如需使用 Sensenova 云端模型，可取消下方注释
+# _sensenova_cfg = {
+#     'api_key': 'sk-aMuGLXz1jMSznP9zSUxOfS4uTG7wlsFI',
+#     'base_url': 'https://token.sensenova.cn/v1',
+#     'model': 'sensenova-6.7-flash-lite',
+#     'timeout': 60,
+#     'max_tokens': 2048,
+#     'temperature': 1.0,
+# }
+# _sensenova = create_ai_service('openai', _sensenova_cfg)
+# if _sensenova:
+#     AIServiceFactory.register('sensenova', _sensenova, set_default=False)
+#     print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")
 
-print("[OK] AI 服务工厂已初始化")
+print("[OK] AI 服务工厂已初始化（仅本地模型）")
 
 # ============================================================
 # 6.5 AI 模型预热（使用 QAI/QAIRT SDK 的本地模型，无须 Ollama）

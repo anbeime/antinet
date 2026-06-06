@@ -51,8 +51,14 @@ const TABS = [
 
 const BookSkillCenter: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as TabType) || 'extract';
-  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+  const [activeTab, setActiveTab] = useState<TabType>('extract');
+
+  useEffect(() => {
+    const tab = searchParams.get('tab') as TabType;
+    if (tab && ['extract', 'notes', 'topics', 'books'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, []);
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<any>(null);
 
@@ -137,7 +143,29 @@ const BookSkillCenter: React.FC = () => {
               <Link2 size={14} />
             </button>
             <button
-              onClick={() => setActiveTab('extract')}
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.pdf';
+                input.onchange = async (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (!file) return;
+                  try {
+                    const ab = await file.arrayBuffer();
+                    await bookshelfService.add({
+                      title: file.name.replace(/\.pdf$/i, ''),
+                      fileName: file.name,
+                      fileType: file.type,
+                      fileData: ab,
+                      pageCount: 0,
+                    });
+                    toast.success(`已添加「${file.name}」到书架`);
+                  } catch (err: any) {
+                    toast.error(err.message || '添加失败');
+                  }
+                };
+                input.click();
+              }}
               className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-800/40 transition-colors"
             >
               <Plus size={14} />
@@ -807,6 +835,9 @@ const NotesPanel: React.FC = () => {
   const [notes, setNotes] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
+  const [editingNote, setEditingNote] = useState<any | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
 
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
@@ -846,13 +877,33 @@ const NotesPanel: React.FC = () => {
     toast.success('笔记队列已清空');
   };
 
+  const startEdit = (note: any) => {
+    setEditingNote(note);
+    setEditTitle(note.title || '');
+    setEditContent(note.content || '');
+  };
+
+  const saveEdit = () => {
+    if (!editingNote) return;
+    const updated = notes.map((n: any, i: number) => {
+      if ((n.id || String(i)) === (editingNote.id || '')) {
+        return { ...n, title: editTitle, content: editContent };
+      }
+      return n;
+    });
+    setNotes(updated);
+    localStorage.setItem('bookskill_notes', JSON.stringify(updated));
+    setEditingNote(null);
+    toast.success('笔记已保存');
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold flex items-center gap-2">
             <BookMarked size={18} className="text-green-500" />
-            笔记队列
+            我的笔记
             <span className="text-xs px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded">
               {notes.length}
             </span>
@@ -876,7 +927,32 @@ const NotesPanel: React.FC = () => {
             className="w-full pl-8 pr-3 py-2 text-sm border rounded-lg bg-gray-50 dark:bg-gray-700 outline-none focus:ring-2 focus:ring-green-400" />
         </div>
 
-        {notes.length === 0 ? (
+        {/* 编辑模式 */}
+        {editingNote ? (
+          <div className="space-y-3 border rounded-xl p-4 bg-gray-50 dark:bg-gray-700/50">
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Edit3 size={14} className="text-green-500" />
+              编辑笔记
+            </h3>
+            <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
+              placeholder="笔记标题"
+              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-gray-700 outline-none focus:ring-2 focus:ring-green-400" />
+            <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+              placeholder="笔记内容"
+              rows={6}
+              className="w-full px-3 py-2 text-sm border rounded-lg bg-white dark:bg-gray-700 outline-none focus:ring-2 focus:ring-green-400 resize-none" />
+            <div className="flex items-center gap-2">
+              <button onClick={saveEdit}
+                className="flex items-center gap-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600">
+                <BookmarkPlus size={14} /> 保存笔记
+              </button>
+              <button onClick={() => setEditingNote(null)}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
+                取消
+              </button>
+            </div>
+          </div>
+        ) : notes.length === 0 ? (
           <div className="text-center py-12 text-gray-400 border border-dashed rounded-lg">
             <BookMarked size={48} className="mx-auto mb-3 opacity-40" />
             <p className="text-sm">笔记队列空着</p>
@@ -896,10 +972,9 @@ const NotesPanel: React.FC = () => {
                                  'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20';
               return (
                 <div key={id} className="relative group">
-                  <div className={`p-4 rounded-lg border border-l-4 cursor-pointer transition-all ${colorClass} ${selectedIds.has(id) ? 'ring-2 ring-green-400' : 'border-gray-100 dark:border-gray-700'}`}
-                    onClick={() => toggleSelect(id)}>
+                  <div className={`p-4 rounded-lg border border-l-4 transition-all ${colorClass} ${selectedIds.has(id) ? 'ring-2 ring-green-400' : 'border-gray-100 dark:border-gray-700'}`}>
                     <div className="flex items-start gap-3">
-                      <input type="checkbox" checked={selectedIds.has(id)} onChange={() => {}}
+                      <input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleSelect(id)}
                         className="mt-1 w-4 h-4 rounded text-green-500 cursor-pointer" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -911,6 +986,10 @@ const NotesPanel: React.FC = () => {
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 whitespace-pre-wrap line-clamp-3">{note.content}</p>
                         <div className="flex items-center gap-2 mt-2">
+                          <button onClick={() => startEdit(note)}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                            <Edit3 size={10} className="inline mr-0.5" />编辑
+                          </button>
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500">
                             {note.card_type === 'blue' ? '📋 事实' : note.card_type === 'green' ? '🔗 关联' : note.card_type === 'red' ? '🎯 行动' : '⚠️ 风险'}
                           </span>
@@ -931,7 +1010,7 @@ const NotesPanel: React.FC = () => {
       </div>
 
       {/* 已选笔记预览 */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && !editingNote && (
         <div className="bg-white dark:bg-gray-800 rounded-xl border p-5 space-y-3">
           <h3 className="text-sm font-medium flex items-center gap-2">
             <Edit3 size={14} className="text-green-500" />
@@ -939,8 +1018,7 @@ const NotesPanel: React.FC = () => {
             <span className="text-xs text-gray-400">共 {selectedIds.size} 条</span>
           </h3>
           <textarea readOnly rows={8}
-            value={filtered.filter((_, i) => selectedIds.has(String(notes.findIndex((n: any, j: number) => (n.id || String(j)) === (notes.find((_, k: number) => (notes[k]?.id || String(k)) === (notes[i]?.id || String(i))))?.id || String(notes.indexOf(_))))))
-              .map(n => `【${n.title || '无标题'}】\n${n.content || ''}`).join('\n\n---\n\n')}
+            value={notes.filter((n: any, i: number) => selectedIds.has(n.id || String(i))).map(n => `【${n.title || '无标题'}】\n${n.content || ''}`).join('\n\n---\n\n')}
             className="w-full p-3 text-sm font-mono border rounded-lg bg-gray-50 dark:bg-gray-700 resize-none outline-none" />
           <p className="text-xs text-gray-400 text-center">勾选笔记 → 上方自动生成 Markdown 文本</p>
         </div>

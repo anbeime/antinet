@@ -191,6 +191,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [referencedCards, setReferencedCards] = useState<any[]>([]);
   const [previewCard, setPreviewCard] = useState<any | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const cardCacheRef = useRef<Map<string, any>>(new Map());
+
+  // 新消息时自动滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
 
   // 知识库卡片选择
   const [topics, setTopics] = useState<any[]>([]);
@@ -513,6 +519,15 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setTasks(allTasks);
   }, [projects]);
 
+  // 维护卡片标题→对象的持久缓存，用于历史消息中的 @[卡片] 查找
+  useEffect(() => {
+    const cache = cardCacheRef.current;
+    [...topicCards, ...discussionCards, ...referencedCards].forEach(card => {
+      const key = card.title || card.name;
+      if (key) cache.set(key, card);
+    });
+  }, [topicCards, discussionCards, referencedCards]);
+
   // ========== 团队成员管理 ==========
   const handleSaveMember = async () => {
     if (!editingMember) return;
@@ -559,6 +574,12 @@ const TeamCollaborationEnhanced: React.FC = () => {
   // ========== 协作消息管理 ==========
   const handleSendMessage = () => {
     if (!newMessage.trim()) return;
+    
+    // 持久化当前引用的卡片，用于后续历史消息渲染
+    referencedCards.forEach(card => {
+      const key = card.title || card.name;
+      if (key) cardCacheRef.current.set(key, card);
+    });
     
     const refs = referencedCards.map(c => `@[${c.title || c.name || '卡片'}]`).join(' ');
     const fullContent = refs ? `${refs} ${newMessage}` : newMessage;
@@ -879,7 +900,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
       }
       const title = match[1];
-      const card = allCards.find(c => (c.title || c.name) === title);
+      const card = allCards.find(c => (c.title || c.name) === title) || cardCacheRef.current.get(title);
       if (card) {
         parts.push({ type: 'card', content: title, card });
       } else {
@@ -1197,9 +1218,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 <h2 className="text-xl font-bold mb-2">项目管理</h2>
                 <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
                 <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
-                  <span>全{projects.length} 个项监</span>
+                  <span>共{projects.length} 个项目</span>
                   <span>·</span>
-                  <span>全{tasks.length} 个任务</span>
+                  <span>共{tasks.length} 个任务</span>
                   <span>·</span>
                   <span className="text-green-600">
                     已完成{tasks.filter(t => t.status === 'completed').length}
@@ -1377,7 +1398,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                                   </span>
                                 </div>
                                 <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
-                                  <span>分配组 {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
+                                  <span>分配至 {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
                                   {task.dueDate && <span>截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
                                 </div>
                               </div>
@@ -2142,7 +2163,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
 };
 
 // ========== 专题研究列表组件（嵌入团队项目管理面板） ==========
-const UnifiedResearchList: React.FC = () => {
+const UnifiedResearchList: React.FC<{ onSelect?: (project: any) => void }> = ({ onSelect }) => {
   const [researchProjects, setResearchProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -2176,7 +2197,7 @@ const UnifiedResearchList: React.FC = () => {
   if (researchProjects.length === 0) {
     return (
       <div className="text-center py-4 text-sm text-gray-400">
-        暂无专题研究，请地GTD →专题研究中创建
+        暂无专题研究，请到 GTD → 专题研究中创建
       </div>
     );
   }
@@ -2186,11 +2207,7 @@ const UnifiedResearchList: React.FC = () => {
       {researchProjects.map(project => (
         <div
           key={`research-${project.id}`}
-          onClick={() => {
-            // 导航切GTD 中的专题研究
-            const event = new CustomEvent('navigateToResearch', { detail: { projectId: project.id } });
-            window.dispatchEvent(event);
-          }}
+          onClick={() => onSelect?.(project)}
           className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-750 ${
             colorMap[project.color || 'blue'] || colorMap.blue
           } border`}

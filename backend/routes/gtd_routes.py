@@ -688,9 +688,17 @@ async def get_tasks_by_project(project_id: int):
         raise HTTPException(status_code=500, detail=f"获取项目任务失败: {str(e)}")
 
 
+class KanbanStatusUpdate(BaseModel):
+    kanban_status: str
+
+    @property
+    def status(self) -> str:
+        return self.kanban_status
+
 @router.put("/tasks/{task_id}/kanban-status")
-async def update_kanban_status(task_id: int, kanban_status: str):
+async def update_kanban_status(task_id: int, update: KanbanStatusUpdate):
     """更新任务看板状态"""
+    kanban_status = update.kanban_status
     valid_statuses = {"backlog", "todo", "in_progress", "review", "done"}
     if kanban_status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"无效状态: {kanban_status}")

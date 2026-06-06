@@ -68,6 +68,8 @@ const PPTAnalysis: React.FC = () => {
   const [projectCards, setProjectCards] = useState<any[]>([]);
   const [projectCardsLoading, setProjectCardsLoading] = useState(false);
   const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<number>>(new Set());
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   
   // 检查PPT服务状态
   useEffect(() => {
@@ -129,7 +131,9 @@ const PPTAnalysis: React.FC = () => {
       const response = await fetch(`${API_BASE}/api/research/projects/${projectId}/cards`);
       if (response.ok) {
         const data = await response.json();
-        setProjectCards(Array.isArray(data) ? data : []);
+        const cards = Array.isArray(data) ? data : [];
+        setProjectCards(cards);
+        setSelectedCardIds(new Set(cards.map((_: any, i: number) => i)));
       } else {
         setProjectCards([]);
       }
@@ -160,10 +164,45 @@ const PPTAnalysis: React.FC = () => {
       )
     : cards;
 
+  // 卡片选择
+  const allSelected = projectCards.length > 0 && selectedCardIds.size === projectCards.length;
+  const toggleCard = (idx: number) => {
+    setSelectedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedCardIds(new Set());
+    } else {
+      setSelectedCardIds(new Set(projectCards.map((_: any, i: number) => i)));
+    }
+  };
+  const toggleExpand = (idx: number) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+  const cardColorClass = (c: any) => {
+    const t = c.type || c.card_type || 'blue';
+    if (t === 'blue') return 'border-l-blue-400 bg-blue-50 dark:bg-blue-900/20';
+    if (t === 'green') return 'border-l-green-400 bg-green-50 dark:bg-green-900/20';
+    if (t === 'red') return 'border-l-red-400 bg-red-50 dark:bg-red-900/20';
+    return 'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20';
+  };
+
   // 从专题生成PPT
   const generatePPTFromProject = async () => {
     if (!selectedProject) {
       toast.error('请选择专题');
+      return;
+    }
+    if (selectedCardIds.size === 0) {
+      toast.error('请至少选择一张卡片');
       return;
     }
     
@@ -172,14 +211,15 @@ const PPTAnalysis: React.FC = () => {
       let filename: string | null = null;
 
       if (useNativePPT) {
-        // SVG→DrawingML 原生形状模式
         const topic = projects.find(p => p.id === selectedProject)?.name || '专题报告';
         const typeMap: Record<string, string> = { '事实': 'blue', '解释': 'green', '风险': 'yellow', '行动': 'red' };
-        const cardList = projectCards.map((c: any) => ({
-          type: typeMap[c.category] || c.type || 'blue',
-          title: c.title,
-          content: c.content,
-        }));
+        const cardList = projectCards
+          .filter((_: any, i: number) => selectedCardIds.has(i))
+          .map((c: any) => ({
+            type: typeMap[c.category] || c.type || 'blue',
+            title: c.title,
+            content: c.content,
+          }));
         const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -661,20 +701,42 @@ const PPTAnalysis: React.FC = () => {
                       <span className="ml-3 text-gray-500">加载卡片中...</span>
                     </div>
                   ) : projectCards.length > 0 ? (
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold flex items-center"><Layers className="w-5 h-5 mr-2 text-purple-500" />专题卡片 ({projectCards.length})</h3>
-                      </div>
-                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                        {projectCards.slice(0, 10).map((card: any, i: number) => (
-                          <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                            <p className="text-sm font-medium truncate">{card.title || card.content?.slice(0, 50) || '无标题'}</p>
-                          </div>
-                        ))}
-                        {projectCards.length > 10 && (
-                          <p className="text-xs text-gray-500 text-center">还有 {projectCards.length - 10} 张卡片...</p>
-                        )}
-                      </div>
+<div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold flex items-center">
+                            <Layers className="w-5 h-5 mr-2 text-purple-500" />
+                            专题卡片 ({selectedCardIds.size}/{projectCards.length})
+                          </h3>
+                          <button onClick={toggleAll} className="text-xs px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                            {allSelected ? '取消全选' : '全选'}
+                          </button>
+                        </div>
+                        <div className="space-y-2 max-h-[480px] overflow-y-auto">
+                          {projectCards.map((card: any, i: number) => {
+                            const sel = selectedCardIds.has(i);
+                            const expanded = expandedCards.has(i);
+                            return (
+                              <div key={i}
+                                className={`flex items-start gap-2 p-3 rounded-lg border border-l-4 transition-all ${
+                                  cardColorClass(card)
+                                } ${sel ? 'ring-2 ring-purple-400 ring-offset-1' : 'border-gray-200 dark:border-gray-700'}`}
+                              >
+                                <input type="checkbox" checked={sel} onChange={() => toggleCard(i)}
+                                  className="mt-0.5 w-4 h-4 rounded text-purple-600 cursor-pointer shrink-0" />
+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => toggleExpand(i)}>
+                                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                                    {card.title || card.content?.slice(0, 50) || '无标题'}
+                                  </p>
+                                  {card.content && (
+                                    <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${expanded ? '' : 'line-clamp-2'}`}>
+                                      {card.content}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                     </div>
                   ) : (
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-500">
