@@ -10,6 +10,8 @@ from typing import List, Optional
 import os
 import tempfile
 import time
+import asyncio
+import httpx
 from pathlib import Path
 import shutil
 import zipfile
@@ -764,10 +766,43 @@ except ImportError:
     logger.warning("[PDF] 无法导入 meeting_routes.call_llm，Genie/多智能体不可用")
 
 
+# 缓存 Genie 探测结果（避免每次请求都连一次 8910）
+_GENIE_LAST_CHECK_TS: float = 0.0
+_GENIE_LAST_OK: bool = False
+_GENIE_CHECK_TTL_SEC: float = 10.0  # 10s 内复用上次结果
+
+
+def _check_genie_quick(timeout: float = 1.5) -> bool:
+    """快速探测 Genie (127.0.0.1:8910) 是否可达。带 TTL 缓存。
+    失败/超时一律返回 False，调用方应走规则兜底而不是傻等 120s。
+    """
+    global _GENIE_LAST_CHECK_TS, _GENIE_LAST_OK
+    now = time.time()
+    if now - _GENIE_LAST_CHECK_TS < _GENIE_CHECK_TTL_SEC:
+        return _GENIE_LAST_OK
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.get("http://127.0.0.1:8910/v1/models")
+            _GENIE_LAST_OK = r.status_code < 500
+    except Exception as e:
+        logger.debug(f"[PDF] Genie 健康检查失败: {e}")
+        _GENIE_LAST_OK = False
+    _GENIE_LAST_CHECK_TS = now
+    if not _GENIE_LAST_OK:
+        logger.info(f"[PDF] Genie(8910) 不可达，后续 LLM 路径将走规则兜底")
+    return _GENIE_LAST_OK
+
+
 async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
-    """使用多智能体流程（通政司→参谋司→驿传司）生成四色知识卡片"""
+    """使用多智能体流程（通政司→参谋司→驿传司）生成四色知识卡片
+
+    每阶段 LLM 调用硬超时 20s（call_llm 自身会等 120s+，这里强制兜底）。
+    """
     if not _GENIE_CALL_AVAILABLE:
         return {"cards": [], "mode": "multi-agent-unavailable"}
+
+    if not _check_genie_quick(timeout=1.5):
+        return {"cards": [], "mode": "multi-agent-genie-down"}
 
     truncated = text[:6000]
 
@@ -785,13 +820,25 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
 
 每个分类列出 2-5 条要点，每条控制在 50 字以内。"""
 
-    tongzhengsi_result = await call_llm(
-        system_prompt="你是通政司，擅长文档分析与四色分类。",
-        user_prompt=tongzhengsi_prompt,
-        max_tokens=500,
-        agent_id="pdf-tongzhengsi",
-        temperature=0.4
-    )
+    t1 = time.time()
+    try:
+        tongzhengsi_result = await asyncio.wait_for(
+            call_llm(
+                system_prompt="你是通政司，擅长文档分析与四色分类。",
+                user_prompt=tongzhengsi_prompt,
+                max_tokens=500,
+                agent_id="pdf-tongzhengsi",
+                temperature=0.4
+            ),
+            timeout=20.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"[PDF/multi-agent] 通政司 20s 超时 ({time.time()-t1:.1f}s)")
+        return {"cards": [], "mode": "multi-agent-tongzhengsi-timeout"}
+    except Exception as e:
+        logger.warning(f"[PDF/multi-agent] 通政司异常: {e}")
+        return {"cards": [], "mode": "multi-agent-tongzhengsi-fail"}
+    logger.info(f"[PDF/multi-agent] 通政司 {time.time()-t1:.1f}s, {len(tongzhengsi_result)}字")
 
     if not tongzhengsi_result:
         return {"cards": [], "mode": "multi-agent-no-genie"}
@@ -808,13 +855,25 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
 类型必须是：fact / explanation / risk / action
 只输出卡片，不要序号和其他内容。"""
 
-    canmousi_result = await call_llm(
-        system_prompt="你是参谋司，擅长将分析转化为结构化知识卡片。",
-        user_prompt=canmousi_prompt,
-        max_tokens=800,
-        agent_id="pdf-canmousi",
-        temperature=0.5
-    )
+    t2 = time.time()
+    try:
+        canmousi_result = await asyncio.wait_for(
+            call_llm(
+                system_prompt="你是参谋司，擅长将分析转化为结构化知识卡片。",
+                user_prompt=canmousi_prompt,
+                max_tokens=800,
+                agent_id="pdf-canmousi",
+                temperature=0.5
+            ),
+            timeout=20.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"[PDF/multi-agent] 参谋司 20s 超时 ({time.time()-t2:.1f}s)")
+        return {"cards": [], "mode": "multi-agent-canmousi-timeout"}
+    except Exception as e:
+        logger.warning(f"[PDF/multi-agent] 参谋司异常: {e}")
+        return {"cards": [], "mode": "multi-agent-canmousi-fail"}
+    logger.info(f"[PDF/multi-agent] 参谋司 {time.time()-t2:.1f}s, {len(canmousi_result)}字")
 
     if not canmousi_result:
         return {"cards": [], "mode": "multi-agent-no-cards"}
@@ -857,28 +916,47 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
 @router.post("/generate/cards-from-text")
 async def generate_cards_from_text(data: dict):
     """从前端提取的文本生成四色知识卡片（不需要 pypdf）
-    
-    可选 mode: "npu" / "rule" / "multi-agent" / "auto"（默认 auto）
+
+    可选 mode: "npu" / "rule" / "multi-agent" / "auto"
+    - 默认 "rule"：纯关键词提取，< 1s 返回
+    - "auto"：先试 LLM（带超时，失败回退 rule）
+    - "multi-agent"：2 阶段 LLM（带超时，失败返回空）
+    - "npu"：仅试 LLM（带超时，失败返回空）
+
+    诊断：所有分支均带耗时日志输出，可在 backend/logs/*.log 中追踪
     """
+    t0 = time.time()
     text = data.get("text", "")
     max_cards = data.get("max_cards", 20)
-    mode = data.get("mode", "auto")
+    mode = (data.get("mode") or "rule").lower()
+    if mode not in ("npu", "rule", "multi-agent", "auto"):
+        mode = "rule"
     if not text.strip():
         raise HTTPException(status_code=400, detail="文本内容为空")
+
+    logger.info(f"[PDF/cards-from-text] mode={mode} text_len={len(text)} max_cards={max_cards}")
 
     # mode = multi-agent: 使用通政司→参谋司→驿传司流程
     if mode == "multi-agent":
         result = await _generate_cards_multi_agent(text, max_cards)
+        elapsed = (time.time() - t0) * 1000
+        logger.info(f"[PDF/cards-from-text] multi-agent → {len(result['cards'])} cards ({result['mode']}) {elapsed:.0f}ms")
         if result["cards"]:
-            return {"success": True, **result}
-        logger.warning(f"[PDF] 多智能体生成失败 ({result['mode']})，不回退到其他模式")
-        return {"success": True, "cards": [], "count": 0, "mode": result["mode"]}
+            return {"success": True, "cards": result["cards"], "count": len(result["cards"]), "mode": result["mode"], "elapsed_ms": int(elapsed)}
+        # multi-agent 失败不回退（用户明确要 LLM）
+        return {"success": True, "cards": [], "count": 0, "mode": result["mode"], "elapsed_ms": int(elapsed),
+                "hint": "多智能体生成失败。可切回【规则】快速出结果，或检查 Genie 服务(端口 8910)是否健康。"}
 
-    # mode = npu 或 auto: 通过 Genie API（端口 8910）推理，避免与 GenieAPIService 争抢 NPU
+    # mode = npu 或 auto: 通过 Genie API（端口 8910）推理，带硬超时
     if mode in ("npu", "auto"):
-        if _GENIE_CALL_AVAILABLE:
-            try:
-                prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
+        genie_ok = _check_genie_quick(timeout=1.5)
+        if not genie_ok and mode == "npu":
+            elapsed = (time.time() - t0) * 1000
+            logger.warning(f"[PDF/cards-from-text] npu → Genie 不可用，{elapsed:.0f}ms")
+            return {"success": True, "cards": [], "count": 0, "mode": "genie-unavailable", "elapsed_ms": int(elapsed)}
+
+        if _GENIE_CALL_AVAILABLE and genie_ok:
+            prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
 
 文档内容：
 {text[:6000]}
@@ -894,13 +972,20 @@ async def generate_cards_from_text(data: dict):
 
 只输出卡片，不要其他内容。"""
 
-                result_text = await call_llm(
-                    system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
-                    user_prompt=prompt,
-                    max_tokens=1000,
-                    agent_id="pdf-cards-from-text",
-                    temperature=0.4
+            t_llm = time.time()
+            try:
+                result_text = await asyncio.wait_for(
+                    call_llm(
+                        system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
+                        user_prompt=prompt,
+                        max_tokens=800,
+                        agent_id="pdf-cards-from-text",
+                        temperature=0.4
+                    ),
+                    timeout=25.0,  # 硬超时：call_llm 自身会等 120s+，这里强制 25s 兜底
                 )
+                llm_ms = (time.time() - t_llm) * 1000
+                logger.info(f"[PDF/cards-from-text] LLM 返回 {len(result_text) if result_text else 0}字 耗时 {llm_ms:.0f}ms")
 
                 if result_text:
                     cards = []
@@ -920,19 +1005,25 @@ async def generate_cards_from_text(data: dict):
                                 "source": "AI生成"
                             })
                     if cards:
-                        return {"success": True, "cards": cards[:max_cards], "count": len(cards), "mode": "genie"}
+                        elapsed = (time.time() - t0) * 1000
+                        return {"success": True, "cards": cards[:max_cards], "count": len(cards), "mode": "genie", "elapsed_ms": int(elapsed)}
+            except asyncio.TimeoutError:
+                logger.warning(f"[PDF/cards-from-text] LLM 25s 硬超时，回退 rule")
             except Exception as e:
-                logger.warning(f"[PDF] Genie 推理失败: {e}")
+                logger.warning(f"[PDF/cards-from-text] Genie 推理失败: {e}")
 
         if mode == "npu":
-            return {"success": True, "cards": [], "count": 0, "mode": "genie-unavailable"}
+            elapsed = (time.time() - t0) * 1000
+            return {"success": True, "cards": [], "count": 0, "mode": "genie-unavailable", "elapsed_ms": int(elapsed)}
 
-    # mode = rule 或 auto（NPU 不可用时的自动回退）
+    # mode = rule 或 auto（NPU 不可用时自动回退）
     try:
         from tools.pdf_four_color_processor import PDFourColorProcessor
         processor = PDFourColorProcessor()
         result = processor._analyze_content(text, max_cards)
-        return {"success": True, "cards": result[:max_cards], "count": len(result), "mode": "rule"}
+        elapsed = (time.time() - t0) * 1000
+        logger.info(f"[PDF/cards-from-text] rule → {len(result)} cards {elapsed:.0f}ms")
+        return {"success": True, "cards": result[:max_cards], "count": len(result), "mode": "rule", "elapsed_ms": int(elapsed)}
     except ImportError:
         # 极简兜底：按段落分割
         lines = [l.strip() for l in text.split('\n') if l.strip()]
@@ -945,7 +1036,8 @@ async def generate_cards_from_text(data: dict):
                 "content": line[:100],
                 "source": "text-fallback"
             })
-        return {"success": True, "cards": cards, "count": len(cards), "mode": "fallback"}
+        elapsed = (time.time() - t0) * 1000
+        return {"success": True, "cards": cards, "count": len(cards), "mode": "fallback", "elapsed_ms": int(elapsed)}
 
 
 @router.post("/toolkit/images-to-pdf")

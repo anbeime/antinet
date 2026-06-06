@@ -170,7 +170,9 @@ def register_router(module_name: str):
                 print(f"[WARN] {module_name} 无 router 属性")
         return False
     except Exception as e:
+        import traceback
         print(f"[WARN] 无法导入 {module_name}: {e}")
+        traceback.print_exc()
         return False
 
 # 核心路由 - 使用各自的 prefix
@@ -348,6 +350,24 @@ if __name__ == "__main__":
     import socket
     import subprocess
     import uvicorn
+    import sys
+    import traceback
+
+    def _excepthook(exc_type, exc_value, exc_tb):
+        msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        sys.stderr.write(f"[UNCAUGHT] {msg}\n")
+        try:
+            with open("uncaught.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[{__import__('datetime').datetime.now()}] {msg}\n")
+        except Exception:
+            pass
+    sys.excepthook = _excepthook
+
+    try:
+        from services.global_error_handler import install_global_handlers
+        install_global_handlers()
+    except Exception:
+        pass
     
     # 检查端口是否被占用，如果是则释放
     def check_and_free_port(port: int):
@@ -388,13 +408,35 @@ if __name__ == "__main__":
     print(f"服务地址: http://{app_config.HOST}:{app_config.PORT}")
     print(f"{'='*50}\n")
     
-    uvicorn.run(
-        app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
-        host=app_config.HOST,
-        port=app_config.PORT,
-        reload=False,
-        log_level="info"
-    )
+    _auto_restart = os.environ.get("ZHIYI_AUTO_RESTART", "1") == "1"
+    _attempt = 0
+    while True:
+        try:
+            uvicorn.run(
+                app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
+                host=app_config.HOST,
+                port=app_config.PORT,
+                reload=False,
+                log_level="info"
+            )
+            break
+        except KeyboardInterrupt:
+            raise
+        except SystemExit as e:
+            if not _auto_restart or e.code == 0:
+                break
+            _attempt += 1
+            print(f"[WATCHDOG] uvicorn SystemExit({e.code}); restart #{_attempt} in 2s")
+            check_and_free_port(app_config.PORT)
+            import time as _t; _t.sleep(2)
+            continue
+        except BaseException as e:
+            _attempt += 1
+            print(f"[WATCHDOG] uvicorn crashed: {e!r}; restart #{_attempt} in 2s")
+            traceback.print_exc()
+            check_and_free_port(app_config.PORT)
+            import time as _t; _t.sleep(2)
+            continue
 
 # 初始化技能热插拔系统
 try:

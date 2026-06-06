@@ -3,15 +3,15 @@ Card → Direct PPTX Renderer using python-pptx (bypasses buggy SVG→DrawingML 
 Dark-tech theme with gold accents, matching the Qualcomm Snapdragon competition style.
 """
 
-import re, json, logging
+import re, logging
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
 
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu, Cm
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ _THEMES = {
 }
 
 CARD_LABELS = {
-    "blue": "核心事实",
+    "blue": "核心概念",
     "green": "深度解读",
     "yellow": "风险警示",
     "red": "行动方案",
@@ -125,6 +125,17 @@ def _add_accent_line(slide, left, top, w, color):
     _add_shape(slide, left, top, w, 0.04, fill=color)
 
 
+def _add_type_tag(slide, left, top, w, h, label, bg_clr, text_clr=WHITE):
+    """Small rounded pill in top-right of card: colored bg + light text."""
+    _add_rounded_rect(slide, left, top, w, h, fill=bg_clr, line=bg_clr, line_w=0.5)
+    _add_textbox(
+        slide, left, top, w, h, label,
+        "Microsoft YaHei", 11, text_clr,
+        bold=True, alignment=PP_ALIGN.CENTER,
+    )
+    return left + w
+
+
 def _add_textbox(slide, left, top, width, height, text, font_name, font_size, color,
                  bold=False, alignment=PP_ALIGN.LEFT):
     txbox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
@@ -143,26 +154,6 @@ def _add_textbox(slide, left, top, width, height, text, font_name, font_size, co
     return txbox
 
 
-def _add_footer_bar(slide, colors, text="知易智能知识管家"):
-    _add_shape(slide, 0, SLIDE_H - 0.35, SLIDE_W, 0.35, fill=RGBColor(0x08, 0x0C, 0x16))
-    _add_textbox(slide, 0.4, SLIDE_H - 0.32, 8, 0.3, text, colors["body_font"], 9, colors["text_muted"])
-
-
-def _add_page_number(slide, num, total, colors):
-    _add_textbox(slide, SLIDE_W - 1.2, SLIDE_H - 0.32, 0.9, 0.3,
-                 f"{num}/{total}", colors["body_font"], 9, colors["text_muted"], alignment=PP_ALIGN.RIGHT)
-
-
-def _gradient_bg(slide):
-    bg = slide.background
-    fill = bg.fill
-    fill.gradient()
-    fill.gradient_stops[0].color.rgb = RGBColor(0x0A, 0x0E, 0x1A)
-    fill.gradient_stops[0].position = 0.0
-    fill.gradient_stops[1].color.rgb = RGBColor(0x0D, 0x15, 0x28)
-    fill.gradient_stops[1].position = 1.0
-
-
 def _solid_bg(slide, color=BG_DARK):
     bg = slide.background
     fill = bg.fill
@@ -172,105 +163,166 @@ def _solid_bg(slide, color=BG_DARK):
 
 # ── Slide Builders ──
 
-def _build_cover_slide(prs, topic, colors):
+def _build_cover_slide(prs, topic, colors, card_count: int = 0, author: str = "Antinet 智能知识管家"):
+    """封面：标题 + 元信息行（日期/作者/数量） + 横向分隔线"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _solid_bg(slide, colors["bg"])
 
-    top_line = _add_shape(slide, 2, 1.2, 9.333, Pt(4), colors["accent"])
-    _add_textbox(slide, 2, 1.6, 9.333, 1.2, topic, colors["title_font"], 40, colors["accent_bright"],
-                 bold=True, alignment=PP_ALIGN.LEFT)
-    _add_textbox(slide, 2, 2.9, 9.333, 0.6, "智能分析报告 · 锦衣卫多智能体生成",
-                 colors["body_font"], 18, colors["text_light"], alignment=PP_ALIGN.LEFT)
-    _add_textbox(slide, 2, 3.7, 9.333, 0.5,
-                 "四色卡片 · Agent 协同 · NPU 加速",
-                 colors["body_font"], 14, colors["accent"], alignment=PP_ALIGN.LEFT)
-    _add_shape(slide, 2, 4.5, 9.333, Pt(2), colors["accent"])
+    now_str = datetime.now().strftime("%Y年%m月%d日")
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    _add_textbox(slide, 2, 5.0, 9.333, 0.4, f"生成时间: {now_str}",
-                 colors["body_font"], 14, colors["text_muted"], alignment=PP_ALIGN.LEFT)
+    # 大标题（彩色）
+    _add_textbox(
+        slide, 0.7, 1.6, SLIDE_W - 1.4, 1.4,
+        topic, colors["title_font"], 54, colors["accent_bright"],
+        bold=True,
+    )
 
-    _add_footer_bar(slide, colors)
+    # 横向装饰线
+    _add_shape(slide, 0.7, 3.2, SLIDE_W - 1.4, 0.05, fill=colors["accent"])
+
+    # 元信息行：日期 | 作者 | 卡片数量
+    meta = f"生成日期: {now_str}  |  作者: {author}"
+    if card_count > 0:
+        meta += f"  |  卡片数量: {card_count}"
+    _add_textbox(
+        slide, 0.7, 3.45, SLIDE_W - 1.4, 0.5,
+        meta, colors["body_font"], 16, colors["text_light"],
+    )
+
+    # 底部脚注
+    _add_textbox(
+        slide, 0.7, SLIDE_H - 0.6, SLIDE_W - 1.4, 0.4,
+        f"由 知易 · 锦衣卫多智能体 生成于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        colors["body_font"], 10, colors["text_muted"],
+        alignment=PP_ALIGN.CENTER,
+    )
 
 
-def _build_section_slide(slide, card_type, title, content, colors, slide_num, total_slides):
-    """一页一张卡片，深色背景 + 白色/金色文字（高对比度）"""
+def _build_section_slide(slide, card_type, title, content, colors, slide_num, total_slides,
+                         source: str = ""):
+    """知识卡片风格：一页一张卡，圆角彩色描边 + 编号彩色标题 + 类型徽章 + 内容 + 底部来源/时间戳"""
     clr = _card_type(card_type, colors)
     body_font = colors["body_font"]
     title_font = colors["title_font"]
-    content_len = len(content)
 
     _solid_bg(slide, colors["bg"])
 
-    _add_accent_line(slide, 0, 0, SLIDE_W, colors["accent"])
-    _add_shape(slide, 0, 0, 0.10, SLIDE_H, fill=clr)
+    # 圆角彩色描边卡片（占满整页，留 0.5" 边距）
+    _add_rounded_rect(
+        slide, 0.4, 0.3, SLIDE_W - 0.8, SLIDE_H - 0.6,
+        fill=colors["bg"], line=clr, line_w=2.0,
+    )
 
-    if content_len < 300:
-        icons = {"blue": "📘", "green": "📗", "yellow": "📙", "red": "📕"}
-        icon_char = icons.get(card_type, "📄")
+    # 顶部右上角：类型徽章（彩色实心 + 白字小药丸）
+    type_label = CARD_LABELS.get(card_type, "笔记")
+    tag_w, tag_h = 1.4, 0.42
+    _add_type_tag(
+        slide, SLIDE_W - 0.4 - tag_w, 0.55, tag_w, tag_h,
+        type_label, clr, WHITE,
+    )
 
-        _add_textbox(slide, 0.5, 0.25, 10, 0.5, _sanitize(title[:60]),
-                     title_font, 24, clr, bold=True)
-        _add_accent_line(slide, 0.5, 0.75, 1.2, clr)
-        _add_textbox(slide, 0.5, 1.0, SLIDE_W - 1.2, 1.2, icon_char,
-                     body_font, 72, colors["text"], alignment=PP_ALIGN.CENTER)
-        _add_textbox(slide, 0.5, 2.3, SLIDE_W - 1.2, 0.7, _sanitize(title[:80]),
-                     title_font, 28, clr, bold=True, alignment=PP_ALIGN.CENTER)
-        fs = 16 if content_len < 100 else 14
-        _add_textbox(slide, 1.0, 3.2, SLIDE_W - 2.4, SLIDE_H - 4.0,
-                     _sanitize(content), body_font, fs, colors["text"], alignment=PP_ALIGN.CENTER)
+    # 编号彩色标题（左上角，28pt 粗体）
+    _add_textbox(
+        slide, 0.7, 0.45, SLIDE_W - 2.5, 0.7,
+        f"{slide_num}. {_sanitize(title[:60])}",
+        title_font, 28, clr, bold=True,
+    )
+
+    # 内容正文（占据卡片主体，16pt 跟随主题文字色）
+    fs = 16 if len(content) < 400 else (14 if len(content) < 800 else 12)
+    _add_textbox(
+        slide, 0.7, 1.5, SLIDE_W - 1.4, SLIDE_H - 2.6,
+        _sanitize(content), body_font, fs, colors["text"],
+    )
+
+    # 底部：左侧来源路径，右侧创建时间（小号灰色）
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+    if source:
+        left_footer = f"地址: {source}"
     else:
-        title_fs = 22 if len(title) < 20 else 18
-        _add_textbox(slide, 0.5, 0.25, 10, 0.5, _sanitize(title[:60]),
-                     title_font, title_fs, clr, bold=True)
-        _add_accent_line(slide, 0.5, 0.75, 1.2, clr)
-
-        labels = {"blue": "📘 核心事实", "green": "📗 深度解读",
-                  "yellow": "📙 风险警示", "red": "📕 行动方案"}
-        _add_textbox(slide, 0.5, 0.9, 3, 0.35, labels.get(card_type, "📄 笔记"),
-                     body_font, 11, clr)
-
-        if content_len < 600:
-            fs = 15
-            as_code = False
-        else:
-            fs = 13
-            content = content[:800] + "\n\n[内容摘要]"
-            as_code = True
-
-        if as_code:
-            _add_rounded_rect(slide, 0.5, 1.4, SLIDE_W - 1.2, SLIDE_H - 2.3,
-                              fill=RGBColor(0x0D, 0x11, 0x1A), line=clr, line_w=0.5)
-            _add_textbox(slide, 0.7, 1.5, SLIDE_W - 1.6, SLIDE_H - 2.6,
-                         _sanitize(content), body_font, fs, WHITE)
-        else:
-            _add_textbox(slide, 0.5, 1.4, SLIDE_W - 1.2, SLIDE_H - 2.3,
-                         _sanitize(content), body_font, fs, colors["text"])
-
-    _add_footer_bar(slide, colors)
-    _add_page_number(slide, slide_num, total_slides, colors)
+        left_footer = ""
+    _add_textbox(
+        slide, 0.7, SLIDE_H - 0.7, SLIDE_W - 1.4, 0.3,
+        left_footer, body_font, 9, colors["text_muted"],
+    )
+    _add_textbox(
+        slide, 0.7, SLIDE_H - 0.7, SLIDE_W - 1.4, 0.3,
+        f"创建时间: {now_str}", body_font, 9, colors["text_muted"],
+        alignment=PP_ALIGN.RIGHT,
+    )
 
 
 def _build_summary_slide(prs, cards, colors):
+    """分析报告总结：4 张大色卡（按 type 计数）+ 居中大号数字 + 标签 + 底部脚注"""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     _solid_bg(slide, colors["bg"])
 
-    bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(SLIDE_W), Inches(0.06))
-    bar.fill.solid()
-    bar.fill.fore_color.rgb = colors["accent"]
-    bar.line.fill.background()
+    # 顶部装饰线
+    _add_shape(slide, 0, 0, SLIDE_W, 0.06, fill=colors["accent"])
+    _add_shape(slide, 0, 0, 0.10, SLIDE_H, fill=colors["accent"])
 
-    _add_textbox(slide, 0.6, 0.6, 10, 0.6, "要点总结", colors["title_font"], 28,
-                 colors["accent_bright"], bold=True)
+    # 标题
+    _add_textbox(
+        slide, 0.6, 0.55, SLIDE_W - 1.2, 0.7,
+        "分析报告总结", colors["title_font"], 32,
+        colors["accent_bright"], bold=True,
+    )
+    _add_textbox(
+        slide, 0.6, 1.25, SLIDE_W - 1.2, 0.4,
+        f"共 {len(cards)} 张分析卡片 · 按类型分布",
+        colors["body_font"], 14, colors["text_light"],
+    )
 
-    y = 1.4
-    for i, c in enumerate(cards[:12]):
-        card_title = c.get("title", "")[:60]
-        _add_textbox(slide, 0.9, y, 10, 0.5, f"{i+1}. {card_title}",
-                     colors["body_font"], 15, colors["text"])
-        y += 0.55
+    # 4 张大色卡横向排列
+    type_order = [
+        ("blue", "核心概念"),
+        ("green", "深度解读"),
+        ("yellow", "风险警示"),
+        ("red", "行动方案"),
+    ]
+    counts = {t: 0 for t, _ in type_order}
+    for c in cards:
+        t = c.get("type", "blue")
+        if t in counts:
+            counts[t] += 1
 
-    _add_footer_bar(slide, colors)
+    n = len(type_order)
+    margin = 0.6
+    gap = 0.4
+    total_w = SLIDE_W - 2 * margin
+    card_w = (total_w - gap * (n - 1)) / n
+    card_h = 3.6
+    top = 2.0
+
+    for i, (ctype, label) in enumerate(type_order):
+        clr = _card_type(ctype, colors)
+        left = margin + i * (card_w + gap)
+        _add_rounded_rect(
+            slide, left, top, card_w, card_h,
+            fill=colors["bg"], line=clr, line_w=2.5,
+        )
+        cx = left + card_w / 2
+        _add_textbox(
+            slide, left, top + 0.7, card_w, 1.6,
+            str(counts[ctype]),
+            colors["title_font"], 72, clr,
+            bold=True, alignment=PP_ALIGN.CENTER,
+        )
+        _add_textbox(
+            slide, left, top + 2.4, card_w, 0.5,
+            f"{label}卡片",
+            colors["body_font"], 16, colors["text"],
+            bold=True, alignment=PP_ALIGN.CENTER,
+        )
+
+    # 底部脚注
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    _add_textbox(
+        slide, 0.6, SLIDE_H - 0.55, SLIDE_W - 1.2, 0.3,
+        f"共 {len(cards)} 张分析卡片  生成于 {now_str}",
+        colors["body_font"], 10, colors["text_muted"],
+        alignment=PP_ALIGN.CENTER,
+    )
 
 
 # ── Public API ──
@@ -280,17 +332,18 @@ def generate_pptx_direct(
     cards: list[dict],
     theme_name: str = "dark-tech-gold",
     output_path: Optional[str] = None,
+    source: str = "",
 ) -> str:
     """
-    Generate PPTX directly using python-pptx.
-    All text on dark backgrounds uses WHITE or GOLD for readability.
+    Generate PPTX directly using python-pptx with knowledge-card style.
+    One slide per card, plus a cover and a 4-color stats summary.
     """
     colors = _resolve_theme(theme_name)
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
 
-    _build_cover_slide(prs, topic, colors)
+    _build_cover_slide(prs, topic, colors, card_count=len(cards))
 
     total_cards = len(cards)
     for idx, card in enumerate(cards):
@@ -303,6 +356,7 @@ def generate_pptx_direct(
             colors,
             idx + 1,
             total_cards + 2,
+            source=card.get("source", source),
         )
 
     _build_summary_slide(prs, cards, colors)

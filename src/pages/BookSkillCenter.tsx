@@ -67,11 +67,51 @@ const BookSkillCenter: React.FC = () => {
     loadStats();
   }, []);
 
+  // 监听 localStorage 中笔记/书架变化，实时同步统计
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'bookskill_notes' || e.key === null) loadStats();
+    };
+    const onLocalChange = () => loadStats();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('bookskill-notes-changed', onLocalChange);
+    window.addEventListener('bookshelf-changed', onLocalChange);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('bookskill-notes-changed', onLocalChange);
+      window.removeEventListener('bookshelf-changed', onLocalChange);
+    };
+  }, [loadStats]);
+
   const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await skillService.getBookSkillStats();
-      setStats(data);
+      // 真实数据同步：
+      // - 本 书籍  ← bookshelfService（IndexedDB 里实际保存的 PDF 书籍）
+      // - 条 方法论--笔记 ← localStorage 'bookskill_notes' 笔记队列
+      // - 个 案例   ← 笔记内容里包含「**案例**」的条目数
+      // 后端 stats 仅作 case_studies 兜底（兼容历史数据）
+      const [bookList, backendStats] = await Promise.all([
+        bookshelfService.getAll().catch(() => []),
+        skillService.getBookSkillStats().catch(() => null),
+      ]);
+      let notes: any[] = [];
+      try { notes = JSON.parse(localStorage.getItem('bookskill_notes') || '[]'); } catch {}
+      const caseCount = notes.filter((n: any) =>
+        (n.content || n.contentHtml || '').includes('案例')
+      ).length;
+
+      setStats({
+        total_books: bookList.length,
+        total_methodologies: notes.length,
+        total_case_studies: caseCount || (backendStats?.total_case_studies ?? 0),
+        // 兼容旧版 active 徽标判断
+        active: notes.length > 0,
+        _backend_fallback: backendStats ? {
+          books: backendStats.total_books,
+          methodologies: backendStats.total_methodologies,
+        } : null,
+      });
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -102,9 +142,9 @@ const BookSkillCenter: React.FC = () => {
           </div>
         ) : stats ? (
           <div className="hidden md:flex gap-3 flex-wrap items-center">
-            <StatBadge icon={BookOpen} value={stats.total_books} label="书籍" color="yellow" />
-            <StatBadge icon={Lightbulb} value={stats.total_methodologies} label="方法论" color="yellow" />
-            <StatBadge icon={CheckCircle} value={stats.total_case_studies} label="案例" color="blue" />
+            <StatBadge icon={BookOpen} value={stats.total_books} label="本 书籍" color="yellow" />
+            <StatBadge icon={Lightbulb} value={stats.total_methodologies} label="条 方法论--笔记" color="yellow" />
+            <StatBadge icon={CheckCircle} value={stats.total_case_studies} label="个 案例" color="blue" />
             {stats.total_methodologies > 0 && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full">
                 <TrendingUp size={14} />
@@ -152,14 +192,17 @@ const BookSkillCenter: React.FC = () => {
                   if (!file) return;
                   try {
                     const ab = await file.arrayBuffer();
-                    await bookshelfService.add({
+                    const bookId = await bookshelfService.add({
                       title: file.name.replace(/\.pdf$/i, ''),
                       fileName: file.name,
                       fileType: file.type,
                       fileData: ab,
                       pageCount: 0,
                     });
-                    toast.success(`已添加「${file.name}」到书架`);
+                    toast.success(`已添加「${file.name}」到书架`, {
+                      action: { label: '查看', onClick: () => window.open(`/pdf-viewer?book=${encodeURIComponent(bookId)}#page=1`, '_blank') },
+                      duration: 5000,
+                    });
                   } catch (err: any) {
                     toast.error(err.message || '添加失败');
                   }
@@ -401,6 +444,7 @@ loadTopicBooks();
       };
       existing.push(note);
       localStorage.setItem('bookskill_notes', JSON.stringify(existing));
+      window.dispatchEvent(new Event('bookskill-notes-changed'));
       toast.success(`「${m.name_cn}」已加入笔记`);
     } catch {
       toast.error('保存笔记失败');
@@ -512,6 +556,7 @@ loadTopicBooks();
                     <button
                       onClick={() => {
                         localStorage.removeItem('bookskill_notes');
+                        window.dispatchEvent(new Event('bookskill-notes-changed'));
                         setPdfAnnotations([]);
                         setSelectedAnnotations(new Set());
                         setContent('');
@@ -571,6 +616,7 @@ loadTopicBooks();
                                 const filtered = pdfAnnotations.filter((a: any, i: number) => (a.id || String(i)) !== id);
                                 setPdfAnnotations(filtered);
                                 localStorage.setItem('bookskill_notes', JSON.stringify(filtered));
+                                window.dispatchEvent(new Event('bookskill-notes-changed'));
                                 toast.success('已移除');
                               }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-opacity"
@@ -864,6 +910,7 @@ const NotesPanel: React.FC = () => {
     const filtered = notes.filter((n: any, i: number) => (n.id || String(i)) !== id);
     setNotes(filtered);
     localStorage.setItem('bookskill_notes', JSON.stringify(filtered));
+    window.dispatchEvent(new Event('bookskill-notes-changed'));
     const s = new Set(selectedIds);
     s.delete(id);
     setSelectedIds(s);
@@ -872,6 +919,7 @@ const NotesPanel: React.FC = () => {
 
   const clearAll = () => {
     localStorage.removeItem('bookskill_notes');
+    window.dispatchEvent(new Event('bookskill-notes-changed'));
     setNotes([]);
     setSelectedIds(new Set());
     toast.success('笔记队列已清空');
@@ -893,6 +941,7 @@ const NotesPanel: React.FC = () => {
     });
     setNotes(updated);
     localStorage.setItem('bookskill_notes', JSON.stringify(updated));
+    window.dispatchEvent(new Event('bookskill-notes-changed'));
     setEditingNote(null);
     toast.success('笔记已保存');
   };
@@ -1283,15 +1332,19 @@ const BooksPanel: React.FC = () => {
       if (!file) return;
       try {
         const ab = await file.arrayBuffer();
-        await bookshelfService.add({
+        const bookId = await bookshelfService.add({
           title: file.name.replace(/\.pdf$/i, ''),
           fileName: file.name,
           fileType: file.type,
           fileData: ab,
           pageCount: 0,
         });
-        toast.success(`已添加「${file.name}」到书架`);
+        toast.success(`已添加「${file.name}」到书架`, {
+          action: { label: '查看', onClick: () => window.open(`/pdf-viewer?book=${encodeURIComponent(bookId)}#page=1`, '_blank') },
+          duration: 5000,
+        });
         loadBooks();
+        window.dispatchEvent(new Event('bookshelf-changed'));
       } catch (err: any) {
         toast.error(err.message || '添加失败');
       }
@@ -1304,6 +1357,7 @@ const BooksPanel: React.FC = () => {
     await bookshelfService.remove(id);
     toast.success('已删除');
     loadBooks();
+    window.dispatchEvent(new Event('bookshelf-changed'));
   };
 
   const handleOpenPdf = (id: string) => {

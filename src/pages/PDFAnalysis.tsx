@@ -110,7 +110,15 @@ const PDFAnalysis: React.FC = () => {
   const [activeFeature, setActiveFeature] = useState<'extract' | 'generate' | 'merge' | 'split' | 'fromImages' | 'convertWord' | 'convertExcel' | 'pptConvert' | 'history' | 'ocr'>('extract');
   const [pptFile, setPptFile] = useState<File | null>(null);
   const [convertedPdfUrl, setConvertedPdfUrl] = useState<string | null>(null);
-  const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>('auto');
+  // 卡片生成模式：'rule'(默认，<1s) / 'auto'(LLM，约 5-30s) / 'multi-agent'(2 阶段 LLM，约 10-60s)
+  // 默认持久化为 rule，避免上次误选 LLM 模式后下次仍卡顿
+  const [cardGenMode, setCardGenMode] = useState<'auto' | 'rule' | 'multi-agent'>(() => {
+    try {
+      const saved = localStorage.getItem('pdf-analysis:cardGenMode');
+      if (saved === 'auto' || saved === 'rule' || saved === 'multi-agent') return saved;
+    } catch {}
+    return 'rule';
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // OCR 识别相关状态
@@ -326,6 +334,11 @@ const PDFAnalysis: React.FC = () => {
     const genMode = mode || cardGenMode;
     setIsProcessing(true);
     setProcessingStatus({ stage: 'upload', progress: 0, message: '正在上传文件...' });
+    if (genMode === 'auto') {
+      toast.info('已选择【自动】模式，将调用 LLM（约 5-30s）；如需快速出结果请切换到【规则】', { duration: 4000 });
+    } else if (genMode === 'multi-agent') {
+      toast.info('已选择【多智能体】模式，将多阶段调用 LLM（约 10-60s）', { duration: 4000 });
+    }
 
     const formData = new FormData();
     formData.append('file', uploadedFile);
@@ -1248,6 +1261,14 @@ const renderPPTConvertPanel = () => {
                 <p className="text-gray-600 dark:text-gray-400">提取、分析、转换 PDF 文档</p>
               </div>
             </div>
+            <button
+              onClick={() => window.open('/pdf-viewer', '_blank')}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow hover:shadow-lg hover:from-blue-600 hover:to-indigo-600 transition-all"
+              title="在 PDF 查看器中打开（全屏滚动 · 可编辑 · 保存为笔记）"
+            >
+              <ExternalLink size={16} />
+              <span className="text-sm font-medium">PDF 预览</span>
+            </button>
           </div>
         </motion.div>
 
@@ -1575,19 +1596,27 @@ const renderPPTConvertPanel = () => {
                     <div className="space-y-2">
                       {/* 生成模式选择 */}
                       <div className="flex gap-1 bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-                        {(['auto', 'rule', 'multi-agent'] as const).map(m => (
-                          <button
-                            key={m}
-                            onClick={() => setCardGenMode(m)}
-                            className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
-                              cardGenMode === m
-                                ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-300 shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                            }`}
-                          >
-                            {m === 'auto' ? '自动' : m === 'rule' ? '规则' : '多智能体'}
-                          </button>
-                        ))}
+                        {(['auto', 'rule', 'multi-agent'] as const).map(m => {
+                          const labels: Record<typeof m, { text: string; hint: string }> = {
+                            rule:        { text: '规则',     hint: '⚡ < 1s，纯关键词提取' },
+                            auto:        { text: '自动',     hint: '🤖 ~5-30s，LLM 推理' },
+                            'multi-agent': { text: '多智能体', hint: '🏛️ ~10-60s，多阶段 LLM' },
+                          };
+                          return (
+                            <button
+                              key={m}
+                              onClick={() => { setCardGenMode(m); try { localStorage.setItem('pdf-analysis:cardGenMode', m); } catch {} }}
+                              title={labels[m].hint}
+                              className={`flex-1 py-1.5 text-xs rounded-md font-medium transition-all ${
+                                cardGenMode === m
+                                  ? 'bg-white dark:bg-gray-600 text-purple-600 dark:text-purple-300 shadow-sm'
+                                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                              }`}
+                            >
+                              {labels[m].text}
+                            </button>
+                          );
+                        })}
                       </div>
                       {/* 生成按钮 */}
                       <button

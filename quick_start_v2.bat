@@ -52,11 +52,11 @@ if exist "C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73\GenieAPIService.exe
 )
 
 REM ========================================
-REM [2/6] Zhiyi Backend (port 8000)
+REM [2/6] Zhiyi Backend (port 8000) - with auto-restart watcher
 REM ========================================
-echo [2/6] Starting Zhiyi Backend...
-start "Zhiyi Backend" cmd /k "C:\D\zhiyi\venv_arm64\Scripts\python.exe C:\D\zhiyi\backend\main.py"
-timeout /t 8 /nobreak >nul
+echo [2/6] Starting Zhiyi Backend (auto-restart watcher)...
+start "Zhiyi Backend" cmd /k "C:\D\zhiyi\run_backend_watch.bat"
+timeout /t 10 /nobreak >nul
 
 REM ========================================
 REM [4/6] Zhiyi Frontend (port 3000)

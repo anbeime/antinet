@@ -968,7 +968,7 @@ async def download_sources_archive(
     missing_ids: List[int] = []
     seen_names: Dict[str, int] = {}
 
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATE) as zf:
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for r in rows:
             inv_id = r["id"]
             original = r["filename"] or f"invoice_{inv_id}"

@@ -109,11 +109,15 @@ const PDFViewer: React.FC = () => {
         setShowCardPanel(true);
       } catch {}
     }
-  }, []);
+  }, [searchParams]);
 
   const loadPDFFromURL = async (url: string) => {
     setPdfLoading(true);
     setPdfError('');
+    setPdfDoc(null);
+    setTotalPages(0);
+    setPdfUrl((prev) => { if (prev) try { URL.revokeObjectURL(prev); } catch {}; return ''; });
+    pdfBufferRef.current = null;
     try {
       try {
         const urlObj = new URL(url, window.location.origin);
@@ -127,7 +131,7 @@ const PDFViewer: React.FC = () => {
       const ab = await res.arrayBuffer();
       pdfBufferRef.current = ab;
       setPdfUrl(URL.createObjectURL(new Blob([ab], { type: 'application/pdf' })));
-      const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+      const pdf = await pjs.getDocument({ data: new Uint8Array(ab.slice(0)), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
     } catch (e: any) {
@@ -146,7 +150,7 @@ const PDFViewer: React.FC = () => {
       pdfFileNameRef.current = book.fileName;
       setPdfUrl(URL.createObjectURL(new Blob([book.fileData], { type: 'application/pdf' })));
       const pjs = await loadPDFJS();
-      const pdf = await pjs.getDocument({ data: new Uint8Array(book.fileData), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+      const pdf = await pjs.getDocument({ data: new Uint8Array(book.fileData.slice(0)), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
     } catch (e: any) {
@@ -195,7 +199,7 @@ const PDFViewer: React.FC = () => {
       setPdfUrl(URL.createObjectURL(new Blob([ab], { type: 'application/pdf' })));
       try {
         const pjs = await loadPDFJS();
-        const pdf = await pjs.getDocument({ data: new Uint8Array(ab), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+        const pdf = await pjs.getDocument({ data: new Uint8Array(ab.slice(0)), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
         setPdfDoc(pdf); setTotalPages(pdf.numPages);
       } catch (err: any) { setPdfError(err.message || '加载PDF失败'); } finally { setPdfLoading(false); }
     };
@@ -678,14 +682,23 @@ const PDFViewer: React.FC = () => {
                 if (!ab) return;
                 try {
                   const name = pdfFileNameRef.current || fileName || '未命名文档';
-                  await bookshelfService.add({
+                  const bookId = await bookshelfService.add({
                     title: name.replace(/\.pdf$/i, ''),
                     fileName: name,
                     fileType: 'application/pdf',
                     fileData: ab,
                     pageCount: totalPages,
                   });
-                  toast.success(`已保存「${name}」到书架`);
+                  // 双 action：直接查看这本书 / 返回书架
+                  // 笔记流程的 toast 也是这种双 action 模式（保存到笔记 → 查看/书架）
+                  toast.success(`已保存「${name}」到书架`, {
+                    action: {
+                      label: '查看',
+                      onClick: () => window.open(`/pdf-viewer?book=${encodeURIComponent(bookId)}#page=1`, '_blank')
+                    },
+                    description: '书架已可访问',
+                    duration: 5000,
+                  });
                 } catch (err: any) {
                   toast.error(err.message || '保存失败');
                 }
@@ -707,7 +720,7 @@ const PDFViewer: React.FC = () => {
             ) : pdfError ? (
               <div className="flex flex-col items-center justify-center h-full text-red-300"><AlertCircle size={48} className="mb-4 opacity-30" /><p>{pdfError}</p></div>
             ) : pdfDoc && pdfUrl ? (
-              <object data={pdfUrl} type="application/pdf" className="w-full h-full">
+              <object key={pdfUrl} data={pdfUrl} type="application/pdf" className="w-full h-full">
                 <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
               </object>
             ) : (
