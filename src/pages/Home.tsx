@@ -1005,17 +1005,17 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 transition={{ duration: 0.5 }}
                 className="bg-paper dark:bg-dark-soft rounded-card shadow-sm border border-border p-6"
               >
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
                   <h2 className="text-xl font-bold text-ink-main">知识概览</h2>
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
+                  <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:flex-none">
                       <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-desc" />
                       <input
                         type="text"
                         placeholder="搜索知识卡片/任务..."
                         value={dashboardSearchQuery}
                         onChange={e => setDashboardSearchQuery(e.target.value)}
-                        className="w-52 pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-bg-soft dark:bg-dark-soft focus:outline-none focus:ring-2 focus:ring-wood focus:border-transparent transition-all"
+                        className="w-full sm:w-52 pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-bg-soft dark:bg-dark-soft focus:outline-none focus:ring-2 focus:ring-wood focus:border-transparent transition-all"
                       />
                       {dashboardSearchQuery && (
                         <button
@@ -1037,11 +1037,11 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     </motion.button>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4">
                   {Object.entries(cardTypeMap).map(([color, type]) => (
                     <div 
                       key={color}
-                      className={`${type.bgColor} border ${type.borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow`}
+                      className={`${type.bgColor} border ${type.borderColor} rounded-lg p-3 sm:p-4 cursor-pointer hover:shadow-md transition-shadow`}
                       onClick={() => {
                         setActiveTab('cards-management');
                         setSelectedCardColor(color as CardColor);
@@ -1423,26 +1423,25 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             </div>
             
             {/* 统计卡片 */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
               <div 
                 onClick={() => { setSelectedCardColor(null); setSearchQuery(''); setTimeFilter('all'); }}
-                className="bg-paper dark:bg-dark-soft p-4 rounded-card border border-border cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="text-2xl font-bold text-ink-main">{cards.length}</div>
-                <div className="text-sm text-ink-desc">总卡片数</div>
+                className="bg-paper dark:bg-dark-soft p-3 sm:p-4 rounded-card border border-border cursor-pointer hover:shadow-md transition-shadow">
+                <div className="text-xl sm:text-2xl font-bold text-ink-main">{cards.length}</div>
+                <div className="text-xs sm:text-sm text-ink-desc">总卡片数</div>
               </div>
               {Object.entries(cardTypeMap).map(([color, type]) => (
                 <div 
                   key={color} 
                   id={`card-stat-${color}`}
                   onClick={() => setSelectedCardColor(color as CardColor)}
-                  className={`${type.bgColor} p-4 rounded-card border border-border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-wood' : ''}`}
+                  className={`${type.bgColor} p-3 sm:p-4 rounded-card border border-border cursor-pointer hover:shadow-lg transition-all hover:scale-105 ${selectedCardColor === color ? 'ring-2 ring-offset-2 ring-wood' : ''}`}
                 >
-                  <div className={`text-2xl font-bold text-ink-main`}>{cards.filter(c => c.color === color).length}</div>
-                  <div className={`text-sm font-medium text-ink-main`}>{type.name}</div>
+                  <div className={`text-xl sm:text-2xl font-bold text-ink-main`}>{cards.filter(c => c.color === color).length}</div>
+                  <div className={`text-xs sm:text-sm font-medium text-ink-main`}>{type.name}</div>
                 </div>
               ))}
-            </div>
+</div>
 
             {/* 搜索和筛选 */}
             <div className="flex flex-wrap items-center gap-2 bg-paper dark:bg-dark-soft p-3 rounded-card border border-border">
@@ -1790,36 +1789,36 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <BookOpen className="w-8 h-8 text-blue-500" />
                 文档中心
               </h2>
-              <div className="grid grid-cols-4 gap-4">
-                <button onClick={() => setActiveTab('pdf-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <FileText className="w-10 h-10 text-red-500 mb-3" />
-                  <h3 className="font-semibold">PDF分析器</h3>
-                  <p className="text-sm text-gray-500">智能解析PDF文档</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <button onClick={() => setActiveTab('pdf-analysis')} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <FileText className="w-8 h-8 sm:w-10 sm:h-10 text-red-500 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">PDF分析器</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">智能解析PDF文档</p>
                 </button>
-                <button onClick={() => setActiveTab('pdf-viewer')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <FileText className="w-10 h-10 text-red-400 mb-3" />
-                  <h3 className="font-semibold">PDF查看器</h3>
-                  <p className="text-sm text-gray-500">在线查看PDF文件</p>
+                <button onClick={() => setActiveTab('pdf-viewer')} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <FileText className="w-8 h-8 sm:w-10 sm:h-10 text-red-400 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">PDF查看器</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">在线查看PDF文件</p>
                 </button>
-                <button onClick={() => setActiveTab('ppt-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Presentation className="w-10 h-10 text-orange-500 mb-3" />
-                  <h3 className="font-semibold">PPT生成</h3>
-                  <p className="text-sm text-gray-500">从卡片生成演示文稿</p>
+                <button onClick={() => setActiveTab('ppt-analysis')} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Presentation className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">PPT生成</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">从卡片生成演示文稿</p>
                 </button>
-                <button onClick={() => setActiveTab('ppt-viewer')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Presentation className="w-10 h-10 text-orange-400 mb-3" />
-                  <h3 className="font-semibold">PPT演示</h3>
-                  <p className="text-sm text-gray-500">在线演示PPT文件</p>
+                <button onClick={() => setActiveTab('ppt-viewer')} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Presentation className="w-8 h-8 sm:w-10 sm:h-10 text-orange-400 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">PPT演示</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">在线演示PPT文件</p>
                 </button>
-<button onClick={() => setActiveTab('excel-analysis')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Table className="w-10 h-10 text-green-500 mb-3" />
-                  <h3 className="font-semibold">Excel/在线表格</h3>
-                  <p className="text-sm text-gray-500">数据分析与可视化</p>
+<button onClick={() => setActiveTab('excel-analysis')} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Table className="w-8 h-8 sm:w-10 sm:h-10 text-green-500 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">Excel/在线表格</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">数据分析与可视化</p>
                 </button>
-                <button onClick={() => { setActiveTab('cards-management'); setKnowledgeSubTab('mindmap'); }} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
-                  <Brain className="w-10 h-10 text-pink-500 mb-3" />
-                  <h3 className="font-semibold">思维导图</h3>
-                  <p className="text-sm text-gray-500">结构化思维整理</p>
+                <button onClick={() => { setActiveTab('cards-management'); setKnowledgeSubTab('mindmap'); }} className="p-4 sm:p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
+                  <Brain className="w-8 h-8 sm:w-10 sm:h-10 text-pink-500 mb-2 sm:mb-3" />
+                  <h3 className="font-semibold text-sm sm:text-base">思维导图</h3>
+                  <p className="text-xs sm:text-sm text-gray-500">结构化思维整理</p>
                 </button>
 {/* <button onClick={() => setActiveTab('knowledge-network')} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md hover:shadow-lg transition-shadow text-left">
                   <Network className="w-10 h-10 text-indigo-500 mb-3" />
