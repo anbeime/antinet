@@ -1219,6 +1219,12 @@ const ProjectDetailPanel: React.FC<{
                         tasks={tasks}
                         projectId={project.id!}
                         onTasksChange={() => loadData()}
+                        onTaskStatusUpdate={(taskId, newStatus) => {
+                          // 乐观更新：立即修改本地任务状态，无需等待 refetch
+                          setTasks(prev => prev.map(t =>
+                            t.id === taskId ? { ...t, kanban_status: newStatus as GtdTask['kanban_status'] } : t
+                          ));
+                        }}
                       />
                     )}
                   </div>

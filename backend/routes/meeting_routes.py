@@ -978,7 +978,7 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                        system_prompt: str, user_prompt: str, max_tokens: int,
                        degrade_state: dict, scheduler, inference_start: float,
                        agent_id: str, layer: str) -> Optional[str]:
-    """调用 Genie HTTP（端口 8910），NPU 串行锁 + 冷却"""
+    """调用 Genie HTTP（端口 8910），NPU 串行锁 + 冷却 + 指数退避重试"""
     now = time.time()
     if not (now > degrade_state.get("skip_vision_until", 0)):
         logger.info(f"[Meeting] 层{layer} Genie({model_name}) 跳过（冷却中）")
@@ -986,8 +986,8 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
 
     # NPU 串行锁：Genie 一次只能处理一个请求，排队等待而非并发导致429
     async with _GENIE_LOCK:
-        # 如果 Genie 报 blocked，等3秒重试（最多3次）
-        for attempt in range(3):
+        # 指数退避重试：3s → 5s → 8s → 12s
+        for attempt in range(4):
             result = await _do_call_genie(
                 model_name=model_name, timeout_sec=timeout_sec, max_chars=max_chars,
                 system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=max_tokens,
@@ -995,10 +995,13 @@ async def _call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                 agent_id=agent_id, layer=layer
             )
             if result is not None:
+                # 成功后等待 0.8s 再释放锁，给 Genie 服务恢复时间
+                await asyncio.sleep(0.8)
                 return result
-            if attempt < 2:
-                logger.warning(f"[Meeting] 层{layer} Genie 被阻塞，3秒后重试 ({attempt+1}/3)...")
-                await asyncio.sleep(3)
+            if attempt < 3:
+                backoff = [3, 5, 8][attempt]
+                logger.warning(f"[Meeting] 层{layer} Genie 被阻塞，{backoff}秒后重试 ({attempt+1}/4)...")
+                await asyncio.sleep(backoff)
         return None
 
 
@@ -1036,6 +1039,10 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
                 }
             )
             response.raise_for_status()
+            body = response.text
+            if "blocked" in body.lower() or "An other request" in body:
+                logger.warning(f"[Meeting] 层{layer} Genie 请求被服务端阻塞: {body[:100]}")
+                return None
             result = response.json()
             content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             if _is_valid_genie_content(content):
@@ -1049,6 +1056,15 @@ async def _do_call_genie(*, model_name: str, timeout_sec: float, max_chars: int,
             return await _do_call()
         except httpx.HTTPStatusError as e:
             logger.warning(f"[Meeting] 层{layer} Genie HTTP {e.response.status_code}")
+            body = e.response.text[:200]
+            if "blocked" in body.lower() or "An other request" in body:
+                logger.warning(f"[Meeting] 层{layer} Genie 服务端阻塞: {body[:100]}")
+            return None
+        except json.JSONDecodeError:
+            logger.warning(f"[Meeting] 层{layer} Genie 返回非JSON响应（服务端可能已阻塞）")
+            return None
+        except httpx.TimeoutException:
+            logger.warning(f"[Meeting] 层{layer} Genie 请求超时")
             return None
         except Exception as e:
             logger.warning(f"[Meeting] 层{layer} Genie 异常: {e}")
@@ -1391,20 +1407,21 @@ async def meeting_health():
     """会议服务健康检查 - 使用 Genie LLM 真实响应"""
     llm_reply = None
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10.0, proxy=None) as client:
-            resp = await client.post(
-                "http://127.0.0.1:8910/v1/chat/completions",
-                json={
-                    "model": "qwen2.5vl3b-8380-2.42",
-                    "messages": [{"role": "user", "content": "请回复OK"}],
-                    "max_tokens": 5,
-                    "temp": 0.1
-                }
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                llm_reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        async with _GENIE_LOCK:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0, proxy=None) as client:
+                resp = await client.post(
+                    "http://127.0.0.1:8910/v1/chat/completions",
+                    json={
+                        "model": "qwen2.5vl3b-8380-2.42",
+                        "messages": [{"role": "user", "content": "请回复OK"}],
+                        "max_tokens": 5,
+                        "temp": 0.1
+                    }
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    llm_reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
     except Exception as e:
         logger.warning(f"[Meeting] health LLM check failed: {e}")
 
@@ -2147,26 +2164,28 @@ async def create_meeting_stream(request: MeetingRequest):
         })
         await asyncio.sleep(0.1)
 
-        # 模型预热：直接 httpx 调用，绕过 _call_genie（避免污染降级冷却状态）
+# 模型预热：使用 _GENIE_LOCK 保护，避免与后续 LLM 调用冲突
         try:
             logger.info("[Meeting] 模型预热中...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.post(
-                    "http://127.0.0.1:8910/v1/chat/completions",
-                    json={
-                        "model": "qwen2.0-7b-ssd-8380-2.34",
-                        "messages": [
-                            {"role": "system", "content": "你是一个中文助手。"},
-                            {"role": "user", "content": "你好"}
-                        ],
-                        "max_tokens": 5, "temperature": 0.1
-                    }
-                )
-                # 预热只需触发模型加载，不管返回内容
-                if resp.status_code == 200:
-                    logger.info("[Meeting] 模型预热完成")
-                else:
-                    logger.info(f"[Meeting] 模型预热返回非200: {resp.status_code}")
+            async with _GENIE_LOCK:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        "http://127.0.0.1:8910/v1/chat/completions",
+                        json={
+                            "model": "qwen2.0-7b-ssd-8380-2.34",
+                            "messages": [
+                                {"role": "system", "content": "你是一个中文助手。"},
+                                {"role": "user", "content": "你好"}
+                            ],
+                            "max_tokens": 5, "temperature": 0.1
+                        }
+                    )
+                    if resp.status_code == 200:
+                        logger.info("[Meeting] 模型预热完成")
+                    else:
+                        logger.info(f"[Meeting] 模型预热返回非200: {resp.status_code}")
+            # 预热后等待 1s 让 Genie 服务稳定
+            await asyncio.sleep(1.0)
         except Exception:
             logger.info("[Meeting] 模型预热跳过（Genie可能未就绪）")
 

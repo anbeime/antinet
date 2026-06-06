@@ -506,6 +506,105 @@ async def convert_ppt_to_pdf(file: UploadFile = File(...)):
                 pass
 
 
+# ========== 按文件名转换 PPTX → PDF（用于浏览器原生预览） ==========
+
+@router.get("/convert/to-pdf-file")
+async def convert_pptx_file_to_pdf(filename: str):
+    """将已生成的 PPTX 文件转换为 PDF（使用 LibreOffice），供 <object type="application/pdf"> 浏览器原生预览。
+
+    - 输入：?filename=xxx.pptx （在 C:/D/zhiyi/generated/ 下）
+    - 输出：application/pdf 字节流
+    - 缓存：转换后的 PDF 存到 generated/_pdf_cache/<filename>.pdf，重复访问秒返
+    """
+    if not PPTX_AVAILABLE:
+        raise HTTPException(status_code=503, detail="PPT 功能不可用")
+
+    try:
+        import subprocess
+        import os
+
+        output_dir = Path("C:/D/zhiyi/generated")
+        file_path = output_dir / filename
+
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="PPTX 文件不存在")
+
+        if not file_path.suffix.lower() == ".pptx":
+            raise HTTPException(status_code=400, detail="仅支持 .pptx 文件")
+
+        cache_dir = output_dir / "_pdf_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_pdf = cache_dir / (file_path.stem + ".pdf")
+
+        # 缓存命中：直接返回（避免重复转换）
+        if cached_pdf.exists():
+            pdf_mtime = cached_pdf.stat().st_mtime
+            pptx_mtime = file_path.stat().st_mtime
+            if pdf_mtime >= pptx_mtime:
+                return FileResponse(
+                    path=str(cached_pdf),
+                    media_type="application/pdf",
+                    headers={"X-Cache": "HIT", "Cache-Control": "public, max-age=3600"},
+                )
+
+        # 查找 LibreOffice
+        libreoffice_paths = [
+            r"C:\Program Files\LibreOffice\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            r"C:\Users\topgo\Downloads\LibreOffice_26.2.2_Win_aarch64\program\soffice.exe",
+            "/usr/bin/soffice",
+            "/usr/local/bin/soffice",
+        ]
+        libreoffice = None
+        for p in libreoffice_paths:
+            if os.path.exists(p):
+                libreoffice = p
+                break
+        if not libreoffice:
+            libreoffice = shutil_which_soffice()
+
+        if not libreoffice:
+            raise HTTPException(
+                status_code=501,
+                detail="PPT→PDF 需要 LibreOffice。请安装 LibreOffice 后重试。",
+            )
+
+        cmd = [
+            libreoffice,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(cache_dir),
+            str(file_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+
+        if not cached_pdf.exists():
+            logger.error(f"LibreOffice 转换失败: {result.stderr.decode('utf-8', errors='ignore')[:500]}")
+            raise HTTPException(
+                status_code=500,
+                detail="LibreOffice 转换失败，请确认 PPTX 文件有效",
+            )
+
+        return FileResponse(
+            path=str(cached_pdf),
+            media_type="application/pdf",
+            headers={"X-Cache": "MISS", "Cache-Control": "public, max-age=3600"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PPTX→PDF 转换异常: {e}")
+        raise HTTPException(status_code=500, detail=f"转换失败: {str(e)}")
+
+
+def shutil_which_soffice() -> Optional[str]:
+    """回退：在 PATH 中查找 soffice"""
+    import shutil
+    return shutil.which("soffice")
+
+
 # ========== 专题到PPT闭环 ==========
 
 class NarrativeTemplateConfig(BaseModel):

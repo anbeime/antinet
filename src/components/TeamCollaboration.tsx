@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useContext, useRef } from 'react';
+﻿import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Permission } from '@/contexts/authContext';
 import {
@@ -15,7 +15,17 @@ import {
   Calendar,
   Library,
   Bookmark,
-  MessageSquare
+  MessageSquare,
+  Folder,
+  Layers,
+  Network,
+  Archive,
+  ArchiveRestore,
+  BarChart3,
+  Target,
+  CheckCircle2,
+  Circle,
+  PlayCircle
 } from 'lucide-react';
 import MeetingCardPanel, { CardDetailPopup } from './MeetingCardPanel';
 import { collaborationService, collaborationREST } from '../services/collaborationService';
@@ -315,11 +325,18 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
-  // 项目管理状态
+// 项目管理状态
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-
-  // 全局错误监听, 捕获运行时异常并提示
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  // 项目类型过滤：团队项目 / 专题研究 / 已归档
+  const [projectTypeFilter, setProjectTypeFilter] = useState<'team' | 'topic' | 'archive'>('team');
+  // 本地维护已归档项目 id 集合
+  const [archivedProjectIds, setArchivedProjectIds] = useState<Set<number>>(new Set());
+  // 专题研究状态
+  const [researchProjects, setResearchProjects] = useState<any[]>([]);
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
       console.error('Global error', event.error || event.message, event);
@@ -335,10 +352,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleRejection);
     };
-  }, []);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+}, []);
 
   // 从后端API加载协作数据
   useEffect(() => {
@@ -873,7 +887,101 @@ const TeamCollaborationEnhanced: React.FC = () => {
             : t
         )
       });
+}
+  };
+
+  // ========== 归档/取消归档项目 ==========
+  const handleArchiveProject = (projectId: number) => {
+    setArchivedProjectIds(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+        toast.success('项目已取消归档');
+      } else {
+        next.add(projectId);
+        toast.success('项目已归档');
+      }
+      return next;
+    });
+  };
+
+  // ========== 项目统计 useMemo ==========
+  const projectStats = useMemo(() => {
+    const filtered = projects.filter(p => !archivedProjectIds.has(p.id));
+    const total = filtered.length;
+    const allTasks = filtered.flatMap(p => p.tasks || []);
+    const totalTasks = allTasks.length;
+    const completedTasks = allTasks.filter(t => t.status === 'completed').length;
+    const inProgressTasks = allTasks.filter(t => t.status === 'in-progress').length;
+    const avgProgress = total > 0
+      ? Math.round(filtered.reduce((sum, p) => sum + (p.progress || 0), 0) / total)
+      : 0;
+    return { total, totalTasks, completedTasks, inProgressTasks, avgProgress };
+  }, [projects, archivedProjectIds]);
+
+  // 根据类型过滤项目
+  const filteredProjects = useMemo(() => {
+    if (projectTypeFilter === 'archive') {
+      return projects.filter(p => archivedProjectIds.has(p.id));
     }
+    if (projectTypeFilter === 'team') {
+      return projects.filter(p => !archivedProjectIds.has(p.id));
+    }
+    return projects;
+  }, [projects, projectTypeFilter, archivedProjectIds]);
+
+  // ========== 辅助函数 ==========
+  const getProjectStatusText = (status: Project['status']) => {
+    switch (status) {
+      case 'completed': return '已完成';
+      case 'active':
+      case 'in-progress': return '进行中';
+      case 'planning': return '规划中';
+      case 'on-hold': return '已暂停';
+      case 'pending':
+      default: return '待开始';
+    }
+  };
+
+  const getProjectStatusBadge = (status: Project['status']) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800';
+      case 'active':
+      case 'in-progress':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+      case 'on-hold':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+      case 'planning':
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+      case 'pending':
+      default:
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400 border-gray-200 dark:border-gray-700';
+    }
+  };
+
+  const getProjectStatusIcon = (status: Project['status']) => {
+    switch (status) {
+      case 'completed': return <CheckCircle2 size={14} className="text-green-600" />;
+      case 'active':
+      case 'in-progress': return <PlayCircle size={14} className="text-blue-600" />;
+      case 'on-hold': return <Circle size={14} className="text-amber-600" />;
+      case 'planning': return <Target size={14} className="text-purple-600" />;
+      case 'pending':
+      default: return <Circle size={14} className="text-gray-500" />;
+    }
+  };
+
+  // 计算距截止日期的剩余天数
+  const getDaysUntilDeadline = (endDate?: string) => {
+    if (!endDate) return null;
+    const end = new Date(endDate);
+    const now = new Date();
+    const diff = Math.ceil((end.getTime() - now.getTime()) / 86400000);
+    if (diff < 0) return { text: `已逾期 ${Math.abs(diff)} 天`, color: 'text-red-600' };
+    if (diff === 0) return { text: '今天截止', color: 'text-red-600' };
+    if (diff <= 7) return { text: `还剩 ${diff} 天`, color: 'text-amber-600' };
+    return { text: `${end.toLocaleDateString()}`, color: 'text-gray-500' };
   };
 
   // 渲染加载状态
@@ -1210,97 +1318,164 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {/* 协作分析报告 */}
 
 
-        {/* 项目管理 */}
+{/* 项目管理 */}
         {activeTab === 'projects' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div className="w-full sm:w-auto">
-                <h2 className="text-lg sm:text-xl font-bold mb-1 sm:mb-2">项目管理</h2>
-                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 hidden sm:block">管理团队项目和任务分配，提高协作效率</p>
-                <div className="mt-1 sm:mt-2 flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1 text-[10px] sm:text-xs text-gray-500">
-                  <span>共{projects.length} 个项目</span>
-                  <span className="hidden sm:inline">·</span>
-                  <span>共{tasks.length} 个任务</span>
-                  <span className="hidden sm:inline">·</span>
-                  <span className="text-green-600">
-                    ✅{tasks.filter(t => t.status === 'completed').length}
-                  </span>
-                  <span className="hidden sm:inline">·</span>
-                  <span className="text-orange-600">
-                    🔄{tasks.filter(t => t.status === 'in-progress').length}
-                  </span>
-                </div>
+            {/* 顶部统计栏 - 5 卡片：项目数 + 任务数 + 进度 */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><Folder size={18} className="text-blue-600" /></div>
+                <div className="text-xl font-bold text-blue-600">{projectStats.total}</div>
+                <div className="text-xs text-gray-500 mt-0.5">总项目</div>
               </div>
-              <button
-                onClick={handleAddProject}
-                className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex-shrink-0"
-              >
-                <Plus size={16} className="sm:mr-2" />
-                <span className="hidden sm:inline">新建项目</span>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><Layers size={18} className="text-indigo-600" /></div>
+                <div className="text-xl font-bold text-indigo-600">{projectStats.totalTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">总任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><CheckCircle2 size={18} className="text-green-600" /></div>
+                <div className="text-xl font-bold text-green-600">{projectStats.completedTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">已完成任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><PlayCircle size={18} className="text-blue-600" /></div>
+                <div className="text-xl font-bold text-blue-600">{projectStats.inProgressTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">进行中任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center col-span-2 md:col-span-1">
+                <div className="flex justify-center mb-1"><BarChart3 size={18} className="text-purple-600" /></div>
+                <div className="text-xl font-bold text-purple-600">{projectStats.avgProgress}%</div>
+                <div className="text-xs text-gray-500 mt-0.5">平均进度</div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg sm:text-xl font-bold">项目管理</h2>
+              <button onClick={handleAddProject} className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex-shrink-0">
+                <Plus size={16} className="sm:mr-2" /><span className="hidden sm:inline">新建项目</span>
+              </button>
+            </div>
+
+            {/* 类型过滤 Tabs */}
+            <div className="flex space-x-2">
+              <button onClick={() => { setProjectTypeFilter('team'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'team' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                📁 团队项目 <span className="ml-1 text-xs opacity-70">{projects.filter(p => !archivedProjectIds.has(p.id)).length}</span>
+              </button>
+              <button onClick={() => { setProjectTypeFilter('topic'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'topic' ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                🔬 专题研究 <span className="ml-1 text-xs opacity-70">{researchProjects.length}</span>
+              </button>
+              <button onClick={() => { setProjectTypeFilter('archive'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'archive' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                🗄️ 已归档 <span className="ml-1 text-xs opacity-70">{archivedProjectIds.size}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* 左侧:项目列表 */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="lg:col-span-1 space-y-4"
               >
                 <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">团队项目</h3>
-                  <div className="space-y-3 max-h-[200px] overflow-y-auto">
-                    {projects.map(project => (
-                      <div 
-                        key={`team-${project.id}`}
-                        onClick={() => setSelectedProject(project)}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedProject?.id === project.id 
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' 
-                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-sm">{project.name}</h4>
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            project.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                            project.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                          }`}>
-                            {project.status === 'completed' ? '已完成' : 
-                             project.status === 'in-progress' ? '进行中' : '待开始'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>{project.tasks.length} 个任务</span>
-                          <span>{new Date(project.endDate).toLocaleDateString()}</span>
-                        </div>
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>进度</span>
-                            <span>{project.progress}%</span>
-                          </div>
-                          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500 rounded-full transition-all" 
-                              style={{ width: `${project.progress}%` }}
-                            ></div>
-                          </div>
-                        </div>
+                  {projectTypeFilter === 'team' && (
+                    <>
+                      <h3 className="font-semibold mb-3">团队项目</h3>
+                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                        {filteredProjects.map(project => {
+                          const days = getDaysUntilDeadline(project.endDate);
+                          const tasks = project.tasks || [];
+                          const completedTasks = tasks.filter(t => t.status === 'completed').length;
+                          return (
+                            <div
+                              key={`team-${project.id}`}
+                              onClick={() => setSelectedProject(project)}
+                              className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                                selectedProject?.id === project.id
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-sm'
+                                  : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-medium text-sm flex items-center gap-1.5">
+                                  {getProjectStatusIcon(project.status)}
+                                  {project.name}
+                                </h4>
+                                <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs border ${getProjectStatusBadge(project.status)}`}>
+                                  {getProjectStatusText(project.status)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                                <span>{tasks.length} 个任务 · 已完成 {completedTasks}</span>
+                                {days && <span className={days.color}>{days.text}</span>}
+                              </div>
+                              <div className="mt-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span>进度</span>
+                                  <span>{project.progress}%</span>
+                                </div>
+                                <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-500 rounded-full transition-all"
+                                    style={{ width: `${project.progress}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
 
-                  {/* 专题研究入口 */}
-                  <h3 className="font-semibold mt-4 mb-3 flex items-center">
-                    <span className="text-lg mr-1.5">📚</span>专题研究
-                  </h3>
-                  <UnifiedResearchList />
+                  {projectTypeFilter === 'topic' && (
+                    <>
+                      <h3 className="font-semibold mb-3 flex items-center"><span className="text-lg mr-1.5">📚</span>专题研究</h3>
+                      {researchProjects.length > 0 ? (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {researchProjects.map((rp: any) => (
+                            <div key={rp.id} className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <div className="font-medium text-sm">{rp.name}</div>
+                              {rp.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{rp.description}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-400 text-sm">暂无专题研究</div>
+                      )}
+                    </>
+                  )}
+
+                  {projectTypeFilter === 'archive' && (
+                    <>
+                      <h3 className="font-semibold mb-3">已归档项目</h3>
+                      {archivedProjectIds.size > 0 ? (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {filteredProjects.map(project => (
+                            <div key={`arch-${project.id}`}
+                              onClick={() => { setSelectedProject(project); }}
+                              className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750"
+                            >
+                              <div className="font-medium text-sm">{project.name}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {project.tasks.length} 个任务 · 进度 {project.progress}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-center py-6 text-gray-400 text-sm">暂无已归档项目</p>
+                      )}
+                    </>
+                  )}
                 </div>
               </motion.div>
 
-              {/* 中间:项目详情和任加*/}
-              <motion.div 
+              {/* 中间:项目详情 */}
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
                 className="lg:col-span-2 space-y-4"
@@ -1311,21 +1486,26 @@ const TeamCollaborationEnhanced: React.FC = () => {
                     <div className="bg-white dark:bg-gray-750 rounded-xl p-3 sm:p-4 border border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between items-start mb-3 sm:mb-4">
                         <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {getProjectStatusIcon(selectedProject.status)}
+                            <span className={`px-2 py-0.5 rounded-full text-xs border ${getProjectStatusBadge(selectedProject.status)}`}>
+                              {getProjectStatusText(selectedProject.status)}
+                            </span>
+                          </div>
                           <h3 className="text-base sm:text-lg font-semibold truncate">{selectedProject.name}</h3>
                           <p className="text-gray-600 dark:text-gray-300 text-xs sm:text-sm mt-1 line-clamp-2">{selectedProject.description}</p>
                         </div>
                         <div className="flex space-x-1 sm:space-x-2 flex-shrink-0 ml-2">
-                          <button 
-                            onClick={() => handleEditProject(selectedProject)}
+                          <button onClick={() => handleEditProject(selectedProject)}
                             className="p-1.5 sm:p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
-                          >
-                            <Edit3 size={14} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteProject(selectedProject.id)}
+                            title="编辑项目"><Edit3 size={14} /></button>
+                          <button onClick={() => handleDeleteProject(selectedProject.id)}
                             className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                          >
-                            <Trash2 size={14} />
+                            title="删除项目"><Trash2 size={14} /></button>
+                          <button onClick={() => handleArchiveProject(selectedProject.id)}
+                            className={`p-1.5 sm:p-2 ${archivedProjectIds.has(selectedProject.id) ? 'text-amber-600 hover:text-blue-600' : 'text-gray-500 hover:text-amber-600'}`}
+                            title={archivedProjectIds.has(selectedProject.id) ? '取消归档' : '归档项目'}>
+                            {archivedProjectIds.has(selectedProject.id) ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                           </button>
                         </div>
                       </div>
@@ -1340,7 +1520,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                           <div className="text-[10px] sm:text-xs text-gray-500">已完成</div>
                         </div>
                         <div className="text-center p-1 sm:p-0">
-                          <div className="text-lg sm:text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
+                          <div className="text-lg sm:text-2xl font-bold text-blue-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
                           <div className="text-[10px] sm:text-xs text-gray-500">进行中</div>
                         </div>
                         <div className="text-center p-1 sm:p-0">
@@ -1349,10 +1529,24 @@ const TeamCollaborationEnhanced: React.FC = () => {
                         </div>
                       </div>
 
+                      <div className="mb-3">
+                        <div className="flex justify-between text-xs sm:text-sm mb-1">
+                          <span className="text-gray-500">总进度</span>
+                          <span className="font-medium">{selectedProject.progress}%</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${selectedProject.progress >= 80 ? 'bg-green-500' : selectedProject.progress >= 40 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                            style={{ width: `${selectedProject.progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs sm:text-sm gap-2">
                         <div className="flex items-center space-x-2">
                           <Calendar size={14} className="text-gray-500" />
                           <span>截止: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
+                          {(() => { const d = getDaysUntilDeadline(selectedProject.endDate); return d ? <span className={d.color}>({d.text})</span> : null; })()}
                         </div>
                         <div className="flex items-center space-x-2">
                           <Users size={14} className="text-gray-500" />
@@ -1365,68 +1559,50 @@ const TeamCollaborationEnhanced: React.FC = () => {
                     <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="font-semibold">任务列表</h3>
-                        <button 
-                          onClick={() => handleAddTask(selectedProject.id)}
-                          className="flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
-                        >
-                          <Plus size={14} className="mr-1" />
-                          添加任务
+                        <button onClick={() => handleAddTask(selectedProject.id)}
+                          className="flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                          <Plus size={14} className="mr-1" />添加任务
                         </button>
                       </div>
 
-                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                        {selectedProject.tasks.map(task => (
-                          <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
-                            <div className="flex items-center space-x-3 flex-1">
-                              <input
-                                type="checkbox"
-                                checked={task.status === 'completed'}
-                                onChange={() => handleToggleTask(task.id)}
-                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
-                                    {task.title}
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    task.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                                    task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                    'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                                  }`}>
-                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
-                                  </span>
-                                </div>
-                                <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
-                                  <span>分配至 {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
-                                  {task.dueDate && <span>截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                      {selectedProject.tasks.length > 0 ? (
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                          {selectedProject.tasks.map(task => (
+                            <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                              <div className="flex items-center space-x-3 flex-1">
+                                <input type="checkbox" checked={task.status === 'completed'}
+                                  onChange={() => handleToggleTask(task.id)}
+                                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>{task.title}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${task.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'}`}>
+                                      {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
+                                    <span>分配至 {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
+                                    {task.dueDate && <span>截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                                  </div>
                                 </div>
                               </div>
+                              <div className="flex space-x-1">
+                                <button onClick={() => handleEditTask(task)} className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"><Edit3 size={14} /></button>
+                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"><Trash2 size={14} /></button>
+                              </div>
                             </div>
-                            <div className="flex space-x-1">
-                              <button 
-                                onClick={() => handleEditTask(task)}
-                                className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
-                              >
-                                <Edit3 size={14} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteTask(task.id)}
-                                className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-400 text-sm">暂无任务，点击"添加任务"创建</div>
+                      )}
                     </div>
                   </>
                 ) : (
                   <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 text-center">
                     <FileCheck size={48} className="mx-auto text-gray-400 mb-4" />
                     <h3 className="text-lg font-medium text-gray-600 dark:text-gray-300 mb-2">选择项目查看详情</h3>
-                    <p className="text-gray-500 dark:text-gray-400">从左侧列表中选择一个项目来查看任务和进度详想</p>
+                    <p className="text-gray-500 dark:text-gray-400">从左侧列表中选择一个项目来查看任务和进度详情</p>
                   </div>
                 )}
               </motion.div>

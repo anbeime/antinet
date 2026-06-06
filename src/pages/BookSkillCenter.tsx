@@ -62,27 +62,6 @@ const BookSkillCenter: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<any>(null);
 
-  // Load statistics on mount
-  useEffect(() => {
-    loadStats();
-  }, []);
-
-  // 监听 localStorage 中笔记/书架变化，实时同步统计
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === 'bookskill_notes' || e.key === null) loadStats();
-    };
-    const onLocalChange = () => loadStats();
-    window.addEventListener('storage', onStorage);
-    window.addEventListener('bookskill-notes-changed', onLocalChange);
-    window.addEventListener('bookshelf-changed', onLocalChange);
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener('bookskill-notes-changed', onLocalChange);
-      window.removeEventListener('bookshelf-changed', onLocalChange);
-    };
-  }, [loadStats]);
-
   const loadStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -115,6 +94,27 @@ const BookSkillCenter: React.FC = () => {
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
+
+  // Load statistics on mount
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // 监听 localStorage 中笔记/书架变化，实时同步统计
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'bookskill_notes' || e.key === null) loadStats();
+    };
+    const onLocalChange = () => loadStats();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('bookskill-notes-changed', onLocalChange);
+    window.addEventListener('bookshelf-changed', onLocalChange);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('bookskill-notes-changed', onLocalChange);
+      window.removeEventListener('bookshelf-changed', onLocalChange);
+    };
+  }, [loadStats]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">

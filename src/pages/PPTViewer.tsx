@@ -5,7 +5,7 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Presentation, Upload, Download, ChevronLeft, ChevronRight,
   Play, Pause, Grid, List, Edit3, Save,
-  RotateCcw
+  RotateCcw, FileText, Maximize2, Minimize2
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import { toast } from 'sonner';
@@ -36,7 +36,7 @@ const PPTViewer: React.FC = () => {
   const [preview, setPreview] = useState<PPTPreviewData | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [viewMode, setViewMode] = useState<'slide' | 'outline'>('slide');
+  const [viewMode, setViewMode] = useState<'native' | 'slide' | 'outline'>('native');
   const [editMode, setEditMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentFileName, setCurrentFileName] = useState<string>('');
@@ -44,6 +44,10 @@ const PPTViewer: React.FC = () => {
   const [availableThemes, setAvailableThemes] = useState<DesignTheme[]>([]);
   const [selectedTheme, setSelectedTheme] = useState('professional');
   const [editSlides, setEditSlides] = useState<SlideData[]>([]);
+  const [pdfUrl, setPdfUrl] = useState<string>('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string>('');
+  const [nativeFullscreen, setNativeFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const slides = preview?.slides || [];
@@ -54,6 +58,34 @@ const PPTViewer: React.FC = () => {
     loadThemes();
     loadPPT();
   }, []);
+
+  useEffect(() => {
+    if (currentFileName) loadNativePdf(currentFileName);
+    return () => { /* url revoked in loader */ };
+  }, [currentFileName]);
+
+  const loadNativePdf = async (fileName: string) => {
+    setPdfLoading(true);
+    setPdfError('');
+    setPdfUrl((prev) => { if (prev) try { URL.revokeObjectURL(prev); } catch {}; return ''; });
+    try {
+      const resp = await fetch(
+        `${API_BASE}/api/ppt/convert/to-pdf-file?filename=${encodeURIComponent(fileName)}`
+      );
+      if (!resp.ok) {
+        const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+        throw new Error(detail.detail || `HTTP ${resp.status}`);
+      }
+      const blob = await resp.blob();
+      if (blob.size === 0) throw new Error('PDF 为空');
+      setPdfUrl(URL.createObjectURL(new Blob([blob], { type: 'application/pdf' })));
+    } catch (e) {
+      setPdfError((e as Error).message);
+      setViewMode('slide');
+      toast.error('原生预览不可用，已回退到幻灯片视图: ' + (e as Error).message);
+    }
+    setPdfLoading(false);
+  };
 
   useEffect(() => {
     if (isPlaying) {
@@ -357,9 +389,20 @@ const PPTViewer: React.FC = () => {
             ))}
           </select>
 
+          <button onClick={() => setViewMode(viewMode === 'native' ? 'outline' : viewMode === 'slide' ? 'native' : 'slide')}
+            className={`p-2 rounded ${viewMode === 'native' ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-300'}`}
+            title="浏览器原生 PDF 预览（连续滚动/缩放/跳页/全屏）">
+            <FileText className="w-4 h-4" />
+          </button>
+
           <button onClick={() => setViewMode(viewMode === 'slide' ? 'outline' : 'slide')}
-            className="p-2 hover:bg-gray-700 rounded text-gray-300" title={viewMode === 'slide' ? '大纲视图' : '幻灯片视图'}>
-            {viewMode === 'slide' ? <List className="w-4 h-4" /> : <Grid className="w-4 h-4" />}
+            className={`p-2 rounded ${viewMode === 'slide' || viewMode === 'native' ? 'hover:bg-gray-700 text-gray-300' : 'bg-gray-700 text-white'}`} title="单页幻灯片视图">
+            <Grid className="w-4 h-4" />
+          </button>
+
+          <button onClick={() => setViewMode('outline')}
+            className={`p-2 rounded ${viewMode === 'outline' ? 'bg-gray-700 text-white' : 'hover:bg-gray-700 text-gray-300'}`} title="大纲视图（所有页）">
+            <List className="w-4 h-4" />
           </button>
 
           <button onClick={() => { setEditMode(!editMode); if (!editMode) setEditSlides(JSON.parse(JSON.stringify(slides))); }}
@@ -406,6 +449,41 @@ const PPTViewer: React.FC = () => {
           </div>
         ) : editMode ? (
           <div className="flex-1 overflow-hidden">{renderEditSlides()}</div>
+        ) : viewMode === 'native' ? (
+          <div className={`flex-1 flex flex-col bg-gray-800 ${nativeFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+            <div className="flex items-center justify-between px-3 py-1.5 bg-gray-700/60 text-xs text-gray-300">
+              <div className="flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5" />
+                <span>浏览器原生 PDF 预览 — 自带连续滚动、缩放、跳页、全屏</span>
+                {pdfError && <span className="text-red-400">· {pdfError}</span>}
+              </div>
+              <button
+                onClick={() => setNativeFullscreen(f => !f)}
+                className="p-1 hover:bg-gray-600 rounded"
+                title={nativeFullscreen ? '退出全屏' : '全屏'}
+              >
+                {nativeFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <div className="flex-1 min-h-0">
+              {pdfLoading ? (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <div className="text-center">
+                    <RotateCcw className="w-8 h-8 animate-spin mx-auto mb-2" />
+                    <p>正在将 PPTX 转为 PDF（首次约 2-5 秒，之后命中缓存秒开）…</p>
+                  </div>
+                </div>
+              ) : pdfUrl ? (
+                <object key={pdfUrl} data={pdfUrl} type="application/pdf" className="w-full h-full">
+                  <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
+                </object>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <p>无 PDF 可预览</p>
+                </div>
+              )}
+            </div>
+          </div>
         ) : viewMode === 'slide' ? (
           <div className="flex-1 flex items-center justify-center p-8">
             <AnimatePresence mode="wait">
@@ -450,14 +528,27 @@ const PPTViewer: React.FC = () => {
       </main>
 
       <footer className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <input type="range" min={0} max={totalSlides - 1} value={currentSlide}
-            onChange={e => setCurrentSlide(parseInt(e.target.value))} className="w-32" />
-        </div>
-        <div className="flex items-center space-x-4 text-sm text-gray-400">
-          <span>{current?.shapes?.[0] && ((current.shapes[0] as any).paragraphs?.[0]?.text || current.shapes[0].text || '')}</span>
-          <span>空格 {isPlaying ? '暂停' : '播放'}</span>
-        </div>
+        {viewMode === 'native' ? (
+          <>
+            <div className="text-xs text-gray-400">
+              原生 PDF 预览模式：使用浏览器内置 PDF 阅读器（连续滚动 / Ctrl+滚轮缩放 / 跳页 / F11 全屏）
+            </div>
+            <div className="text-xs text-gray-500">
+              {currentFileName}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center space-x-2">
+              <input type="range" min={0} max={totalSlides - 1} value={currentSlide}
+                onChange={e => setCurrentSlide(parseInt(e.target.value))} className="w-32" />
+            </div>
+            <div className="flex items-center space-x-4 text-sm text-gray-400">
+              <span>{current?.shapes?.[0] && ((current.shapes[0] as any).paragraphs?.[0]?.text || current.shapes[0].text || '')}</span>
+              <span>空格 {isPlaying ? '暂停' : '播放'}</span>
+            </div>
+          </>
+        )}
       </footer>
     </div>
   );
