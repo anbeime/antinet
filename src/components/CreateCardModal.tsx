@@ -12,8 +12,11 @@ import {
   AlertCircle,
   Image,
   Upload,
-  FolderOpen
+  FolderOpen,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
 const API_BASE = getApiBaseUrl()
@@ -113,6 +116,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadingCount, setUploadingCount] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [projects, setProjects] = useState<{id: number; name: string}[]>([])
 
   // 加载专题列表
@@ -527,7 +531,10 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
+        className={cn(
+          "bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col",
+          isFullscreen ? "w-screen h-screen max-w-none rounded-none" : "w-full max-w-4xl max-h-[90vh]"
+        )}
       >
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
@@ -538,13 +545,23 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               </p>
             )}
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-            aria-label="关闭"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              aria-label={isFullscreen ? '退出全屏' : '全屏'}
+              title={isFullscreen ? '退出全屏' : '全屏'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button 
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              aria-label="关闭"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
         
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -638,12 +655,11 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
               placeholder="输入卡片内容（支持粘贴、拖放图片）..."
-              rows={5}
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none ${
+              className={`w-full min-h-[300px] text-lg leading-relaxed border-2 rounded-lg p-4 focus:outline-none resize-y ${
                 errors.content 
                   ? 'border-red-500 focus:ring-red-500/20 dark:border-red-400' 
-                  : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600'
-              } dark:bg-gray-700`}
+                  : 'border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 bg-white/50 dark:bg-gray-700/50'
+              }`}
             />
             {errors.content && (
               <p className="text-red-500 text-xs mt-1 flex items-center">
