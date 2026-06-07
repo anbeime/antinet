@@ -1,10 +1,16 @@
-@echo off
+﻿@echo off
 chcp 65001 >nul
+REM 切换到脚本所在目录
 cd /d "%~dp0"
 
 echo ========================================
 echo   Zhiyi Quick Start (v2)
 echo ========================================
+echo.
+
+REM 显示当前路径以便调试
+echo 当前工作目录: %cd%
+echo 脚本所在目录: %~dp0
 echo.
 
 REM Kill existing processes
@@ -14,62 +20,57 @@ taskkill /F /IM node.exe >nul 2>&1
 taskkill /F /IM GenieAPIService.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-REM Clear Python bytecode cache to ensure fresh code
-echo [0.5/6] Clearing Python bytecode cache...
-if exist "%~dp0backend\__pycache__" rmdir /s /q "%~dp0backend\__pycache__"
-if exist "%~dp0backend\routes\__pycache__" rmdir /s /q "%~dp0backend\routes\__pycache__"
-if exist "%~dp0backend\conf\__pycache__" rmdir /s /q "%~dp0backend\conf\__pycache__"
-if exist "%~dp0backend\agents\__pycache__" rmdir /s /q "%~dp0backend\agents\__pycache__"
-if exist "%~dp0backend\api\__pycache__" rmdir /s /q "%~dp0backend\api\__pycache__"
-if exist "%~dp0backend\middleware\__pycache__" rmdir /s /q "%~dp0backend\middleware\__pycache__"
-if exist "%~dp0backend\services\__pycache__" rmdir /s /q "%~dp0backend\services\__pycache__"
-echo [OK] Bytecode cache cleared
+REM 检查当前目录是否正确
+if not exist "venv_arm64\Scripts\python.exe" (
+    echo [WARN] 在当前目录未找到venv: %cd%\venv_arm64\
+    echo 尝试在 C:\D\zhiyi 中查找...
+    
+    REM 尝试切换到 C:\D\zhiyi
+    cd /d "C:\D\zhiyi"
+    echo 切换到目录: %cd%
+)
 
 REM Check Python venv
-if not exist "%~dp0venv_arm64\Scripts\python.exe" (
-    echo [ERROR] Python venv not found: %~dp0venv_arm64\Scripts\python.exe
+if not exist "venv_arm64\Scripts\python.exe" (
+    echo [ERROR] Python venv not found!
+    echo 请确保 venv_arm64\Scripts\python.exe 存在
+    echo 当前路径: %cd%\venv_arm64\Scripts\python.exe
     pause
     exit /b 1
 )
-echo [OK] Python venv found
+echo [OK] Python venv found at: %cd%\venv_arm64\Scripts\python.exe
 
 REM Check node_modules
-if not exist "%~dp0node_modules" (
+if not exist "node_modules" (
     echo [INFO] Installing frontend dependencies...
     call pnpm install
 )
 echo [OK] Node modules ready
 
 REM ========================================
-REM [1/6] Genie AI Engine (port 8910) - optional
+REM [1/6] Genie AI Engine (port 8910)
 REM ========================================
-set "GENIE_DIR=C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73"
-set "GENIE_MODEL=C:\models\qwen2.5vl3b-8380-2.42\config.json"
-if exist "%GENIE_DIR%\GenieAPIService.exe" (
-    echo [1/6] Starting Genie AI Engine (port 8910)...
-    start "Genie" cmd /k ""%GENIE_DIR%\GenieAPIService.exe" -c "%GENIE_MODEL%" -l -p 8910 -d 3"
+if exist "C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73\GenieAPIService.exe" (
+    echo [1/6] Starting Genie...
+    start "Genie" cmd /k "C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73\GenieAPIService.exe -c C:\models\qwen2.5vl3b-8380-2.42\config.json -l -p 8910 -d 3"
     timeout /t 5 /nobreak >nul
 ) else (
-    echo [1/6] Genie not found at %GENIE_DIR%, skipping...
+    echo [1/6] Genie not found, skipping...
 )
 
 REM ========================================
-REM [2/6] Zhiyi Backend (port 8000) - with auto-restart watcher
+REM [2/6] Zhiyi Backend (port 8000)
 REM ========================================
-echo [2/6] Starting Zhiyi Backend (auto-restart watcher)...
-if not exist "%~dp0run_backend_watch.bat" (
-    echo [ERROR] run_backend_watch.bat not found, falling back to direct start
-    start "Zhiyi Backend" cmd /k "cd /d "%~dp0backend" && "%~dp0venv_arm64\Scripts\python.exe" main.py"
-) else (
-    start "Zhiyi Backend [Auto-Restart]" cmd /k ""%~dp0run_backend_watch.bat""
-)
-timeout /t 10 /nobreak >nul
+echo [2/6] Starting Zhiyi Backend...
+REM 确保在正确的工作目录启动后端
+start "Zhiyi Backend" cmd /k "cd /d backend && ..\venv_arm64\Scripts\python.exe main.py"
+timeout /t 8 /nobreak >nul
 
 REM ========================================
 REM [4/6] Zhiyi Frontend (port 3000)
 REM ========================================
 echo [4/6] Starting Zhiyi Frontend...
-start "Zhiyi Frontend" cmd /k "cd /d "%~dp0" && pnpm dev"
+start "Zhiyi Frontend" cmd /k "pnpm dev"
 timeout /t 5 /nobreak >nul
 
 REM ========================================
@@ -83,14 +84,10 @@ echo ========================================
 echo   All Services Started
 echo ========================================
 echo.
-if exist "%GENIE_DIR%\GenieAPIService.exe" (
-    echo   Genie:     http://localhost:8910
-)
-echo   Backend:   http://localhost:8000
-echo   Frontend:  http://localhost:3000
-echo.
-echo   Backend crash protection: ENABLED (auto-restart on crash)
-echo   Backend logs: %~dp0logs\
+echo   项目根目录: %cd%
+echo   后端:       http://localhost:8000
+echo   前端:       http://localhost:3000
+echo   Genie:     http://localhost:8910
 echo ========================================
 echo.
 pause

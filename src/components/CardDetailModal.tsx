@@ -253,6 +253,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [savingCard, setSavingCard] = useState(false);
 
   // 全屏切换功能
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -841,19 +842,27 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   };
 
   // 保存编辑
-  const saveEditing = () => {
+  const saveEditing = async () => {
     if (!editTitle.trim()) {
       toast('标题不能为空', { className: 'bg-red-50 text-red-800' });
       return;
     }
+    if (savingCard) return;
+    setSavingCard(true);
     const updatedCard = {
       ...card,
       title: editTitle,
       content: editContent
     };
-    onUpdateCard(updatedCard);
-    setIsEditing(false);
-    toast('卡片已更新', { className: 'bg-green-50 text-green-800' });
+    try {
+      await onUpdateCard(updatedCard);
+      setIsEditing(false);
+      toast('卡片已更新', { className: 'bg-green-50 text-green-800' });
+    } catch {
+      toast('卡片更新失败', { className: 'bg-red-50 text-red-800' });
+    } finally {
+      setSavingCard(false);
+    }
   };
 
   // 分享卡片
@@ -892,7 +901,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   };
 
   // 保存关联卡片更改
-  const saveRelationChanges = () => {
+  const saveRelationChanges = async () => {
     const updatedCard = {
       ...card,
       relatedCards: editingRelatedCards
@@ -900,13 +909,18 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     if (!updatedCard.relatedCards) {
       updatedCard.relatedCards = [];
     }
-    onUpdateCard(updatedCard);
-    setIsEditingRelations(false);
-    // 重新加载双向链接数据以保持同步
-    setTimeout(() => loadBacklinks(), 500);
-    toast('关联卡片已更新', {
-      className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-    });
+    try {
+      await onUpdateCard(updatedCard);
+      setIsEditingRelations(false);
+      setTimeout(() => loadBacklinks(), 500);
+      toast('关联卡片已更新', {
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
+    } catch {
+      toast('关联卡片更新失败', {
+        className: 'bg-red-50 text-red-800 dark:bg-red-900 dark:text-red-100'
+      });
+    }
   };
 
   // 取消关联编辑
@@ -937,6 +951,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     };
     return names[type] || type;
   };
+
+  if (!card || !isOpen) return null;
 
   return (
     <motion.div
@@ -993,10 +1009,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   取消
                 </button>
                 <button
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={saveEditing}
+                  disabled={savingCard}
                 >
-                  保存
+                  {savingCard ? '保存中...' : '保存'}
                 </button>
               </>
             ) : (
@@ -1222,18 +1239,6 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
                   {card.address}
                 </div>
-                {/* 维度2: 编辑卡片按钮 - 复用知识管理功能 */}
-                <button
-                  className="text-xs text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
-                  onClick={() => {
-                    // 打开知识管理页面的编辑模式
-                    window.open(`/knowledge-management?editCard=${card.id}`, '_blank');
-                  }}
-                  title="编辑卡片（在新窗口打开知识管理）"
-                >
-                  <Edit2 size={12} />
-                  编辑
-                </button>
                 {/* 源文件溯源按钮 - 微信读书风格：主按钮可直接点击跳转查看，下拉菜单提供更多操作 */}
                 {sourceFileLoading && (
                   <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-0.5 flex items-center gap-1">
@@ -1325,7 +1330,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="w-full min-h-[200px] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none"
+                className="w-full min-h-[300px] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
                 placeholder="输入卡片内容..."
               />
             ) : (

@@ -700,31 +700,24 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 更新卡片
   const handleUpdateCard = async (updatedCard: KnowledgeCard) => {
-    // 确保关联卡片数组存在
     const cardWithValidRelations = {
       ...updatedCard,
       relatedCards: updatedCard.relatedCards || []
     };
-    
-    // 更新卡片列表
+    const prevCards = cards;
+    const prevSelected = selectedCard;
     const updatedCards = cards.map(card => 
       card.id === updatedCard.id ? cardWithValidRelations : card
     );
-    
-    // 设置更新后的卡片列表
     setCards(updatedCards);
-    
-    // 更新选中的卡片
     setSelectedCard(cardWithValidRelations);
-    
-    // 持久化到后端API
     try {
       const cardId = parseInt(updatedCard.id);
       if (!isNaN(cardId)) {
         const categoryMap: Record<string, string> = {
           blue: '事实', green: '解释', yellow: '风险', red: '行动'
         };
-        await fetch(getApiBaseUrl() + `/api/knowledge/cards/${cardId}`, {
+        const res = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${cardId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -736,9 +729,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
             related_cards: cardWithValidRelations.relatedCards.map(Number).filter(id => !isNaN(id))
           })
         });
+        if (!res.ok) throw new Error('同步失败');
       }
     } catch (err) {
       console.error('同步关联卡片到后端失败:', err);
+      setCards(prevCards);
+      setSelectedCard(prevSelected);
+      throw err;
     }
   };
 

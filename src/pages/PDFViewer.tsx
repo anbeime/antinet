@@ -286,11 +286,13 @@ const PDFViewer: React.FC = () => {
       if (isNewCard) {
         const res = await fetch(`${API_BASE}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (res.ok) { const saved = await res.json(); setSelectedCard(saved); setIsNewCard(false); loadCards(); }
+        else { toast.error('保存失败'); }
       } else if (selectedCard?.id) {
         const res = await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (res.ok) { const updated = await res.json(); setSelectedCard(updated); loadCards(); }
+        else { toast.error('保存失败'); }
       }
-    } catch {} finally { setSaving(false); }
+    } catch { toast.error('保存失败'); } finally { setSaving(false); }
   };
 
   const handleDeleteCard = async () => {
@@ -300,7 +302,7 @@ const PDFViewer: React.FC = () => {
       await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
       setSelectedCard(null); setIsNewCard(false); setActiveView('pdf');
       loadCards();
-    } catch {}
+    } catch { toast.error('删除失败'); }
   };
 
   // 客户端按专题过滤卡片
@@ -622,13 +624,15 @@ const PDFViewer: React.FC = () => {
                 const existing = JSON.parse(localStorage.getItem('bookskill_notes') || '[]');
                 const id = selectedCard?.id || `note-${Date.now()}`;
                 const noteData = { id, title: cardTitle || '无标题', content: cardContent, contentHtml: renderMarkdown(cardContent), card_type: cardType, addedAt: new Date().toISOString() };
-                if (!existing.find((m: any) => m.id === id)) {
+                const idx = existing.findIndex((m: any) => m.id === id);
+                if (idx === -1) {
                   existing.push(noteData);
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
                   toast.success('已保存到笔记', {
                     action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }
                   });
-                  existing[existing.findIndex((m: any) => m.id === id)] = noteData;
+                } else {
+                  existing[idx] = noteData;
                   localStorage.setItem('bookskill_notes', JSON.stringify(existing));
                   toast.success('笔记已更新', {
                     action: { label: '查看', onClick: () => window.open('/book-skill?tab=notes', '_blank') }

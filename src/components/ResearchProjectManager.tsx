@@ -1349,10 +1349,25 @@ const ProjectDetailPanel: React.FC<{
               const target = cards.find(c => String(c.id) === id);
               if (target) setPreviewCard(target);
             }}
-            onUpdateCard={(updatedCard: KnowledgeCardForDetail) => {
-              const updated = convertKnowledgeCardToProjectCard(updatedCard);
-              setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
-              toast.success('卡片已更新');
+            onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
+              try {
+                const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${updatedCard.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: updatedCard.title,
+                    content: updatedCard.content,
+                    card_type: updatedCard.color,
+                    related_cards: updatedCard.relatedCards?.map(Number),
+                  })
+                });
+                if (!res.ok) throw new Error('更新失败');
+                const updated = convertKnowledgeCardToProjectCard(updatedCard);
+                setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
+                toast.success('卡片已更新');
+              } catch {
+                toast.error('卡片更新失败');
+              }
             }}
             onCreateRecommendedCard={(title: string) => toast.info(`推荐: ${title}`)}
           />
