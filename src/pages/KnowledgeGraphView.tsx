@@ -8,10 +8,11 @@ import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
   Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Presentation
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import AppHeader from '@/components/AppHeader';
+import { toast } from 'sonner';
 
 const API_BASE = getApiBaseUrl()
 
@@ -984,10 +985,49 @@ return (
                 <h2 className="text-base font-semibold dark:text-white flex items-center gap-1.5">
                   <List className="w-4 h-4" /> 卡片列表
                 </h2>
-                <button onClick={loadCards} disabled={listLoading}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50">
-                  <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={async () => {
+                    const ids = (() => {
+                      const filtered = cards.filter((card: any) => {
+                        const t = card.card_type || card.type || 'blue';
+                        if (listColorFilter !== 'all' && t !== listColorFilter) return false;
+                        if (listSearch) {
+                          const getText = (c: any): string => {
+                            if (!c) return '';
+                            if (typeof c === 'string') return c;
+                            if (typeof c === 'object') return c.description || c.text || JSON.stringify(c);
+                            return String(c);
+                          };
+                          const q = listSearch.toLowerCase();
+                          if (!(card.title||'').toLowerCase().includes(q) && !getText(card.content).toLowerCase().includes(q)) return false;
+                        }
+                        return true;
+                      });
+                      return filtered.map((c: any) => c.id);
+                    })();
+                    if (ids.length === 0) { toast.warning('没有匹配的卡片'); return; }
+                    try {
+                      const r = await fetch(`${API_BASE}/api/knowledge/cards/export/ppt`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ card_ids: ids }),
+                      });
+                      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '导出失败'); }
+                      const blob = await r.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `cards_${ids.length}slides.pptx`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      toast.success(`已导出 ${ids.length} 张卡片为 PPT`);
+                    } catch (e: any) { toast.error('PPT 导出失败: ' + e.message); }
+                  }}
+                    className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                    title="将当前筛选出的卡片导出为 PPT（每页一张卡片）">
+                    <Presentation className="w-4 h-4" />
+                  </button>
+                  <button onClick={loadCards} disabled={listLoading}
+                    className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50">
+                    <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
               </div>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />

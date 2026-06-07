@@ -3,7 +3,7 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ========================================
-echo   Zhiyi Quick Start
+echo   Zhiyi Quick Start (v2)
 echo ========================================
 echo.
 
@@ -26,8 +26,8 @@ if exist "%~dp0backend\services\__pycache__" rmdir /s /q "%~dp0backend\services\
 echo [OK] Bytecode cache cleared
 
 REM Check Python venv
-if not exist "C:\D\zhiyi\venv_arm64\Scripts\python.exe" (
-    echo [ERROR] Python venv not found!
+if not exist "%~dp0venv_arm64\Scripts\python.exe" (
+    echo [ERROR] Python venv not found: %~dp0venv_arm64\Scripts\python.exe
     pause
     exit /b 1
 )
@@ -41,28 +41,35 @@ if not exist "%~dp0node_modules" (
 echo [OK] Node modules ready
 
 REM ========================================
-REM [1/6] Genie AI Engine (port 8910)
+REM [1/6] Genie AI Engine (port 8910) - optional
 REM ========================================
-if exist "C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73\GenieAPIService.exe" (
-    echo [1/6] Starting Genie...
-    start "Genie" cmd /k "C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73\GenieAPIService.exe -c C:\models\qwen2.5vl3b-8380-2.42\config.json -l -p 8910 -d 3"
+set "GENIE_DIR=C:\models\GenieAPIService_v2.1.4_QAIRT_v2.42.0_v73"
+set "GENIE_MODEL=C:\models\qwen2.5vl3b-8380-2.42\config.json"
+if exist "%GENIE_DIR%\GenieAPIService.exe" (
+    echo [1/6] Starting Genie AI Engine (port 8910)...
+    start "Genie" cmd /k ""%GENIE_DIR%\GenieAPIService.exe" -c "%GENIE_MODEL%" -l -p 8910 -d 3"
     timeout /t 5 /nobreak >nul
 ) else (
-    echo [1/6] Genie not found, skipping...
+    echo [1/6] Genie not found at %GENIE_DIR%, skipping...
 )
 
 REM ========================================
 REM [2/6] Zhiyi Backend (port 8000) - with auto-restart watcher
 REM ========================================
 echo [2/6] Starting Zhiyi Backend (auto-restart watcher)...
-start "Zhiyi Backend" cmd /k "C:\D\zhiyi\run_backend_watch.bat"
+if not exist "%~dp0run_backend_watch.bat" (
+    echo [ERROR] run_backend_watch.bat not found, falling back to direct start
+    start "Zhiyi Backend" cmd /k "cd /d "%~dp0backend" && "%~dp0venv_arm64\Scripts\python.exe" main.py"
+) else (
+    start "Zhiyi Backend [Auto-Restart]" cmd /k ""%~dp0run_backend_watch.bat""
+)
 timeout /t 10 /nobreak >nul
 
 REM ========================================
 REM [4/6] Zhiyi Frontend (port 3000)
 REM ========================================
 echo [4/6] Starting Zhiyi Frontend...
-start "Zhiyi Frontend" cmd /k "cd /d C:\D\zhiyi && pnpm dev"
+start "Zhiyi Frontend" cmd /k "cd /d "%~dp0" && pnpm dev"
 timeout /t 5 /nobreak >nul
 
 REM ========================================
@@ -76,10 +83,14 @@ echo ========================================
 echo   All Services Started
 echo ========================================
 echo.
-echo   Genie:     http://localhost:8910
-
+if exist "%GENIE_DIR%\GenieAPIService.exe" (
+    echo   Genie:     http://localhost:8910
+)
 echo   Backend:   http://localhost:8000
 echo   Frontend:  http://localhost:3000
+echo.
+echo   Backend crash protection: ENABLED (auto-restart on crash)
+echo   Backend logs: %~dp0logs\
 echo ========================================
 echo.
 pause

@@ -622,6 +622,10 @@ const PPTAnalysis: React.FC = () => {
                       <span>二级标题 → 创建新页面</span>
                     </div>
                     <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">---</code>
+                      <span>分隔线（独占一行）→ 强制分页</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
                       <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">###</code>
                       <span>三级标题 → 页面小标题</span>
                     </div>
