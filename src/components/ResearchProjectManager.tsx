@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { Document, Page, Text, View, StyleSheet, pdf, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
 import { 
   Book, 
   Plus, 
@@ -110,31 +111,14 @@ const cardTypeConfig: Record<string, { name: string; color: string; bgColor: str
 
 const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
 
-// ========== 内容渲染组件（处理图片） ==========
+// ========== 内容渲染组件 ==========
 const RenderContent: React.FC<{ content: string }> = ({ content }) => {
   if (!content) return null;
   
-  const parts = content.split(/(!\[image\]\([^)]+\))/g);
-  
   return (
-    <span>
-      {parts.map((part, index) => {
-        const imageMatch = part.match(/!\[image\]\(([^)]+)\)/);
-        if (imageMatch) {
-          const url = imageMatch[1];
-          return (
-            <img 
-              key={index} 
-              src={url} 
-              alt="card image" 
-              className="max-w-full h-auto rounded my-1"
-              style={{ maxHeight: '80px' }}
-            />
-          );
-        }
-        return <span key={index}>{part}</span>;
-      })}
-    </span>
+    <div className="prose prose-gray dark:prose-invert max-w-none text-sm [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
   );
 };
 
@@ -197,6 +181,7 @@ const ProjectDetailPanel: React.FC<{
   const [unconvertedCards, setUnconvertedCards] = useState<ProjectCard[]>([]);
   const [exportingPPT, setExportingPPT] = useState(false);
   const [pptResult, setPptResult] = useState<{ filename: string; success: boolean; message: string } | null>(null);
+  const loadIdRef = useRef(0);
 
   const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
 
@@ -1307,7 +1292,21 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   const [openProject, setOpenProject] = useState<ResearchProject | null>(null);
   const [newProject, setNewProject] = useState({ name: '', description: '', color: 'blue', icon: '📚' });
 
+  const autoOpened = useRef(false);
+
   useEffect(() => { loadProjects(); }, []);
+
+  // 当从URL传入selectedProjectId时，自动打开对应专题（仅首次）
+  useEffect(() => {
+    if (autoOpened.current) return;
+    if (selectedProjectId && projects.length > 0) {
+      const project = projects.find(p => p.id === selectedProjectId);
+      if (project) {
+        setOpenProject(project);
+        autoOpened.current = true;
+      }
+    }
+  }, [selectedProjectId, projects]);
 
   const loadProjects = async () => {
     try {

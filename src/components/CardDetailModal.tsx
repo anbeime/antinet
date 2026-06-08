@@ -993,7 +993,6 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 className="text-xl font-bold bg-transparent border-b-2 border-blue-500 focus:outline-none flex-1 min-w-0"
-                autoFocus
               />
             ) : (
               <h2 className="text-xl font-bold truncate">{card.title}</h2>
@@ -2402,8 +2401,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               {/* 放大后的卡片内容 */}
               <div className="flex-1 overflow-y-auto p-8">
                 <div className={`${cardTypeMap[card.color].bgColor} border ${cardTypeMap[card.color].borderColor} rounded-xl p-8`}>
-                  <div className="text-lg leading-relaxed whitespace-pre-wrap" style={{ whiteSpace: 'pre-wrap' }}>
-                    {card.content}
+                  <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
+                    <ReactMarkdown>{card.content}</ReactMarkdown>
                   </div>
                 </div>
                 

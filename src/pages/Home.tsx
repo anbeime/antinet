@@ -157,10 +157,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   
   // 从URL参数获取tab
   const urlTab = searchParams.get('tab');
+  const urlProjectId = searchParams.get('project');
   
-  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>('cards');
+  const [knowledgeSubTab, setKnowledgeSubTab] = useState<'cards' | 'research' | 'knowledge-graph' | 'mindmap'>(() => {
+    if (urlTab === 'research') return 'research';
+    return 'cards';
+  });
   const [cardViewMode, setCardViewMode] = useState<'grid' | 'timeline'>('grid');
   const [activeTab, setActiveTab] = useState<string>(() => {
+    if (urlTab === 'research') return 'cards-management';
     if (urlTab) return urlTab;
     if (initialTab === 'remotion') return 'remotion';
     return 'dashboard';
@@ -1497,8 +1502,24 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <span className="text-blue-600">已选择 {selectedCardIds.size} 张卡片</span>
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => {
-                      selectedCardIds.forEach(id => handleDeleteCard(id));
+                    onClick={async () => {
+                      const ids = Array.from(selectedCardIds);
+                      try {
+                        const resp = await fetch(getApiBaseUrl() + '/api/knowledge/batch-delete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ card_ids: ids.map(Number) }),
+                        });
+                        if (resp.ok) {
+                          const result = await resp.json();
+                          setCards(prev => prev.filter(c => !ids.includes(c.id)));
+                          toast.success(`成功删除 ${result.deleted}/${result.total} 张卡片`);
+                        } else {
+                          toast.error('批量删除失败，请检查后端服务');
+                        }
+                      } catch {
+                        toast.error('批量删除失败，请检查后端服务');
+                      }
                       setSelectedCardIds(new Set());
                     }}
                     className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
@@ -1560,7 +1581,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                         }
                         return (
                           <div>
-                            <p className="text-sm text-gray-600 whitespace-pre-wrap mb-1">{card.content}</p>
+                            <div className="text-sm text-gray-600 mb-1 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
+                              <ReactMarkdown>{card.content}</ReactMarkdown>
+                            </div>
                             {isLong && <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">收起</button>}
                           </div>
                         );
@@ -1680,7 +1703,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
 
           {knowledgeSubTab === 'research' && (
-            <ResearchProjectManager />
+            <ResearchProjectManager selectedProjectId={urlProjectId ? Number(urlProjectId) : null} />
           )}
 
           {knowledgeSubTab === 'knowledge-graph' && (
@@ -1989,8 +2012,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                              </div>
                            </div>
                          </div>
-                         <div className="p-3 bg-paper dark:bg-dark-mute">
-                           <p className="text-sm text-ink-desc dark:text-ink-desc line-clamp-3 mb-2">{card.content}</p>
+                          <div className="p-3 bg-paper dark:bg-dark-mute">
+                            <div className="text-sm text-ink-desc dark:text-ink-desc line-clamp-3 mb-2 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1"><ReactMarkdown>{card.content}</ReactMarkdown></div>
                            <div className="flex items-center justify-between text-xs text-ink-desc">
                              <span>ID: {card.id}</span>
                              <span>{formatDate(card.createdAt)}</span>

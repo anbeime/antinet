@@ -21,6 +21,7 @@ interface BatchFile {
   result?: any;
   extractedCards?: ExtractedCard[];
   error?: string;
+  sourceFileId?: string;
 }
 
 interface ExtractedCard {
@@ -263,13 +264,12 @@ const getFileType = (filename: string): BatchFile['type'] => {
         const batchResult = await response.json();
         const results = batchResult.results || [];
 
-        // 更新每个文件的状态
+        // 更新每个文件的状态（按索引匹配，确保与 formData 顺序一致）
         let totalAgentCards = 0;
         for (const result of results) {
-          const matchedFile = waitingFiles.find(wf => wf.name === result.filename);
+          const matchedFile = waitingFiles[result.index];
           if (matchedFile) {
             const extractedCards: ExtractedCard[] = [];
-            // 从批量API返回中提取卡片详情
             if (result.success && result.cards && Array.isArray(result.cards)) {
               for (const card of result.cards) {
                 extractedCards.push({
@@ -288,6 +288,7 @@ const getFileType = (filename: string): BatchFile['type'] => {
                     progress: result.success ? 100 : 0,
                     result,
                     extractedCards,
+                    sourceFileId: result.source_file_id || undefined,
                     error: result.error
                   }
                 : f
