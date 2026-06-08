@@ -369,14 +369,24 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // 内容区引用（选中文本检测）
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // 当卡片数据变化时，更新编辑中的关联列表
+  // 打开模态框或切换卡片时，重置编辑/选中状态
   useEffect(() => {
-    if (card) {
+    if (isOpen && card) {
+      setIsEditing(false);
+      setSelectedText('');
       setEditingRelatedCards([...card.relatedCards]);
       setEditTitle(card.title);
       setEditContent(card.content);
     }
-  }, [card?.relatedCards, card?.title, card?.content]);
+  }, [isOpen, card?.id]);
+
+  // 卡片内容变化时同步编辑字段（不重置编辑模式）
+  useEffect(() => {
+    if (card) {
+      setEditTitle(card.title);
+      setEditContent(card.content);
+    }
+  }, [card?.title, card?.content]);
 
   // 点击加载 AI 知识洞察
   const loadInsights = () => {
@@ -1340,13 +1350,41 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 placeholder="输入卡片内容..."
               />
             ) : (
-              <div
-                ref={contentRef}
-                onMouseUp={handleTextSelect}
-                className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
-              >
-                <ReactMarkdown>{card.content}</ReactMarkdown>
-              </div>
+              <>
+                <div
+                  ref={contentRef}
+                  onMouseUp={handleTextSelect}
+                  className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
+                >
+                  <ReactMarkdown>{card.content}</ReactMarkdown>
+                </div>
+                {/* P0: 选中文本提示条 — 紧跟在内容下方 */}
+                {!isEditing && selectedText && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-between"
+                  >
+                    <span className="text-sm text-amber-700 dark:text-amber-300 truncate max-w-[70%]">
+                      已选: 「{selectedText.slice(0, 40)}{selectedText.length > 40 ? '...' : ''}」
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                        onClick={() => openCreateTask()}
+                      >
+                        <ListTodo size={12} /> 创建任务
+                      </button>
+                      <button
+                        className="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-1"
+                        onClick={openCreateEvent}
+                      >
+                        <Calendar size={12} /> 创建日程
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </>
             )}
             
 {/* 图片附件展示 - 包括images数组和content中的markdown图片 */}
@@ -1402,32 +1440,6 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               );
             })()}
             
-            {/* P0: 选中文本提示条 */}
-            {!isEditing && selectedText && (
-              <motion.div
-                initial={{ opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg flex items-center justify-between"
-              >
-                <span className="text-sm text-amber-700 dark:text-amber-300 truncate max-w-[70%]">
-                  已选: 「{selectedText.slice(0, 40)}{selectedText.length > 40 ? '...' : ''}」
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors flex items-center gap-1"
-                    onClick={() => openCreateTask()}
-                  >
-                    <ListTodo size={12} /> 创建任务
-                  </button>
-                  <button
-                    className="text-xs px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center gap-1"
-                    onClick={openCreateEvent}
-                  >
-                    <Calendar size={12} /> 创建日程
-                  </button>
-                </div>
-              </motion.div>
-            )}
           </div>
 
           {/* P0: Tab 切换栏 */}

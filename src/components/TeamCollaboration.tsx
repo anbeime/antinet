@@ -840,92 +840,94 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setIsTaskModalOpen(true);
   };
 
-  const handleSaveTask = () => {
+  const handleSaveTask = async () => {
     if (!editingTask) return;
-    
-    setProjects(projects.map(project => {
-      if (project.id === editingTask.projectId) {
-        let updatedTasks;
-        if (editingTask.id === 0) {
-          const newTask = { ...editingTask, id: Date.now() };
-          updatedTasks = [...project.tasks, newTask];
-        } else {
-          updatedTasks = project.tasks.map(t => t.id === editingTask.id ? editingTask : t);
-        }
-        
-        // 更新项目进度
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: editingTask.id === 0 
-          ? [...selectedProject.tasks, { ...editingTask, id: Date.now() }]
-          : selectedProject.tasks.map(t => t.id === editingTask.id ? editingTask : t)
-      });
+
+    const project = projects.find(p => p.id === editingTask.projectId);
+    if (!project) return;
+
+    let updatedTasks;
+    if (editingTask.id === 0) {
+      const newTask = { ...editingTask, id: Date.now() };
+      updatedTasks = [...project.tasks, newTask];
+    } else {
+      updatedTasks = project.tasks.map(t => t.id === editingTask.id ? editingTask : t);
     }
-    
+
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('保存任务到后端失败:', err);
+    }
+
+    setProjects(projects.map(p =>
+      p.id === editingTask.projectId ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === editingTask.projectId) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
+
     setIsTaskModalOpen(false);
     setEditingTask(null);
     toast.success(editingTask.id === 0 ? '任务添加成功' : '任务更新成功');
   };
 
-  const handleDeleteTask = (taskId: number) => {
+  const handleDeleteTask = async (taskId: number) => {
     if (!confirm('确定要删除这个任务吗，')) return;
-    
-    setProjects(projects.map(project => {
-      if (project.tasks.some(t => t.id === taskId)) {
-        const updatedTasks = project.tasks.filter(t => t.id !== taskId);
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: selectedProject.tasks.filter(t => t.id !== taskId)
-      });
+
+    const project = projects.find(p => p.tasks.some(t => t.id === taskId));
+    if (!project) return;
+
+    const updatedTasks = project.tasks.filter(t => t.id !== taskId);
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('删除任务后端同步失败:', err);
     }
-    
+
+    setProjects(projects.map(p =>
+      p.id === project.id ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === project.id) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
+
     toast.success('任务删除成功');
   };
 
-  const handleToggleTask = (taskId: number) => {
-    setProjects(projects.map(project => {
-      if (project.tasks.some(t => t.id === taskId)) {
-        const updatedTasks = project.tasks.map(t => 
-          t.id === taskId 
-            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
-            : t
-        );
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: selectedProject.tasks.map(t => 
-          t.id === taskId 
-            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
-            : t
-        )
-      });
-}
+  const handleToggleTask = async (taskId: number) => {
+    const project = projects.find(p => p.tasks.some(t => t.id === taskId));
+    if (!project) return;
+
+    const updatedTasks = project.tasks.map(t =>
+      t.id === taskId
+        ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
+        : t
+    );
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('切换任务状态后端同步失败:', err);
+    }
+
+    setProjects(projects.map(p =>
+      p.id === project.id ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === project.id) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
   };
 
   // ========== 归档/取消归档项目 ==========
