@@ -1083,6 +1083,9 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     title="查看双向链接"
                     onClick={() => {
                       setActiveTab('backlinks');
+                      setTimeout(() => {
+                        document.getElementById('backlinks-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 100);
                     }}
                   >
                     <Link size={18} />
@@ -1230,7 +1233,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 {(() => {
                   const proj = projects.find(p => p.id === card.projectId);
                   return proj ? (
-                    <span className="text-xs text-indigo-600 dark:text-indigo-400 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center gap-1">
+                    <span
+                      className="text-xs text-indigo-600 dark:text-indigo-400 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center gap-1 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+                      onClick={() => window.open(`/?tab=research&project=${proj.id}`, '_blank')}
+                      title={`查看专题「${proj.name}」`}
+                    >
                       <BarChart3 size={12} />
                       {proj.name}
                     </span>
@@ -1703,7 +1710,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
           {/* P0: Tab 内容: 双向链接 */}
           {activeTab === 'backlinks' && (
-            <div className="mb-6 space-y-4">
+            <div id="backlinks-section" className="mb-6 space-y-4">
               {backlinksLoading ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   <div className="animate-spin w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full mx-auto mb-2"></div>
@@ -2014,7 +2021,15 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       key={idx}
                       whileHover={{ x: 5 }}
                       className="border border-purple-200 dark:border-purple-800 rounded-lg p-4 cursor-pointer hover:shadow-md transition-all bg-purple-50/30 dark:bg-purple-900/10"
-                      onClick={() => onRelatedCardClick(suggestion.card_id)}
+                      onClick={() => {
+                        const found = allCards.find(c => c.id === suggestion.card_id);
+                        if (found) {
+                          onRelatedCardClick(suggestion.card_id);
+                        } else {
+                          window.open(`/?tab=cards-management`, '_blank');
+                          toast('该卡片不在当前视图中，已跳转到知识卡片管理', { className: 'bg-blue-50 text-blue-800' });
+                        }
+                      }}
                     >
                       <div className="flex items-start justify-between">
                         <div className="flex-1">

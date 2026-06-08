@@ -1265,7 +1265,8 @@ async def get_project_tasks(project_id: int):
                 "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
                 "assigned_to": row["assigned_to"],
                 "assigned_to_name": row["assigned_to_name"],
-                "project_id": row["project_id"]
+                "project_id": row["project_id"],
+                "kanban_status": row["kanban_status"] or "backlog"
             })
         return tasks
     except HTTPException:
