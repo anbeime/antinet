@@ -27,7 +27,6 @@ import type {
   SkillResult,
   SceneType
 } from '@/services/enhancedChatService';
-import { fileToBase64 } from '@/services/visionService';
 import { CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import CardDetailModal from '@/components/CardDetailModal';
@@ -513,6 +512,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imageData, setImageData] = useState<string | null>(null);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   
   // 语音相关状态
   const [isListening, setIsListening] = useState(false);
@@ -603,20 +603,27 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       setSelectedImage(file);
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
-      
-      // 转换为Base64
-      fileToBase64(file).then(base64 => {
+
+      // 读取完整 DataURL（供显示）+ 裸 Base64（供 API）
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fullDataUrl = reader.result as string;
+        const base64 = fullDataUrl.split(',')[1];
         setImageData(base64);
-      }).catch(error => {
-        console.error('图片转换失败:', error);
+        setImageDataUrl(fullDataUrl);
+      };
+      reader.onerror = () => {
+        console.error('图片转换失败');
         toast.error('图片处理失败');
-      });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const handleRemoveImage = () => {
     setSelectedImage(null);
     setImageData(null);
+    setImageDataUrl(null);
     if (previewUrl) {
       const oldUrl = previewUrl;
       setPreviewUrl(null);          // 先置空，React 不会再挂载旧 img
@@ -698,7 +705,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             if (transcript) {
               setInput(transcript);
               toast.success(`识别: ${transcript}`, { duration: 2000 });
-              setTimeout(() => handleSendWithText(transcript, imageData || undefined), 300);
+              setTimeout(() => handleSendWithText(transcript, imageData || undefined, imageDataUrl || undefined), 300);
             } else {
               toast.error('未识别到语音内容，请重试');
             }
@@ -836,10 +843,10 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   // 发送消息
   const handleSend = async () => {
     if (!input.trim() && !selectedImage) return;
-    await handleSendWithText(input.trim(), imageData || undefined);
+    await handleSendWithText(input.trim(), imageData || undefined, imageDataUrl || undefined);
   };
 
-  const handleSendWithText = async (text: string, imgData?: string) => {
+  const handleSendWithText = async (text: string, imgData?: string, imgDisplayUrl?: string) => {
     if (!text.trim() && !imgData) return;
 
     const query = text.trim();
@@ -852,7 +859,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         content: query,
         timestamp: new Date().toISOString(),
         metadata: {
-          image_url: imgData || undefined
+          image_url: imgDisplayUrl || undefined
         }
       };
       setMessages(prev => [...prev, userMessage]);
