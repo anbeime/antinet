@@ -368,14 +368,27 @@ const TeamCollaborationEnhanced: React.FC = () => {
         ]);
 
         // 设置团队成员数据
-        setTeamMembers(members.map((m, idx) => ({
+        const mappedMembers = members.map((m, idx) => ({
           ...m,
           id: m.id || idx + 1,
           avatar: m.avatar || '👤',
           online: m.online ?? Math.random() > 0.5,
           contribution: m.contribution || Math.floor(Math.random() * 100),
           permissions: m.permissions || ['read', 'write']
-        })));
+        }));
+        // 确保当前登录用户在成员列表中（用其昵称）
+        if (userInfo?.name && !mappedMembers.some((m: any) => m.name === userInfo.name)) {
+          mappedMembers.push({
+            id: Date.now() + 999,
+            name: userInfo.name,
+            role: userInfo.role || '成员',
+            avatar: userInfo.avatar || '👤',
+            online: true,
+            contribution: 0,
+            permissions: ['read', 'write']
+          });
+        }
+        setTeamMembers(mappedMembers);
 
         // 记录最近活动用于展示
         if (activities && activities.length > 0) {
@@ -541,6 +554,31 @@ const TeamCollaborationEnhanced: React.FC = () => {
       if (key) cache.set(key, card);
     });
   }, [topicCards, discussionCards, referencedCards]);
+
+  // 缓存历史消息中所有 @[卡片] 引用，确保旧消息中的卡片也可点击
+  useEffect(() => {
+    const cache = cardCacheRef.current;
+    const regex = /@\[([^\]]+)\]/g;
+    messages.forEach(msg => {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(msg.content)) !== null) {
+        const title = match[1];
+        if (!cache.has(title)) {
+          cache.set(title, { title, name: title, id: 'history_' + title, content: title });
+        }
+      }
+      (msg.replies || []).forEach(reply => {
+        regex.lastIndex = 0;
+        while ((match = regex.exec(reply.content)) !== null) {
+          const title = match[1];
+          if (!cache.has(title)) {
+            cache.set(title, { title, name: title, id: 'history_' + title, content: title });
+          }
+        }
+      });
+    });
+  }, [messages]);
 
   // ========== 团队成员管理 ==========
   const handleSaveMember = async () => {

@@ -413,8 +413,11 @@ class EnhancedPPTProcessor:
         # 添加标题页
         self.add_title_slide(prs, title)
         
+        # 内容页卡片类型轮询（避免所有卡片同一颜色）
+        _type_cycle = [CardType.FACT, CardType.INTERPRET, CardType.RISK, CardType.ACTION]
+        
         # 添加内容页
-        for slide_data in slides_data:
+        for i, slide_data in enumerate(slides_data):
             slide_title = slide_data.get('title', '')
             slide_content = slide_data.get('content', [])
             
@@ -439,8 +442,8 @@ class EnhancedPPTProcessor:
             
             content_str = '\n'.join(content_lines)
             
-            # 使用事实卡片样式作为默认
-            self.add_card_slide(prs, CardType.FACT, slide_title, content_str)
+            card_type = _type_cycle[i % len(_type_cycle)]
+            self.add_card_slide(prs, card_type, slide_title, content_str)
         
         prs.save(output_path)
     

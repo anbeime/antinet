@@ -871,24 +871,55 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         saved_filename = f"{clean_name.replace(' ', '_')}_{int(datetime.now().timestamp())}.pptx"
         saved_path = output_dir / saved_filename
         
-        # 使用PPT处理器生成
+        # 直接从卡片数据生成PPT（跳过Markdown序列化/反序列化，避免卡片合并和类型丢失）
         if USE_ENHANCED:
-            processor = EnhancedPPTProcessor()
+            # 四色 -> EnhancedPPTProcessor 类型映射
+            _CARD_TYPE_MAP = {
+                'blue': 'fact',
+                'green': 'interpret',
+                'yellow': 'risk',
+                'red': 'action',
+                'fact': 'fact',
+                'interpret': 'interpret',
+                'risk': 'risk',
+                'action': 'action',
+            }
+            
+            ppt_cards = []
+            for section in organized:
+                for card in section['cards']:
+                    content = card.get('content', '')
+                    if isinstance(content, list):
+                        content = '\n'.join(content)
+                    
+                    raw_type = card.get('card_type', card.get('type', 'fact'))
+                    mapped_type = _CARD_TYPE_MAP.get(raw_type, 'fact')
+                    
+                    ppt_cards.append({
+                        'type': mapped_type,
+                        'title': card.get('title', '无标题'),
+                        'content': content,
+                        'tags': card.get('tags', []),
+                    })
+            
+            prs = processor.create_cards_presentation(
+                cards=ppt_cards,
+                title=request.title or project['name']
+            )
+            prs.save(str(saved_path))
         else:
-            processor = PPTProcessor()
-        
-        # 将slides转为Markdown格式再生成PPT
-        md_content = _slides_to_markdown(slides)
-        
-        from tools.ppt_processor import parse_markdown_content
-        slides_data = parse_markdown_content(md_content)
-        
-        processor.create_presentation_from_slides(
-            slides_data=slides_data,
-            title=request.title or project['name'],
-            output_path=str(saved_path),
-            theme=request.theme
-        )
+            # 降级：使用旧版PPTProcessor
+            from tools.ppt_processor import parse_markdown_content
+            
+            md_content = _slides_to_markdown(slides)
+            slides_data = parse_markdown_content(md_content)
+            
+            processor.create_presentation_from_slides(
+                slides_data=slides_data,
+                title=request.title or project['name'],
+                output_path=str(saved_path),
+                theme=request.theme
+            )
         
         # 返回文件名
         return {
@@ -923,10 +954,10 @@ def _slides_to_markdown(slides: List[Dict]) -> str:
             if slide.get('subtitle'):
                 lines.append(f"\n{slide['subtitle']}")
         else:
-            lines.append(f"\n### {slide.get('title', '')}")
+            # 每个内容幻灯片独立成页（用 --- 分隔），避免 parse_markdown_content 合并
+            lines.append(f"\n---\n\n## {slide.get('title', '')}")
             content = slide.get('content', '')
             if content:
-                # 按行拆分内容，添加要点标记
                 for line in content.split('\n'):
                     line = line.strip()
                     if line:
