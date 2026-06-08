@@ -1570,8 +1570,8 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                         <div className="flex gap-1">
                           <button onClick={(e) => handleCopyCard(card, e)} className="text-gray-500 hover:text-blue-600 p-1" title="复制内容"><Copy size={14} /></button>
                           <button onClick={(e) => { e.stopPropagation(); setZoomedCard(card); }} className="text-gray-500 hover:text-purple-600 p-1" title="放大查看"><ZoomIn size={14} /></button>
-                          <button onClick={() => openDetailModal(card)} className="text-blue-600 text-sm hover:underline">编辑</button>
-                          <button onClick={() => handleDeleteCard(card.id)} className="text-red-500 text-sm hover:underline ml-2">删除</button>
+                          <button onClick={() => openDetailModal(card)} className="text-blue-600 text-sm hover:underline whitespace-nowrap">编辑</button>
+                          <button onClick={() => handleDeleteCard(card.id)} className="text-red-500 text-sm hover:underline ml-2 whitespace-nowrap">删除</button>
                         </div>
                       </div>
                     </div>

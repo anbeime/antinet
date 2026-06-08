@@ -1003,13 +1003,13 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             {isEditing ? (
               <>
                 <button
-                  className="px-3 py-1.5 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm"
+                  className="px-3 py-1.5 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm whitespace-nowrap"
                   onClick={cancelEditing}
                 >
                   取消
                 </button>
                 <button
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   onClick={saveEditing}
                   disabled={savingCard}
                 >
@@ -1061,14 +1061,6 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   onClick={startEditing}
                 >
                   <Edit2 size={18} />
-                </button>
-
-<button
-                  className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                  aria-label="删除"
-                  onClick={handleDelete}
-                >
-                  <Trash2 size={18} />
                 </button>
 
                 {/* 链接图谱快捷入口 — 桌面端显示 */}
@@ -1192,6 +1184,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
                   </button>
                 </span>
+
+                <button
+                  className="p-2 text-red-500 hover:text-red-700 dark:hover:text-red-300 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                  aria-label="删除"
+                  onClick={handleDelete}
+                >
+                  <Trash2 size={18} />
+                </button>
               </>
             )}
             <button
@@ -1330,7 +1330,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
-                className="w-full min-h-[300px] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
+                className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
                 placeholder="输入卡片内容..."
               />
             ) : (

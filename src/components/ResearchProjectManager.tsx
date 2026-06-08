@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
 import { Document, Page, Text, View, StyleSheet, pdf, Font } from '@react-pdf/renderer';
@@ -91,10 +91,6 @@ interface ResearchProjectManagerProps {
   showDeepLinkButton?: boolean;
 }
 
-interface AllCardsResponse {
-  cards: ProjectCard[];
-}
-
 const colorOptions = [
   { value: 'blue', label: '蓝色', bg: 'bg-blue-100', text: 'text-blue-800', border: 'border-blue-200' },
   { value: 'green', label: '绿色', bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
@@ -162,224 +158,7 @@ const formatDate = (dateStr?: string) => {
 
 // ========== 专题卡片详情弹窗组件（全屏级别）- 用于ProjectDetailPanel内部 ==========
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const ResearchCardDetailModal: React.FC<{
-  card: ProjectCard;
-  onClose: () => void;
-  onConvertToTask: (id: number, onComplete?: () => void) => void;
-  onUpdate?: (cardId: number, updates: { title: string; content: string; card_type?: string; related_cards?: number[] }) => void;
-  projectId?: number;
-  allProjects?: ResearchProject[];
-  onRelatedCardClick?: (cardId: number) => void;
-  onSaveSuccess?: () => void;
-}> = React.memo(({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick, onSaveSuccess }) => {
-  const typeConfig = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(card.title);
-  const [editContent, setEditContent] = useState(card.content);
-  const [showProjectSelector, setShowProjectSelector] = useState(false);
-  const [showRelatedCards, setShowRelatedCards] = useState(false);
-  const [relatedCards, setRelatedCards] = useState<number[]>(card.related_cards || []);
-  const [allCards, setAllCards] = useState<ProjectCard[]>([]);
-  const [relatedSearch, setRelatedSearch] = useState('');
-  const [suggestedCards, setSuggestedCards] = useState<{id: number; title: string; card_type: string; category?: string; reason: string; score: number}[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [suggestionsError, setSuggestionsError] = useState('');
-
-  const loadSuggestions = useCallback(async () => {
-    if (suggestionsLoading || suggestedCards.length > 0) return;
-    setSuggestionsLoading(true);
-    setSuggestionsError('');
-    try {
-      const sugRes = await fetch(getApiBaseUrl() + `/api/research/cards/${card.id}/suggested-relations?limit=8`);
-      if (!sugRes.ok) throw new Error(`API错误: ${sugRes.status}`);
-      const sugData = await sugRes.json();
-      setSuggestedCards(sugData.suggestions || []);
-    } catch (e) {
-      setSuggestionsError('加载失败');
-    } finally {
-      setSuggestionsLoading(false);
-    }
-  }, [card.id, suggestedCards.length, suggestionsLoading]);
-
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
-        const data: AllCardsResponse = await res.json();
-        setAllCards(data.cards || []);
-        try {
-          const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/backlinks`);
-          const backlinks = await blRes.json();
-          const blIds = backlinks.map((b: any) => b.id);
-          const flRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/forwardlinks`);
-          const forwardlinks = await flRes.json();
-          const flIds = forwardlinks.map((f: any) => f.id);
-          const allRelatedIds = new Set([...(card.related_cards || []), ...blIds, ...flIds]);
-          setRelatedCards([...allRelatedIds]);
-        } catch (e) {
-          console.warn('加载backlink数据失败，使用原有related_cards:', e);
-        }
-      } catch (e) {
-        console.error('加载卡片失败:', e);
-      }
-    };
-    loadData();
-  }, [card.id]);
-
-  const availableCards = useMemo(() => {
-    if (!relatedSearch) return [];
-    const q = relatedSearch.toLowerCase();
-    return allCards.filter(c =>
-      c.id !== card.id &&
-      !relatedCards.includes(c.id) &&
-      (c.title.toLowerCase().includes(q) || c.content.toLowerCase().includes(q))
-    ).slice(0, 20);
-  }, [allCards, card.id, relatedCards, relatedSearch]);
-
-  const addRelatedCard = (targetId: number) => {
-    if (!relatedCards.includes(targetId)) {
-      setRelatedCards([...relatedCards, targetId]);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!editTitle.trim() || !onUpdate) return;
-    await onUpdate(card.id, {
-      title: editTitle.trim(),
-      content: editContent,
-      card_type: card.card_type,
-      related_cards: relatedCards,
-    });
-    setIsEditing(false);
-    if (onSaveSuccess) onSaveSuccess();
-  };
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-        <div className={`flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 ${typeConfig.bgColor}`}>
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <span className="text-2xl flex-shrink-0">{typeConfig.icon}</span>
-            <div className="min-w-0 flex-1">
-              {isEditing ? (
-                <input value={editTitle} onChange={e => setEditTitle(e.target.value)} className="text-lg font-bold bg-transparent border-b-2 border-purple-500 focus:outline-none w-full text-gray-900 dark:text-white" autoFocus />
-              ) : (
-                <h2 className="text-lg font-bold text-gray-900 dark:text-white truncate">{card.title}</h2>
-              )}
-              <span className={`text-xs font-medium ${typeConfig.color}`}>{typeConfig.name}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-            {isEditing ? (
-              <>
-                <button onClick={() => { setIsEditing(false); setEditTitle(card.title); setEditContent(card.content); }} className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">取消</button>
-                <button onClick={handleSave} className="px-3 py-1.5 text-sm text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">保存</button>
-              </>
-            ) : (
-              <>
-                <button onClick={() => setIsEditing(true)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="编辑"><Edit2 className="w-4 h-4" /></button>
-                <button onClick={() => onConvertToTask(card.id)} className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors" title="转为任务"><CheckSquare className="w-4 h-4" /></button>
-                <button onClick={() => setShowProjectSelector(true)} className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="移动到其他专题"><ArrowRight className="w-4 h-4" /></button>
-              </>
-            )}
-            <button onClick={onClose} className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">内容</label>
-            {isEditing ? (
-              <textarea value={editContent} onChange={e => setEditContent(e.target.value)} className="w-full min-h-[200px] p-3 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm leading-relaxed" />
-            ) : (
-              <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap"><RenderContent content={card.content || '暂无内容'} /></div>
-            )}
-          </div>
-          {card.created_at && (
-            <div className="flex items-center gap-1 text-xs text-gray-400 mb-4">
-              <Clock className="w-3 h-3" />
-              {(() => { try { return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(card.created_at)); } catch { return card.created_at; } })()}
-            </div>
-          )}
-          <div className="border-t border-gray-100 dark:border-gray-700 pt-4 mt-4">
-            <div className="flex items-center justify-between mb-3">
-              <button onClick={() => { setShowRelatedCards(!showRelatedCards); if (!showRelatedCards && suggestedCards.length === 0 && !suggestionsLoading) loadSuggestions(); }} className="flex items-center gap-1 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-purple-600 transition-colors">
-                <Layers className="w-4 h-4" />
-                关联卡片 ({relatedCards.length})
-                <ChevronRight className={`w-4 h-4 transition-transform ${showRelatedCards ? 'rotate-90' : ''}`} />
-              </button>
-            </div>
-            {showRelatedCards && (
-              <div className="space-y-3">
-                <div className="relative">
-                  <input type="text" value={relatedSearch} onChange={e => setRelatedSearch(e.target.value)} placeholder="搜索可关联的卡片..." className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500" />
-                  {relatedSearch && availableCards.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                      {availableCards.map(ac => (
-                        <button key={ac.id} onClick={() => { addRelatedCard(ac.id); setRelatedSearch(''); }} className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center gap-2 border-b border-gray-100 dark:border-gray-600 last:border-0">
-                          <span className="text-base">{cardTypeConfig[ac.card_type]?.icon || '📄'}</span>
-                          <span className="truncate text-gray-700 dark:text-gray-200">{ac.title}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {relatedCards.map(rcId => {
-                    const rc = allCards.find(c => c.id === rcId);
-                    return (
-                      <div key={rcId} className="flex items-center gap-1 px-2 py-1 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded-lg text-xs">
-                        <span>{rc ? cardTypeConfig[rc.card_type]?.icon || '📄' : '📄'}</span>
-                        <button onClick={() => { if (rc && onRelatedCardClick) onRelatedCardClick(rc.id); }} className="text-purple-700 dark:text-purple-300 hover:underline truncate max-w-[120px]">{rc?.title || `卡片 #${rcId}`}</button>
-                        <button onClick={() => setRelatedCards(prev => prev.filter(id => id !== rcId))} className="text-gray-400 hover:text-red-500 ml-1"><X className="w-3 h-3" /></button>
-                      </div>
-                    );
-                  })}
-                  {relatedCards.length === 0 && <span className="text-xs text-gray-400">暂无关联卡片，在搜索框中添加</span>}
-                </div>
-                {suggestionsLoading && <div className="text-xs text-gray-400 text-center py-2">加载推荐中...</div>}
-                {suggestionsError && <div className="text-xs text-red-500 text-center py-2">{suggestionsError}</div>}
-                {suggestedCards.length > 0 && (
-                  <div>
-                    <div className="text-xs font-medium text-gray-500 mb-2">AI 推荐关联</div>
-                    <div className="space-y-1">
-                      {suggestedCards.map(sc => (
-                        <div key={sc.id} className="flex items-center justify-between px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span className="text-base">{cardTypeConfig[sc.card_type]?.icon || '📄'}</span>
-                            <div className="min-w-0">
-                              <div className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{sc.title}</div>
-                              <div className="text-xs text-gray-400 truncate">{sc.reason}</div>
-                            </div>
-                          </div>
-                          <button onClick={() => addRelatedCard(sc.id)} className="flex-shrink-0 ml-2 px-2 py-1 text-xs text-white bg-purple-600 hover:bg-purple-700 rounded-md transition-colors" disabled={relatedCards.includes(sc.id)}>{relatedCards.includes(sc.id) ? '已添加' : '添加'}</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-      {showProjectSelector && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50" onClick={() => setShowProjectSelector(false)}>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">移动卡片到其他专题</h3>
-            <p className="text-sm text-gray-500 mb-3">将《{card.title}》移动到：</p>
-            <div className="space-y-1 max-h-60 overflow-y-auto">
-              {allProjects.filter(p => p.id !== (card.project_id || projectId)).map(p => (
-                <button key={p.id} onClick={async () => { if (!onUpdate) return; try { await onUpdate(card.id, { title: card.title, content: card.content, related_cards: relatedCards }); toast.success(`已移动到「${p.name}」`); setShowProjectSelector(false); onClose(); } catch { toast.error('移动失败'); } }} className="w-full text-left px-3 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">{p.name}</button>
-              ))}
-              {allProjects.filter(p => p.id !== (card.project_id || projectId)).length === 0 && <p className="text-sm text-gray-400 text-center py-4">没有其他专题可供选择</p>}
-            </div>
-            <button onClick={() => setShowProjectSelector(false)} className="w-full mt-4 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">取消</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-});
+// ResearchCardDetailModal 已移除，改用标准 CardDetailModal
 
 // ========== 专题详情全屏面板 ==========
 const ProjectDetailPanel: React.FC<{
@@ -1255,32 +1034,47 @@ const ProjectDetailPanel: React.FC<{
           </div>
         </div>
 
-        {/* ===== 卡片详情弹窗 - 使用专题级ResearchCardDetailModal ===== */}
+        {/* ===== 卡片详情弹窗 - 使用标准 CardDetailModal ===== */}
         {showCardDetail && selectedCard && (
-          <ResearchCardDetailModal
-            card={selectedCard}
+          <CardDetailModal
+            isOpen={true}
+            card={convertProjectCardToKnowledgeCard(selectedCard)}
+            allCards={cards.map(convertProjectCardToKnowledgeCard)}
             onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
-            onConvertToTask={handleConvertToTask}
-            onUpdate={async (cardId, updates) => {
-              if (updates) {
-                try {
-                  const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${cardId}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
-                  });
-                  if (!res.ok) throw new Error('更新失败');
-                } catch { toast.error('卡片更新失败'); }
+            onDelete={async (id: string) => {
+              await fetch(`${RESEARCH_API_BASE}/cards/${id}`, { method: 'DELETE' });
+              setCards(prev => prev.filter(c => String(c.id) !== id));
+              setShowCardDetail(false);
+              setSelectedCard(null);
+              toast.success('卡片已删除');
+              refreshCards();
+            }}
+            onRelatedCardClick={(id: string) => {
+              const target = cards.find(c => String(c.id) === id);
+              if (target) { setSelectedCard(target); }
+            }}
+            onUpdateCard={async (updatedCard) => {
+              try {
+                const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${updatedCard.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: updatedCard.title,
+                    content: updatedCard.content,
+                    card_type: updatedCard.color,
+                    related_cards: updatedCard.relatedCards?.map(Number),
+                  })
+                });
+                if (!res.ok) throw new Error('更新失败');
+                const updated = convertKnowledgeCardToProjectCard(updatedCard);
+                setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
+                toast.success('卡片已更新');
+                refreshCards();
+              } catch {
+                toast.error('卡片更新失败');
               }
-              await refreshCards();
             }}
-            projectId={project.id}
-            allProjects={allProjectsList}
-            onRelatedCardClick={(cardId) => {
-              const targetCard = cards.find(c => c.id === cardId);
-              if (targetCard) setSelectedCard(targetCard);
-            }}
-            onSaveSuccess={() => refreshCards()}
+            onCreateRecommendedCard={(title: string) => toast.info(`推荐: ${title}`)}
           />
         )}
 
