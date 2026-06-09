@@ -31,8 +31,7 @@ import {
   Copy,
   ZoomIn,
   Menu,
-  Calendar,
-  Receipt
+  Calendar
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -52,7 +51,6 @@ import MultiModel from '@/pages/MultiModel';
 import GeniePlayground from '@/pages/GeniePlayground';
 import GenieNPUTest from '@/pages/GenieNPUTest';
 import FormatConverter from '@/pages/FormatConverter';
-import InvoicePage from '@/pages/InvoicePage';
 import VirtualOfficeMeeting from '@/pages/VirtualOfficeMeeting';
 import TeamCollaboration from '@/components/TeamCollaboration';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -187,7 +185,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(new Set());
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState('');
   const [gtdTasks, setGtdTasks] = useState<GtdTask[]>([]);
-  const [invoiceStats, setInvoiceStats] = useState<{total: number; active: number; total_amount: number} | null>(null);
   
   const toggleExpandCard = (id: string) => {
     setExpandedCardIds(prev => {
@@ -721,17 +718,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
       };
       
       console.log('仪表板数据加载完成:', { cards: fetchedCards.length, typeCount });
-
-      // 加载发票统计
-      try {
-        const invRes = await fetch(getApiBaseUrl() + '/api/invoice/stats');
-        if (invRes.ok && isMounted) {
-          const invData = await invRes.json();
-          setInvoiceStats(invData.stats || null);
-        }
-      } catch (e) {
-        console.warn('加载发票统计失败:', e);
-      }
     } catch (error) {
       console.error('加载仪表板数据失败:', error);
       if (!isMounted) return;
@@ -878,13 +864,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Table size={16} />
                   <span>Excel/在线表格</span>
                 </button>
-                <button
-                  onClick={() => setActiveTab('invoice')}
-                  className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'invoice' ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}
-                >
-                  <Receipt size={16} />
-                  <span>发票管理</span>
-                </button>
               </div>
             </div>
             
@@ -1028,10 +1007,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 <button onClick={() => { setActiveTab('excel-analysis'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-ink-main bg-card-green' : ''}`}>
                 <Table size={16} /><span>Excel/在线表格</span>
-              </button>
-              <button onClick={() => { setActiveTab('invoice'); setMobileMenuOpen(false); }}
-                className={`w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 ${activeTab === 'invoice' ? 'text-ink-main bg-card-green' : ''}`}>
-                <Receipt size={16} /><span>发票管理</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-ink-desc uppercase tracking-wider mt-2">
                 AI工具
@@ -1196,41 +1171,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   );
                 })()}
               </motion.div>
-
-              {/* 发票概览 */}
-              {invoiceStats && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.15 }}
-                  className="bg-paper dark:bg-dark-soft rounded-card shadow-sm border border-border p-4 cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => setActiveTab('invoice')}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-ink-main flex items-center">
-                      <Receipt className="w-4 h-4 mr-2 text-green-500" />
-                      发票概览
-                    </h3>
-                    <ChevronRight size={16} className="text-ink-desc" />
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-ink-main">{invoiceStats.total}</p>
-                      <p className="text-xs text-ink-desc">全部发票</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">{invoiceStats.active}</p>
-                      <p className="text-xs text-ink-desc">可报销</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-green-600">
-                        ¥{Number(invoiceStats.total_amount || 0).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                      </p>
-                      <p className="text-xs text-ink-desc">合计金额</p>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
 
               {/* 平台功能入口 */}
               <motion.div 
@@ -1941,11 +1881,6 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
         {/* Excel分析 */}
         {activeTab === 'excel-analysis' && (
           <ExcelAnalysis />
-        )}
-
-        {/* 发票管理 */}
-        {activeTab === 'invoice' && (
-          <InvoicePage />
         )}
 
         {/* 报表生成 → 重定向到 PPT 演示 */}
