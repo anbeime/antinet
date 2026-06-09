@@ -1410,8 +1410,8 @@ async def convert_card_to_task(card_id: int):
         
         # 检查卡片是否属于某个专题
         project_id = card["project_id"] if card["project_id"] is not None else None
-        source_type = 'project' if project_id else 'card'
-        source_id = project_id if project_id else card_id
+        source_type = 'card'
+        source_id = card_id
         category = 'projects' if project_id else 'inbox'
         
         now = datetime.now().isoformat()

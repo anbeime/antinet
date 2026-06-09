@@ -4,7 +4,7 @@ import {
   FileText, Upload, Download, X, CheckCircle, XCircle,
   RefreshCw, Filter, Building2, DollarSign, AlertTriangle,
   Loader, ChevronDown, ChevronUp, Trash2, FileSpreadsheet,
-  Clock, Tag, ShieldAlert, Paperclip, Archive, FileWarning,
+  Clock, Tag, ShieldAlert, Paperclip, Archive, FileWarning, ListTodo,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -68,6 +68,10 @@ const InvoiceManager: React.FC = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // gtd task integration
+  const [taskCreating, setTaskCreating] = useState<number | null>(null);
+  const [invoiceTaskIds, setInvoiceTaskIds] = useState<Record<number, number>>({});
 
   // upload
   const [uploading, setUploading] = useState(false);
@@ -164,6 +168,25 @@ const InvoiceManager: React.FC = () => {
       if (selectedInvoice?.id === id) setShowDetail(false);
       await fetchInvoices();
       await fetchStats();
+    }
+  };
+
+  const handleCreateTask = async (invoiceId: number) => {
+    setTaskCreating(invoiceId);
+    try {
+      const res = await fetch(api(`/api/invoice/${invoiceId}/create-task`), { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setInvoiceTaskIds(prev => ({ ...prev, [invoiceId]: data.task_id }));
+        alert(data.message);
+      } else {
+        const err = await res.json().catch(() => ({ detail: '创建失败' }));
+        alert(`创建任务失败: ${err.detail}`);
+      }
+    } catch {
+      alert('网络错误，请检查后端服务');
+    } finally {
+      setTaskCreating(null);
     }
   };
 
@@ -640,6 +663,21 @@ const InvoiceManager: React.FC = () => {
                       className="flex items-center space-x-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm">
                       <Trash2 className="w-4 h-4 text-red-400" />
                       <span>删除</span>
+                    </button>
+                    <button
+                      onClick={() => handleCreateTask(selectedInvoice.id)}
+                      disabled={taskCreating === selectedInvoice.id || !!invoiceTaskIds[selectedInvoice.id]}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                        invoiceTaskIds[selectedInvoice.id]
+                          ? 'bg-green-100 text-green-700 cursor-default'
+                          : 'bg-purple-500 text-white hover:bg-purple-600 disabled:opacity-50'
+                      }`}
+                      title={invoiceTaskIds[selectedInvoice.id] ? '报销任务已创建' : '创建GTD报销任务'}>
+                      <ListTodo className="w-4 h-4" />
+                      <span>
+                        {taskCreating === selectedInvoice.id ? '创建中...' :
+                         invoiceTaskIds[selectedInvoice.id] ? '任务已创建' : '创建报销任务'}
+                      </span>
                     </button>
                   </div>
                 </>

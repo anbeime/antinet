@@ -18,6 +18,7 @@ import AgentSystem from "@/pages/AgentSystem";
 import SkillCenter from "@/pages/SkillCenter";
 import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
+import InvoicePage from "@/pages/InvoicePage";
 import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import GTDTaskManager from "@/pages/GTDTaskManager";
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/skill-center" element={<SkillCenter />} />
           <Route path="/multi-model" element={<MultiModel />} />
           <Route path="/format-converter" element={<FormatConverter />} />
+          <Route path="/invoice" element={<InvoicePage />} />
           <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
           <Route path="/meeting/:meetingId" element={<MeetingDetailPage />} />
           <Route path="/gtd-tasks" element={<GTDTaskManager />} />
