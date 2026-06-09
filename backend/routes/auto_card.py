@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 db_manager = None
 
 # LLM 路径单 Agent 超时（秒）；总编排用 gather，2 阶段串行
-LLM_TIMEOUT_SEC: float = float(os.environ.get("AUTO_CARD_LLM_TIMEOUT", "8"))
+# 本地 NPU 推理通常需要 10-25s，8s 过短导致频繁超时
+LLM_TIMEOUT_SEC: float = float(os.environ.get("AUTO_CARD_LLM_TIMEOUT", "20"))
 LLM_DISABLED: bool = os.environ.get("AUTO_CARD_LLM", "1") == "0"
 
 # 懒加载的 Agent 缓存
@@ -317,16 +318,28 @@ async def analyze_and_suggest_cards_async(
     user_query: str,
     assistant_response: str,
     threshold: float = 0.5,
+    card_context: Optional[List[Dict]] = None,
 ) -> List[CardSuggestion]:
     """
     主路径：4-Agent 协同提取四色卡片
     - 阶段1 并行：通政司(事实) + 刑狱司(风险)
     - 阶段2 串行：监察院(解释) 依赖事实 / 参谋司(行动) 依赖前两者
     - 任一 Agent 失败/超时不影响其他类型；4 类全空时回退到规则
+    
+    参数：
+        card_context: 知识库搜索结果卡片列表，提供给 Agent 作为分析上下文
     """
     text = f"{(user_query or '').strip()}\n{(assistant_response or '').strip()}".strip()
     if not text:
         return []
+    
+    # 追加知识库卡片作为分析上下文
+    if card_context:
+        card_section = "\n\n【相关知识库卡片】\n" + "\n".join(
+            f"- [{c.get('card_type','blue')}] {c.get('title','')}: {c.get('content','')[:200]}"
+            for c in card_context if c.get('title') or c.get('content')
+        )
+        text += card_section
 
     agents = _get_agents()
     if agents is None:
@@ -558,10 +571,15 @@ def suggest_cards_api(
 async def suggest_cards_api_async(
     user_query: str,
     assistant_response: str,
+    card_context: Optional[List[Dict]] = None,
 ) -> Dict[str, Any]:
-    """卡片建议 API（异步版本，供 async def 路由直接 await）"""
+    """卡片建议 API（异步版本，供 async def 路由直接 await）
+    
+    参数：
+        card_context: 知识库搜索结果卡片列表，传递给 Agent 作为分析上下文
+    """
     suggestions = await analyze_and_suggest_cards_async(
-        user_query, assistant_response, threshold=0.3
+        user_query, assistant_response, threshold=0.3, card_context=card_context
     )
     return {
         "count": len(suggestions),

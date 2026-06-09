@@ -83,40 +83,21 @@ def send_windows_notification(title: str, message: str):
 
 class ReminderService:
     def __init__(self):
-        self.scheduler = None
         self.sent_reminders = set()  # 已发送的提醒 (task_id + remind_time)
-        self._check_interval_minutes = 1440  # 每天检查一次 (1440分钟 = 24小时)
         self._load_sent_reminders()  # 从数据库加载已发送的提醒
     
     def start(self):
-        """启动提醒服务"""
+        """启动提醒服务（启动时执行一次检查）"""
         try:
-            from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            from apscheduler.triggers.interval import IntervalTrigger
-            
-            self.scheduler = AsyncIOScheduler()
-            
-            # 每分钟检查一次
-            self.scheduler.add_job(
-                self.check_reminders,
-                trigger=IntervalTrigger(minutes=self._check_interval_minutes),
-                id='check_reminders',
-                replace_existing=True,
-                max_instances=1,
-            )
-            
-            self.scheduler.start()
-            logger.info(f"[Reminder] 提醒服务已启动 (检查间隔: {self._check_interval_minutes}分钟)")
-        except ImportError:
-            logger.warning("[Reminder] APScheduler 未安装，提醒服务无法启动")
+            logger.info("[Reminder] 提醒服务已启动，执行启动检查...")
+            self.check_reminders()
+            logger.info("[Reminder] 启动检查完成")
         except Exception as e:
-            logger.error(f"[Reminder] 启动提醒服务失败: {e}")
+            logger.error(f"[Reminder] 启动检查失败: {e}")
     
     def stop(self):
         """停止提醒服务"""
-        if self.scheduler:
-            self.scheduler.shutdown()
-            logger.info("[Reminder] 提醒服务已停止")
+        logger.info("[Reminder] 提醒服务已停止")
     
     def _normalize_time(self, time_str: str) -> str:
         """标准化时间字符串到分钟精度（YYYY-MM-DD HH:MM 格式）"""
@@ -173,15 +154,15 @@ class ReminderService:
             logger.warning(f"[Reminder] 保存已发送提醒记录失败: {e}")
     
     def check_reminders(self):
-        """检查需要提醒的任务 - 每分钟执行"""
+        """检查需要提醒的任务（启动时执行）"""
         try:
             conn = sqlite3.connect(DB_PATH)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
             now = datetime.now()
-            # 只查询未来 5 分钟内的提醒（不包括已过期的）
-            check_window = now + timedelta(minutes=5)
+            # 查未来24小时内需提醒的任务（配合每天一次的检查间隔）
+            future_window = now + timedelta(hours=24)
             
             cursor.execute("""
                 SELECT id, title, description, remind_at, remind_before_minutes,
@@ -190,9 +171,9 @@ class ReminderService:
                 WHERE reminder_enabled = 1
                   AND is_completed = 0
                   AND remind_at IS NOT NULL
-                  AND DATETIME(remind_at) <= DATETIME(?)
                   AND DATETIME(remind_at) >= DATETIME(?)
-            """, (check_window.isoformat(), now.isoformat()))
+                  AND DATETIME(remind_at) <= DATETIME(?)
+            """, (now.isoformat(), future_window.isoformat()))
             
             tasks = cursor.fetchall()
             found_count = 0

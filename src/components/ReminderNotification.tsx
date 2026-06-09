@@ -256,6 +256,7 @@ export const ReminderNotification: React.FC = () => {
   const viewNow = () => {
     if (currentReminder) {
       showNotification('🔔 任务提醒', currentReminder.title, currentReminder.id);
+      dismissedToday.current.add(currentReminder.id);
     }
     setIsVisible(false);
     setCurrentReminder(null);
@@ -300,7 +301,7 @@ export const ReminderNotification: React.FC = () => {
                   onClick={viewNow}
                   className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                 >
-                  立即查看
+                  我知道了
                 </button>
               </div>
             </div>

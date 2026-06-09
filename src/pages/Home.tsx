@@ -354,10 +354,43 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     address: string;
   }>, syncToGTD: boolean = false, rawText?: string) => {
     try {
-      if (importedCards.length === 0) {
+      if (importedCards.length === 0 && rawText !== '__FILE_SAVED__') {
         toast('没有可导入的卡片', {
           className: 'bg-amber-50 text-amber-800 dark:bg-amber-900 dark:text-amber-100'
         });
+        return;
+      }
+
+      // 文件导入：后端已通过 /import/file 保存（含源文件追溯 + 自动建链），仅需刷新卡片列表
+      if (rawText === '__FILE_SAVED__') {
+        try {
+          const cardsResponse = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
+          if (cardsResponse.ok) {
+            const responseData = await cardsResponse.json();
+            const apiCards = responseData.cards || responseData;
+            const formattedCards = apiCards.map((card: any) => ({
+              id: String(card.id || card.ID),
+              title: card.title || '',
+              content: card.content || '',
+              card_type: card.card_type || card.type || 'blue',
+              category: card.category || '',
+              address: card.address || '',
+              tags: Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' ? JSON.parse(card.tags) : []),
+              core_tags: Array.isArray(card.core_tags) ? card.core_tags : (typeof card.core_tags === 'string' ? JSON.parse(card.core_tags) : []),
+              created_at: card.created_at || null,
+              updated_at: card.updated_at || null,
+            }));
+            setCards(formattedCards);
+          }
+        } catch (refreshErr) {
+          console.error('刷新卡片列表失败:', refreshErr);
+        }
+
+        if (syncToGTD) {
+          try { await fetch(getApiBaseUrl() + '/api/data/gtd-tasks/sync-all-cards', { method: 'POST' }); } catch (e) {}
+        }
+
+        setActiveTab('cards-management');
         return;
       }
       

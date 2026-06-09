@@ -444,13 +444,9 @@ async def genie_classify(request: ClassifyRequest):
                                 "total": len(normalized)
                             }
                     except json.JSONDecodeError:
-                        logger.warning(f"Genie 返回非标准JSON，回退到原文本: {response_text[:200]}")
-                        return {
-                            "success": True,
-                            "source": "genie",
-                            "model": model,
-                            "response": response_text
-                        }
+                        logger.warning(f"Genie 返回非标准JSON: {response_text[:200]}")
+                        last_error = f"{model}: 返回非标准JSON"
+                        continue
         except httpx.HTTPStatusError as e:
             last_error = f"{model} HTTP {e.response.status_code}"
             try: last_error += ": " + e.response.text[:100]

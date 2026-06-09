@@ -200,7 +200,7 @@ register_router("routes.invoice_routes")
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
 # register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同（已隐藏）
-# register_router("routes.evolving_chat_routes")  # 自进化聊天（已隐藏）
+register_router("routes.evolving_chat_routes")  # 自进化聊天
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
 register_router("routes.card_pdf_routes")
@@ -402,6 +402,14 @@ if __name__ == "__main__":
             return True  # 继续尝试启动
     
     check_and_free_port(app_config.PORT)
+    
+    # 打印所有已注册路由（便于诊断 404）
+    print(f"\n{'─'*50}")
+    print(f"已注册路由 ({len([r for r in app.routes if hasattr(r, 'path')])} 条):")
+    for route in sorted(app.routes, key=lambda r: getattr(r, 'path', '')):
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            print(f"  {route.path:50s} {route.methods}")
+    print(f"{'─'*50}")
     
     print(f"\n{'='*50}")
     print(f"启动 {app_config.APP_NAME} v{app_config.APP_VERSION}")

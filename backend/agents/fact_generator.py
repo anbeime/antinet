@@ -86,43 +86,43 @@ class FactGeneratorAgent:
     async def _analyze_data(self, preprocessed_data: Dict, user_query: str, current_date: str) -> List[Dict]:
         """
         分析数据
-        
+       
         参数：
             preprocessed_data: 预处理数据
             user_query: 用户查询
             current_date: 当前日期
-        
+       
         返回：
             原始事实列表
         """
         try:
             # 准备数据摘要
             data_summary = self._prepare_data_summary(preprocessed_data, current_date)
-            
+           
             # 构建提示词
             prompt = f"""
-            你是Antinet系统的通政司，负责从数据中挖掘关键事实。
+            你是Antinet系统的通政司，负责从对话内容和知识库中挖掘关键事实。
             
             用户查询：{user_query}
             当前日期：{current_date}
             
-            数据摘要：
+            分析内容：
             {data_summary}
             
-            请从数据中挖掘关键事实，包括：
-            1. 趋势事实（上升、下降、稳定）
-            2. 异常事实（显著偏离正常值）
-            3. 对比事实（同比、环比、行业对比）
-            4. 结构事实（占比、分布）
+            请从以上内容中提取关键事实，关注：
+            1. 明确陈述的事实（客观信息、定义、属性）
+            2. 数据或统计（数值、比例、时间）
+            3. 关系或关联（A与B的关系、因果）
+            4. 分类或归属（属于、包含、组成）
             
             输出格式（JSON）：
             {{
                 "facts": [
                     {{
-                        "title": "事实标题",
+                        "title": "事实标题（简洁概括）",
                         "description": "详细描述",
-                        "evidence": "数据证据（具体数值或对比）",
-                        "source": "数据来源字段",
+                        "evidence": "事实依据（原文引用或具体数据）",
+                        "source": "事实来源",
                         "confidence": 0.95
                     }}
                 ]
@@ -142,23 +142,30 @@ class FactGeneratorAgent:
     def _prepare_data_summary(self, preprocessed_data: Dict, current_date: str) -> str:
         """
         准备数据摘要
-        
+       
         参数：
             preprocessed_data: 预处理数据
             current_date: 当前日期
-        
+       
         返回：
             数据摘要文本
         """
         try:
             data = preprocessed_data.get("preprocessed_data", {})
-            features = data.get("features", {})
+            raw_data = data.get("data", [])
             
-            summary = f"""
-            数据规模：{len(data.get('data', []))}条记录
-            字段：{', '.join(data.get('schema', {}).keys())}
-            时间范围：{current_date}
-            """
+            # 提取正文内容
+            text_content = ""
+            for item in raw_data:
+                text = item.get("text", "") if isinstance(item, dict) else str(item)
+                if len(text) > len(text_content):
+                    text_content = text
+            
+            # 截断过长文本
+            if len(text_content) > 3000:
+                text_content = text_content[:3000] + "\n...（内容过长已截断）"
+            
+            summary = text_content if text_content else "(无内容)"
             
             return summary
         
@@ -233,29 +240,25 @@ class FactGeneratorAgent:
     def _verify_facts(self, categorized_facts: Dict, preprocessed_data: Dict) -> Dict:
         """
         验证事实
-        
+       
         参数：
             categorized_facts: 分类后事实
             preprocessed_data: 预处理数据
-        
+       
         返回：
             验证后事实字典
         """
         try:
             verified = {k: [] for k in categorized_facts.keys()}
-            
+           
             for color, facts in categorized_facts.items():
                 for fact in facts:
-                    # 验证证据是否存在
-                    evidence = fact.get("evidence", "")
-                    if evidence:
-                        # 验证数据来源
-                        source = fact.get("source", "")
-                        if source in preprocessed_data.get("preprocessed_data", {}).get("schema", {}):
-                            verified[color].append(fact)
-            
+                    # 验证必要字段存在
+                    if fact.get("title") and fact.get("description") and fact.get("confidence", 0) >= 0.5:
+                        verified[color].append(fact)
+           
             return verified
-        
+       
         except Exception as e:
             logger.error(f"验证事实失败: {e}", exc_info=True)
             raise

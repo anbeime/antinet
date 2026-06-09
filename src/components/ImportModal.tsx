@@ -460,7 +460,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
-  // 处理文件上传导入
+  // 处理文件上传导入（调用后端锦衣卫全线：文件解析 + 密卷房提取 + 四司分类）
   const handleFileImport = async () => {
     if (!selectedFile) {
       setErrors(['请选择要导入的文件']);
@@ -470,50 +470,115 @@ const ImportModal: React.FC<ImportModalProps> = ({
     try {
       setIsProcessing(true);
       setErrors([]);
-      
-      // 读取文件内容
-      const content = await selectedFile.text();
-      const results = await autoClassifyContent(content);
+
+      // 调用后端文件导入API（后端统一处理解析+分类，支持PDF/Word/Excel/图片等）
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file?preview_only=true', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        let detail = '';
+        try { const err = await res.json(); detail = err.detail || ''; } catch {}
+        throw new Error(`文件解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+      }
+
+      const data = await res.json();
+      const cards = data.cards || [];
+
+      if (cards.length === 0) {
+        setErrors(['未从文件中识别到有效知识记录']);
+        return;
+      }
+
+      // 映射后端结果到前端格式
+      const colorCounts: Record<string, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
+      const prefixes: Record<string, string> = { blue: 'A', green: 'B', yellow: 'C', red: 'D' };
+
+      const results = cards.map((item: any) => {
+        const color = (item.card_type || 'blue').toLowerCase() as CardColor;
+        colorCounts[color] = (colorCounts[color] || 0) + 1;
+        const address = item.address || `${prefixes[color]}${colorCounts[color]}`;
+        return {
+          title: item.title || item.content.slice(0, 30),
+          content: item.content,
+          color,
+          confidence: item.confidence || 0.85,
+          address
+        };
+      });
+
       setImportResults(results);
       setShowResults(true);
+      toast.success(`锦衣卫文件解析完成，识别到 ${cards.length} 条知识记录`);
     } catch (error) {
       console.error('文件导入失败:', error);
-      setErrors(['文件导入失败，请检查文件格式']);
+      setErrors([error instanceof Error ? error.message : '文件导入失败，请检查文件格式']);
     } finally {
       setIsProcessing(false);
     }
   };
 
   // 确认导入
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (importResults.length === 0) {
       setErrors(['没有可导入的内容']);
       return;
     }
 
-    // 调用父组件的导入回调（粘贴文本模式下传递原始文本，用于后端溯源保存）
-    const rawText = importType === 'paste' ? importContent : undefined;
-    onImport(
-      importResults.map(result => ({
-        title: result.title,
-        content: result.content,
-        color: result.color,
-        address: result.address
-      })),
-      syncToGTD,
-      rawText
-    );
+    try {
+      setIsProcessing(true);
 
-    // 重置表单并关闭模态框
-    setIsSaved(true);
-    resetForm();
-    setShowConfirmDialog(false);
-    onClose();
+      if (importType === 'upload' && selectedFile) {
+        // 文件导入：调用后端一次性保存（含源文件追溯 + 关键词分类 + 自动建链）
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
+          method: 'POST',
+          body: formData
+        });
 
-    toast(`${importResults.length} 条知识记录已成功导入并分类${syncToGTD ? '，并同步到任务管理' : ''}`, {
-      icon: <Check size={16} />,
-      className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-    });
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`文件保存失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        // 通知父组件：后端已保存，仅需刷新卡片列表
+        onImport([], syncToGTD, '__FILE_SAVED__');
+      } else {
+        // 粘贴文本导入：走原有流程（传递原始文本用于后端溯源保存）
+        const rawText = importType === 'paste' ? importContent : undefined;
+        onImport(
+          importResults.map(result => ({
+            title: result.title,
+            content: result.content,
+            color: result.color,
+            address: result.address
+          })),
+          syncToGTD,
+          rawText
+        );
+      }
+
+      // 重置表单并关闭模态框
+      setIsSaved(true);
+      resetForm();
+      setShowConfirmDialog(false);
+      onClose();
+
+      toast(`${importResults.length} 条知识记录已成功导入并分类${syncToGTD ? '，并同步到任务管理' : ''}`, {
+        icon: <Check size={16} />,
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
+    } catch (error) {
+      console.error('保存失败:', error);
+      setErrors(['保存失败: ' + (error instanceof Error ? error.message : '未知错误')]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // 取消导入
