@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -1009,7 +1011,9 @@ https://example.com/knowledge-management
                       {Math.round(result.confidence * 100)}%
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">{result.content}</p>
+                  <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
+                    <ReactMarkdown remarkPlugins={[remarkBreaks]}>{result.content}</ReactMarkdown>
+                  </div>
                 </motion.div>
               ))}
             </div>

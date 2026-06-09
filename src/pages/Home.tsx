@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import {
   Brain,
   ChevronDown,
@@ -232,7 +233,9 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 
   // 格式化日期时间
   const formatDate = (dateString: string) => {
+    if (!dateString) return '';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
     return new Intl.DateTimeFormat('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -248,10 +251,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
     const colorMatch = !selectedCardColor || card.color === selectedCardColor;
     
     // 时间过滤
-    const cardDate = new Date(card.createdAt);
+    const cardDate = card.createdAt ? new Date(card.createdAt) : null;
     const now = new Date();
     let timeMatch = true;
-    if (timeFilter !== 'all') {
+    if (timeFilter !== 'all' && cardDate && !isNaN(cardDate.getTime())) {
       if (timeFilter === 'today') {
         timeMatch = cardDate.toDateString() === now.toDateString();
       } else if (timeFilter === 'week') {
@@ -372,13 +375,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               id: String(card.id || card.ID),
               title: card.title || '',
               content: card.content || '',
-              card_type: card.card_type || card.type || 'blue',
-              category: card.category || '',
+              color: card.card_type || card.type || 'blue',
               address: card.address || '',
-              tags: Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' ? JSON.parse(card.tags) : []),
-              core_tags: Array.isArray(card.core_tags) ? card.core_tags : (typeof card.core_tags === 'string' ? JSON.parse(card.core_tags) : []),
-              created_at: card.created_at || null,
-              updated_at: card.updated_at || null,
+              createdAt: card.created_at || null,
+              relatedCards: Array.isArray(card.related_cards) ? card.related_cards.map(String) : [],
             }));
             setCards(formattedCards);
           }
@@ -443,13 +443,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
               id: String(card.id || card.ID),
               title: card.title || '',
               content: card.content || '',
-              card_type: card.card_type || card.type || 'blue',
-              category: card.category || '',
+              color: card.card_type || card.type || 'blue',
               address: card.address || '',
-              tags: Array.isArray(card.tags) ? card.tags : (typeof card.tags === 'string' ? JSON.parse(card.tags) : []),
-              core_tags: Array.isArray(card.core_tags) ? card.core_tags : (typeof card.core_tags === 'string' ? JSON.parse(card.core_tags) : []),
-              created_at: card.created_at || null,
-              updated_at: card.updated_at || null,
+              createdAt: card.created_at || null,
+              relatedCards: Array.isArray(card.related_cards) ? card.related_cards.map(String) : [],
             }));
             setCards(formattedCards);
           }
@@ -1601,26 +1598,14 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                       </div>
                     </div>
                     <div className="p-3 bg-white dark:bg-gray-800">
-                      {(() => {
-                        const summary = extractSummary(card.content);
-                        const isLong = card.content.length > 120;
-                        if (isLong && !expandedCardIds.has(card.id)) {
-                          return (
-                            <div>
-                              <p className="text-sm text-gray-600 mb-1">{summary}</p>
-                              <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">展开全文</button>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div>
-                            <div className="text-sm text-gray-600 mb-1 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
-                              <ReactMarkdown>{card.content}</ReactMarkdown>
-                            </div>
-                            {isLong && <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">收起</button>}
-                          </div>
-                        );
-                      })()}
+                      <div className={`text-sm text-gray-600 mb-1 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1 ${!expandedCardIds.has(card.id) ? 'line-clamp-3' : ''}`}>
+                        <ReactMarkdown remarkPlugins={[remarkBreaks]}>{card.content}</ReactMarkdown>
+                      </div>
+                      {card.content.length > 120 && (
+                        <button onClick={() => toggleExpandCard(card.id)} className="text-xs text-blue-500 hover:text-blue-700">
+                          {expandedCardIds.has(card.id) ? '收起' : '展开全文'}
+                        </button>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-500">{formatDate(card.createdAt)}</span>
                         <div className="flex gap-1">
@@ -2046,7 +2031,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                            </div>
                          </div>
                           <div className="p-3 bg-paper dark:bg-dark-mute">
-                            <div className="text-sm text-ink-desc dark:text-ink-desc line-clamp-3 mb-2 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1"><ReactMarkdown>{card.content}</ReactMarkdown></div>
+                            <div className="text-sm text-ink-desc dark:text-ink-desc line-clamp-3 mb-2 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1"><ReactMarkdown remarkPlugins={[remarkBreaks]}>{card.content}</ReactMarkdown></div>
                            <div className="flex items-center justify-between text-xs text-ink-desc">
                              <span>ID: {card.id}</span>
                              <span>{formatDate(card.createdAt)}</span>
@@ -2110,7 +2095,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                 <div className="flex-1 overflow-y-auto p-8">
                   <div className={`${getCardType(zoomedCard.color).bgColor} border border-border rounded-card p-6`}>
                     <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
-                      <ReactMarkdown>{zoomedCard.content}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkBreaks]}>{zoomedCard.content}</ReactMarkdown>
                     </div>
                   </div>
                   

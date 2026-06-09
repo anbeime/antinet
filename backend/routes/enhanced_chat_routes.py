@@ -1349,8 +1349,11 @@ async def enhanced_chat(request: ChatRequest):
         # 自动提取卡片建议（不自动创建）— LLM 主路径 + 规则降级
         try:
             from routes import auto_card
+            # 把知识库搜索结果传给卡片提取 Agent 作为分析上下文
+            kb_cards = result.cards if 'result' in locals() and hasattr(result, 'cards') else []
             suggestions = await auto_card.suggest_cards_api_async(
-                query, response_data.get("response", "")
+                query, response_data.get("response", ""),
+                card_context=kb_cards,
             )
             response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
         except Exception as e:

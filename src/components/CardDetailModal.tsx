@@ -94,9 +94,17 @@ const cardTypeMap = {
   }
 };
 
+// 安全获取卡片类型样式（防御 color 未定义）
+const getCardStyles = (color?: string) => {
+  if (color && color in cardTypeMap) return cardTypeMap[color as keyof typeof cardTypeMap];
+  return cardTypeMap.blue;
+};
+
 // 格式化日期时间
 const formatDate = (dateString: string) => {
+  if (!dateString) return '';
   const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
     month: '2-digit',
@@ -613,7 +621,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // 生成 PDF 预览（Markdown → 样式化 PDF）
   const generateSourcePdf = async (theme?: string) => {
     const effectiveTheme = theme || sourceExportTheme;
-    const mdContent = `# ${card?.title || '知识卡片'}\n\n${card?.content || ''}`;
+    const mdContent = sourceMarkdownData?.source_file?.markdown_content || `# ${card?.title || '知识卡片'}\n\n${card?.content || ''}`;
     if (!mdContent.trim()) return;
     setSourcePdfGenerating(true);
     setSourcePdfError('');
@@ -678,10 +686,10 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // 切换到 PDF 标签时自动生成 PDF
   useEffect(() => {
-    if (showSourceMarkdown && sourceViewMode === 'pdf' && card?.content) {
+    if (showSourceMarkdown && sourceViewMode === 'pdf' && (sourceMarkdownData?.source_file?.markdown_content || card?.content)) {
       generateSourcePdf();
     }
-  }, [sourceViewMode, showSourceMarkdown]);
+  }, [sourceViewMode, showSourceMarkdown, sourceMarkdownData]);
 
   // 外部触发刷新（如任务创建后）
   useEffect(() => {
@@ -877,7 +885,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // 分享卡片
   const handleShare = () => {
-    const shareText = `【${cardTypeMap[card.color].name}】${card.title}\n\n${card.content}\n\nID: ${card.address}`;
+    const shareText = `【${getCardStyles(card.color).name}】${card.title}\n\n${card.content}\n\nID: ${card.address}`;
     navigator.clipboard?.writeText(shareText);
     toast('卡片内容已复制到剪贴板', { className: 'bg-green-50 text-green-800' });
   };
@@ -996,7 +1004,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
           style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
           <div className="flex items-center min-w-0 flex-1">
-            <div className={`${cardTypeMap[card.color].color} w-3 h-3 rounded-full mr-2 flex-shrink-0`}></div>
+            <div className={`${getCardStyles(card.color).color} w-3 h-3 rounded-full mr-2 flex-shrink-0`}></div>
             {isEditing ? (
               <input
                 type="text"
@@ -1219,11 +1227,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         {/* 模态框内容 */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* 卡片基本信息 */}
-          <div className={`${cardTypeMap[card.color].bgColor} border ${cardTypeMap[card.color].borderColor} rounded-lg p-6 mb-6`}>
+          <div className={`${getCardStyles(card.color).bgColor} border ${getCardStyles(card.color).borderColor} rounded-lg p-6 mb-6`}>
             <div className="flex flex-wrap items-center justify-between mb-4 gap-4">
               <div className="flex items-center">
-                <span className={`${cardTypeMap[card.color].color} text-white text-xs px-2 py-1 rounded-full`}>
-                  {cardTypeMap[card.color].name}
+                <span className={`${getCardStyles(card.color).color} text-white text-xs px-2 py-1 rounded-full`}>
+                  {getCardStyles(card.color).name}
                 </span>
                 <span className="text-gray-500 dark:text-gray-400 text-sm ml-3 flex items-center">
                   <Clock size={14} className="mr-1" />
@@ -1252,7 +1260,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     </span>
                   ) : null;
                 })()}
-                <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
+                <div className={`${getCardStyles(card.color).color} text-white px-3 py-1 rounded-full text-sm font-medium`}>
                   {card.address}
                 </div>
                 {/* 源文件溯源按钮 - 微信读书风格：主按钮可直接点击跳转查看，下拉菜单提供更多操作 */}
@@ -1553,19 +1561,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       <motion.div
                         key={relatedCard.id}
                         whileHover={{ x: 5 }}
-                        className={`border ${cardTypeMap[relatedCard.color].borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-all`}
+                        className={`border ${getCardStyles(relatedCard.color).borderColor} rounded-lg p-4 cursor-pointer hover:shadow-md transition-all`}
                         onClick={() => onRelatedCardClick(relatedCard.id)}
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex items-center">
-                            <div className={`${cardTypeMap[relatedCard.color].color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
+                            <div className={`${getCardStyles(relatedCard.color).color} w-2 h-2 rounded-full mt-2 mr-3`}></div>
                             <div>
                               <h4 className="font-medium">{relatedCard.title}</h4>
                               <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{relatedCard.content}</p>
                             </div>
                           </div>
                           <div className="flex items-center">
-                            <span className={`text-xs ${cardTypeMap[relatedCard.color].color} text-white px-2 py-0.5 rounded-full mr-3`}>
+                            <span className={`text-xs ${getCardStyles(relatedCard.color).color} text-white px-2 py-0.5 rounded-full mr-3`}>
                               {relatedCard.address}
                             </span>
                             <ChevronRight size={16} className="text-gray-400" />
@@ -1591,7 +1599,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                             key={rc.id}
                             className="inline-flex items-center px-3 py-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-sm"
                           >
-                            <div className={`${cardTypeMap[rc.color].color} w-2 h-2 rounded-full mr-2`}></div>
+                            <div className={`${getCardStyles(rc.color).color} w-2 h-2 rounded-full mr-2`}></div>
                             <span>{rc.title}</span>
                             <button
                               type="button"
@@ -1633,7 +1641,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                             onClick={() => addRelatedCard(availableCard.id)}
                             className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center"
                           >
-                            <div className={`${cardTypeMap[availableCard.color].color} w-2 h-2 rounded-full mr-2`}></div>
+                            <div className={`${getCardStyles(availableCard.color).color} w-2 h-2 rounded-full mr-2`}></div>
                             <Plus size={14} className="mr-2 text-blue-500" />
                             <span>{availableCard.title}</span>
                           </button>
@@ -1691,7 +1699,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                         }`}
                         onClick={() => onRelatedCardClick(String(sc.id))}
                       >
-                        <div className={`${cardTypeMap[sc.card_type as CardColor]?.color || 'bg-gray-500'} w-2 h-2 rounded-full mr-3 flex-shrink-0`}></div>
+                        <div className={`${getCardStyles(sc.card_type as CardColor).color || 'bg-gray-500'} w-2 h-2 rounded-full mr-3 flex-shrink-0`}></div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <h5 className="font-medium text-sm truncate">{sc.title}</h5>
@@ -1704,7 +1712,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{sc.content?.slice(0, 80)}</p>
                         </div>
                         <div className="flex items-center gap-2 ml-3 flex-shrink-0">
-                          <span className={`text-[10px] ${cardTypeMap[sc.card_type as CardColor]?.color || 'bg-gray-500'} text-white px-1.5 py-0.5 rounded`}>
+                          <span className={`text-[10px] ${getCardStyles(sc.card_type as CardColor).color || 'bg-gray-500'} text-white px-1.5 py-0.5 rounded`}>
                             {sc.location_in_source || ''}
                           </span>
                           <ChevronRight size={14} className="text-gray-400" />
@@ -2168,7 +2176,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     {(relatedCardsDetails.length > 0 ? relatedCardsDetails.slice(0, 2) : []).map((related, index) => (
                       <div key={index} className="bg-white/50 dark:bg-gray-800/50 p-3 rounded-lg">
                         <div className="flex items-center mb-1">
-                          <div className={`${cardTypeMap[related.color].color} w-2 h-2 rounded-full mr-2`}></div>
+                          <div className={`${getCardStyles(related.color).color} w-2 h-2 rounded-full mr-2`}></div>
                           <span className="text-xs font-medium">{related.title}</span>
                         </div>
                         <div className="w-full bg-blue-100 dark:bg-blue-900/30 rounded-full h-1">
@@ -2387,10 +2395,10 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               {/* 放大模态框头部 */}
               <div className="flex justify-between items-center p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 gap-2">
                 <div className="flex items-center min-w-0 flex-1">
-                  <div className={`${cardTypeMap[card.color].color} w-4 h-4 rounded-full mr-3 flex-shrink-0`}></div>
+                  <div className={`${getCardStyles(card.color).color} w-4 h-4 rounded-full mr-3 flex-shrink-0`}></div>
                   <h2 className="text-2xl font-bold truncate">{card.title}</h2>
-                  <span className={`ml-3 hidden sm:inline ${cardTypeMap[card.color].color} text-white text-xs px-2 py-1 rounded-full flex-shrink-0`}>
-                    {cardTypeMap[card.color].name}
+                  <span className={`ml-3 hidden sm:inline ${getCardStyles(card.color).color} text-white text-xs px-2 py-1 rounded-full flex-shrink-0`}>
+                    {getCardStyles(card.color).name}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -2412,7 +2420,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               
               {/* 放大后的卡片内容 */}
               <div className="flex-1 overflow-y-auto p-8">
-                <div className={`${cardTypeMap[card.color].bgColor} border ${cardTypeMap[card.color].borderColor} rounded-xl p-8`}>
+                <div className={`${getCardStyles(card.color).bgColor} border ${getCardStyles(card.color).borderColor} rounded-xl p-8`}>
                   <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
                     <ReactMarkdown>{card.content}</ReactMarkdown>
                   </div>
@@ -2424,7 +2432,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     <Clock size={14} className="mr-1" />
                     创建于 {formatDate(card.createdAt)}
                   </div>
-                  <div className={`${cardTypeMap[card.color].color} text-white px-3 py-1 rounded-full`}>
+                  <div className={`${getCardStyles(card.color).color} text-white px-3 py-1 rounded-full`}>
                     {card.address}
                   </div>
                 </div>
@@ -2531,7 +2539,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
             </div>
 
             {/* 内容区 */}
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 relative">
               {/* PDF 预览视图（Markdown → 样式化 PDF，与知识图谱页面效果一致） */}
               {sourceViewMode === 'pdf' ? (
                 sourcePdfGenerating ? (
@@ -2548,7 +2556,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     </button>
                   </div>
                 ) : sourcePdfUrl ? (
-                  <div className="-m-6 h-full flex flex-col bg-gray-100 dark:bg-gray-900">
+                  <div className="absolute inset-0 flex flex-col bg-gray-100 dark:bg-gray-900">
                     {/* 顶部操作栏 */}
                     {sourcePdfUrl && (
                       <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shrink-0">
