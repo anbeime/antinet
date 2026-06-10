@@ -1037,3 +1037,86 @@ def _serve_zip_buffer(buf: io.BytesIO, filename: str):
             "Content-Length": str(len(data)),
         },
     )
+
+
+# ---- GTD Task Integration ----
+
+@router.post("/{invoice_id}/create-task")
+async def create_invoice_task(invoice_id: int):
+    """Create a GTD reimbursement task from an invoice"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+    invoice = cursor.fetchone()
+    if not invoice:
+        conn.close()
+        raise HTTPException(status_code=404, detail="invoice not found")
+
+    cursor.execute(
+        "SELECT id FROM gtd_tasks WHERE source_type = 'invoice' AND source_id = ?",
+        (invoice_id,)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail=f"报销任务已存在",
+            headers={"X-Existing-Task-Id": str(existing["id"])}
+        )
+
+    seller = invoice["seller_name"] or "未知商家"
+    amount = invoice["total_amount"] or 0
+    inv_date = invoice["invoice_date"] or "未知日期"
+    inv_number = invoice["invoice_number"] or "无号码"
+
+    description = (
+        f"发票报销任务\n"
+        f"商家: {seller}\n"
+        f"金额: ¥{float(amount):.2f}\n"
+        f"开票日期: {inv_date}\n"
+        f"发票号码: {inv_number}"
+    )
+
+    try:
+        amt = float(amount)
+        if amt > 10000:
+            priority = "high"
+        elif amt > 1000:
+            priority = "medium"
+        else:
+            priority = "low"
+    except (ValueError, TypeError):
+        priority = "low"
+
+    now = datetime.now().isoformat()
+    cursor.execute(
+        """INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'invoice', ?, ?, ?)""",
+        (f"报销 - {seller}", description, priority, "inbox", invoice_id, now, now)
+    )
+    task_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "message": f"报销任务已创建（{priority}优先级）",
+        "priority": priority,
+    }
+
+
+@router.get("/{invoice_id}/tasks")
+async def get_invoice_tasks(invoice_id: int):
+    """List GTD tasks associated with an invoice"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM gtd_tasks WHERE source_type = 'invoice' AND source_id = ? ORDER BY created_at DESC",
+        (invoice_id,)
+    )
+    tasks = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return {"status": "ok", "tasks": tasks, "count": len(tasks)}

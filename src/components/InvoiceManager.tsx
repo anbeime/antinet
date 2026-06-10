@@ -5,8 +5,10 @@ import {
   RefreshCw, Filter, Building2, DollarSign, AlertTriangle,
   Loader, ChevronDown, ChevronUp, Trash2, FileSpreadsheet,
   Clock, Tag, ShieldAlert, Paperclip, Archive, FileWarning,
+  ExternalLink,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { toast } from 'sonner';
 
 interface Invoice {
   id: number;
@@ -76,6 +78,44 @@ const InvoiceManager: React.FC = () => {
   // exporting
   const [exporting, setExporting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+
+  // task creation
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [linkedTaskId, setLinkedTaskId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedInvoice) setLinkedTaskId(null);
+  }, [selectedInvoice]);
+
+  const handleCreateTask = async () => {
+    if (!selectedInvoice) return;
+    setCreatingTask(true);
+    try {
+      const res = await fetch(api(`/api/invoice/${selectedInvoice.id}/create-task`), { method: 'POST' });
+      if (res.status === 409) {
+        const taskId = Number(res.headers.get('X-Existing-Task-Id'));
+        setLinkedTaskId(taskId);
+        toast('报销任务已存在', {
+          description: '点击"查看任务"跳转管理',
+          action: { label: '查看任务', onClick: () => window.location.href = '/gtd-tasks' },
+        });
+      } else if (res.ok) {
+        const data = await res.json();
+        setLinkedTaskId(data.task_id);
+        toast('报销任务已创建', {
+          description: `优先级: ${data.priority === 'high' ? '高' : data.priority === 'medium' ? '中' : '低'}`,
+          action: { label: '查看任务', onClick: () => window.location.href = '/gtd-tasks' },
+        });
+      } else {
+        const err = await res.json().catch(() => ({ detail: '创建失败' }));
+        toast.error(err.detail || '创建报销任务失败');
+      }
+    } catch {
+      toast.error('创建报销任务失败，请检查后端服务');
+    } finally {
+      setCreatingTask(false);
+    }
+  };
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -614,6 +654,29 @@ const InvoiceManager: React.FC = () => {
 
                   {/* Actions */}
                   <div className="flex flex-wrap gap-3">
+                    {selectedInvoice.is_excluded ? (
+                      <button disabled
+                        className="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm bg-gray-200 text-gray-400 cursor-not-allowed">
+                        <XCircle className="w-4 h-4" />
+                        <span>不报销</span>
+                      </button>
+                    ) : linkedTaskId ? (
+                      <button onClick={() => window.location.href = '/gtd-tasks'}
+                        className="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm bg-green-500 text-white hover:bg-green-600 transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                        <span>查看任务 →</span>
+                      </button>
+                    ) : (
+                      <button onClick={handleCreateTask} disabled={creatingTask}
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                          creatingTask
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                        }`}>
+                        {creatingTask ? <Loader className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                        <span>{creatingTask ? '创建中...' : '创建报销任务'}</span>
+                      </button>
+                    )}
                     <button onClick={() => handleDownloadSource(selectedInvoice)}
                       disabled={!selectedInvoice.has_source_file}
                       className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${

@@ -864,11 +864,15 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Table size={16} />
                   <span>Excel/在线表格</span>
                 </button>
+                <button
+                  onClick={() => navigate('/invoice')}
+                  className="w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 text-gray-700"
+                >
+                  <FileText size={16} />
+                  <span>发票管理</span>
+                </button>
               </div>
             </div>
-            
-
-            
 
             {/* AI工具下拉菜单 */}
             <div className="relative group">
@@ -973,6 +977,10 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
 <button onClick={() => { setActiveTab('excel-analysis'); setMobileMenuOpen(false); }}
                 className={`w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 ${activeTab === 'excel-analysis' ? 'text-blue-600 bg-blue-50 font-semibold' : 'text-gray-700'}`}>
                 <Table size={16} /><span>Excel/在线表格</span>
+              </button>
+              <button onClick={() => { navigate('/invoice'); setMobileMenuOpen(false); }}
+                className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center space-x-2 text-gray-700">
+                <FileText size={16} /><span>发票管理</span>
               </button>
               <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-2">
                 AI 工具
