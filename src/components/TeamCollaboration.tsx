@@ -203,6 +203,14 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const cardCacheRef = useRef<Map<string, any>>(new Map());
 
+  // 持久化消息到 localStorage
+  const MESSAGES_STORAGE_KEY = 'team_collab_messages';
+  useEffect(() => {
+    try {
+      localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages]);
+
   // 新消息时自动滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -448,6 +456,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         ]);
 
         // 通过 WebSocket REST 加载历史活动
+        let loadedFromApi = false;
         try {
           const activities = await collaborationREST.getActivities(50);
           if (activities && activities.length > 0) {
@@ -459,10 +468,24 @@ const TeamCollaborationEnhanced: React.FC = () => {
               timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '',
               replies: []
             })));
+            loadedFromApi = true;
             console.info(`[协作] 加载了${activities.length} 条历史消息`);
           }
         } catch (e) {
-          console.info('[协作] 无历史消息记录，开始新的协作会话');
+          console.info('[协作] REST加载失败，尝试本地缓存');
+        }
+        // REST 无数据时从 localStorage 恢复
+        if (!loadedFromApi) {
+          try {
+            const cached = localStorage.getItem(MESSAGES_STORAGE_KEY);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setMessages(parsed);
+                console.info(`[协作] 从本地缓存恢复了 ${parsed.length} 条消息`);
+              }
+            }
+          } catch {}
         }
 
       } finally {
@@ -1171,7 +1194,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col ${showCardPanel ? 'lg:col-span-2' : ''}`}
+                  className={`bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[400px] sm:h-[500px] flex flex-col ${showCardPanel ? 'lg:col-span-2' : ''}`}
                 >
                   <div className="flex justify-between items-center mb-4">
                     <div className="flex items-center space-x-3">
@@ -1216,20 +1239,20 @@ const TeamCollaborationEnhanced: React.FC = () => {
                                     value={replyContent}
                                     onChange={(e) => setReplyContent(e.target.value)}
                                     placeholder="输入回复..."
-                                    className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                                    className="flex-1 px-3 py-2 sm:py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
                                     autoFocus
                                   />
                                   <button
                                     onClick={() => handleSendReply(message.id)}
-                                    className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    className="p-2 sm:p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                                   >
-                                    <Send size={14} />
+                                    <Send size={16} />
                                   </button>
                                   <button
                                     onClick={() => setReplyingTo(null)}
-                                    className="p-1.5 text-gray-500 hover:text-gray-700"
+                                    className="p-2 sm:p-1.5 text-gray-500 hover:text-gray-700"
                                   >
-                                    <X size={14} />
+                                    <X size={16} />
                                   </button>
                                 </div>
                               )}
@@ -1273,39 +1296,81 @@ const TeamCollaborationEnhanced: React.FC = () => {
                       </div>
                     )}
 
-                    <div className="mt-4 flex items-end gap-2">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
-                        {userInfo.name?.charAt(0) || '?'}
+                    <div className="mt-4 sticky bottom-0 bg-white dark:bg-gray-750 pt-2">
+                      <div className="hidden sm:flex items-end gap-2">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                          {userInfo.name?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                            placeholder="输入想法或建议.."
+                            className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                          />
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                                setDiscussionCards(prev => [...prev, fakeCard]);
+                                toast.success('已添加到知识卡片');
+                              }}
+                              disabled={!newMessage.trim()}
+                              className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                              title="添加为知识卡片"
+                            >
+                              <Bookmark size={16} />
+                            </button>
+                            <button
+                              onClick={handleSendMessage}
+                              disabled={!newMessage.trim()}
+                              className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
+                            >
+                              <Send size={16} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1 flex items-center space-x-2">
+                      {/* 移动端：输入框和按钮分两行，发送键在右下角容易点击 */}
+                      <div className="flex sm:hidden flex-col gap-2">
                         <input
                           type="text"
                           value={newMessage}
                           onChange={(e) => setNewMessage(e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
                           placeholder="输入想法或建议.."
-                          className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                          className="w-full bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
                         />
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => {
-                              const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
-                              setDiscussionCards(prev => [...prev, fakeCard]);
-                              toast.success('已添加到知识卡片');
-                            }}
-                            disabled={!newMessage.trim()}
-                            className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
-                            title="添加为知识卡片"
-                          >
-                            <Bookmark size={16} />
-                          </button>
-                          <button
-                            onClick={handleSendMessage}
-                            disabled={!newMessage.trim()}
-                            className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
-                          >
-                            <Send size={16} />
-                          </button>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                              {userInfo.name?.charAt(0) || '?'}
+                            </div>
+                            <span className="text-xs text-gray-400">协作讨论</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                                setDiscussionCards(prev => [...prev, fakeCard]);
+                                toast.success('已添加到知识卡片');
+                              }}
+                              disabled={!newMessage.trim()}
+                              className="p-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                              title="添加为知识卡片"
+                            >
+                              <Bookmark size={18} />
+                            </button>
+                            <button
+                              onClick={handleSendMessage}
+                              disabled={!newMessage.trim()}
+                              className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
+                            >
+                              <Send size={20} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1315,7 +1380,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
                   <motion.div
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col"
+                    className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[400px] sm:h-[500px] flex flex-col"
                   >
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold flex items-center gap-2">

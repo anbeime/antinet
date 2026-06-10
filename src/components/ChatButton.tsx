@@ -65,22 +65,21 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
             onMouseDown={handleMouseDown}
             style={{ 
               transform: `translate(${position.x}px, ${position.y}px)`,
-              right: '24px',
-              top: '50%'
+              right: '24px'
             }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             className={cn(
-              "fixed z-50 cursor-move",
+              "fixed z-50 cursor-move bottom-24 sm:top-1/2 sm:bottom-auto",
               className
             )}
           >
             <div
               onClick={() => setIsOpen(true)}
-              className="w-14 h-14 cursor-pointer relative"
+              className="w-16 h-16 sm:w-14 sm:h-14 cursor-pointer relative"
             >
-              <img src={chatAvatar} alt="智能助手" className="w-14 h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
+              <img src={chatAvatar} alt="智能助手" className="w-16 h-16 sm:w-14 sm:h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
             </div>
 
             {/* 拖拽手柄 */}

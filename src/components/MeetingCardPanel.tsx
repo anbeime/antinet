@@ -126,7 +126,7 @@ const MeetingCardItem: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-lg border ${style.border} ${style.bg} p-2.5 transition-all hover:border-opacity-70 cursor-pointer`}
+      className={`rounded-lg border ${style.border} ${style.bg} p-3 sm:p-2.5 transition-all hover:border-opacity-70 cursor-pointer active:scale-[0.98]`}
       onClick={() => onClick?.(card)}
     >
       {/* 卡片头部：类型标签 + 标题 + 详情/保存按钮 */}
@@ -162,7 +162,7 @@ const MeetingCardItem: React.FC<{
               }`}
               title={card.saved ? '已添加到输入框' : '添加到输入框'}
             >
-              {card.saved ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+              {card.saved ? <BookmarkCheck className="w-4 h-4 sm:w-3.5 sm:h-3.5" /> : <Bookmark className="w-4 h-4 sm:w-3.5 sm:h-3.5" />}
             </button>
           )}
         </div>
@@ -270,7 +270,7 @@ const MeetingCardPanel: React.FC<MeetingCardPanelProps> = ({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {displayCards.map((card, idx) => (
                 <MeetingCardItem
                   key={`${card.source}-${card.title}-${idx}`}

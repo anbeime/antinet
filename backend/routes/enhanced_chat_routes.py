@@ -764,12 +764,12 @@ async def synthesize_response_with_llm(query: str, result: HybridSearchResult, u
 
 回答："""
     
-    # 尝试使用 NPU 模型生成（快速）- 直接实例化避免单例问题
+    # 尝试使用 NPU 模型生成
     try:
-        from models.model_loader import NPUModelLoader
-        loader = NPUModelLoader("llama3.2-3b")  # 直接实例化，使用快速的3B模型
+        from models.model_loader import get_model_loader
+        loader = get_model_loader("qwen2.0-7b")
         if not loader.is_loaded:
-            loader.load()  # 加载模型
+            loader.load()
         if loader and loader.is_loaded:
             response = loader.infer(prompt=prompt, max_new_tokens=512, temperature=0.3)
             if response and len(response) > 10:
@@ -788,11 +788,10 @@ def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str
     """尝试使用 NPU 模型生成回答（带人设和记忆）"""
     try:
         from models.model_loader import get_model_loader
-        loader = get_model_loader("qwen2.0-7b")  # 使用 Qwen 7B 中文优化模型
+        loader = get_model_loader("qwen2.0-7b")
         if not loader.is_loaded:
-            return None
+            loader.load()
         
-        # 构建带人设的提示词
         memory_context = memory_manager.get_memory_context(user_id)
         system_prompt = PERSONA_SYSTEM_PROMPT.format(
             current_time=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
@@ -1276,7 +1275,11 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["reply"] = response_data["response"]
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    response_data["response"] = f"该技能暂时不可用。"
+                    npu_text = _try_npu_generate(f"用户想要{scene_type.value}：{query}", user_id)
+                    if npu_text:
+                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + npu_text
+                    else:
+                        response_data["response"] = f"该技能暂时不可用。"
                 
         elif scene_type == SceneType.GREETING:
             response_data["response"] = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
@@ -1323,8 +1326,13 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["reply"] = response_data["response"]
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    logger.warning("Genie生成失败，回退到简单格式")
-                    response_data["response"] = generate_hybrid_response(query, result)
+                    logger.warning("Genie生成失败，尝试NPU直接推理")
+                    npu_text = _try_npu_generate(query, user_id)
+                    if npu_text:
+                        response_data["response"] = npu_text
+                        response_data["metadata"]["model"] = "npu-direct"
+                    else:
+                        response_data["response"] = generate_hybrid_response(query, result)
             else:
                 # 无匹配时，使用Genie快速响应（7B优先，3B兜底）
                 genie_text = await call_genie(
@@ -1336,8 +1344,13 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["reply"] = genie_text
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    logger.warning("[Chat] Genie不可用")
-                    response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
+                    logger.warning("[Chat] Genie不可用，尝试NPU直接推理")
+                    npu_text = _try_npu_generate(query, user_id)
+                    if npu_text:
+                        response_data["response"] = npu_text
+                        response_data["metadata"]["model"] = "npu-direct"
+                    else:
+                        response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
         
         response_data["suggested_questions"] = generate_suggested_questions(
             scene_type,
@@ -1536,6 +1549,12 @@ async def enhanced_chat_stream(request: ChatRequest):
                         ):
                             full_text += token
                             yield _sse_event("token", {"content": token})
+                        if not full_text:
+                            npu_text = _try_npu_generate(query, user_id) or generate_hybrid_response(query, result)
+                            full_text = npu_text
+                            for ch in npu_text:
+                                yield _sse_event("token", {"content": ch})
+                                await asyncio.sleep(0.02)
                     else:
                         yield _sse_event("meta", {"scene_type": "general"})
                         async for token in _call_genie_stream(
@@ -1544,6 +1563,12 @@ async def enhanced_chat_stream(request: ChatRequest):
                         ):
                             full_text += token
                             yield _sse_event("token", {"content": token})
+                        if not full_text:
+                            npu_text = _try_npu_generate(query, user_id) or f"关于「{query}」，我没有找到相关信息。"
+                            full_text = npu_text
+                            for ch in npu_text:
+                                yield _sse_event("token", {"content": ch})
+                                await asyncio.sleep(0.02)
 
                 # 最终事件：携带完整回复 + 元数据（确保所有值 JSON 可序列化）
                 yield _sse_event("done", {

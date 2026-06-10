@@ -62,6 +62,7 @@ class CollaborationService {
   private reconnectDelay = 2000;
   private maxReconnectDelay = 30000;
   private destroyed = false;
+  private _hasLoggedConnError = false;
 
   /**
    * 连接 WebSocket 协作频道
@@ -74,6 +75,7 @@ class CollaborationService {
     this.nickname = nickname || '';
     this.userAvatar = avatar || '👤';
     this.destroyed = false;
+    this._hasLoggedConnError = false;
     this._connect();
   }
 
@@ -127,8 +129,11 @@ class CollaborationService {
     }
   }
 
-  private _onError(event: Event): void {
-    console.error('[Collab] WebSocket 错误:', event);
+  private _onError(_event: Event): void {
+    if (!this._hasLoggedConnError) {
+      console.warn('[Collab] WebSocket 连接失败，后台会自动重连。如需协作功能请确保后端已启动 (localhost:8000)');
+      this._hasLoggedConnError = true;
+    }
   }
 
   private _scheduleReconnect(): void {
