@@ -12,7 +12,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
 import { renderMarkdown } from '@/lib/utils';
 import { bookshelfService } from '@/services/bookshelfService';
 
-const API_BASE = getApiBaseUrl();
+const API_BASE = () => getApiBaseUrl();
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
 const CARD_COLORS: Record<string, string> = {
@@ -220,7 +220,7 @@ const PDFViewer: React.FC = () => {
       fd.append('title', cardTitle || '知识卡片');
       fd.append('author', 'PDFViewer');
       fd.append('theme', effectiveTheme);
-      const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd });
+      const res = await fetch(`${API_BASE()}/api/md2pdf/convert`, { method: 'POST', body: fd });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || 'PDF 生成失败'); }
       const blob = await res.blob();
       if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
@@ -235,13 +235,13 @@ const PDFViewer: React.FC = () => {
       if (currentTopic) {
         // 有专题时，尝试从专题 API 加载卡片
         try {
-          const projRes = await fetch(`${API_BASE}/api/research/projects`);
+          const projRes = await fetch(`${API_BASE()}/api/research/projects`);
           if (projRes.ok) {
             const projects = await projRes.json();
             const project = projects.find((p: any) => p.name === currentTopic);
             if (project?.id) {
               setCurrentProjectId(project.id);
-              const cardsRes = await fetch(`${API_BASE}/api/research/projects/${project.id}/cards`);
+              const cardsRes = await fetch(`${API_BASE()}/api/research/projects/${project.id}/cards`);
               if (cardsRes.ok) { const d = await cardsRes.json(); setCards(d || []); setCardsLoading(false); return; }
             }
           }
@@ -249,10 +249,10 @@ const PDFViewer: React.FC = () => {
       }
       // 降级：按专题ID或从知识库加载全部卡片
       if (currentProjectId) {
-        const topicRes = await fetch(`${API_BASE}/api/knowledge/cards/by-topic/${currentProjectId}`);
+        const topicRes = await fetch(`${API_BASE()}/api/knowledge/cards/by-topic/${currentProjectId}`);
         if (topicRes.ok) { const d = await topicRes.json(); setCards(d.cards || d || []); setCardsLoading(false); return; }
       }
-      const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=500`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards?limit=500`);
       if (res.ok) { const d = await res.json(); setCards(d.cards || d || []); }
     } catch {} finally { setCardsLoading(false); }
   };
@@ -284,11 +284,11 @@ const PDFViewer: React.FC = () => {
     try {
       const body = { title: cardTitle || '无标题', content: cardContent, type: cardType };
       if (isNewCard) {
-        const res = await fetch(`${API_BASE}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const res = await fetch(`${API_BASE()}/api/knowledge/cards`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (res.ok) { const saved = await res.json(); setSelectedCard(saved); setIsNewCard(false); loadCards(); }
         else { toast.error('保存失败'); }
       } else if (selectedCard?.id) {
-        const res = await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const res = await fetch(`${API_BASE()}/api/knowledge/cards/${selectedCard.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (res.ok) { const updated = await res.json(); setSelectedCard(updated); loadCards(); }
         else { toast.error('保存失败'); }
       }
@@ -299,7 +299,7 @@ const PDFViewer: React.FC = () => {
     if (!selectedCard?.id || isNewCard) return;
     if (!window.confirm(`确定删除卡片「${selectedCard.title}」？`)) return;
     try {
-      await fetch(`${API_BASE}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE()}/api/knowledge/cards/${selectedCard.id}`, { method: 'DELETE' });
       setSelectedCard(null); setIsNewCard(false); setActiveView('pdf');
       loadCards();
     } catch { toast.error('删除失败'); }
@@ -420,7 +420,7 @@ const PDFViewer: React.FC = () => {
       fd.append('title', cardTitle || '文档');
       fd.append('author', 'PDFViewer');
 
-      const res = await fetch(`${API_BASE}/api/pdf/edit-text`, { method: 'POST', body: fd });
+      const res = await fetch(`${API_BASE()}/api/pdf/edit-text`, { method: 'POST', body: fd });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.detail || '导出失败'); }
 
       const blob = await res.blob();
@@ -545,7 +545,7 @@ const PDFViewer: React.FC = () => {
                         className="flex items-center gap-1 px-3 py-1 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
                         {sourcePdfGenerating ? <Loader size={12} className="animate-spin" /> : <FileText size={12} />}导出编辑 PDF
                       </button>
-                      <button onClick={async () => { if (cardContent) { const md = `# ${cardTitle}\n\n${cardContent}`; const fd = new FormData(); fd.append('file', new Blob([md], { type: 'text/markdown' }), 'doc.md'); fd.append('title', cardTitle); fd.append('author', 'PDFViewer'); fd.append('theme', exportTheme); const res = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (res.ok) { const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${cardTitle}-${exportTheme}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } } }}
+                      <button onClick={async () => { if (cardContent) { const md = `# ${cardTitle}\n\n${cardContent}`; const fd = new FormData(); fd.append('file', new Blob([md], { type: 'text/markdown' }), 'doc.md'); fd.append('title', cardTitle); fd.append('author', 'PDFViewer'); fd.append('theme', exportTheme); const res = await fetch(`${API_BASE()}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (res.ok) { const blob = await res.blob(); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${cardTitle}-${exportTheme}.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); } } }}
                         className="text-xs px-2 py-1 bg-purple-500 text-white rounded hover:bg-purple-600">生成主题 PDF</button>
                     </>
                   )}

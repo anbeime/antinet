@@ -49,7 +49,7 @@ interface KnowledgeCard {
   createdAt: string;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = () => getApiBaseUrl()
 
 const PDFAnalysisEnhanced: React.FC = () => {
   useTheme();
@@ -121,7 +121,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     try {
       setProcessingStatus({ stage: 'extract', progress: 30, message: '正在提取文本...' });
       
-      const response = await fetch(`${API_BASE}/api/pdf/extract/text`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/extract/text`, {
         method: 'POST',
         body: formData
       });
@@ -169,7 +169,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     try {
       setProcessingStatus({ stage: 'analyze', progress: 30, message: '正在分析内容...' });
 
-      const response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/generate/four-color-cards`, {
         method: 'POST',
         body: formData
       });
@@ -241,7 +241,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     });
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/merge`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/merge`, {
         method: 'POST',
         body: formData
       });
@@ -286,7 +286,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/split`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/split`, {
         method: 'POST',
         body: formData
       });
@@ -333,7 +333,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     });
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/images-to-pdf`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/images-to-pdf`, {
         method: 'POST',
         body: formData
       });

@@ -52,7 +52,7 @@ interface ExtractionResult {
   system_prompt: string;
 }
 
-const API_BASE = getApiBaseUrl() + '/api/skill'
+const API_BASE = () => getApiBaseUrl() + '/api/skill'
 
 const FourColorCardPanel: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -85,7 +85,7 @@ const FourColorCardPanel: React.FC = () => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/four-color-cards/extract`, {
+      const response = await fetch(`${API_BASE()}/four-color-cards/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -112,7 +112,7 @@ const FourColorCardPanel: React.FC = () => {
   // 加载存储统计
   const loadStorageStats = async () => {
     try {
-      const response = await fetch(`${API_BASE}/four-color-cards/stats`);
+      const response = await fetch(`${API_BASE()}/four-color-cards/stats`);
       if (response.ok) {
         const data = await response.json();
         setStorageStats(data);
@@ -126,8 +126,8 @@ const FourColorCardPanel: React.FC = () => {
   const handleExport = async (cardType?: string) => {
     try {
       const url = cardType 
-        ? `${API_BASE}/four-color-cards/export?card_type=${cardType}`
-        : `${API_BASE}/four-color-cards/export`;
+        ? `${API_BASE()}/four-color-cards/export?card_type=${cardType}`
+        : `${API_BASE()}/four-color-cards/export`;
       
       const response = await fetch(url);
       if (!response.ok) throw new Error('导出失败');
@@ -144,7 +144,7 @@ const FourColorCardPanel: React.FC = () => {
   // 加载系统提示词
   const loadSystemPrompt = async () => {
     try {
-      const response = await fetch(`${API_BASE}/four-color-cards/system-prompt`);
+      const response = await fetch(`${API_BASE()}/four-color-cards/system-prompt`);
       if (response.ok) {
         const data = await response.json();
         setSystemPrompt(data.system_prompt);
@@ -159,7 +159,7 @@ const FourColorCardPanel: React.FC = () => {
     if (!confirm('确定要清空所有四色卡片吗？')) return;
     
     try {
-      const response = await fetch(`${API_BASE}/four-color-cards/clear`, {
+      const response = await fetch(`${API_BASE()}/four-color-cards/clear`, {
         method: 'DELETE'
       });
       

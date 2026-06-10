@@ -19,7 +19,7 @@ interface ChatBotWithAPIProps {
 }
 
 // API 基础 URL
-const API_BASE = getApiBaseUrl() + '/api/chat/enhanced'
+const API_BASE = () => getApiBaseUrl() + '/api/chat/enhanced'
 
 export const ChatBotWithAPI: React.FC<ChatBotWithAPIProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -73,7 +73,7 @@ export const ChatBotWithAPI: React.FC<ChatBotWithAPIProps> = ({ isOpen, onClose 
       setMessages(prev => [...prev, userMessage]);
 
       // 调用后端API
-      const response = await fetch(`${API_BASE}/message`, {
+      const response = await fetch(`${API_BASE()}/message`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

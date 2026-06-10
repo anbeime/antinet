@@ -17,8 +17,10 @@ interface WorkingChatBotProps {
   onClose: () => void;
 }
 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 // API 配置 - 使用数据库版接口
-const API_BASE = 'http://localhost:8002/api/chat/simple';
+const API_BASE = () => getApiBaseUrl() + '/api/chat/simple';
 
 export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -46,7 +48,7 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
 
   const checkBackendStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/health`, { 
+      const response = await fetch(`${API_BASE()}/health`, { 
         method: 'GET',
         signal: AbortSignal.timeout(3000)
       });
@@ -135,7 +137,7 @@ export const WorkingChatBot: React.FC<WorkingChatBotProps> = ({ isOpen, onClose 
       setMessages(prev => [...prev, userMessage]);
 
       // 调用后端API
-      const response = await fetch(`${API_BASE}/chat`, {
+      const response = await fetch(`${API_BASE()}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -48,8 +48,10 @@ const getFileType = (fileName: string): 'excel' | 'pdf' | 'ppt' | 'doc' | 'other
   return 'other';
 };
 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 // API 配置
-const API_BASE = '/api/markdown-converter';
+const API_BASE = () => getApiBaseUrl() + '/api/markdown-converter';
 
 // 格式转换状态接口
 interface ConverterStatus {
@@ -363,7 +365,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
   // 格式转换功能
   const loadConverterStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/status`);
+      const response = await fetch(`${API_BASE()}/status`);
       if (response.ok) {
         const data = await response.json();
         setConverterStatus(data);
@@ -388,7 +390,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     setSuccess('');
 
     try {
-      const response = await fetch(`${API_BASE}/convert`, {
+      const response = await fetch(`${API_BASE()}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -431,7 +433,7 @@ const OfficeDocs: React.FC<OfficeDocsProps> = ({ initialFile }) => {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE}/mermaid/render`, {
+      const response = await fetch(`${API_BASE()}/mermaid/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

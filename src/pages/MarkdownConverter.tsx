@@ -22,8 +22,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 // API 配置
-const API_BASE = '/api/markdown-converter';
+const API_BASE = () => getApiBaseUrl() + '/api/markdown-converter';
 
 interface ConverterStatus {
   pandoc: { available: boolean; path: string | null };
@@ -101,7 +103,7 @@ graph TD
   // 加载状态
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/status`);
+      const response = await fetch(`${API_BASE()}/status`);
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
@@ -128,7 +130,7 @@ graph TD
       formData.append('output_format', selectedFormat);
       formData.append('render_mermaid', String(renderMermaid));
 
-      const response = await fetch(`${API_BASE}/convert/file`, {
+      const response = await fetch(`${API_BASE()}/convert/file`, {
         method: 'POST',
         body: formData,
       });
@@ -173,7 +175,7 @@ graph TD
     if (!markdown) return;
 
     try {
-      const response = await fetch(`${API_BASE}/mermaid/render`, {
+      const response = await fetch(`${API_BASE()}/mermaid/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

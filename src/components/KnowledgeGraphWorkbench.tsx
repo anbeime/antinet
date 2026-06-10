@@ -23,7 +23,7 @@ import {
   LinkType,
   LINK_TYPE_LABELS
 } from '@/types/card';
-import { API_BASE_URL } from '@/config/api';
+import { getApiBaseUrlDynamic } from '@/config/api';
 
 interface GraphNode {
   id: string;
@@ -215,7 +215,7 @@ useEffect(() => {
   const loadGraphData = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetchWithTimeout(`${API_BASE_URL}/api/knowledge/graph?limit=500`);
+      const response = await fetchWithTimeout(`${getApiBaseUrlDynamic()}/api/knowledge/graph?limit=500`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       setGraphData(data);
@@ -237,7 +237,7 @@ useEffect(() => {
   const loadCards = useCallback(async () => {
     setLoading(true);
     try {
-      let url = `${API_BASE_URL}/api/knowledge/cards?limit=1000`;
+      let url = `${getApiBaseUrlDynamic()}/api/knowledge/cards?limit=1000`;
       if (projectId) {
         url += `&project_id=${projectId}`;
       }
@@ -264,13 +264,13 @@ useEffect(() => {
   const loadCardDetail = useCallback(async (cardId: number) => {
     try {
       // 并行请求卡片详情和知识网络，不互相阻塞
-      const cardPromise = fetchWithTimeout(`${API_BASE_URL}/api/knowledge/cards/${cardId}`)
+      const cardPromise = fetchWithTimeout(`${getApiBaseUrlDynamic()}/api/knowledge/cards/${cardId}`)
         .then(async (response) => {
           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
           return response.json();
         });
       
-      const networkPromise = fetchWithTimeout(`${API_BASE_URL}/api/backlinks/card/${cardId}/graph?max_depth=1`)
+      const networkPromise = fetchWithTimeout(`${getApiBaseUrlDynamic()}/api/backlinks/card/${cardId}/graph?max_depth=1`)
         .then(async (networkResponse) => {
           if (networkResponse.ok) {
             return networkResponse.json();
@@ -583,7 +583,7 @@ result = result.filter(card => {
       const title = lines[0]?.replace(/^#+\s*/, '') || '无标题';
       const content = lines.slice(1).join('\n').trim();
       
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards/${selectedCard.id}`, {
+      const response = await fetch(`${getApiBaseUrlDynamic()}/api/knowledge/cards/${selectedCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -616,7 +616,7 @@ result = result.filter(card => {
     }
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards`, {
+      const response = await fetch(`${getApiBaseUrlDynamic()}/api/knowledge/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -647,7 +647,7 @@ result = result.filter(card => {
     if (!cardToDelete) return;
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge/cards/${cardToDelete}`, {
+      const response = await fetch(`${getApiBaseUrlDynamic()}/api/knowledge/cards/${cardToDelete}`, {
         method: 'DELETE'
       });
       
@@ -679,7 +679,7 @@ result = result.filter(card => {
     }
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/backlinks/add`, {
+      const response = await fetch(`${getApiBaseUrlDynamic()}/api/backlinks/add`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -707,7 +707,7 @@ result = result.filter(card => {
     
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/backlinks/remove?source_card_id=${selectedCard.id}&target_card_id=${targetId}`,
+        `${getApiBaseUrlDynamic()}/api/backlinks/remove?source_card_id=${selectedCard.id}&target_card_id=${targetId}`,
         { method: 'DELETE' }
       );
       

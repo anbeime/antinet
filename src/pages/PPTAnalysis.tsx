@@ -16,7 +16,7 @@ interface KnowledgeCard {
   tags?: string;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = () => getApiBaseUrl()
 
 type TabType = 'text' | 'cards' | 'project';
 type ThemeType = 'professional' | 'creative' | 'minimal' | 'tech' | 'business';
@@ -80,7 +80,7 @@ const PPTAnalysis: React.FC = () => {
 
   const checkPPTStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/ppt/status`);
+      const response = await fetch(`${API_BASE()}/api/ppt/status`);
       if (response.ok) {
         const data = await response.json();
         setPptAvailable(data.available);
@@ -98,7 +98,7 @@ const PPTAnalysis: React.FC = () => {
   // 加载知识卡片
   const loadKnowledgeCards = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/knowledge/cards`);
+      const response = await fetch(`${API_BASE()}/api/knowledge/cards`);
       if (response.ok) {
         const data = await response.json();
         // 兼容: 可能返回 {cards: [...]} 或 [...]
@@ -114,7 +114,7 @@ const PPTAnalysis: React.FC = () => {
   // 加载专题列表
   const loadProjects = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/research/projects`);
+      const response = await fetch(`${API_BASE()}/api/research/projects`);
       if (response.ok) {
         const data = await response.json();
         setProjects(data || []);
@@ -128,7 +128,7 @@ const PPTAnalysis: React.FC = () => {
   const loadProjectCards = async (projectId: number) => {
     setProjectCardsLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/research/projects/${projectId}/cards`);
+      const response = await fetch(`${API_BASE()}/api/research/projects/${projectId}/cards`);
       if (response.ok) {
         const data = await response.json();
         const cards = Array.isArray(data) ? data : [];
@@ -220,7 +220,7 @@ const PPTAnalysis: React.FC = () => {
             title: c.title,
             content: c.content,
           }));
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic, cards: cardList, theme: selectedTheme }),
@@ -234,7 +234,7 @@ const PPTAnalysis: React.FC = () => {
           return;
         }
       } else {
-        const resp = await fetch(`${API_BASE}/api/ppt/export/collection`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/export/collection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -287,7 +287,7 @@ const PPTAnalysis: React.FC = () => {
 
       if (useNativePPT) {
         // SVG→DrawingML 原生形状模式
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate-from-text`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate-from-text`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: pptTitle, content: textContent, theme: selectedTheme }),
@@ -302,7 +302,7 @@ const PPTAnalysis: React.FC = () => {
         }
       } else {
         // 传统 python-pptx 模式
-        const resp = await fetch(`${API_BASE}/api/ppt/generate/from-text`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/generate/from-text`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: textContent, title: pptTitle, theme: selectedTheme }),
@@ -354,7 +354,7 @@ const PPTAnalysis: React.FC = () => {
           title: c.title,
           content: c.content,
         }));
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: '四色卡片分析报告', cards: cardList, theme: selectedTheme }),
@@ -380,7 +380,7 @@ const PPTAnalysis: React.FC = () => {
           title: 'Antinet 四色卡片分析报告',
           include_summary: true,
         };
-        const resp = await fetch(`${API_BASE}/api/ppt/export/cards`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/export/cards`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exportData),
         });
         if (resp.ok) {
@@ -388,7 +388,7 @@ const PPTAnalysis: React.FC = () => {
           if (data.success && data.filename) {
             filename = data.filename;
             toast.success('PPT导出成功！', {
-              action: { label: '下载', onClick: () => window.open(`${API_BASE}/api/ppt/file?filename=${data.filename}`, '_blank') },
+              action: { label: '下载', onClick: () => window.open(`${API_BASE()}/api/ppt/file?filename=${data.filename}`, '_blank') },
             });
           } else { toast.error(`导出失败: ${data.detail || '未知错误'}`); return; }
         }

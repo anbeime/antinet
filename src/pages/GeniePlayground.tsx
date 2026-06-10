@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE = getApiBaseUrl() + '/api/genie-playground'
+const API_BASE = () => getApiBaseUrl() + '/api/genie-playground'
 
 interface GenieModel {
   id: string;
@@ -69,7 +69,7 @@ const GeniePlayground: React.FC = () => {
 
   const fetchModels = async () => {
     try {
-      const res = await fetch(`${API_BASE}/models`);
+      const res = await fetch(`${API_BASE()}/models`);
       if (res.ok) {
         const data = await res.json();
         setModels(data.models || []);
@@ -81,7 +81,7 @@ const GeniePlayground: React.FC = () => {
 
   const checkService = async () => {
     try {
-      const res = await fetch(`${API_BASE}/service-status`);
+      const res = await fetch(`${API_BASE()}/service-status`);
       if (res.ok) {
         const data = await res.json();
         setServiceAvailable(data.available);
@@ -174,7 +174,7 @@ const GeniePlayground: React.FC = () => {
       // 视觉模型 + 图片 -> 用 vision-chat 接口
       if (isVisionModel && hasImage) {
         // 视觉模型 + 图片 -> 用 vision-chat 接口
-        const res = await fetch(`${API_BASE}/vision-chat`, {
+        const res = await fetch(`${API_BASE()}/vision-chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -206,7 +206,7 @@ const GeniePlayground: React.FC = () => {
           { role: 'user', content: text },
         ];
 
-        const res = await fetch(`${API_BASE}/chat/stream`, {
+        const res = await fetch(`${API_BASE()}/chat/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -270,7 +270,7 @@ const GeniePlayground: React.FC = () => {
     setBatchRunning(true);
     setBatchResults([]);
     try {
-      const res = await fetch(`${API_BASE}/batch-test`, { method: 'POST' });
+      const res = await fetch(`${API_BASE()}/batch-test`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setBatchResults(data.results || []);

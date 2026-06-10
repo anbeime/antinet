@@ -172,10 +172,12 @@ export async function fetchPost<T = any>(
     }
 
     // 处理网络错误
-    if (error.message === 'Failed to fetch' || error.message === 'Unexpected end of JSON input') {
-      if (url === '/api/transactions') {
-        toast.error('内核连接失败，请检查服务是否正常运行');
-      }
+    if (error.message === 'Failed to fetch' || error.message === 'Unexpected end of JSON input' || error.message === 'NetworkError') {
+      const isLocalNetwork = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const hint = isLocalNetwork
+        ? '请确认后端服务已启动（端口 8000）'
+        : '请确认：1) 后端服务已启动 2) 手机和电脑在同一网络 3) 使用电脑 IP 访问而非 localhost';
+      toast.error(`连接后端失败，${hint}`);
     }
 
     const errorResult = {

@@ -78,7 +78,12 @@ const PdfSourceViewer: React.FC<PdfSourceViewerProps> = ({
         setLoading(false);
       } catch (err: any) {
         if (!cancelled) {
-          setError(err.message || '加载 PDF 失败');
+          const msg = err.message || '';
+          if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+            setError('无法连接到后端获取 PDF 文件。手机访问请使用电脑 IP 地址，并确认后端服务运行在端口 8000');
+          } else {
+            setError(msg || '加载 PDF 失败');
+          }
           setLoading(false);
         }
       }

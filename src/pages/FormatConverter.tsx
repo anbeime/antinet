@@ -57,7 +57,7 @@ interface ConversionRecord {
   errorMessage?: string;
 }
 
-const API_BASE = getApiBaseUrl()
+const API_BASE = () => getApiBaseUrl()
 
 const FormatConverter: React.FC = () => {
   useTheme();
@@ -135,7 +135,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     setIsMermaidLoading(true);
     setMermaidPreviewSvg('');
     try {
-      const response = await fetch(`${API_BASE}/api/markdown-converter/mermaid/render`, {
+      const response = await fetch(`${API_BASE()}/api/markdown-converter/mermaid/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: mermaidCode, output_format: 'svg' })
@@ -213,7 +213,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
       if (pdfTitle) formData.append('title', pdfTitle);
       if (pdfAuthor) formData.append('author', pdfAuthor);
 
-      const response = await fetch(`${API_BASE}/api/markdown-converter/convert/file`, {
+      const response = await fetch(`${API_BASE()}/api/markdown-converter/convert/file`, {
         method: 'POST',
         body: formData
       });
@@ -343,7 +343,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     if (!documentSearch.trim()) return;
     setIsSearching(true);
     try {
-      const response = await fetch(`${API_BASE}/api/libreoffice/search?q=${encodeURIComponent(documentSearch)}`);
+      const response = await fetch(`${API_BASE()}/api/libreoffice/search?q=${encodeURIComponent(documentSearch)}`);
       if (response.ok) {
         const data = await response.json();
         setSearchResults(data.results || []);
@@ -514,7 +514,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
 
     formData.append('output_format', 'docx');
 
-    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+    const response = await fetch(`${API_BASE()}/api/libreoffice/convert`, {
       method: 'POST',
       body: formData
     });
@@ -554,7 +554,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
 
     formData.append('output_format', 'xlsx');
 
-    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+    const response = await fetch(`${API_BASE()}/api/libreoffice/convert`, {
       method: 'POST',
       body: formData
     });
@@ -594,7 +594,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
 
     formData.append('output_format', 'pdf');
 
-    const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+    const response = await fetch(`${API_BASE()}/api/libreoffice/convert`, {
       method: 'POST',
       body: formData
     });
@@ -639,7 +639,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     if (pdfWatermark) formData.append('watermark', pdfWatermark);
 
     try {
-      const response = await fetch(`${API_BASE}/api/md2pdf/convert`, {
+      const response = await fetch(`${API_BASE()}/api/md2pdf/convert`, {
         method: 'POST',
         body: formData
       });
@@ -679,7 +679,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     ));
 
     try {
-      const response = await fetch(`${API_BASE}/api/ppt/to-pdf`, {
+      const response = await fetch(`${API_BASE()}/api/ppt/to-pdf`, {
         method: 'POST',
         body: formData
       });
@@ -724,7 +724,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
     formData.append('output_format', libreOfficeFormat);
 
     try {
-      const response = await fetch(`${API_BASE}/api/libreoffice/convert`, {
+      const response = await fetch(`${API_BASE()}/api/libreoffice/convert`, {
         method: 'POST',
         body: formData
       });

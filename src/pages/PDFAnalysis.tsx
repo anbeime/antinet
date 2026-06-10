@@ -92,7 +92,7 @@ interface ConversionRecord {
   fileDataUrl?: string;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = () => getApiBaseUrl()
 
 const PDFAnalysis: React.FC = () => {
   useTheme();
@@ -137,7 +137,7 @@ const PDFAnalysis: React.FC = () => {
       const formData = new FormData();
       formData.append('file', ocrFile);
       if (selectedPreset) formData.append('preset', selectedPreset);
-      const resp = await fetch(`${API_BASE}/api/ocr/extract`, { method: 'POST', body: formData });
+      const resp = await fetch(`${API_BASE()}/api/ocr/extract`, { method: 'POST', body: formData });
       if (!resp.ok) throw new Error('OCR 识别失败');
       const data = await resp.json();
       setOcrResult(data.text || JSON.stringify(data, null, 2));
@@ -279,7 +279,7 @@ const PDFAnalysis: React.FC = () => {
 
         setProcessingStatus({ stage: 'extract', progress: 30, message: '正在通过后端提取文本...' });
 
-        const response = await fetch(`${API_BASE}/api/pdf/extract/text`, {
+        const response = await fetch(`${API_BASE()}/api/pdf/extract/text`, {
           method: 'POST',
           body: formData
         });
@@ -316,7 +316,7 @@ const PDFAnalysis: React.FC = () => {
 
   // 通过后端从文本生成四色卡片（不需要后端正则 pypdf）
   const generateCardsFromText = async (text: string, mode: string = 'auto'): Promise<any> => {
-    const resp = await fetch(`${API_BASE}/api/pdf/generate/cards-from-text`, {
+    const resp = await fetch(`${API_BASE()}/api/pdf/generate/cards-from-text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text.slice(0, 50000), max_cards: 20, mode })
@@ -355,7 +355,7 @@ const PDFAnalysis: React.FC = () => {
         page_count = result.page_count;
       } catch (e) {
         // 回退到后端提取
-        const resp = await fetch(`${API_BASE}/api/pdf/extract/text`, { method: 'POST', body: formData });
+        const resp = await fetch(`${API_BASE()}/api/pdf/extract/text`, { method: 'POST', body: formData });
         if (!resp.ok) throw new Error('文本提取失败');
         const data = await resp.json();
         full_text = data.full_text || '';
@@ -414,7 +414,7 @@ const PDFAnalysis: React.FC = () => {
 
     for (const card of cardsToSave) {
       try {
-        const response = await fetch(`${API_BASE}/api/knowledge/cards`, {
+        const response = await fetch(`${API_BASE()}/api/knowledge/cards`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -503,7 +503,7 @@ const PDFAnalysis: React.FC = () => {
     });
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/merge`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/merge`, {
         method: 'POST',
         body: formData
       });
@@ -553,7 +553,7 @@ const PDFAnalysis: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/split`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/split`, {
         method: 'POST',
         body: formData
       });
@@ -606,7 +606,7 @@ const PDFAnalysis: React.FC = () => {
     formData.append('ocr', String(ocrEnabled));
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/images-to-pdf`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/images-to-pdf`, {
         method: 'POST',
         body: formData
       });
@@ -717,7 +717,7 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 20 } : t
     ));
 
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+    const analyzeResponse = await fetch(`${API_BASE()}/api/pdf/generate/four-color-cards`, {
       method: 'POST',
       body: formData
     });
@@ -740,7 +740,7 @@ const PDFAnalysis: React.FC = () => {
     wordFormData.append('title', reportTitle);
     wordFormData.append('author', 'Antinet 智能知识管家');
     
-    const wordResponse = await fetch(`${API_BASE}/api/pdf/export/cards-docx`, {
+    const wordResponse = await fetch(`${API_BASE()}/api/pdf/export/cards-docx`, {
       method: 'POST',
       body: wordFormData
     });
@@ -773,7 +773,7 @@ const PDFAnalysis: React.FC = () => {
       t.id === task.id ? { ...t, progress: 20 } : t
     ));
 
-    const analyzeResponse = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+    const analyzeResponse = await fetch(`${API_BASE()}/api/pdf/generate/four-color-cards`, {
       method: 'POST',
       body: formData
     });
@@ -795,7 +795,7 @@ const PDFAnalysis: React.FC = () => {
     excelFormData.append('cards_data', JSON.stringify(analysisData.cards || []));
     excelFormData.append('title', excelTitle);
     
-    const response = await fetch(`${API_BASE}/api/pdf/export/four-color-excel`, {
+    const response = await fetch(`${API_BASE()}/api/pdf/export/four-color-excel`, {
       method: 'POST',
       body: excelFormData
     });
@@ -1387,7 +1387,7 @@ const renderPPTConvertPanel = () => {
                         try {
                           const formData = new FormData();
                           formData.append('file', pptFile);
-                          const response = await fetch(`${API_BASE}/api/ppt/convert/to-pdf`, { method: 'POST', body: formData });
+                          const response = await fetch(`${API_BASE()}/api/ppt/convert/to-pdf`, { method: 'POST', body: formData });
                           if (response.ok) {
                             const blob = await response.blob();
                             const url = URL.createObjectURL(blob);
@@ -1559,12 +1559,12 @@ const renderPPTConvertPanel = () => {
                                     formData.append('json_text', ocrResult);
                                     formData.append('preset', selectedPreset);
                                     formData.append('format', 'xlsx');
-                                    const resp = await fetch(`${API_BASE}/api/ocr/export`, { method: 'POST', body: formData });
+                                    const resp = await fetch(`${API_BASE()}/api/ocr/export`, { method: 'POST', body: formData });
                                     if (!resp.ok) throw new Error('导出失败');
                                     const data = await resp.json();
                                     if (data.download_url) {
                                       const a = document.createElement('a');
-                                      a.href = `${API_BASE}${data.download_url}`;
+                                      a.href = `${API_BASE()}${data.download_url}`;
                                       a.download = data.filename;
                                       a.click();
                                       toast.success('Excel导出成功');

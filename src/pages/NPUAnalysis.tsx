@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { npuService, AnalyzeResponse } from '@/services/npuService';
 import FourColorCards from '@/components/FourColorCards';
 import { Brain, Clock, Gauge, CheckCircle2, AlertTriangle, Search, BookOpen } from 'lucide-react';
-import { API_BASE_URL, API_ENDPOINTS } from '@/config/api';
+import { API_ENDPOINTS } from '@/config/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 export default function NPUAnalysis() {
   const [query, setQuery] = useState('');
@@ -22,7 +23,7 @@ export default function NPUAnalysis() {
   const searchKnowledge = async (searchQuery: string) => {
     try {
       setKnowledgeLoading(true);
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.KNOWLEDGE_SEARCH}`, {
+      const response = await fetch(`${getApiBaseUrl()}${API_ENDPOINTS.KNOWLEDGE_SEARCH}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

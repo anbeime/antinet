@@ -19,9 +19,8 @@ import {
 import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE = getApiBaseUrl()
-// 确保 API_BASE 不以 /api 结尾，避免重复
-const IMAGE_API_BASE = API_BASE.replace(/\/api$/, '') + '/api/images'
+const API_BASE = () => getApiBaseUrl()
+const IMAGE_API_BASE = () => API_BASE().replace(/\/api$/, '') + '/api/images'
 
 // 图片信息类型
 interface ImageInfo {
@@ -326,7 +325,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     formDataUpload.append('file', file);
     
     try {
-      const response = await fetch(`${IMAGE_API_BASE}/upload`, {
+      const response = await fetch(`${IMAGE_API_BASE()}/upload`, {
         method: 'POST',
         body: formDataUpload
       });
@@ -392,7 +391,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     const image = formData.images.find(img => img.id === imageId);
     if (image) {
       try {
-        await fetch(`${IMAGE_API_BASE}/${image.filename}`, { method: 'DELETE' });
+        await fetch(`${IMAGE_API_BASE()}/${image.filename}`, { method: 'DELETE' });
       } catch (err) {
         console.error('删除图片失败:', err);
       }
@@ -747,7 +746,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
                 {formData.images.map(image => (
                   <div key={image.id} className="relative group">
                     <img
-                      src={`${API_BASE}${image.url}`}
+                      src={`${API_BASE()}${image.url}`}
                       alt={image.original_name}
                       className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                     />

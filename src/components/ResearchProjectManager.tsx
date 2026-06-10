@@ -109,7 +109,7 @@ const cardTypeConfig: Record<string, { name: string; color: string; bgColor: str
   red:    { name: '行动', color: 'text-red-700',    bgColor: 'bg-red-50',    borderColor: 'border-red-200',    darkBgColor: 'dark:bg-red-950/40',    darkBorderColor: 'dark:border-red-800',    icon: '📕', headerBg: 'bg-red-500' },
 };
 
-const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
+const RESEARCH_API_BASE = () => getApiBaseUrl() + '/api/research'
 
 // ========== 内容渲染组件 ==========
 const RenderContent: React.FC<{ content: string }> = ({ content }) => {
@@ -409,7 +409,7 @@ const ProjectDetailPanel: React.FC<{
   const handleConvertToTask = async (cardId: number, onComplete?: () => void) => {
     try {
       // 1. 先将卡片转换为任务
-      const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
+      const response = await fetch(`${RESEARCH_API_BASE()}/cards/${cardId}/to-task`, { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         const taskId = data.task_id || data.id;
@@ -1027,7 +1027,7 @@ const ProjectDetailPanel: React.FC<{
             allCards={cards.map(convertProjectCardToKnowledgeCard)}
             onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
             onDelete={async (id: string) => {
-              await fetch(`${RESEARCH_API_BASE}/cards/${id}`, { method: 'DELETE' });
+              await fetch(`${RESEARCH_API_BASE()}/cards/${id}`, { method: 'DELETE' });
               setCards(prev => prev.filter(c => String(c.id) !== id));
               setShowCardDetail(false);
               setSelectedCard(null);
@@ -1040,7 +1040,7 @@ const ProjectDetailPanel: React.FC<{
             }}
             onUpdateCard={async (updatedCard) => {
               try {
-                const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${updatedCard.id}`, {
+                const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/cards/${updatedCard.id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1088,7 +1088,7 @@ const ProjectDetailPanel: React.FC<{
                     key={p.id}
                     onClick={async () => {
                       try {
-                        await fetch(`${RESEARCH_API_BASE}/cards/${selectedCard.id}`, {
+                        await fetch(`${RESEARCH_API_BASE()}/cards/${selectedCard.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ project_id: p.id })
@@ -1119,7 +1119,7 @@ const ProjectDetailPanel: React.FC<{
             allCards={cards.map(convertProjectCardToKnowledgeCard)}
             onClose={() => setPreviewCard(null)}
             onDelete={async (id: string) => {
-              await fetch(`${RESEARCH_API_BASE}/cards/${id}`, { method: 'DELETE' });
+              await fetch(`${RESEARCH_API_BASE()}/cards/${id}`, { method: 'DELETE' });
               setCards(prev => prev.filter(c => String(c.id) !== id));
               setPreviewCard(null);
               toast.success('卡片已删除');
@@ -1130,7 +1130,7 @@ const ProjectDetailPanel: React.FC<{
             }}
             onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
               try {
-                const res = await fetch(`${RESEARCH_API_BASE}/projects/${project.id}/cards/${updatedCard.id}`, {
+                const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/cards/${updatedCard.id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({

@@ -14,7 +14,7 @@ import type {
   DesignTheme, BrandStyle
 } from '@/types/designSystem';
 
-const API_BASE = getApiBaseUrl();
+const API_BASE = () => getApiBaseUrl()
 
 const DEFAULT_THEME: BrandStyle = {
   theme: {
@@ -70,7 +70,7 @@ const PPTViewer: React.FC = () => {
     setPdfUrl((prev) => { if (prev) try { URL.revokeObjectURL(prev); } catch {}; return ''; });
     try {
       const resp = await fetch(
-        `${API_BASE}/api/ppt/convert/to-pdf-file?filename=${encodeURIComponent(fileName)}`
+        `${API_BASE()}/api/ppt/convert/to-pdf-file?filename=${encodeURIComponent(fileName)}`
       );
       if (!resp.ok) {
         const detail = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
@@ -98,7 +98,7 @@ const PPTViewer: React.FC = () => {
 
   const loadThemes = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/design-system/themes`);
+      const res = await fetch(`${API_BASE()}/api/design-system/themes`);
       if (res.ok) setAvailableThemes(await res.json());
     } catch { /* ignore */ }
   };
@@ -109,7 +109,7 @@ const PPTViewer: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const resp = await fetch(`${API_BASE}/api/ppt/file?filename=${encodeURIComponent(fileName)}`);
+      const resp = await fetch(`${API_BASE()}/api/ppt/file?filename=${encodeURIComponent(fileName)}`);
       if (!resp.ok) { toast.error('PPT 文件不存在'); return; }
 
       const blob = await resp.blob();
@@ -119,7 +119,7 @@ const PPTViewer: React.FC = () => {
       const formData = new FormData();
       formData.append('file', new File([blob], fileName, { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }));
 
-      const extResp = await fetch(`${API_BASE}/api/ppt/preview/extract`, { method: 'POST', body: formData });
+      const extResp = await fetch(`${API_BASE()}/api/ppt/preview/extract`, { method: 'POST', body: formData });
       if (extResp.ok) {
         const data: PPTPreviewData = await extResp.json();
         setPreview(data);
@@ -197,7 +197,7 @@ const PPTViewer: React.FC = () => {
     formData.append('file', file);
 
     try {
-      const resp = await fetch(`${API_BASE}/api/ppt/preview/extract`, { method: 'POST', body: formData });
+      const resp = await fetch(`${API_BASE()}/api/ppt/preview/extract`, { method: 'POST', body: formData });
       if (resp.ok) {
         const data: PPTPreviewData = await resp.json();
         setPreview(data);
@@ -217,7 +217,7 @@ const PPTViewer: React.FC = () => {
   const handleThemeChange = async (name: string) => {
     setSelectedTheme(name);
     try {
-      const resp = await fetch(`${API_BASE}/api/design-system/themes/${name}`);
+      const resp = await fetch(`${API_BASE()}/api/design-system/themes/${name}`);
       if (resp.ok) {
         const theme: DesignTheme = await resp.json();
         setBrandStyle(prev => ({ ...prev, theme }));
@@ -230,7 +230,7 @@ const PPTViewer: React.FC = () => {
     if (!preview) return;
     setIsLoading(true);
     try {
-      const resp = await fetch(`${API_BASE}/api/ppt/reconstruct`, {
+      const resp = await fetch(`${API_BASE()}/api/ppt/reconstruct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -423,7 +423,7 @@ const PPTViewer: React.FC = () => {
 
           <div className="w-px h-6 bg-gray-600" />
 
-          <button onClick={() => { const a = document.createElement('a'); a.href = `${API_BASE}/api/ppt/file?filename=${encodeURIComponent(currentFileName)}`; a.download = currentFileName; a.click(); }}
+          <button onClick={() => { const a = document.createElement('a'); a.href = `${API_BASE()}/api/ppt/file?filename=${encodeURIComponent(currentFileName)}`; a.download = currentFileName; a.click(); }}
             disabled={!currentFileName}
             className="flex items-center space-x-1 px-3 py-1.5 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">
             <Download className="w-4 h-4" /><span className="text-sm">下载</span>

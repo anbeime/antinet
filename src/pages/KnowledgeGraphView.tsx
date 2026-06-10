@@ -14,7 +14,7 @@ import { useTheme } from '@/hooks/useTheme';
 import AppHeader from '@/components/AppHeader';
 import { toast } from 'sonner';
 
-const API_BASE = getApiBaseUrl()
+const API_BASE = () => getApiBaseUrl()
 
 interface GraphNode {
   id: string;
@@ -273,7 +273,7 @@ const KnowledgeGraphView: React.FC = () => {
   // 加载持久化的图谱状态
   const loadPersistedGraph = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/graph/state`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/graph/state`);
       if (res.ok) {
         const state = await res.json();
         if (state && state.nodes && state.nodes.length > 0) {
@@ -289,7 +289,7 @@ const KnowledgeGraphView: React.FC = () => {
   // 保存图谱状态到数据库
   const saveGraphState = async (data: {nodes: any[], links: any[], categories: any[]}) => {
     try {
-      await fetch(`${API_BASE}/api/knowledge/graph/state`, {
+      await fetch(`${API_BASE()}/api/knowledge/graph/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'default', ...data })
@@ -315,7 +315,7 @@ const KnowledgeGraphView: React.FC = () => {
     setLoadingAPI(true);
     try {
       // 从后端获取卡片的 backlinks 图谱
-      const response = await fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/backlinks/card/${cardId}/graph`);
       if (response.ok) {
         const data = await response.json();
  setApiData(data);
@@ -336,7 +336,7 @@ const KnowledgeGraphView: React.FC = () => {
     if (!topic.trim()) return;
     setLoadingAPI(true);
     try {
-      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`);
       if (!response.ok) throw new Error('API error: ' + response.status);
       const data = await response.json();
       console.log('[Search] API返回:', data);
@@ -357,7 +357,7 @@ const KnowledgeGraphView: React.FC = () => {
   const loadCards = async () => {
     setListLoading(true);
     try {
-      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards?limit=1000`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/knowledge/cards?limit=1000`);
       if (response.ok) {
         const data = await response.json();
         setCards(data.cards || []);
@@ -372,7 +372,7 @@ const KnowledgeGraphView: React.FC = () => {
   // ========== 列表模式 - 加载卡片详情 ==========
   const loadCardForList = async (cardId: number) => {
     try {
-      const cardRes = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards/${cardId}`);
+      const cardRes = await fetchWithTimeout(`${API_BASE()}/api/knowledge/cards/${cardId}`);
       if (!cardRes.ok) throw new Error('加载卡片失败');
       const card = await cardRes.json();
       setListSelectedCard(card);
@@ -380,7 +380,7 @@ const KnowledgeGraphView: React.FC = () => {
       setListEditorSide('preview');
 
       // 并行加载知识网络
-      fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph?max_depth=1`)
+      fetchWithTimeout(`${API_BASE()}/api/backlinks/card/${cardId}/graph?max_depth=1`)
         .then(async (netRes) => {
           if (netRes.ok) {
             const netData = await netRes.json();
@@ -400,7 +400,7 @@ const KnowledgeGraphView: React.FC = () => {
     const title = lines[0]?.startsWith('# ') ? lines[0].slice(2).trim() : (listSelectedCard.title || '无标题');
     const content = lines[0]?.startsWith('# ') ? lines.slice(2).join('\n') : listMarkdown;
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${listSelectedCard.id}`, {
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${listSelectedCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, content, type: listSelectedCard.card_type || listSelectedCard.type || 'blue' }),
@@ -428,7 +428,7 @@ const KnowledgeGraphView: React.FC = () => {
         formData.append('title', listSelectedCard?.title || '知识卡片');
         formData.append('author', 'Antinet');
         formData.append('theme', exportTheme);
-        const res = await fetch(`${API_BASE}/api/md2pdf/convert`, {
+        const res = await fetch(`${API_BASE()}/api/md2pdf/convert`, {
           method: 'POST', body: formData,
         });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -444,7 +444,7 @@ const KnowledgeGraphView: React.FC = () => {
       const formData = new FormData();
       const blob = new Blob([listMarkdown], { type: 'text/markdown' });
       formData.append('file', blob, 'card.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
+      const res = await fetch(`${API_BASE()}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
         method: 'POST', body: formData,
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -480,7 +480,7 @@ const KnowledgeGraphView: React.FC = () => {
       const formData = new FormData();
       const blob = new Blob([listMarkdown], { type: 'text/markdown' });
       formData.append('file', blob, 'card.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
+      const res = await fetch(`${API_BASE()}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
         method: 'POST', body: formData,
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -499,7 +499,7 @@ const KnowledgeGraphView: React.FC = () => {
   // 打开卡片详情（弹窗）
   const openCardDetail = async (cardId: string | number) => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${cardId}`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${cardId}`);
       if (res.ok) {
         const card = await res.json();
         setModalCard(card);
@@ -528,7 +528,7 @@ const KnowledgeGraphView: React.FC = () => {
   const handleModalSave = async () => {
     if (!modalCard?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${modalCard.id}`, {
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${modalCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1007,7 +1007,7 @@ return (
                     })();
                     if (ids.length === 0) { toast.warning('没有匹配的卡片'); return; }
                     try {
-                      const r = await fetch(`${API_BASE}/api/knowledge/cards/export/ppt`, {
+                      const r = await fetch(`${API_BASE()}/api/knowledge/cards/export/ppt`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ card_ids: ids }),
                       });
@@ -1440,7 +1440,7 @@ return (
               <div className="flex items-center gap-3 min-w-0">
                 <Settings size={18} className="text-gray-500" />
                 <h3 className="font-semibold truncate">{pdfPreviewTitle}</h3>
-                <select value={exportTheme} onChange={async e => { setExportTheme(e.target.value); if (listMarkdown) { try { const fd = new FormData(); fd.append('file', new Blob([listMarkdown], { type: 'text/markdown' }), 'card.md'); fd.append('title', listSelectedCard?.title || '知识卡片'); fd.append('author', 'Antinet'); fd.append('theme', e.target.value); const r = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (r.ok) { const b = await r.blob(); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(URL.createObjectURL(b)); } } catch (ex) { console.error('切换主题失败:', ex); } } }}
+                <select value={exportTheme} onChange={async e => { setExportTheme(e.target.value); if (listMarkdown) { try { const fd = new FormData(); fd.append('file', new Blob([listMarkdown], { type: 'text/markdown' }), 'card.md'); fd.append('title', listSelectedCard?.title || '知识卡片'); fd.append('author', 'Antinet'); fd.append('theme', e.target.value); const r = await fetch(`${API_BASE()}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (r.ok) { const b = await r.blob(); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(URL.createObjectURL(b)); } } catch (ex) { console.error('切换主题失败:', ex); } } }}
                   className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
                   <option value="warm-academic">暖学术</option>
                   <option value="classic-thesis">经典论文</option>

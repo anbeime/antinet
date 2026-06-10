@@ -3,7 +3,11 @@
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE_URL = getApiBaseUrl() + '/api/data'
+// 动态获取 API 基础地址（每次调用实时计算，避免手机网络切换后地址失效）
+const apiBase = () => getApiBaseUrl();
+const apiData = () => apiBase() + '/api/data';
+const apiResearch = () => apiBase() + '/api/research';
+const apiKnowledge = () => apiBase() + '/api/knowledge';
 
 // ========== 类型定义 ==========
 export interface TeamMember {
@@ -59,7 +63,7 @@ async function apiCall<T>(
   options: RequestInit = {}
 ): Promise<T> {
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${apiData()}${endpoint}`, {
       headers: {
         'Content-Type': 'application/json',
         ...options.headers,
@@ -300,7 +304,7 @@ export const gtdTaskService = {
 };
 
 // ========== 专题研究服务 ==========
-const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
+// 每次调用实时计算，支持手机网络切换
 
 export interface ResearchProject {
   id?: number;
@@ -316,14 +320,14 @@ export interface ResearchProject {
 export const researchProjectService = {
   // 获取所有专题
   getAll: async (): Promise<ResearchProject[]> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects`);
+    const response = await fetch(`${apiResearch()}/projects`);
     if (!response.ok) throw new Error('获取专题失败');
     return response.json();
   },
 
   // 获取单个专题
   getById: async (id: number): Promise<ResearchProject> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`);
+    const response = await fetch(`${apiResearch()}/projects/${id}`);
     if (!response.ok) throw new Error('获取专题详情失败');
     return response.json();
   },
@@ -360,14 +364,14 @@ export const researchProjectService = {
 
   // 获取专题下的任务
   getTasks: async (projectId: number): Promise<GtdTask[]> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks`);
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/tasks`);
     if (!response.ok) throw new Error('获取专题任务失败');
     return response.json();
   },
 
   // 添加任务到专题
   addTask: async (projectId: number, taskId: number): Promise<void> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks/${taskId}`, {
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/tasks/${taskId}`, {
       method: 'POST',
     });
     if (!response.ok) throw new Error('添加任务到专题失败');
@@ -375,7 +379,7 @@ export const researchProjectService = {
 
   // 从专题移除任务
   removeTask: async (projectId: number, taskId: number): Promise<void> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/tasks/${taskId}`, {
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/tasks/${taskId}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('从专题移除任务失败');
@@ -383,14 +387,14 @@ export const researchProjectService = {
 
   // 获取专题下的卡片
   getCards: async (projectId: number): Promise<any[]> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards`);
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/cards`);
     if (!response.ok) throw new Error('获取专题卡片失败');
     return response.json();
   },
 
   // 关联卡片到专题
   linkCard: async (projectId: number, cardId: number): Promise<void> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards/${cardId}`, {
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/cards/${cardId}`, {
       method: 'POST',
     });
     if (!response.ok) throw new Error('关联卡片到专题失败');
@@ -523,14 +527,14 @@ export const researchStatsService = {
     calendar_events: number;
     backlinks: number;
   }> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/stats`);
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/stats`);
     if (!response.ok) throw new Error('获取专题统计失败');
     return response.json();
   },
 
   // 获取专题日历事件
   getCalendarEvents: async (projectId: number): Promise<any[]> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/calendar-events`);
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/calendar-events`);
     if (!response.ok) throw new Error('获取专题日历事件失败');
     return response.json();
   },
@@ -544,7 +548,7 @@ export const researchStatsService = {
     calendar_events: any[];
     backlinks: any[];
   }> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/workflow`);
+    const response = await fetch(`${apiResearch()}/projects/${projectId}/workflow`);
     if (!response.ok) throw new Error('获取专题工作流失败');
     return response.json();
   },
@@ -555,14 +559,14 @@ export const researchStatsService = {
     team_projects: any[];
     total: number;
   }> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/unified-projects`);
+    const response = await fetch(`${apiResearch()}/unified-projects`);
     if (!response.ok) throw new Error('获取统一项目列表失败');
     return response.json();
   },
 };
 
 // ========== 源文件溯源服务 ==========
-const KNOWLEDGE_API_BASE = `${getApiBaseUrl()}/api/knowledge`;
+// 知识 API 基地址 - 每次调用实时计算
 
 export interface SourceFileInfo {
   has_source: boolean;
@@ -630,33 +634,33 @@ export interface SiblingCardsResponse {
 export const sourceFileService = {
   // 获取卡片关联的源文件信息
   getCardSourceFile: async (cardId: number): Promise<SourceFileInfo> => {
-    const response = await fetch(`${KNOWLEDGE_API_BASE}/cards/${cardId}/source-file`);
+    const response = await fetch(`${apiKnowledge()}/cards/${cardId}/source-file`);
     if (!response.ok) throw new Error('获取源文件信息失败');
     return response.json();
   },
 
   // 获取源文件生成的所有卡片
   getSourceFileCards: async (sourceFileId: string): Promise<SourceFileCards> => {
-    const response = await fetch(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/cards`);
+    const response = await fetch(`${apiKnowledge()}/source-files/${sourceFileId}/cards`);
     if (!response.ok) throw new Error('获取源文件卡片失败');
     return response.json();
   },
 
   // 下载源文件
   downloadSourceFile: (sourceFileId: string) => {
-    window.open(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/download`, '_blank');
+    window.open(`${apiKnowledge()}/source-files/${sourceFileId}/download`, '_blank');
   },
 
   // 获取源文件 Markdown 内容（用于溯源查看和高亮）
   getSourceFileMarkdown: async (sourceFileId: string): Promise<SourceFileMarkdown> => {
-    const response = await fetch(`${KNOWLEDGE_API_BASE}/source-files/${sourceFileId}/markdown`);
+    const response = await fetch(`${apiKnowledge()}/source-files/${sourceFileId}/markdown`);
     if (!response.ok) throw new Error('获取源文件内容失败');
     return response.json();
   },
 
   // 获取同批次兄弟卡片（同一源文件导入的其他卡片）
   getCardSiblings: async (cardId: number): Promise<SiblingCardsResponse> => {
-    const response = await fetch(`${KNOWLEDGE_API_BASE}/cards/${cardId}/siblings`);
+    const response = await fetch(`${apiKnowledge()}/cards/${cardId}/siblings`);
     if (!response.ok) throw new Error('获取同批次卡片失败');
     return response.json();
   },

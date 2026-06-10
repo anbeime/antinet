@@ -283,7 +283,11 @@ const ImportModal: React.FC<ImportModalProps> = ({
       const text = textContent.items.map((item: any) => item.str).join(' ');
       pages.push(text);
     }
-    return pages.join('\n\n');
+    const result = pages.join('\n\n');
+    if (!result.trim()) {
+      throw new Error('PDF 未提取到文字（可能为扫描件或加密文档）');
+    }
+    return result;
   };
 
   // Excel文件解析 - 调用后端API
@@ -361,7 +365,25 @@ const ImportModal: React.FC<ImportModalProps> = ({
           className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
         });
       } else if (fileExtension === 'pdf') {
-        content = await parsePDFFile(file);
+        try {
+          content = await parsePDFFile(file);
+        } catch {
+          // pdf.js 提取失败（移动端 worker 加载问题等），回退到后端提取
+          const fallbackController = new AbortController();
+          const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 30000);
+          const formData = new FormData();
+          formData.append('file', file);
+          const fallbackRes = await fetch(getApiBaseUrl() + '/api/pdf/extract/text', {
+            method: 'POST',
+            body: formData,
+            signal: fallbackController.signal
+          });
+          clearTimeout(fallbackTimeoutId);
+          if (!fallbackRes.ok) throw new Error('后端 PDF 提取失败');
+          const fallbackData = await fallbackRes.json();
+          content = fallbackData.full_text || '';
+          if (!content.trim()) throw new Error('PDF 未能提取到文字');
+        }
         toast('PDF文件解析成功', {
           icon: <Check size={16} />,
           className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -456,7 +478,11 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setShowResults(true);
     } catch (error) {
       console.error('导入失败:', error);
-      setErrors([error instanceof Error ? error.message : '导入失败，请稍后重试']);
+      const message = error instanceof Error ? error.message : '导入失败，请稍后重试';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '无法连接后端服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : message]);
     } finally {
       setIsProcessing(false);
     }
@@ -473,22 +499,57 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setIsProcessing(true);
       setErrors([]);
 
-      // 调用后端文件导入API（后端统一处理解析+分类，支持PDF/Word/Excel/图片等）
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file?preview_only=true', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!res.ok) {
-        let detail = '';
-        try { const err = await res.json(); detail = err.detail || ''; } catch {}
-        throw new Error(`文件解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+      // 检查后端连接
+      try {
+        const checkController = new AbortController();
+        const checkTimeoutId = setTimeout(() => checkController.abort(), 5000);
+        const healthCheck = await fetch(getApiBaseUrl() + '/api/pdf/extract/text', {
+          method: 'HEAD',
+          signal: checkController.signal
+        });
+        clearTimeout(checkTimeoutId);
+        if (!healthCheck.ok) throw new Error('后端服务异常');
+      } catch {
+        throw new Error('无法连接后端服务，请确认后端已启动（端口 8000）。手机访问请使用电脑 IP 地址，如 http://192.168.x.x:5173');
       }
 
-      const data = await res.json();
-      const cards = data.cards || [];
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      let cards: any[];
+
+      if (fileExtension === 'pdf' && importContent.trim()) {
+        // PDF文件：使用前端 pdf.js 已提取的文本调用文本分类接口，避免后端 pypdf 乱码
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/text?preview_only=true', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: importContent, preview_only: true })
+        });
+
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`PDF解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        const data = await res.json();
+        cards = data.cards || [];
+      } else {
+        // 其他文件类型：上传到后端解析
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file?preview_only=true', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`文件解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        const data = await res.json();
+        cards = data.cards || [];
+      }
 
       if (cards.length === 0) {
         setErrors(['未从文件中识别到有效知识记录']);
@@ -514,10 +575,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
 
       setImportResults(results);
       setShowResults(true);
-      toast.success(`锦衣卫文件解析完成，识别到 ${cards.length} 条知识记录`);
+      toast.success(`解析完成，识别到 ${cards.length} 条知识记录`);
     } catch (error) {
       console.error('文件导入失败:', error);
-      setErrors([error instanceof Error ? error.message : '文件导入失败，请检查文件格式']);
+      const message = error instanceof Error ? error.message : '文件导入失败，请检查文件格式';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('网络');
+      setErrors([isNetworkError
+        ? '无法连接后端服务（Failed to fetch）。请确认：\n1. 后端服务已启动在端口 8000\n2. 手机和电脑在同一局域网\n3. 访问地址使用电脑 IP（如 http://192.168.x.x:5173）而非 localhost'
+        : message]);
     } finally {
       setIsProcessing(false);
     }
@@ -577,7 +642,11 @@ const ImportModal: React.FC<ImportModalProps> = ({
       });
     } catch (error) {
       console.error('保存失败:', error);
-      setErrors(['保存失败: ' + (error instanceof Error ? error.message : '未知错误')]);
+      const message = error instanceof Error ? error.message : '未知错误';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '保存失败：无法连接后端服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : '保存失败: ' + message]);
     } finally {
       setIsProcessing(false);
     }
@@ -652,7 +721,11 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setShowResults(true);
     } catch (e: any) {
       console.error('AI 分类失败:', e);
-      setErrors([e.message || 'AI 分类失败，请稍后重试']);
+      const message = e.message || 'AI 分类失败';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '无法连接 Genie AI 服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : message]);
     } finally {
       setIsAIClassifying(false);
     }
