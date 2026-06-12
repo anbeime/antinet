@@ -898,6 +898,13 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                   <Sparkles size={16} />
                   <span>技能中心</span>
                 </button>
+                <button
+                  onClick={() => navigate('/hermes-manager')}
+                  className="w-full text-left px-4 py-3 hover:bg-soft dark:hover:bg-dark-mute flex items-center space-x-2 text-gray-700"
+                >
+                  <Bot size={16} />
+                  <span>Hermes 管理</span>
+                </button>
               </div>
             </div>
           </div>
@@ -1204,7 +1211,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
                     { icon: <Users size={20} />, title: '团队协作', desc: '局域网团队协作与任务协同工作台', link: 'tab:team-collaboration', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
-
+                    { icon: <FolderOpen size={20} />, title: '文件浏览', desc: '文件浏览器与卡片索引联动', link: '/knowledge-graph?tab=files', gradient: 'from-teal-500 to-emerald-400' },
 
                   ].map((item, i) => (
                     <motion.div

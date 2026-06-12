@@ -23,7 +23,7 @@ import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
-// import HermesManager from "@/pages/HermesManager";
+import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
 import InvoicePage from "@/pages/InvoicePage";
 import TeamCollaboration from "@/pages/TeamCollaboration";
@@ -64,7 +64,7 @@ export default function App() {
           <Route path="/gtd-tasks" element={<GTDTaskManager />} />
           <Route path="/genie-playground" element={<GeniePlayground />} />
           <Route path="/genie-npu-test" element={<GenieNPUTest />} />
-          {/* <Route path="/hermes-manager" element={<HermesManager />} /> */}
+          <Route path="/hermes-manager" element={<HermesManager />} />
           <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />

@@ -72,6 +72,19 @@ export function renderMarkdown(text: string): string {
   return html
 }
 
+// 安全提取错误详情（FastAPI 422 错误中的 detail 可能是对象数组）
+export function safeErrorDetail(detail: any, fallback: string = '操作失败'): string {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+  }
+  if (typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return String(detail);
+}
+
 // 清理Markdown标记（用于纯文本显示）
 export function cleanMarkdown(text: string): string {
   if (!text) return ''

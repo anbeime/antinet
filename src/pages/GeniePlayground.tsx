@@ -4,6 +4,7 @@ import { Cpu, RefreshCw, Send, AlertCircle, Eye, MessageSquare, ImageIcon, Play,
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 
 const API_BASE = () => getApiBaseUrl() + '/api/genie-playground'
 
@@ -195,8 +196,8 @@ const GeniePlayground: React.FC = () => {
           setMessages(prev => [...prev, { role: 'assistant', content: data.response || '(无响应)' }]);
         } else {
           const err = await res.json();
-          toast.error(err.detail || '视觉对话失败');
-          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${err.detail || '视觉对话失败'}` }]);
+          toast.error(safeErrorDetail(err.detail, '视觉对话失败'));
+          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${safeErrorDetail(err.detail, '视觉对话失败')}` }]);
         }
       } else {
         // 纯文本聊天 -> 用流式接口
@@ -254,8 +255,8 @@ const GeniePlayground: React.FC = () => {
           setStreamContent('');
         } else {
           const err = await res.json();
-          toast.error(err.detail || '聊天失败');
-          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${err.detail || '聊天失败'}` }]);
+          toast.error(safeErrorDetail(err.detail, '聊天失败'));
+          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${safeErrorDetail(err.detail, '聊天失败')}` }]);
         }
       }
     } catch (e: any) {

@@ -10,7 +10,7 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -656,7 +656,7 @@ async def get_linkable_cards(project_id: int):
 
 
 @router.post("/projects/{project_id}/link-cards")
-async def link_cards_to_project(project_id: int, card_ids: List[int]):
+async def link_cards_to_project(project_id: int, card_ids: List[int] = Body(...)):
     """批量关联卡片到专题"""
     try:
         conn = get_db()
@@ -687,7 +687,7 @@ async def link_cards_to_project(project_id: int, card_ids: List[int]):
 
 
 @router.post("/projects/{project_id}/unlink-cards")
-async def unlink_cards_from_project(project_id: int, card_ids: List[int]):
+async def unlink_cards_from_project(project_id: int, card_ids: List[int] = Body(...)):
     """批量取消关联卡片"""
     try:
         conn = get_db()

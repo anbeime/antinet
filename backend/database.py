@@ -725,6 +725,26 @@ class DatabaseManager:
 
             conn.commit()
             logger.info("[GraphState] 知识图谱状态表初始化完成")
+
+            # 文件索引表 - 文件浏览器 + 卡片索引联动层
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS file_index (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_path TEXT NOT NULL UNIQUE,
+                    file_name TEXT NOT NULL,
+                    file_type TEXT NOT NULL,
+                    file_size INTEGER DEFAULT 0,
+                    indexed_at TEXT,
+                    card_ids TEXT DEFAULT '[]',
+                    card_count INTEGER DEFAULT 0,
+                    last_modified TEXT,
+                    is_deleted INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.commit()
+            logger.info("[FileIndex] 文件索引表初始化完成")
             # 16. 发票表
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS invoices (
@@ -767,6 +787,37 @@ class DatabaseManager:
                 FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
             )
         """)
+
+        # 全文搜索虚拟表 (FTS5)
+        try:
+            cursor.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_cards_fts USING fts5(
+                    title, content, card_type UNINDEXED,
+                    content=knowledge_cards,
+                    content_rowid=id,
+                    tokenize='unicode61 tokenchars '''
+                );
+
+                CREATE TRIGGER IF NOT EXISTS knowledge_cards_ai AFTER INSERT ON knowledge_cards BEGIN
+                    INSERT INTO knowledge_cards_fts(rowid, title, content, card_type)
+                    VALUES (new.id, new.title, new.content, new.card_type);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS knowledge_carts_ad AFTER DELETE ON knowledge_cards BEGIN
+                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid, title, content, card_type)
+                    VALUES ('delete', old.id, old.title, old.content, old.card_type);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS knowledge_cards_au AFTER UPDATE ON knowledge_cards BEGIN
+                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid, title, content, card_type)
+                    VALUES ('delete', old.id, old.title, old.content, old.card_type);
+                    INSERT INTO knowledge_cards_fts(rowid, title, content, card_type)
+                    VALUES (new.id, new.title, new.content, new.card_type);
+                END;
+            """)
+            logger.info("[FTS5] 全文搜索索引已创建")
+        except Exception as e:
+            logger.warning(f"[FTS5] 创建失败（可能已存在）: {e}")
 
         conn.commit()
 
@@ -2700,3 +2751,169 @@ class DatabaseManager:
                 SELECT * FROM cursor_positions WHERE doc_id = ? AND last_seen > ?
             """, (doc_id, datetime.now().isoformat()))
             return [dict(row) for row in cursor.fetchall()]
+
+    # ========== 文件索引管理 ==========
+
+    def get_indexed_files(self, file_type: Optional[str] = None, limit: int = 1000) -> List[Dict[str, Any]]:
+        """获取已索引的文件列表"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM file_index WHERE is_deleted = 0"
+            params = []
+            if file_type:
+                query += " AND file_type = ?"
+                params.append(file_type)
+            query += " ORDER BY file_path ASC LIMIT ?"
+            params.append(limit)
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                if isinstance(item.get('card_ids'), str):
+                    try:
+                        item['card_ids'] = json.loads(item['card_ids'])
+                    except:
+                        item['card_ids'] = []
+                result.append(item)
+            return result
+
+    def get_file_by_id(self, file_id: int) -> Optional[Dict[str, Any]]:
+        """根据ID获取索引文件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM file_index WHERE id = ?", (file_id,))
+            row = cursor.fetchone()
+            if row:
+                item = dict(row)
+                if isinstance(item.get('card_ids'), str):
+                    try:
+                        item['card_ids'] = json.loads(item['card_ids'])
+                    except:
+                        item['card_ids'] = []
+                return item
+            return None
+
+    def get_file_by_path(self, file_path: str) -> Optional[Dict[str, Any]]:
+        """根据路径获取索引文件"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM file_index WHERE file_path = ?", (file_path,))
+            row = cursor.fetchone()
+            if row:
+                item = dict(row)
+                if isinstance(item.get('card_ids'), str):
+                    try:
+                        item['card_ids'] = json.loads(item['card_ids'])
+                    except:
+                        item['card_ids'] = []
+                return item
+            return None
+
+    def upsert_file_index(self, file_path: str, file_name: str, file_type: str,
+                          file_size: int = 0, last_modified: str = "") -> Dict[str, Any]:
+        """插入或更新文件索引"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute("""
+                INSERT INTO file_index (file_path, file_name, file_type, file_size, indexed_at, last_modified)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(file_path) DO UPDATE SET
+                    file_name = excluded.file_name,
+                    file_type = excluded.file_type,
+                    file_size = excluded.file_size,
+                    indexed_at = excluded.indexed_at,
+                    last_modified = excluded.last_modified,
+                    is_deleted = 0
+            """, (file_path, file_name, file_type, file_size, now, last_modified))
+            conn.commit()
+            return self.get_file_by_path(file_path) or {}
+
+    def mark_file_deleted(self, file_path: str) -> bool:
+        """标记文件为已删除"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE file_index SET is_deleted = 1 WHERE file_path = ?", (file_path,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_file_card_ids(self, file_path: str, card_ids: List[int]) -> bool:
+        """更新文件的关联卡片ID列表"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE file_index SET card_ids = ?, card_count = ? WHERE file_path = ?
+            """, (json.dumps(card_ids), len(card_ids), file_path))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def sync_source_to_file_index(self, source_file_id: str, card_ids: List[int]) -> Optional[Dict[str, Any]]:
+        """将 source_files 中的导入记录同步到 file_index，确保文件浏览器能识别"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT source_file_id, original_name, stored_path, file_type, file_size
+                FROM source_files WHERE source_file_id = ?
+            """, (source_file_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            sf = dict(row)
+            fname = sf["original_name"]
+            ftype = sf["file_type"]
+            fsize = sf.get("file_size", 0)
+            stored = sf.get("stored_path", "")
+
+            rel_path = fname
+
+            now = datetime.now().isoformat()
+            cursor.execute("""
+                INSERT INTO file_index (file_path, file_name, file_type, file_size, indexed_at, last_modified,
+                                        card_ids, card_count, is_deleted)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                ON CONFLICT(file_path) DO UPDATE SET
+                    file_name = excluded.file_name,
+                    file_type = excluded.file_type,
+                    file_size = excluded.file_size,
+                    indexed_at = excluded.indexed_at,
+                    last_modified = excluded.last_modified,
+                    card_ids = excluded.card_ids,
+                    card_count = excluded.card_count,
+                    is_deleted = 0
+            """, (rel_path, fname, ftype, fsize, now, now,
+                  json.dumps(card_ids), len(card_ids)))
+            conn.commit()
+            cursor.execute("SELECT * FROM file_index WHERE file_path = ?", (rel_path,))
+            return dict(cursor.fetchone()) if cursor.fetchone() else None
+
+    def search_files_and_cards(self, query: str, limit: int = 20) -> Dict[str, Any]:
+        """搜索文件和关联卡片"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            search_term = f"%{query}%"
+
+            # 搜索文件
+            cursor.execute("""
+                SELECT * FROM file_index 
+                WHERE is_deleted = 0 AND (file_name LIKE ? OR file_path LIKE ?)
+                ORDER BY file_path ASC LIMIT ?
+            """, (search_term, search_term, limit))
+            files = [dict(row) for row in cursor.fetchall()]
+            for f in files:
+                if isinstance(f.get('card_ids'), str):
+                    try:
+                        f['card_ids'] = json.loads(f['card_ids'])
+                    except:
+                        f['card_ids'] = []
+
+            # 搜索关联的卡片
+            cursor.execute("""
+                SELECT id, title, content, card_type, created_at
+                FROM knowledge_cards
+                WHERE title LIKE ? OR content LIKE ?
+                ORDER BY updated_at DESC LIMIT ?
+            """, (search_term, search_term, limit))
+            cards = [dict(row) for row in cursor.fetchall()]
+
+            return {"files": files, "cards": cards}

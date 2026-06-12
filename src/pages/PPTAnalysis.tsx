@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, Brain, Layers, Search, Film, History, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import ThemeSelector from '@/components/ThemeSelector';
 
 interface KnowledgeCard {
@@ -312,7 +313,7 @@ const PPTAnalysis: React.FC = () => {
           filename = data.filename;
         } else {
           const err = await resp.json().catch(() => ({}));
-          toast.error(`生成失败: ${err.detail || '未知错误'}`);
+          toast.error(`生成失败: ${safeErrorDetail(err.detail, '未知错误')}`);
           return;
         }
       }

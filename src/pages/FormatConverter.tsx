@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
 import {
@@ -146,7 +147,7 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
         toast.success('Mermaid 图表渲染完成');
       } else {
         const err = await response.json().catch(() => ({}));
-        toast.error(err.detail || 'Mermaid 渲染失败');
+        toast.error(safeErrorDetail(err.detail, 'Mermaid 渲染失败'));
       }
     } catch (err) {
       toast.error('Mermaid 渲染失败，请检查后端服务');
@@ -233,8 +234,8 @@ const [searchResults, setSearchResults] = useState<any[]>([]);
         addConversionRecord('Markdown编辑内容', mdOutputFormat, 'completed');
       } else {
         const err = await response.json().catch(() => ({}));
-        toast.error(err.detail || '转换失败');
-        addConversionRecord('Markdown编辑内容', mdOutputFormat, 'error', undefined, err.detail || '转换失败');
+        toast.error(safeErrorDetail(err.detail, '转换失败'));
+        addConversionRecord('Markdown编辑内容', mdOutputFormat, 'error', undefined, safeErrorDetail(err.detail, '转换失败'));
       }
     } catch (err) {
       toast.error('转换失败，请检查后端服务');

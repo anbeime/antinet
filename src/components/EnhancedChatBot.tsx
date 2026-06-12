@@ -13,6 +13,7 @@ import {
   Sparkles, ChevronRight, Loader2,
   Trash2,
   Upload, Mic, MicOff, Volume2, VolumeX,
+  Music,
   Eye, Maximize2, Minimize2,
   Brain, GitBranch, FileSearch, CheckSquare,
   Network, AlertTriangle
@@ -346,9 +347,9 @@ const loadSavedMessages = (): ChatMessage[] => {
   try {
     const saved = localStorage.getItem(CHAT_STORAGE_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      const decompressed = decompressMessages(saved);
+      if (decompressed.length > 0) {
+        return decompressed;
       }
     }
   } catch (e) {
@@ -357,10 +358,35 @@ const loadSavedMessages = (): ChatMessage[] => {
   return [];
 };
 
+// 压缩聊天记录（只保留必要字段，截断长内容）
+const compressMessages = (messages: ChatMessage[]): string => {
+  const compressed = messages.map(m => ({
+    r: m.role,
+    c: m.content.length > 2000 ? m.content.slice(0, 2000) + '...[已截断]' : m.content,
+    t: m.timestamp
+  }));
+  return JSON.stringify(compressed);
+};
+
+// 解压聊天记录
+const decompressMessages = (data: string): ChatMessage[] => {
+  try {
+    const parsed = JSON.parse(data);
+    return parsed.map((m: { r: string; c: string; t?: string }) => ({
+      role: m.r as MessageRole,
+      content: m.c,
+      timestamp: m.t
+    }));
+  } catch {
+    return [];
+  }
+};
+
 // 保存聊天记录到本地存储
 const saveMessages = (messages: ChatMessage[]) => {
   try {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+    const compressed = compressMessages(messages);
+    localStorage.setItem(CHAT_STORAGE_KEY, compressed);
   } catch (e) {
     console.warn('保存聊天记录失败:', e);
   }
@@ -514,6 +540,11 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [imageData, setImageData] = useState<string | null>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   
+  // 音频文件相关状态
+  const [selectedAudio, setSelectedAudio] = useState<File | null>(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
+  const [audioTranscribing, setAudioTranscribing] = useState(false);
+  
   // 语音相关状态
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -528,6 +559,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
 // 初始化欢迎消息
   useEffect(() => {
@@ -631,6 +663,68 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('audio/')) {
+        toast.error('请选择音频文件');
+        return;
+      }
+      setSelectedAudio(file);
+      const url = URL.createObjectURL(file);
+      setAudioPreviewUrl(url);
+      setAudioTranscribing(true);
+
+      try {
+        const formData = new FormData();
+        const ext = file.name.split('.').pop() || 'mp3';
+        formData.append('file', file, `audio.${ext}`);
+        formData.append('language', 'zh');
+        formData.append('model_size', 'base');
+
+        const response = await fetch(getApiBaseUrl() + '/api/speech/stt/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          const transcript = result.text?.trim();
+
+          if (transcript) {
+            setInput(transcript);
+            toast.success(`识别: ${transcript}`, { duration: 2000 });
+          } else {
+            toast.error('未识别到语音内容，请重试');
+          }
+        } else {
+          const error = await response.json().catch(() => ({ detail: '识别失败' }));
+          toast.error(error.detail || '语音识别失败，请重试');
+        }
+      } catch (err) {
+        console.error('STT 请求失败:', err);
+        toast.error('语音识别服务不可用，请确保后端服务已启动');
+      } finally {
+        setAudioTranscribing(false);
+        if (audioInputRef.current) {
+          audioInputRef.current.value = '';
+        }
+      }
+    }
+  };
+
+  const handleRemoveAudio = () => {
+    setSelectedAudio(null);
+    if (audioPreviewUrl) {
+      const oldUrl = audioPreviewUrl;
+      setAudioPreviewUrl(null);
+      URL.revokeObjectURL(oldUrl);
+    }
+    if (audioInputRef.current) {
+      audioInputRef.current.value = '';
     }
   };
 
@@ -1443,6 +1537,36 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           )}
 
+          {/* 音频预览 */}
+          {audioPreviewUrl && (
+            <div className="px-4 py-2" style={{ backgroundColor: '#fef3e2', borderTop: '1px solid #e8ddd0' }}>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-16 h-16 flex items-center justify-center rounded-lg"
+                  style={{ border: '2px solid #d4a574', backgroundColor: '#fff9f3' }}
+                >
+                  <Music className="w-8 h-8" style={{ color: '#8b4513' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: '#8b4513' }}>{selectedAudio?.name}</p>
+                  <p className="text-xs" style={{ color: '#8b7355' }}>
+                    {selectedAudio ? (selectedAudio.size / 1024).toFixed(1) : 0} KB
+                    {audioTranscribing && ' - 识别中...'}
+                  </p>
+                  <audio src={audioPreviewUrl} controls className="h-8 w-full mt-1" />
+                </div>
+                <button
+                  onClick={handleRemoveAudio}
+                  className="p-1 rounded-lg transition-colors"
+                  style={{ color: '#8b7355' }}
+                  disabled={isLoading || audioTranscribing}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 快捷操作 - 可折叠 */}
           <div className="hidden md:block border-t" style={{ borderColor: '#e8ddd0' }}>
             <button
@@ -1481,14 +1605,32 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 accept="image/*"
                 onChange={handleImageSelect}
               />
+              <input
+                type="file"
+                ref={audioInputRef}
+                className="hidden"
+                accept="audio/*"
+                onChange={handleAudioSelect}
+              />
               
               <button
                 className="p-2 rounded-lg transition-colors flex-shrink-0"
                 style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isLoading}
+                title="上传图片"
               >
                 <Upload className="w-4 h-4" />
+              </button>
+              
+              <button
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{ backgroundColor: audioTranscribing ? '#d4a574' : '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
+                onClick={() => audioInputRef.current?.click()}
+                disabled={isLoading || audioTranscribing}
+                title="上传音频转文字"
+              >
+                {audioTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Music className="w-4 h-4" />}
               </button>
               
               {/* 语音输入按钮 */}
@@ -1531,7 +1673,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && !selectedImage)}
+                disabled={isLoading || (!input.trim() && !selectedImage && !selectedAudio)}
                 className="p-2 text-white rounded-md transition-colors flex-shrink-0 disabled:opacity-50"
                 style={{ backgroundColor: '#8b4513' }}
               >

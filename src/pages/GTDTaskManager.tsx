@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, X, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
 import { toast } from 'sonner';
@@ -72,7 +73,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         window.location.reload();
       } else {
         const err = await response.json();
-        toast.error(err.detail || '创建失败');
+        toast.error(safeErrorDetail(err.detail, '创建失败'));
       }
     } catch (error) {
       toast.error('创建失败');

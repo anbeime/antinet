@@ -334,7 +334,7 @@ export const researchProjectService = {
 
   // 创建专题
   create: async (project: Omit<ResearchProject, 'id' | 'created_at' | 'updated_at'>): Promise<ResearchProject> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects`, {
+    const response = await fetch(`${apiResearch()}/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(project),
@@ -345,7 +345,7 @@ export const researchProjectService = {
 
   // 更新专题
   update: async (id: number, project: Partial<ResearchProject>): Promise<ResearchProject> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`, {
+    const response = await fetch(`${apiResearch()}/projects/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(project),
@@ -356,7 +356,7 @@ export const researchProjectService = {
 
   // 删除专题
   delete: async (id: number): Promise<void> => {
-    const response = await fetch(`${RESEARCH_API_BASE}/projects/${id}`, {
+    const response = await fetch(`${apiResearch()}/projects/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) throw new Error('删除专题失败');

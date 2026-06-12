@@ -199,7 +199,7 @@ register_router("routes.invoice_routes")
 
 print("[INFO] 注册增强版聊天路由...")
 register_router("routes.enhanced_chat_routes")
-# register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同（已隐藏）
+register_router("routes.hermes_chat_routes")  # Hermes + 8 Agent 协同
 register_router("routes.evolving_chat_routes")  # 自进化聊天
 register_router("routes.chat_context_routes")
 register_router("routes.md2pdf_routes")
@@ -223,6 +223,8 @@ register_router("routes.design_system_routes")  # 统一设计系统
 register_router("routes.ppt_preview_routes")  # PPT 预览（增强版）
 register_router("routes.ppt_native_routes")  # PPT 原生形状生成（SVG→DrawingML）
 register_router("routes.collab_docs_routes")  # 协作文档 CRUD + 版本 + 权限
+register_router("routes.file_browser_routes")  # 文件浏览器 + 卡片索引联动层
+register_router("routes.auth_routes")  # JWT 认证
 
 # ============================================================
 # 9. 初始化各模块的数据库连接
@@ -296,8 +298,11 @@ try:
     from routes import vector_search
     vector_search.set_db_manager(db_manager)
     vector_search.init_on_startup()
-    vector_search._precompute_all_embeddings_async()
     print("[OK] vector_search 数据库已连接，embedding 已初始化")
+
+    from routes import rag_pipeline
+    rag_pipeline.set_db_manager(db_manager)
+    print("[OK] rag_pipeline 数据库已连接")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
 

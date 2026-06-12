@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom';
 import { Document, Page, Text, View, StyleSheet, pdf, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import { safeErrorDetail } from '@/lib/utils';
 import { 
   Book, 
   Plus, 
@@ -183,6 +184,13 @@ const ProjectDetailPanel: React.FC<{
   const [pptResult, setPptResult] = useState<{ filename: string; success: boolean; message: string } | null>(null);
   const loadIdRef = useRef(0);
 
+  // 添加已有卡片弹窗状态
+  const [showLinkCard, setShowLinkCard] = useState(false);
+  const [linkableCards, setLinkableCards] = useState<Array<{id: number; card_type: string; title: string; content: string; is_linked: boolean; created_at: string}>>([]);
+  const [selectedLinkCardIds, setSelectedLinkCardIds] = useState<Set<number>>(new Set());
+  const [linkableLoading, setLinkableLoading] = useState(false);
+  const [linkingCards, setLinkingCards] = useState(false);
+
   const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
 
   useEffect(() => {
@@ -263,6 +271,47 @@ const ProjectDetailPanel: React.FC<{
       setCards(c);
     } catch (err) {
       console.error('刷新卡片失败:', err);
+    }
+  };
+
+  const loadLinkableCards = async () => {
+    if (!project.id) return;
+    setLinkableLoading(true);
+    try {
+      const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/linkable-cards`);
+      if (res.ok) {
+        const data = await res.json();
+        setLinkableCards(data);
+      }
+    } catch (err) {
+      console.error('加载可关联卡片失败:', err);
+    } finally {
+      setLinkableLoading(false);
+    }
+  };
+
+  const handleLinkCards = async () => {
+    if (!project.id || selectedLinkCardIds.size === 0) return;
+    setLinkingCards(true);
+    try {
+      const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/link-cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card_ids: Array.from(selectedLinkCardIds) })
+      });
+      if (res.ok) {
+        toast.success(`已关联 ${selectedLinkCardIds.size} 张卡片到专题`);
+        setShowLinkCard(false);
+        setSelectedLinkCardIds(new Set());
+        refreshCards();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(safeErrorDetail(err.detail, '关联卡片失败'));
+      }
+    } catch {
+      toast.error('关联卡片失败');
+    } finally {
+      setLinkingCards(false);
     }
   };
 
@@ -458,7 +507,7 @@ const ProjectDetailPanel: React.FC<{
         loadProjectStats();
       } else {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.detail || '更新失败');
+        toast.error(safeErrorDetail(err.detail, '更新失败'));
       }
     } catch { toast.error('更新失败'); }
     finally { setSavingTask(false); }
@@ -644,13 +693,22 @@ const ProjectDetailPanel: React.FC<{
                       <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                         研究卡片
                       </h2>
-                      <button
-                        onClick={() => setShowCreateCard(true)}
-                        className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
-                      >
-                        <PlusCircle className="w-4 h-4 mr-1.5" />
-                        新建卡片
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { loadLinkableCards(); setShowLinkCard(true); }}
+                          className="flex items-center px-4 py-2 border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-sm font-medium"
+                        >
+                          <Plus className="w-4 h-4 mr-1.5" />
+                          添加已有卡片
+                        </button>
+                        <button
+                          onClick={() => setShowCreateCard(true)}
+                          className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
+                        >
+                          <PlusCircle className="w-4 h-4 mr-1.5" />
+                          新建卡片
+                        </button>
+                      </div>
                     </div>
 
                     {cards.length === 0 ? (
@@ -664,6 +722,14 @@ const ProjectDetailPanel: React.FC<{
                         >
                           创建第一张卡片
                         </button>
+                        <div className="mt-3">
+                          <button
+                            onClick={() => { loadLinkableCards(); setShowLinkCard(true); }}
+                            className="px-6 py-2.5 border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors font-medium"
+                          >
+                            从知识库添加已有卡片
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1106,6 +1172,89 @@ const ProjectDetailPanel: React.FC<{
                     <span className="truncate">{p.name}</span>
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 添加已有卡片弹窗 */}
+        {showLinkCard && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50 p-4" onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); }}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-base sm:text-lg font-semibold">添加已有卡片到专题</h3>
+                <button onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                {linkableLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" />
+                  </div>
+                ) : linkableCards.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    <Layers className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p>没有可添加的卡片</p>
+                    <p className="text-sm mt-1">知识库中所有卡片都已加入专题</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {linkableCards.map(card => {
+                      const isSelected = selectedLinkCardIds.has(card.id);
+                      const tc = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={() => {
+                            const next = new Set(selectedLinkCardIds);
+                            if (isSelected) next.delete(card.id); else next.add(card.id);
+                            setSelectedLinkCardIds(next);
+                          }}
+                          className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                            isSelected
+                              ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                              : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-600'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 border-2 ${
+                            isSelected ? 'bg-purple-600 border-purple-600' : 'border-gray-300 dark:border-gray-500'
+                          }`}>
+                            {isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                          </div>
+                          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${tc.color.replace('text-', 'bg-')}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{card.title}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{card.content}</div>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${tc.bgColor} ${tc.color} border ${tc.borderColor}`}>
+                            {tc.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {selectedLinkCardIds.size > 0 ? `已选择 ${selectedLinkCardIds.size} 张卡片` : '请选择要加入专题的卡片'}
+                </span>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); }}
+                    className="px-5 py-2.5 text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleLinkCards}
+                    disabled={selectedLinkCardIds.size === 0 || linkingCards}
+                    className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {linkingCards ? '关联中...' : `加入专题 (${selectedLinkCardIds.size})`}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

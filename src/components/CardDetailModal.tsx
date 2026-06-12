@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
-import { cn } from '@/lib/utils';
+import { cn, safeErrorDetail } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ReactMarkdown from 'react-markdown';
 
@@ -261,6 +261,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const [editProjectId, setEditProjectId] = useState<number | null | undefined>(undefined);
   const [savingCard, setSavingCard] = useState(false);
 
   // 全屏切换功能
@@ -385,6 +386,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       setEditingRelatedCards([...card.relatedCards]);
       setEditTitle(card.title);
       setEditContent(card.content);
+      setEditProjectId(card.projectId);
     }
   }, [isOpen, card?.id]);
 
@@ -766,7 +768,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         loadCardIntegrations();
       } else {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.detail || '更新失败');
+        toast.error(safeErrorDetail(err.detail, '更新失败'));
       }
     } catch { toast.error('更新失败'); }
     finally { setSavingTask(false); }
@@ -849,13 +851,14 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const startEditing = () => {
     setEditTitle(card.title);
     setEditContent(card.content);
+    setEditProjectId(card.projectId);
     setIsEditing(true);
   };
 
-  // 取消编辑
   const cancelEditing = () => {
     setEditTitle(card.title);
     setEditContent(card.content);
+    setEditProjectId(card.projectId);
     setIsEditing(false);
   };
 
@@ -870,7 +873,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     const updatedCard = {
       ...card,
       title: editTitle,
-      content: editContent
+      content: editContent,
+      projectId: editProjectId
     };
     try {
       await onUpdateCard(updatedCard);
@@ -1351,12 +1355,31 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               </div>
             </div>
             {isEditing ? (
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
-                placeholder="输入卡片内容..."
-              />
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                    <FolderOpen size={14} className="inline mr-1" />
+                    所属专题
+                    <span className="text-xs text-gray-400 ml-2 font-normal">（可选）</span>
+                  </label>
+                  <select
+                    value={editProjectId ?? ''}
+                    onChange={(e) => setEditProjectId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 dark:bg-gray-700"
+                  >
+                    <option value="">不加入专题</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
+                  placeholder="输入卡片内容..."
+                />
+              </>
             ) : (
               <>
                 <div

@@ -8,10 +8,11 @@ import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
   Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText,
-  Maximize2, Minimize2, Presentation
+  Maximize2, Minimize2, Presentation, Folder, FolderOpen
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 import AppHeader from '@/components/AppHeader';
+import FileBrowserPanel from '@/components/FileBrowserPanel';
 import { toast } from 'sonner';
 
 const API_BASE = () => getApiBaseUrl()
@@ -79,7 +80,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
   const [apiData, setApiData] = useState<{nodes: any[], links: any[], entities?: any[], relations?: any[], categories?: any[]} | null>(null);
   const [graphSource, setGraphSource] = useState<'sample' | 'api'>('sample');
-  const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap'>('graph');  // 图谱/列表/思维导图 切换
+  const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap' | 'files'>('graph');  // 图谱/列表/思维导图/文件 切换
   const [listSearch, setListSearch] = useState('');
   const [listColorFilter, setListColorFilter] = useState<string>('all');
   const [listLoading, setListLoading] = useState(false);
@@ -101,10 +102,13 @@ const KnowledgeGraphView: React.FC = () => {
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
   const [modalCard, setModalCard] = useState<any>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [cards, setCards] = useState<any[]>([]);
+  const [modalEditorSide, setModalEditorSide] = useState<'edit' | 'preview' | 'split'>('preview');
+  const [modalMarkdown, setModalMarkdown] = useState('');
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
+  const [selectedFileInfo, setSelectedFileInfo] = useState<{ name: string; path: string; type: string; cards: any[] } | null>(null);
+  const [cards, setCards] = useState<any[]>([]);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
@@ -266,7 +270,11 @@ const KnowledgeGraphView: React.FC = () => {
     if (cardId) {
       loadCardBacklinks(parseInt(cardId));
     }
-    // 加载已保存的图谱状态（持久化节点/连线）
+    const tabParam = params.get('tab');
+    if (tabParam === 'files') {
+      setPageMode('files');
+      setSidebarOpen(false);
+    }
     loadPersistedGraph();
   }, []);
 
@@ -503,23 +511,20 @@ const KnowledgeGraphView: React.FC = () => {
       if (res.ok) {
         const card = await res.json();
         setModalCard(card);
-        setModalEditTitle(card.title || '');
-        setModalEditContent(card.content || '');
-        setIsModalEditing(false);
+        setModalMarkdown(`# ${card.title || ''}\n\n${card.content || ''}`);
+        setModalEditorSide('preview');
         setModalOpen(true);
       } else {
         setModalCard({ title: `卡片 ${cardId}`, content: '卡片不存在或已删除', color: 'blue' });
-        setModalEditTitle('');
-        setModalEditContent('');
-        setIsModalEditing(false);
+        setModalMarkdown('');
+        setModalEditorSide('preview');
         setModalOpen(true);
       }
     } catch (e) {
       console.error('加载卡片失败:', e);
       setModalCard({ title: `卡片 ${cardId}`, content: '加载失败: ' + String(e), color: 'red' });
-      setModalEditTitle('');
-      setModalEditContent('');
-      setIsModalEditing(false);
+      setModalMarkdown('');
+      setModalEditorSide('preview');
       setModalOpen(true);
     }
   };
@@ -527,21 +532,24 @@ const KnowledgeGraphView: React.FC = () => {
   // 保存卡片编辑
   const handleModalSave = async () => {
     if (!modalCard?.id) return;
+    const lines = modalMarkdown.split('\n');
+    const title = lines[0]?.startsWith('# ') ? lines[0].slice(2).trim() : modalCard.title;
+    const content = lines[0]?.startsWith('# ') ? lines.slice(2).join('\n').trim() : modalMarkdown.trim();
     try {
       const res = await fetch(`${API_BASE()}/api/knowledge/cards/${modalCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: modalEditTitle,
-          content: modalEditContent,
+          title,
+          content,
           type: modalCard.card_type || modalCard.type || 'blue',
         }),
       });
       if (res.ok) {
         const updated = await res.json();
         setModalCard(updated);
-        setIsModalEditing(false);
-        // 刷新卡片列表
+        setModalMarkdown(`# ${updated.title || ''}\n\n${updated.content || ''}`);
+        setModalEditorSide('preview');
         loadCards();
       }
     } catch (e) {
@@ -690,9 +698,8 @@ useEffect(() => {
             content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。',
             color: 'blue'
           });
-          setIsModalEditing(false);
-          setModalEditTitle('');
-          setModalEditContent('');
+          setModalMarkdown('');
+          setModalEditorSide('preview');
           setModalOpen(true);
         }
       };
@@ -863,6 +870,13 @@ return (
           >
             <GitBranch className="w-4 h-4" />
             <span>导图</span>
+          </button>
+          <button
+            onClick={() => setPageMode('files')}
+            className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'files' ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-amber-100 dark:hover:bg-amber-900/30'}`}
+          >
+            <Folder className="w-4 h-4" />
+            <span>文件</span>
           </button>
         </div>
         
@@ -1206,6 +1220,126 @@ return (
         <div className="flex-1 overflow-hidden pt-12 md:pt-0">
           <MindMap initialRoot={mindmapTree} initialCards={cards} embedded={true} />
         </div>
+      ) : pageMode === 'files' ? (
+        /* ========== 文件浏览器 + 卡片索引联动层 ========== */
+        <div className="flex-1 flex overflow-hidden pt-12 md:pt-0">
+          <div className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-700">
+            <FileBrowserPanel
+              onNavigateToCard={(cardId) => {
+                loadCardBacklinks(cardId);
+                setPageMode('graph');
+                setSidebarOpen(false);
+              }}
+              onNavigateToGraph={(cardId) => {
+                loadCardBacklinks(cardId);
+                setPageMode('graph');
+                setSidebarOpen(false);
+              }}
+              onFileSelect={(info) => setSelectedFileInfo(info)}
+            />
+          </div>
+          {/* 右侧卡片详情 */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {selectedFileInfo ? (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-lg">
+                    {selectedFileInfo.type === 'pdf' ? '📄' :
+                     selectedFileInfo.type === 'docx' ? '📝' :
+                     selectedFileInfo.type === 'xlsx' ? '📊' :
+                     selectedFileInfo.type === 'pptx' ? '📽️' :
+                     selectedFileInfo.type === 'md' ? '📝' :
+                     selectedFileInfo.type === 'txt' ? '📃' : '📄'}
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold">{selectedFileInfo.name}</h2>
+                    <p className="text-xs text-gray-400">{selectedFileInfo.path}</p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      selectedFileInfo.cards.length > 0
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                    }`}>
+                      {selectedFileInfo.cards.length} 张关联卡片
+                    </span>
+                    {selectedFileInfo.cards.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const firstCard = selectedFileInfo.cards[0];
+                          loadCardBacklinks(firstCard.id);
+                          setPageMode('graph');
+                        }}
+                        className="text-xs px-2 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        title="在图谱中查看"
+                      >
+                        查看图谱
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {selectedFileInfo.cards.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {selectedFileInfo.cards.map((card: any) => (
+                      <div
+                        key={card.id}
+                        onClick={() => {
+                          setModalCard(card);
+                          setModalMarkdown(`# ${card.title || '无标题'}\n\n${card.content || ''}`);
+                          setModalEditorSide('preview');
+                          setModalOpen(true);
+                        }}
+                        className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 cursor-pointer hover:shadow-md transition-shadow"
+                      >
+                        <div className={`w-2 h-2 rounded-full mb-2 ${
+                          card.color === 'blue' ? 'bg-blue-500' :
+                          card.color === 'red' ? 'bg-red-500' :
+                          card.color === 'green' ? 'bg-green-500' :
+                          card.color === 'purple' ? 'bg-purple-500' :
+                          card.color === 'orange' ? 'bg-orange-500' :
+                          card.color === 'pink' ? 'bg-pink-500' :
+                          card.color === 'teal' ? 'bg-teal-500' :
+                          card.color === 'indigo' ? 'bg-indigo-500' :
+                          'bg-gray-400'
+                        }`} />
+                        <h3 className="text-sm font-medium mb-1">{card.title}</h3>
+                        <p className="text-xs text-gray-500 line-clamp-3">{card.content}</p>
+                        {card.tags && card.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {card.tags.map((tag: string) => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {card.source && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                            <span className="text-[10px] text-gray-400">
+                              来源: {card.source}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-gray-400">
+                    <p className="text-sm">该文件暂无关联卡片</p>
+                    <p className="text-xs mt-1">可先运行扫描索引建立关联</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-400">
+                  <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">选择一个文件查看详情</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         /* ========== 图谱视图 ========== */
         <main className="flex-1 relative pt-12 md:pt-0">
@@ -1220,92 +1354,90 @@ return (
 
       {/* 卡片详情弹窗 */}
       {modalOpen && modalCard && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setModalOpen(false); setIsModalEditing(false); }}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* 弹窗头部 */}
             <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-              {isModalEditing ? (
-                <input
-                  id="modal-card-title"
-                  name="modalCardTitle"
-                  type="text"
-                  value={modalEditTitle}
-                  onChange={(e) => setModalEditTitle(e.target.value)}
-                  className="text-lg font-semibold bg-transparent border-b border-blue-400 outline-none dark:text-white flex-1 mr-4"
-                  placeholder="卡片标题"
-                />
-              ) : (
-                <h3 className="text-lg font-semibold dark:text-white">{modalCard.title || '无标题'}</h3>
-              )}
-              <div className="flex items-center gap-2">
-                {/* 编辑/预览模式切换 */}
-                {isModalEditing ? (
-                  <button
-                    onClick={() => setIsModalEditing(false)}
-                    className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center gap-1"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> 预览
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setIsModalEditing(true)}
-                    className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" /> 编辑
-                  </button>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <h3 className="text-lg font-semibold dark:text-white truncate">{modalCard.title || '无标题'}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded text-white shrink-0 ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[(modalCard.card_type || modalCard.type || 'blue') as string] || 'bg-blue-500')}`}>
+                  {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[(modalCard.card_type || modalCard.type || 'blue') as string] || '事实'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                {/* 编辑/预览/分屏 toggle */}
+                <div className="hidden sm:flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  {(['edit', 'preview', 'split'] as const).map(s => (
+                    <button key={s}
+                      onClick={() => {
+                        setModalEditorSide(s);
+                        if (s === 'edit' && !modalMarkdown) {
+                          setModalMarkdown(`# ${modalCard.title || '无标题'}\n\n${modalCard.content || ''}`);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md ${
+                        modalEditorSide === s ? 'bg-white dark:bg-gray-600 shadow-sm font-medium' : 'text-gray-500'
+                      }`}
+                    >
+                      {s === 'edit' ? '编辑' : s === 'preview' ? '预览' : '分屏'}
+                    </button>
+                  ))}
+                </div>
+                {/* 导出/预览按钮（仅在预览/分屏时显示） */}
+                {modalEditorSide !== 'edit' && (
+                  <div className="hidden sm:flex items-center gap-1">
+                    <button
+                      onClick={() => toast.info('PDF 导出功能开发中')}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >PDF</button>
+                    <button
+                      onClick={() => toast.info('DOCX 导出功能开发中')}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >DOCX</button>
+                    <button
+                      onClick={() => toast.info('HTML 导出功能开发中')}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >HTML</button>
+                  </div>
                 )}
-                <button onClick={() => { setModalOpen(false); setIsModalEditing(false); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <button onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             {/* 弹窗内容区 */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {/* 类型标签 */}
-              <div className="mb-3 flex items-center gap-2">
-                {isModalEditing ? (
-                  <select
-                    id="modal-card-type"
-                    name="modalCardType"
-                    value={modalCard.card_type || modalCard.type || 'blue'}
-                    onChange={(e) => setModalCard({ ...modalCard, card_type: e.target.value })}
-                    className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600"
-                  >
-                    <option value="blue">事实</option>
-                    <option value="green">解释</option>
-                    <option value="yellow">风险</option>
-                    <option value="red">行动</option>
-                  </select>
-                ) : (
-                  <span className={`text-xs px-2 py-1 rounded text-white ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[(modalCard.card_type || modalCard.type || 'blue') as string] || 'bg-blue-500')}`}>
-                    {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[(modalCard.card_type || modalCard.type || 'blue') as string] || '事实'}
-                  </span>
-                )}
-                <span className="text-xs text-gray-400">#{modalCard.id}</span>
-              </div>
-
-              {/* 内容区 */}
-              {isModalEditing ? (
-                <textarea
-                  id="modal-card-content"
-                  name="modalCardContent"
-                  value={modalEditContent}
-                  onChange={(e) => setModalEditContent(e.target.value)}
-                  className="w-full h-64 p-3 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-blue-400"
-                  placeholder="输入卡片内容..."
-                />
-              ) : (
-                <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-                  {modalCard.content || <span className="text-gray-400 italic">暂无内容</span>}
+            <div className="flex-1 flex overflow-hidden min-h-0">
+              {/* 编辑面板 */}
+              {(modalEditorSide === 'edit' || modalEditorSide === 'split') && (
+                <div className={`flex flex-col ${modalEditorSide === 'split' ? 'w-1/2 border-r dark:border-gray-700' : 'flex-1'}`}>
+                  <textarea
+                    value={modalMarkdown}
+                    onChange={e => setModalMarkdown(e.target.value)}
+                    className="flex-1 p-4 resize-none bg-white dark:bg-gray-900 text-sm font-mono outline-none"
+                    placeholder="# 标题\n\n内容，支持 Markdown..."
+                  />
                 </div>
               )}
-
-              {/* 地址信息 */}
-              {modalCard.address && !isModalEditing && (
-                <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm flex items-center gap-2">
-                  <ExternalLink size={14} className="text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{modalCard.address}</span>
+              {/* 预览面板 */}
+              {(modalEditorSide === 'preview' || modalEditorSide === 'split') && (
+                <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${modalEditorSide === 'split' ? 'w-1/2' : ''}`}>
+                  {modalMarkdown ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown>{modalMarkdown}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
+                      {modalCard.content || <span className="text-gray-400 italic">暂无内容</span>}
+                    </div>
+                  )}
+                  {/* 地址信息 */}
+                  {modalCard.address && (
+                    <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm flex items-center gap-2">
+                      <ExternalLink size={14} className="text-gray-400 flex-shrink-0" />
+                      <span className="truncate">{modalCard.address}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1318,12 +1450,12 @@ return (
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setModalOpen(false); setIsModalEditing(false); }}
+                  onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
                 >
                   关闭
                 </button>
-                {isModalEditing && (
+                {modalEditorSide === 'edit' && modalMarkdown && (
                   <button
                     onClick={handleModalSave}
                     className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"

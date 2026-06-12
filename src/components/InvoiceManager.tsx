@@ -8,6 +8,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface Invoice {
@@ -108,7 +109,7 @@ const InvoiceManager: React.FC = () => {
         });
       } else {
         const err = await res.json().catch(() => ({ detail: '创建失败' }));
-        toast.error(err.detail || '创建报销任务失败');
+        toast.error(safeErrorDetail(err.detail, '创建报销任务失败'));
       }
     } catch {
       toast.error('创建报销任务失败，请检查后端服务');
