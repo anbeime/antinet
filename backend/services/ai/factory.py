@@ -101,7 +101,7 @@ def create_ai_service(provider: str = 'npu', config: Optional[Dict[str, Any]] = 
     创建指定提供者的 AI 服务
     
     Args:
-        provider: 提供者名称 ('openai', 'npu')
+        provider: 提供者名称 ('openai', 'npu', 'nim')
         config: 配置
         
     Returns:
@@ -111,6 +111,9 @@ def create_ai_service(provider: str = 'npu', config: Optional[Dict[str, Any]] = 
         return OpenAIService(config)
     elif provider == 'npu':
         return NPUService(config)
+    elif provider == 'nim':
+        # NVIDIA NIM 使用 OpenAI 兼容接口
+        return OpenAIService(config)
     else:
         logger.warning(f"[AI] 未知提供者: {provider}")
         return None

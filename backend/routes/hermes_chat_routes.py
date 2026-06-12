@@ -32,6 +32,7 @@ class HermesChatRequest(BaseModel):
     user_id: Optional[str] = Field(default="default", description="用户ID")
     enable_8agent: bool = Field(default=True, description="是否启用8-Agent协同")
     context: Optional[Dict[str, Any]] = Field(default=None, description="额外上下文")
+    provider: Optional[str] = Field(default=None, description="AI提供者: hermes, nim, openai, npu")
 
 class HermesChatResponse(BaseModel):
     """Hermes 聊天响应"""
@@ -138,16 +139,28 @@ async def hermes_chat(request: HermesChatRequest):
     
     工作流程:
     1. 接收用户消息
-    2. 如果 Hermes 可用，用 Hermes AI 处理
-    3. 否则使用 8-Agent 系统
-    4. 返回响应（保持四色卡片格式）
+    2. 如果指定了 provider，使用对应 AI 服务
+    3. 否则如果 Hermes 可用，用 Hermes AI 处理
+    4. 否则使用 8-Agent 系统
+    5. 返回响应
     """
     session_id = request.session_id or f"hermes_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    logger.info(f"[Hermes] 会话 {session_id}: {request.message[:100]}...")
+    logger.info(f"[Hermes] 会话 {session_id}, provider={request.provider}: {request.message[:100]}...")
     
     try:
-        # 尝试使用 Hermes，如果不可用则回退到 8-Agent
+        # 如果指定了 provider，使用 AI Factory 获取对应服务
+        if request.provider:
+            result = await _call_provider_service(
+                provider=request.provider,
+                message=request.message,
+                session_id=session_id,
+                user_id=request.user_id,
+                context=request.context
+            )
+            return HermesChatResponse(**result)
+        
+        # 否则尝试 Hermes，回退到 8-Agent
         result = await _try_hermes_or_fallback(
             message=request.message,
             session_id=session_id,
@@ -161,6 +174,30 @@ async def hermes_chat(request: HermesChatRequest):
     except Exception as e:
         logger.error(f"[Hermes] 聊天异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _call_provider_service(provider: str, message: str, session_id: str,
+                                  user_id: str, context: Dict = None) -> Dict:
+    """通过 AI Factory 调用指定提供者的服务"""
+    try:
+        from services.ai.factory import get_ai_service
+        service = get_ai_service(provider)
+        if not service:
+            return await _call_8agent(message, user_id, context, session_id)
+        
+        context_list = []
+        if context:
+            context_list = [json.dumps(context, ensure_ascii=False)]
+        
+        response = service.chat(message, context=context_list)
+        return {
+            "response": response.content if response.content else f"[{provider}] 无响应",
+            "session_id": session_id,
+            "mode": provider,
+        }
+    except Exception as e:
+        logger.error(f"[{provider}] 调用失败: {e}，回退到 8-Agent")
+        return await _call_8agent(message, user_id, context, session_id)
 
 async def _try_hermes_or_fallback(
     message: str, 

@@ -138,6 +138,20 @@ AIServiceFactory.create_default_services()
 #     AIServiceFactory.register('sensenova', _sensenova, set_default=False)
 #     print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")
 
+# 注册 NVIDIA NIM 服务
+_nim_cfg = {
+    'api_key': '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',
+    'base_url': 'https://integrate.api.nvidia.com/v1',
+    'model': 'minimaxai/minimax-m2.7',
+    'timeout': 60,
+    'max_tokens': 8192,
+    'temperature': 1.0,
+}
+_nim = create_ai_service('nim', _nim_cfg)
+if _nim:
+    AIServiceFactory.register('nim', _nim, set_default=False)
+    print("[OK] NVIDIA NIM 服务已注册")
+
 print("[OK] AI 服务工厂已初始化（仅本地模型）")
 
 # ============================================================

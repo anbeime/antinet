@@ -795,7 +795,7 @@ class DatabaseManager:
                     title, content, card_type UNINDEXED,
                     content=knowledge_cards,
                     content_rowid=id,
-                    tokenize='unicode61 tokenchars '''
+                    tokenize='unicode61'
                 );
 
                 CREATE TRIGGER IF NOT EXISTS knowledge_cards_ai AFTER INSERT ON knowledge_cards BEGIN
