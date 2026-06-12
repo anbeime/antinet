@@ -1302,55 +1302,43 @@ async def enhanced_chat(request: ChatRequest):
                 response_data["response"] = "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
             
         else:
-            # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
-            result = hybrid_search_all(query, limit=5)
-            
-            if result.cards or result.kg_entities:
-                # 有搜索结果，用LLM综合生成自然语言回答
-                response_data["cards"] = result.cards[:3]
-                response_data["kg_entities"] = [
-                    {"id": e.id, "name": e.name, "type": e.entity_type, "description": e.description}
-                    for e in result.kg_entities[:3]
-                ]
-                
-                # 使用LLM综合检索结果生成自然语言回答（7B优先，3B兜底）
-                context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
-                quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
-                genie_text = await call_genie(
-                    [{"role": "user", "content": quick_prompt}],
-                    max_tokens=256, timeout_sec=60.0
+            # 通用对话 - 使用 RAG Pipeline（查询重写→混合检索→重排序→生成）
+            try:
+                from routes.rag_pipeline import run_pipeline
+                conv_history = []
+                if hasattr(request, 'conversation_history') and request.conversation_history:
+                    conv_history = [{"role": m.role, "content": m.content} for m in request.conversation_history[-4:]]
+                rag_ctx = await run_pipeline(
+                    query=query,
+                    history=conv_history,
+                    top_k=10,
+                    enable_rewrite=len(query) > 10,
+                    enable_rerank=True,
                 )
-                if genie_text:
-                    logger.info(f"[Chat] Genie响应长度: {len(genie_text)}")
-                    response_data["response"] = genie_text[:500]
-                    response_data["reply"] = response_data["response"]
-                    response_data["metadata"]["model"] = "genie-npu"
-                else:
-                    logger.warning("Genie生成失败，尝试NPU直接推理")
-                    npu_text = _try_npu_generate(query, user_id)
-                    if npu_text:
-                        response_data["response"] = npu_text
-                        response_data["metadata"]["model"] = "npu-direct"
-                    else:
-                        response_data["response"] = generate_hybrid_response(query, result)
-            else:
-                # 无匹配时，使用Genie快速响应（7B优先，3B兜底）
+                response_data["response"] = rag_ctx.llm_response
+                response_data["metadata"]["rag"] = {
+                    "rewritten_query": rag_ctx.rewritten_query,
+                    "retrieved_count": rag_ctx.metadata.get("retrieved_count", 0),
+                    "total_time": round(rag_ctx.metadata.get("total_time", 0), 2),
+                }
+                response_data["cards"] = [
+                    CardReference(
+                        card_id=c["id"], card_type=c.get("card_type", "blue"),
+                        title=c["title"], content=c["content"][:150],
+                        similarity=c.get("rerank_score", c.get("score", 0)),
+                        color=get_card_color(c.get("card_type", "blue"))
+                    ) for c in rag_ctx.reranked_chunks[:3]
+                ]
+            except Exception as e:
+                logger.error(f"[RAG] Pipeline 失败，回退直接 LLM: {e}")
                 genie_text = await call_genie(
                     [{"role": "user", "content": query}],
                     max_tokens=256, timeout_sec=60.0
                 )
                 if genie_text:
                     response_data["response"] = genie_text
-                    response_data["reply"] = genie_text
-                    response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    logger.warning("[Chat] Genie不可用，尝试NPU直接推理")
-                    npu_text = _try_npu_generate(query, user_id)
-                    if npu_text:
-                        response_data["response"] = npu_text
-                        response_data["metadata"]["model"] = "npu-direct"
-                    else:
-                        response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
+                    response_data["response"] = f"关于「{query}」，我没有找到相关信息。换个关键词试试？"
         
         response_data["suggested_questions"] = generate_suggested_questions(
             scene_type,
@@ -1362,8 +1350,7 @@ async def enhanced_chat(request: ChatRequest):
         # 自动提取卡片建议（不自动创建）— LLM 主路径 + 规则降级
         try:
             from routes import auto_card
-            # 把知识库搜索结果传给卡片提取 Agent 作为分析上下文
-            kb_cards = result.cards if 'result' in locals() and hasattr(result, 'cards') else []
+            kb_cards = response_data.get("cards", [])
             suggestions = await auto_card.suggest_cards_api_async(
                 query, response_data.get("response", ""),
                 card_context=kb_cards,

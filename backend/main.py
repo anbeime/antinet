@@ -303,6 +303,14 @@ try:
     from routes import rag_pipeline
     rag_pipeline.set_db_manager(db_manager)
     print("[OK] rag_pipeline 数据库已连接")
+
+    from routes import auth_routes
+    auth_routes.set_db_manager(db_manager)
+    print("[OK] auth_routes 数据库已连接")
+
+    from middleware import audit
+    audit.set_db_manager(db_manager)
+    print("[OK] audit 中间件数据库已连接")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
 

@@ -10,7 +10,6 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
   if (import.meta.env.DEV) {
     return '';
   }
@@ -18,6 +17,14 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+const getToken = (): string => {
+  try {
+    return localStorage.getItem('zhiyi_token') || '';
+  } catch {
+    return '';
+  }
+};
 
 // 请求ID缓存，用于请求去重
 const requestIds: Record<string, number> = {};
@@ -94,10 +101,12 @@ export async function fetchPost<T = any>(
     data.reqId = generateRequestId(url);
   }
 
+  const token = getToken();
   const init: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...fetchOptions.headers,
     },
   };
@@ -207,10 +216,12 @@ export async function fetchGet<T = any>(
 ): Promise<T> {
   const { showLoading = false, onError, onSuccess, ...fetchOptions } = options;
 
+  const token = getToken();
   const init: RequestInit = {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...fetchOptions.headers,
     },
   };

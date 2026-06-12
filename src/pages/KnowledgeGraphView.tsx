@@ -1183,7 +1183,7 @@ return (
                 {(listEditorSide==='preview'||listEditorSide==='split') && (
                   <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${listEditorSide==='split'?'w-1/2':''}`}>
                     {listMarkdown ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className="prose prose-sm dark:prose-invert max-w-none" id="modal-preview-content">
                         <ReactMarkdown>{listMarkdown}</ReactMarkdown>
                       </div>
                     ) : <p className="text-gray-400 text-sm">无内容</p>}
@@ -1387,17 +1387,18 @@ return (
                 {modalEditorSide !== 'edit' && (
                   <div className="hidden sm:flex items-center gap-1">
                     <button
-                      onClick={() => toast.info('PDF 导出功能开发中')}
+                      onClick={() => {
+                        const html = document.getElementById('modal-preview-content')?.innerHTML;
+                        if (html) {
+                          const w = window.open('', '_blank');
+                          if (w) {
+                            w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${modalCard.title || '预览'}</title><style>body{max-width:800px;margin:40px auto;padding:0 20px;font-family:system-ui,sans-serif;line-height:1.6;color:#333;}img{max-width:100%}pre{background:#f5f5f5;padding:16px;border-radius:8px;overflow-x:auto;}code{background:#f0f0f0;padding:2px 6px;border-radius:3px;}</style></head><body>${html}</body></html>`);
+                            w.document.close();
+                          }
+                        }
+                      }}
                       className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    >PDF</button>
-                    <button
-                      onClick={() => toast.info('DOCX 导出功能开发中')}
-                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    >DOCX</button>
-                    <button
-                      onClick={() => toast.info('HTML 导出功能开发中')}
-                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    >HTML</button>
+                    >HTML预览</button>
                   </div>
                 )}
                 <button onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">

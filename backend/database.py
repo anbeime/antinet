@@ -803,14 +803,14 @@ class DatabaseManager:
                     VALUES (new.id, new.title, new.content, new.card_type);
                 END;
 
-                CREATE TRIGGER IF NOT EXISTS knowledge_carts_ad AFTER DELETE ON knowledge_cards BEGIN
-                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid, title, content, card_type)
-                    VALUES ('delete', old.id, old.title, old.content, old.card_type);
+                CREATE TRIGGER IF NOT EXISTS knowledge_cards_ad AFTER DELETE ON knowledge_cards BEGIN
+                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid)
+                    VALUES ('delete', old.id);
                 END;
 
                 CREATE TRIGGER IF NOT EXISTS knowledge_cards_au AFTER UPDATE ON knowledge_cards BEGIN
-                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid, title, content, card_type)
-                    VALUES ('delete', old.id, old.title, old.content, old.card_type);
+                    INSERT INTO knowledge_cards_fts(knowledge_cards_fts, rowid)
+                    VALUES ('delete', old.id);
                     INSERT INTO knowledge_cards_fts(rowid, title, content, card_type)
                     VALUES (new.id, new.title, new.content, new.card_type);
                 END;
