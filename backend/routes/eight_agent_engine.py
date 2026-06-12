@@ -258,21 +258,60 @@ class EightAgentEngine:
         query: str, 
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """密卷房 - 数据预处理"""
+        """密卷房 - 数据预处理（自动从数据库获取真实数据）"""
         try:
+            raw_material = context.get("raw_material", "")
+            
+            # 如果没有传入原始数据，自动从数据库查询
+            if not raw_material:
+                try:
+                    from database import get_db
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    
+                    # 获取知识卡片
+                    cards = []
+                    try:
+                        cursor.execute("SELECT id, title, content, card_type, tags, created_at FROM knowledge_cards ORDER BY updated_at DESC LIMIT 20")
+                        columns = [desc[0] for desc in cursor.description]
+                        for row in cursor.fetchall():
+                            cards.append(dict(zip(columns, row)))
+                    except Exception:
+                        pass
+                    
+                    # 获取研究专题
+                    projects = []
+                    try:
+                        cursor.execute("SELECT id, name, description, status FROM research_projects ORDER BY updated_at DESC LIMIT 10")
+                        columns = [desc[0] for desc in cursor.description]
+                        for row in cursor.fetchall():
+                            projects.append(dict(zip(columns, row)))
+                    except Exception:
+                        pass
+                    
+                    conn.close()
+                    
+                    raw_material = json.dumps({
+                        "knowledge_cards": cards,
+                        "research_projects": projects,
+                        "query": query,
+                        "timestamp": datetime.now().isoformat()
+                    }, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"[密卷房] 数据库查询失败: {e}")
+            
             preprocessor = self._agents.get("preprocessor")
-            if preprocessor:
+            if preprocessor and raw_material:
                 result = await preprocessor.preprocess_data(
-                    data_source=context.get("raw_material", ""),
-                    data_type="csv"
+                    data_source=raw_material,
+                    data_type="json"
                 )
                 return result
         except Exception as e:
             logger.warning(f"[密卷房] 数据预处理失败: {e}")
         
-        # 返回模拟预处理数据
         return {
-            "data": [{"query": query, "context": context}],
+            "data": [{"query": query}],
             "quality_report": {"completeness": 1.0, "accuracy": 1.0}
         }
     
@@ -511,7 +550,7 @@ class EightAgentEngine:
                 "type": "事实",
                 "color": "blue",
                 "emoji": "🔵",
-                "items": cards.blue_cards[:3]
+                "items": cards.blue_cards[:5]
             })
         
         # 解释说明
@@ -520,7 +559,7 @@ class EightAgentEngine:
                 "type": "解释",
                 "color": "green",
                 "emoji": "🟢",
-                "items": cards.green_cards[:2]
+                "items": cards.green_cards[:5]
             })
         
         # 风险提示
@@ -529,7 +568,7 @@ class EightAgentEngine:
                 "type": "风险",
                 "color": "yellow",
                 "emoji": "🟡",
-                "items": cards.yellow_cards[:2]
+                "items": cards.yellow_cards[:5]
             })
         
         # 行动建议
@@ -538,7 +577,7 @@ class EightAgentEngine:
                 "type": "行动",
                 "color": "red",
                 "emoji": "🔴",
-                "items": cards.red_cards[:2]
+                "items": cards.red_cards[:5]
             })
         
         # 生成文本报告
@@ -586,25 +625,25 @@ class EightAgentEngine:
         
         if cards.blue_cards and isinstance(cards.blue_cards, list):
             lines.append("\n### 🔵 事实\n")
-            for card in cards.blue_cards[:3]:
+            for card in cards.blue_cards[:5]:
                 if isinstance(card, dict):
                     lines.append(f"- {card.get('title', card.get('content', ''))}")
         
         if cards.green_cards and isinstance(cards.green_cards, list):
             lines.append("\n### 🟢 解释\n")
-            for card in cards.green_cards[:2]:
+            for card in cards.green_cards[:5]:
                 if isinstance(card, dict):
                     lines.append(f"- {card.get('title', card.get('content', ''))}")
         
         if cards.yellow_cards and isinstance(cards.yellow_cards, list):
             lines.append("\n### 🟡 风险\n")
-            for card in cards.yellow_cards[:2]:
+            for card in cards.yellow_cards[:5]:
                 if isinstance(card, dict):
-                    lines.append(f"- ⚠️ {card.get('title', card.get('content', ''))}")
+                    lines.append(f"- ⚠️ {card.get('title', card.get('name', card.get('content', '')))}")
         
         if cards.red_cards and isinstance(cards.red_cards, list):
             lines.append("\n### 🔴 行动建议\n")
-            for card in cards.red_cards[:2]:
+            for card in cards.red_cards[:5]:
                 if isinstance(card, dict):
                     lines.append(f"- 👉 {card.get('title', card.get('content', ''))}")
         

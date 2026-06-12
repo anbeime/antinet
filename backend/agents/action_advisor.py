@@ -63,9 +63,15 @@ class ActionAdvisorAgent:
             grouped_actions = self._group_actions(verified_actions)
             self.log.append(f"[参谋司] 建议分组完成: {len(grouped_actions)}个分组")
             
+            # 展平分组后的行动建议为列表
+            flat_actions = []
+            for group in grouped_actions.values():
+                flat_actions.extend(group)
+
             # 构建输出
             result = {
-                "actions": grouped_actions,
+                "actions": flat_actions,
+                "grouped_actions": grouped_actions,
                 "statistics": {
                     "total": len(verified_actions),
                     "by_priority": self._count_by_priority(verified_actions),
@@ -260,18 +266,18 @@ class ActionAdvisorAgent:
             if item["type"] == "risk":
                 risk = item["item"]
                 return f"""
-                风险名称：{risk['name']}
-                风险描述：{risk['description']}
-                严重程度：{risk['severity']}
-                检测来源：{risk['source']}
+                风险名称：{risk.get('name', risk.get('title', '未知风险'))}
+                风险描述：{risk.get('description', '')}
+                严重程度：{risk.get('severity', 'medium')}
+                检测来源：{risk.get('source', 'AI检测')}
                 """
             elif item["type"] == "fact":
                 fact = item["item"]
                 return f"""
-                事实标题：{fact['title']}
-                事实描述：{fact['description']}
-                证据：{fact['evidence']}
-                置信度：{fact['confidence']}
+                事实标题：{fact.get('title', fact.get('name', '未知事实'))}
+                事实描述：{fact.get('description', '')}
+                证据：{fact.get('evidence', '')}
+                置信度：{fact.get('confidence', '0.5')}
                 """
             else:
                 return ""

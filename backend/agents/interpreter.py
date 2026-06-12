@@ -158,7 +158,7 @@ class InterpreterAgent:
         向量检索 - 使用混合搜索（向量 + 关键词）
         """
         try:
-            from routes.vector_search import set_db_manager, search_hybrid, fallback_keyword_search
+            from routes.vector_search import set_db_manager, search_hybrid, _keyword_fallback as fallback_keyword_search
             from routes import vector_search
             
             # 设置数据库管理器

@@ -237,42 +237,49 @@ const MessageBubble: React.FC<{
             </button>
             {!cardsCollapsed && (
               <div className="space-y-2">
-                {cards.slice(0, 3).map((card, idx) => (
-                  <div
-                    key={card.id || idx}
-                    className="rounded-lg shadow transition-all cursor-pointer hover:shadow-md"
-                    style={{
-                      backgroundColor: '#fff9f3',
-                      borderLeft: '4px solid #d4a574',
-                      border: '1px solid #e8ddd0',
-                      borderLeftWidth: '4px',
-                      borderLeftColor: '#d4a574'
-                    }}
-                    onClick={() => onCardClick?.(card)}
-                  >
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}>
-                          {enhancedChatService.formatCardType(card.card_type)}
-                        </span>
-                        <span className="text-xs" style={{ color: '#8b7355' }}>
-                          {enhancedChatService.formatSimilarity(card.match_score)}
-                        </span>
-                      </div>
-                      <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: '#8b4513' }}>{card.title}</h4>
-                      <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
-                        {card.content}
-                      </p>
-                      <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
-                        <Eye className="w-3 h-3" />
-                        <span>点击查看卡片详情</span>
-                      </div>
-                    </CardContent>
-                  </div>
-                ))}
-                {cards.length > 3 && (
+                {cards.slice(0, 10).map((card, idx) => {
+                  const cardColors: Record<string, { bg: string; border: string; tag: string; title: string }> = {
+                    blue: { bg: '#f0f5ff', border: '#4a90d9', tag: '#e6f0ff', title: '#1a4d8f' },
+                    green: { bg: '#f0fff4', border: '#52c41a', tag: '#e6ffed', title: '#237804' },
+                    yellow: { bg: '#fffbe6', border: '#faad14', tag: '#fff7e6', title: '#ad6b00' },
+                    red: { bg: '#fff1f0', border: '#ff4d4f', tag: '#ffe6e6', title: '#a8071a' },
+                  };
+                  const colors = cardColors[card.card_type] || { bg: '#fff9f3', border: '#d4a574', tag: '#fef3e2', title: '#8b4513' };
+                  return (
+                    <div
+                      key={card.id || idx}
+                      className="rounded-lg shadow transition-all cursor-pointer hover:shadow-md"
+                      style={{
+                        backgroundColor: colors.bg,
+                        border: `1px solid ${colors.border}`,
+                        borderLeft: `4px solid ${colors.border}`,
+                      }}
+                      onClick={() => onCardClick?.(card)}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.tag, color: colors.title, border: `1px solid ${colors.border}40` }}>
+                            {enhancedChatService.formatCardType(card.card_type)}
+                          </span>
+                          <span className="text-xs" style={{ color: '#8b7355' }}>
+                            {enhancedChatService.formatSimilarity(card.match_score)}
+                          </span>
+                        </div>
+                        <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: colors.title }}>{card.title || card.name || card.content}</h4>
+                        <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
+                          {card.content}
+                        </p>
+                        <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                          <Eye className="w-3 h-3" />
+                          <span>点击查看卡片详情</span>
+                        </div>
+                      </CardContent>
+                    </div>
+                  );
+                })}
+                {cards.length > 10 && (
                   <div className="text-xs text-center" style={{ color: '#8b7355' }}>
-                    还有 {cards.length - 3} 张相关卡片
+                    还有 {cards.length - 10} 张相关卡片
                   </div>
                 )}
               </div>

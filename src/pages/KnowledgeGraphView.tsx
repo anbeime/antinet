@@ -3,6 +3,7 @@ import MindMap from './MindMap';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
@@ -1184,7 +1185,7 @@ return (
                   <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${listEditorSide==='split'?'w-1/2':''}`}>
                     {listMarkdown ? (
                     <div className="prose prose-sm dark:prose-invert max-w-none" id="modal-preview-content">
-                        <ReactMarkdown>{listMarkdown}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{listMarkdown}</ReactMarkdown>
                       </div>
                     ) : <p className="text-gray-400 text-sm">无内容</p>}
                   </div>
@@ -1425,7 +1426,7 @@ return (
                 <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${modalEditorSide === 'split' ? 'w-1/2' : ''}`}>
                   {modalMarkdown ? (
                     <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown>{modalMarkdown}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{modalMarkdown}</ReactMarkdown>
                     </div>
                   ) : (
                     <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
