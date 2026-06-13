@@ -59,6 +59,9 @@ const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ conten
         // 分割线
         if (line === '---') return <hr key={`${i}-${j}`} className="my-3 border-gray-300" />;
         
+        // 跳过单独成行的数字
+        if (/^\d+\.?$/.test(line.trim())) return null;
+        
         // 粗体/斜体
         const formatted = line
           .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')

@@ -113,6 +113,7 @@ const KnowledgeGraphView: React.FC = () => {
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  const [graphSearch, setGraphSearch] = useState('');
 
 
 
@@ -657,19 +658,32 @@ useEffect(() => {
         series: [{
           type: 'graph',
           layout: 'force',
-          data: dedupedNodes.map((node: any) => ({
-            id: node.id,
-            name: node.name,
-            category: node.category ?? 0,
-            symbolSize: node.symbolSize || 30,
-            label: { show: true, fontSize: 11, position: 'bottom' },
-          })),
-          links: dedupedLinks.map((link: any) => ({
-            source: link.source,
-            target: link.target,
-            lineStyle: { width: 2, curveness: 0.2 },
-            label: { show: true, fontSize: 10, formatter: link.label || '' }
-          })),
+          data: dedupedNodes.map((node: any) => {
+            const searchLower = graphSearch.toLowerCase();
+            const isMatch = !searchLower || (node.name || '').toLowerCase().includes(searchLower);
+            return {
+              id: node.id,
+              name: node.name,
+              category: node.category ?? 0,
+              symbolSize: node.symbolSize || 30,
+              label: { show: true, fontSize: 11, position: 'bottom' },
+              itemStyle: searchLower ? { opacity: isMatch ? 1 : 0.2 } : undefined,
+            };
+          }),
+          links: dedupedLinks.map((link: any) => {
+            const searchLower = graphSearch.toLowerCase();
+            const sourceNode = dedupedNodes.find(n => String(n.id) === String(link.source));
+            const targetNode = dedupedNodes.find(n => String(n.id) === String(link.target));
+            const isMatch = !searchLower || 
+              (sourceNode && (sourceNode.name || '').toLowerCase().includes(searchLower)) ||
+              (targetNode && (targetNode.name || '').toLowerCase().includes(searchLower));
+            return {
+              source: link.source,
+              target: link.target,
+              lineStyle: { width: 2, curveness: 0.2, opacity: searchLower ? (isMatch ? 0.8 : 0.1) : 0.8 },
+              label: { show: true, fontSize: 10, formatter: link.label || '' }
+            };
+          }),
           categories: displayData.categories?.map((c: any, i: number) => ({ name: c.name || ['事实', '解释', '风险', '行动'][i] })) || [
             { name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }
           ],

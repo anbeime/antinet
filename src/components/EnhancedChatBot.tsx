@@ -40,6 +40,8 @@ interface EnhancedChatBotProps {
 
 // Markdown 渲染组件 - 中国风配色（参考日历组件）
 const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+  // 预处理：移除单独成行的数字（1, 2, 3 等单独占一行的情况）
+  const cleaned = content.replace(/^\d+\.?\s*$/gm, '').replace(/\n{3,}/g, '\n\n');
   return (
     <ReactMarkdown
       components={{
@@ -79,7 +81,7 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
         a: ({ href, children }) => <a href={href} className="underline hover:opacity-80" style={{ color: '#b87333' }} target="_blank" rel="noopener noreferrer">{children}</a>,
       }}
     >
-      {content}
+      {cleaned}
     </ReactMarkdown>
   );
 };
@@ -370,7 +372,8 @@ const compressMessages = (messages: ChatMessage[]): string => {
   const compressed = messages.map(m => ({
     r: m.role,
     c: m.content.length > 2000 ? m.content.slice(0, 2000) + '...[已截断]' : m.content,
-    t: m.timestamp
+    t: m.timestamp,
+    m: m.metadata
   }));
   return JSON.stringify(compressed);
 };
@@ -379,10 +382,11 @@ const compressMessages = (messages: ChatMessage[]): string => {
 const decompressMessages = (data: string): ChatMessage[] => {
   try {
     const parsed = JSON.parse(data);
-    return parsed.map((m: { r: string; c: string; t?: string }) => ({
+    return parsed.map((m: { r: string; c: string; t?: string; m?: Record<string, any> }) => ({
       role: m.r as MessageRole,
       content: m.c,
-      timestamp: m.t
+      timestamp: m.t,
+      metadata: m.m
     }));
   } catch {
     return [];
