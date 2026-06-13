@@ -183,14 +183,38 @@ const KnowledgeGraphView: React.FC = () => {
 
   // 列表数据源：有 currentCardId 时与图谱/导图保持一致
   const listDataSource = useMemo(() => {
+    if (!apiData) return cards;
+    
+    // 处理 suggestions 格式（搜索结果）
+    if (apiData.suggestions && !apiData.nodes) {
+      const suggestions = apiData.suggestions;
+      const seenIds = new Set<string>();
+      const nodes = suggestions
+        .filter((s: any) => {
+          const sid = String(s.card_id);
+          if (seenIds.has(sid)) return false;
+          seenIds.add(sid);
+          return true;
+        })
+        .map((s: any) => ({
+          id: String(s.card_id),
+          title: s.title || `卡片${s.card_id}`,
+          content: s.content || '',
+          card_type: s.card_type || 'blue',
+          type: s.card_type || 'blue',
+        }));
+      
+      if (nodes.length > 0) return nodes;
+      return cards;
+    }
+    
+    // 处理普通图数据（nodes + links 或 entities + relations）
     if (currentCardId && apiData) {
       const graphNodes = apiData.nodes || apiData.entities || [];
       if (graphNodes.length === 0) return cards;
       const graphIds = new Set(graphNodes.map((n: any) => String(n.id)));
-      // 优先从 cards 中匹配（保持完整卡片数据）
       const matched = cards.filter((c: any) => graphIds.has(String(c.id)));
       if (matched.length > 0) return matched;
-      // 如果 ID 不匹配，从图谱节点直接派生卡片对象
       return graphNodes.map((n: any) => ({
         id: n.id,
         title: n.title || n.name || `节点${n.id}`,
@@ -1304,7 +1328,7 @@ return (
                           'bg-gray-400'
                         }`} />
                         <h3 className="text-sm font-medium mb-1">{card.title}</h3>
-                        <p className="text-xs text-gray-500 line-clamp-3">{card.content}</p>
+                        <p className="text-xs text-gray-500 line-clamp-3">{card.content?.replace(/!\[([^\]]*)\]\([^)]+\)/g, '[$1]')}</p>
                         {card.tags && card.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {card.tags.map((tag: string) => (
@@ -1400,6 +1424,22 @@ return (
                       }}
                       className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                     >HTML预览</button>
+                    <button
+                      onClick={() => {
+                        const html = document.getElementById('modal-preview-content')?.innerHTML;
+                        if (html) {
+                          const styled = `<div style="font-family:system-ui,sans-serif;line-height:1.6;color:#333;max-width:800px">${html}</div>`;
+                          navigator.clipboard.write([
+                            new ClipboardItem({
+                              'text/html': new Blob([styled], { type: 'text/html' }),
+                              'text/plain': new Blob([html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()], { type: 'text/plain' }),
+                            })
+                          ]).then(() => toast.success('排版内容已复制'))
+                            .catch(() => toast.error('复制失败'));
+                        }
+                      }}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >复制</button>
                   </div>
                 )}
                 <button onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">

@@ -265,38 +265,33 @@ class EightAgentEngine:
             # 如果没有传入原始数据，自动从数据库查询
             if not raw_material:
                 try:
-                    from database import get_db
-                    conn = get_db()
+                    from database import DatabaseManager
+                    from config import settings
+                    db = DatabaseManager(settings.DB_PATH)
+                    conn = db.get_connection()
                     cursor = conn.cursor()
                     
-                    # 获取知识卡片
                     cards = []
                     try:
-                        cursor.execute("SELECT id, title, content, card_type, tags, created_at FROM knowledge_cards ORDER BY updated_at DESC LIMIT 20")
+                        cursor.execute("SELECT id, title, content, card_type, tags, created_at FROM knowledge_cards ORDER BY updated_at DESC LIMIT 5")
                         columns = [desc[0] for desc in cursor.description]
                         for row in cursor.fetchall():
-                            cards.append(dict(zip(columns, row)))
+                            card = dict(zip(columns, row))
+                            if card.get('content') and len(card['content']) > 150:
+                                card['content'] = card['content'][:150] + '...'
+                            cards.append(card)
                     except Exception:
                         pass
-                    
-                    # 获取研究专题
-                    projects = []
-                    try:
-                        cursor.execute("SELECT id, name, description, status FROM research_projects ORDER BY updated_at DESC LIMIT 10")
-                        columns = [desc[0] for desc in cursor.description]
-                        for row in cursor.fetchall():
-                            projects.append(dict(zip(columns, row)))
-                    except Exception:
-                        pass
-                    
                     conn.close()
-                    
-                    raw_material = json.dumps({
-                        "knowledge_cards": cards,
-                        "research_projects": projects,
-                        "query": query,
-                        "timestamp": datetime.now().isoformat()
-                    }, ensure_ascii=False)
+
+                    summary_lines = []
+                    summary_lines.append(f"用户查询：{query}")
+                    summary_lines.append(f"当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
+                    if cards:
+                        summary_lines.append(f"\n知识库中有 {len(cards)} 条记录：")
+                        for c in cards:
+                            summary_lines.append(f"- [{c.get('card_type','blue')}] {c.get('title','')}: {c.get('content','')[:100]}")
+                    raw_material = "\n".join(summary_lines)
                 except Exception as e:
                     logger.warning(f"[密卷房] 数据库查询失败: {e}")
             
@@ -304,7 +299,7 @@ class EightAgentEngine:
             if preprocessor and raw_material:
                 result = await preprocessor.preprocess_data(
                     data_source=raw_material,
-                    data_type="json"
+                    data_type="text"
                 )
                 return result
         except Exception as e:

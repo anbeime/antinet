@@ -34,7 +34,7 @@ _qnn_doc_ids = []  # alignment with _qnn_vectors
 
 # 配置开关
 USE_QNN_EMBEDDING = True
-USE_QNN_RERANKER = True  # 启用 QNN Reranker
+USE_QNN_RERANKER = False  # QNN Reranker 原生库不稳定，暂时禁用
 
 
 @dataclass
@@ -663,8 +663,23 @@ def rebuild_fts_index():
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
+        
+        # 先尝试清空，如果表损坏则删除重建
+        try:
+            cursor.execute("DELETE FROM knowledge_cards_fts")
+        except Exception:
+            logger.warning("[Vector] FTS5 表损坏，尝试删除重建...")
+            cursor.execute("DROP TABLE IF EXISTS knowledge_cards_fts")
+            conn.commit()
+        
+        # 重建 FTS5 表和数据
         cursor.executescript("""
-            DELETE FROM knowledge_cards_fts;
+            CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_cards_fts USING fts5(
+                title, content, card_type UNINDEXED,
+                content=knowledge_cards,
+                content_rowid=id,
+                tokenize='unicode61'
+            );
             INSERT INTO knowledge_cards_fts(rowid, title, content, card_type)
             SELECT id, title, content, COALESCE(card_type, 'blue') FROM knowledge_cards;
         """)

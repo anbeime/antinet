@@ -797,6 +797,23 @@ class DatabaseManager:
                     content_rowid=id,
                     tokenize='unicode61'
                 );
+            """)
+        except Exception:
+            logger.warning("[FTS5] 表损坏，尝试删除重建...")
+            try:
+                cursor.execute("DROP TABLE IF EXISTS knowledge_cards_fts")
+            except Exception:
+                pass
+
+        # 确保 FTS5 表存在（无论是新建还是重建后）
+        try:
+            cursor.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_cards_fts USING fts5(
+                    title, content, card_type UNINDEXED,
+                    content=knowledge_cards,
+                    content_rowid=id,
+                    tokenize='unicode61'
+                );
 
                 CREATE TRIGGER IF NOT EXISTS knowledge_cards_ai AFTER INSERT ON knowledge_cards BEGIN
                     INSERT INTO knowledge_cards_fts(rowid, title, content, card_type)
