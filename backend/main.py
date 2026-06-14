@@ -9,10 +9,12 @@ import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
 # ============================================================
 # 1. 路径设置（必须在导入之前）
 # ============================================================
+load_dotenv()
 if getattr(sys, 'frozen', False):
     # PyInstaller 打包后，exe 已在 backend/ 目录下
     backend_dir = os.path.dirname(sys.executable)
@@ -138,9 +140,9 @@ AIServiceFactory.create_default_services()
 #     AIServiceFactory.register('sensenova', _sensenova, set_default=False)
 #     print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")
 
-# 注册 NVIDIA NIM 服务
+# 注册 NVIDIA NIM 服务（API Key 通过环境变量 NVIDIA_API_KEY 设置）
 _nim_cfg = {
-    'api_key': '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',
+    'api_key': os.getenv('NVIDIA_API_KEY', ''),
     'base_url': 'https://integrate.api.nvidia.com/v1',
     'model': 'minimaxai/minimax-m2.7',
     'timeout': 60,
@@ -148,9 +150,11 @@ _nim_cfg = {
     'temperature': 1.0,
 }
 _nim = create_ai_service('nim', _nim_cfg)
-if _nim:
+if _nim and _nim_cfg['api_key']:
     AIServiceFactory.register('nim', _nim, set_default=False)
     print("[OK] NVIDIA NIM 服务已注册")
+elif _nim:
+    print("[SKIP] NVIDIA NIM 服务跳过：未设置 NVIDIA_API_KEY 环境变量")
 
 print("[OK] AI 服务工厂已初始化（仅本地模型）")
 

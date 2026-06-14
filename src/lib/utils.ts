@@ -72,6 +72,146 @@ export function renderMarkdown(text: string): string {
   return html
 }
 
+// PDF.js text items → 结构化 Markdown
+export function pdfItemsToMarkdown(itemsByPage: Map<number, any[]>): string {
+  const Y_TOLERANCE = 4;
+  const bodyTexts: number[] = [];
+
+  itemsByPage.forEach((items) => {
+    items.forEach((t: any) => {
+      if ((t.height || 12) > 0) bodyTexts.push(t.height || 12);
+    });
+  });
+  bodyTexts.sort((a, b) => a - b);
+  const bodyFontSize = bodyTexts[Math.floor(bodyTexts.length * 0.6)] || 12;
+
+  const pages: string[] = [];
+
+  itemsByPage.forEach((items, pageNum) => {
+    if (!items.length) return;
+
+    const lineMap = new Map<number, { y: number; items: any[] }>();
+    items.forEach((item: any) => {
+      const y = item.transform?.[5] ?? 0;
+      let key = -1;
+      lineMap.forEach((_, k) => {
+        if (Math.abs(k - y) <= Y_TOLERANCE) key = k;
+      });
+      if (key === -1) {
+        key = Math.round(y);
+        lineMap.set(key, { y, items: [item] });
+      } else {
+        lineMap.get(key)!.items.push(item);
+      }
+    });
+
+    const sortedLines = Array.from(lineMap.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([, v]) => v);
+
+    const rows: { y: number; x: number; text: string; height: number; segments: { x: number; text: string }[] }[] = [];
+
+    sortedLines.forEach((line) => {
+      line.items.sort((a, b) => (a.transform?.[4] ?? 0) - (b.transform?.[4] ?? 0));
+      const text = line.items.map(t => t.str).join('').trim();
+      if (!text) return;
+
+      const avgHeight = line.items.reduce((s, t) => s + (t.height || bodyFontSize), 0) / line.items.length;
+      const x0 = line.items[0]?.transform?.[4] ?? 0;
+
+      const segments: { x: number; text: string }[] = [];
+      let segText = '';
+      let segX = 0;
+      for (let i = 0; i < line.items.length; i++) {
+        const it = line.items[i];
+        const s = it.str || '';
+        const cx = it.transform?.[4] ?? 0;
+        const cw = it.width ?? 0;
+        if (i === 0) {
+          segX = cx; segText = s;
+        } else {
+          const prev = line.items[i - 1];
+          const px = prev.transform?.[4] ?? 0;
+          const pw = prev.width ?? 0;
+          if (cx > px + pw + 2) {
+            segments.push({ x: segX, text: segText });
+            segX = cx; segText = s;
+          } else {
+            segText += s;
+          }
+        }
+      }
+      if (segText) segments.push({ x: segX, text: segText.trim() });
+
+      const joinedText = segments.map(s => s.text).join(' ');
+      rows.push({ y: line.y, x: x0, text: joinedText, height: avgHeight, segments });
+    });
+
+    // Try table detection: look for consecutive rows with same column count & similar X positions
+    const tableRows: typeof rows[] = [];
+    let currentTable: typeof rows = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const isTableRow = r.segments.length >= 2 && r.segments.every(s => s.text.trim().length > 0);
+      if (isTableRow && currentTable.length > 0) {
+        const prev = currentTable[currentTable.length - 1];
+        if (r.segments.length !== prev.segments.length) {
+          if (currentTable.length >= 2) tableRows.push([...currentTable]);
+          currentTable = [r];
+        } else {
+          const alignOk = r.segments.every((s, j) => Math.abs(s.x - prev.segments[j].x) < 10);
+          if (alignOk) { currentTable.push(r); }
+          else { if (currentTable.length >= 2) tableRows.push([...currentTable]); currentTable = [r]; }
+        }
+      } else {
+        if (currentTable.length >= 2) tableRows.push([...currentTable]);
+        currentTable = [];
+      }
+    }
+    if (currentTable.length >= 2) tableRows.push([...currentTable]);
+
+    // Mark rows that belong to a table so we skip them in normal output
+    const inTable = new Set<number>();
+    tableRows.forEach(tbl => tbl.forEach(r => inTable.add(r.y)));
+
+    const out: string[] = [];
+    let prevY = 0;
+
+    for (let ri = 0; ri < rows.length; ri++) {
+      const r = rows[ri];
+      if (inTable.has(r.y)) {
+        if (ri === 0 || !inTable.has(rows[ri - 1].y)) {
+          out.push('');
+          const header = r.segments.map(s => s.text.trim());
+          out.push('| ' + header.join(' | ') + ' |');
+          out.push('| ' + header.map(() => '---').join(' | ') + ' |');
+        } else {
+          const cells = r.segments.map(s => s.text.trim());
+          out.push('| ' + cells.join(' | ') + ' |');
+        }
+        prevY = r.y;
+        continue;
+      }
+
+      if (prevY && (r.y - prevY) > bodyFontSize * 2.8) out.push('');
+      prevY = r.y;
+
+      if (r.height > bodyFontSize * 1.5) {
+        const level = r.height > bodyFontSize * 2.2 ? 2 : 3;
+        out.push(`${'#'.repeat(level)} ${r.text}`);
+      } else if (/^[•·\-●○◆▪▸→⇒]\s/.test(r.text) || /^(\d+[.、）)])\s/.test(r.text)) {
+        out.push(r.text);
+      } else if (r.x > 15) {
+        out.push(`  - ${r.text}`);
+      } else {
+        out.push(r.text);
+      }
+    }
+    pages.push(out.join('\n'));
+  });
+  return pages.join('\n\n');
+}
+
 // 安全提取错误详情（FastAPI 422 错误中的 detail 可能是对象数组）
 export function safeErrorDetail(detail: any, fallback: string = '操作失败'): string {
   if (!detail) return fallback;

@@ -723,6 +723,74 @@ useEffect(() => {
               setMessengerInfo({ agentName: '锦衣卫', agentTitle: '陆绎', message: '八府巡按会议正式开始！', progress: 5 });
               break;
 
+            case 'task_planning':
+              // 任务型会议：正在制定计划
+              setPixelState(prev => ({ ...prev, detail: '锦衣卫正在分解任务...', progress: 10 }));
+              setMessengerInfo(prev => ({ ...prev, message: '正在分析需求，制定会议执行计划...', progress: 10 }));
+              break;
+
+            case 'task_plan':
+              // 任务型会议：计划已就绪，展示子任务列表
+              {
+                const sub = evt.data.subtasks || [];
+                setPixelState(prev => ({ ...prev, detail: `计划就绪: ${sub.length}个子任务`, progress: 15 }));
+                setMessengerInfo(prev => ({ ...prev, message: `意图识别: ${evt.data.intent} | 工作流: ${evt.data.workflow} | 共${sub.length}步`, progress: 15 }));
+                // 展示子任务列表
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'round_header',
+                  round: 1,
+                  theme: `🔧 任务分解: ${evt.data.workflow || '动态'} (${sub.length}步)`,
+                  timestamp: evt.data.timestamp || new Date().toISOString()
+                }]);
+                const totalExpected = sub.length * 2;
+                speechCount = 0;
+              }
+              break;
+
+            case 'subtask_start':
+              {
+                const idx = evt.data.index || 1;
+                const total = evt.data.total || 1;
+                const progress = 15 + Math.round((idx / total) * 70);
+                setPixelState(prev => ({ ...prev, detail: `[${idx}/${total}] ${evt.data.executor}: ${(evt.data.description || '').slice(0, 30)}...`, progress }));
+                setMessengerInfo(prev => ({ ...prev, message: `[${idx}/${total}] ${evt.data.executor} 正在执行: ${(evt.data.description || '').slice(0, 30)}...`, progress }));
+                // 在讨论流中显示子任务开始
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'speech',
+                  agent: { name: evt.data.executor || '锦衣卫', title: '任务执行', avatar: '⚡', color: 'from-yellow-500 to-yellow-600' },
+                  message: `▶️ 开始执行: ${evt.data.description}`,
+                  timestamp: new Date().toISOString()
+                }]);
+              }
+              break;
+
+            case 'subtask_done':
+              {
+                const status = evt.data.status || 'completed';
+                const statusIcon = status === 'completed' ? '✅' : '❌';
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'speech',
+                  agent: { name: evt.data.id || '密卷房', title: '任务结果', avatar: statusIcon, color: status === 'completed' ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600' },
+                  message: `${statusIcon} ${status === 'completed' ? '完成' : '失败'}: ${(evt.data.summary || evt.data.error || '').slice(0, 200)}`,
+                  timestamp: new Date().toISOString()
+                }]);
+                // 处理子任务产生的卡片
+                if (evt.data.cards && evt.data.cards.length > 0) {
+                  const newCards: MeetingCard[] = evt.data.cards.map((c: any) => ({
+                    card_type: c.card_type || 'blue',
+                    title: c.title || '',
+                    content: c.content || '',
+                    source: 'agent_extracted' as const,
+                    agent_name: evt.data.id || '密卷房',
+                    round: 1,
+                    saved: false,
+                    timestamp: new Date().toISOString()
+                  }));
+                  setMeetingCards(prev => [...prev, ...newCards]);
+                }
+              }
+              break;
+
             case 'round_start':
               currentRound = { round: evt.data.round, title: evt.data.theme, discussions: [], cards: [] };
               setPixelState(prev => ({ ...prev, detail: `第${evt.data.round}轮: ${evt.data.theme}` }));
@@ -837,6 +905,21 @@ useEffect(() => {
                 agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
                 detail: `第${evt.data.round}轮讨论完成`
               }));
+              break;
+
+            case 'knowledge_supplement':
+              // 密卷房/太史阁补充检索到的知识卡片，展示在讨论流中
+              setLiveDiscussions(prev => [...prev, {
+                type: 'speech',
+                agent: {
+                  name: '密卷房',
+                  title: '知识检索官',
+                  avatar: '🔍',
+                  color: 'from-purple-500 to-purple-600'
+                },
+                message: `已从知识库检索到 ${evt.data.total} 张补充卡片（关键词: ${evt.data.keywords?.join(', ')}），已分发给各府参考。`,
+                timestamp: new Date().toISOString()
+              }]);
               break;
 
             case 'meeting_decision':
@@ -2018,12 +2101,12 @@ useEffect(() => {
           )}
         </div>
       </div>
-      {/* 卡片保存弹窗 */}
+      {/* 卡片保存弹窗 — 使用 currentMeetingId 建立溯源 */}
       <MeetingCardSaveModal
         isOpen={saveModalOpen}
         onClose={() => { setSaveModalOpen(false); setSaveTargetCard(null); }}
         card={saveTargetCard}
-        meetingId={meetingResult?.meeting_id || ''}
+        meetingId={currentMeetingId || meetingResult?.meeting_id || ''}
         topic={topic}
         onSaved={(_card, cardId) => {
           // 标记已保存的卡片

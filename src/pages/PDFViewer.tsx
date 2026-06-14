@@ -9,7 +9,7 @@ import { getApiBaseUrl } from '@/lib/apiConfig';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
-import { renderMarkdown } from '@/lib/utils';
+import { renderMarkdown, pdfItemsToMarkdown } from '@/lib/utils';
 import { bookshelfService } from '@/services/bookshelfService';
 
 const API_BASE = () => getApiBaseUrl();
@@ -163,21 +163,17 @@ const PDFViewer: React.FC = () => {
     setIsNewCard(true); setCardType('blue');
     setCardTitle(fileName.replace(/\.pdf$/i, '') || '导入文档');
     const itemsByPage = new Map<number, any[]>();
-    const pageTexts: string[] = [];
-    let text = '';
     for (let i = 1; i <= Math.min(pdfDoc.numPages, 50); i++) {
       try {
         const p = await pdfDoc.getPage(i);
         const tc = await p.getTextContent();
         itemsByPage.set(i, tc.items);
-        const pageText = tc.items.map((t: any) => t.str).join(' ');
-        pageTexts.push(pageText);
-        text += pageText + '\n\n';
       } catch {}
     }
     textItemsByPageRef.current = itemsByPage;
-    originalPageTextsRef.current = pageTexts;
-    setCardContent(text.trim() || '');
+    const markdown = pdfItemsToMarkdown(itemsByPage);
+    originalPageTextsRef.current = [markdown];
+    setCardContent(markdown || '');
     if (sourcePdfUrl) { URL.revokeObjectURL(sourcePdfUrl); setSourcePdfUrl(''); }
   };
 

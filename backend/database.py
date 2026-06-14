@@ -130,11 +130,33 @@ class DatabaseManager:
                     -- 向量嵌入 (简化版)
                     embedding TEXT,
                     
+                    -- 会议溯源
+                    source_meeting_id TEXT DEFAULT NULL,
+                    
                     similarity REAL DEFAULT 0.0,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # 知识卡片 ↔ 会议关联表 (支持多对多)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS meeting_card_relations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    meeting_id TEXT NOT NULL,
+                    card_id INTEGER NOT NULL,
+                    relation_type TEXT DEFAULT 'generated',  -- generated / referenced
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (card_id) REFERENCES knowledge_cards(id) ON DELETE CASCADE,
+                    UNIQUE(meeting_id, card_id)
+                )
+            """)
+            
+            # 为已有数据库做兼容迁移：添加 source_meeting_id 列
+            try:
+                cursor.execute("ALTER TABLE knowledge_cards ADD COLUMN source_meeting_id TEXT DEFAULT NULL")
+            except sqlite3.OperationalError:
+                pass  # 列已存在，忽略
 
             # 7. 检查清单数据表
             cursor.execute("""

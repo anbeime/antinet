@@ -5,6 +5,7 @@ import * as echarts from 'echarts';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { useNavigate } from 'react-router-dom';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
@@ -108,8 +109,9 @@ const KnowledgeGraphView: React.FC = () => {
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
-  const [selectedFileInfo, setSelectedFileInfo] = useState<{ name: string; path: string; type: string; cards: any[] } | null>(null);
+  const [selectedFileInfo, setSelectedFileInfo] = useState<{ name: string; path: string; type: string; cards: any[]; fileId?: number } | null>(null);
   const [cards, setCards] = useState<any[]>([]);
+  const navigate = useNavigate();
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
@@ -1295,6 +1297,22 @@ return (
                     <p className="text-xs text-gray-400">{selectedFileInfo.path}</p>
                   </div>
                   <div className="ml-auto flex items-center gap-2">
+                    {selectedFileInfo.fileId && (
+                      <button
+                        onClick={() => {
+                          const downloadUrl = `${API_BASE()}/api/files/${selectedFileInfo.fileId}/download`;
+                          if (selectedFileInfo.type === 'pdf') {
+                            navigate(`/pdf-viewer?url=${encodeURIComponent(downloadUrl)}`);
+                          } else {
+                            window.location.href = downloadUrl;
+                          }
+                        }}
+                        className="text-xs px-2 py-1.5 bg-amber-500 text-white rounded hover:bg-amber-600"
+                        title="预览文件"
+                      >
+                        {selectedFileInfo.type === 'pdf' ? '📄 预览PDF' : '📂 打开文件'}
+                      </button>
+                    )}
                     <span className={`text-xs px-2 py-1 rounded-full ${
                       selectedFileInfo.cards.length > 0
                         ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'

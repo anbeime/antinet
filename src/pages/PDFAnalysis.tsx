@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import PDFExporter from '@/components/PDFExporter';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min?url';
+import { pdfItemsToMarkdown } from '@/lib/utils';
 
 // 配置 PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
@@ -225,19 +226,18 @@ const PDFAnalysis: React.FC = () => {
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 使用 pdf.js 在前端提取 PDF 文本（解决后端正则乱码问题）
+  // 使用 pdf.js 在前端提取 PDF 文本并转为结构化 Markdown
   const extractPdfTextLocally = async (file: File): Promise<{ full_text: string; page_count: number }> => {
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
     const doc = await pdfjsLib.getDocument({ data }).promise;
-    const pages: string[] = [];
+    const itemsByPage = new Map<number, any[]>();
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const textContent = await page.getTextContent();
-      const text = textContent.items.map((item: any) => item.str).join(' ');
-      pages.push(text);
+      itemsByPage.set(i, textContent.items);
     }
-    return { full_text: pages.join('\n\n'), page_count: doc.numPages };
+    return { full_text: pdfItemsToMarkdown(itemsByPage), page_count: doc.numPages };
   };
 
   const handleExtractText = async () => {
@@ -315,11 +315,11 @@ const PDFAnalysis: React.FC = () => {
   };
 
   // 通过后端从文本生成四色卡片（不需要后端正则 pypdf）
-  const generateCardsFromText = async (text: string, mode: string = 'auto'): Promise<any> => {
+  const generateCardsFromText = async (text: string, mode: string = 'auto', sourceName: string = 'AI生成'): Promise<any> => {
     const resp = await fetch(`${API_BASE()}/api/pdf/generate/cards-from-text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.slice(0, 50000), max_cards: 20, mode })
+      body: JSON.stringify({ text: text.slice(0, 50000), max_cards: 20, mode, source_name: sourceName })
     });
     if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).detail || '卡片生成失败');
     return resp.json();
@@ -367,7 +367,7 @@ const PDFAnalysis: React.FC = () => {
       }
 
       // 通过文本端点生成卡片
-      const textResult = await generateCardsFromText(full_text, genMode);
+      const textResult = await generateCardsFromText(full_text, genMode, uploadedFile.name);
 
       setProcessingStatus({ stage: 'generate', progress: 70, message: '正在生成知识卡片...' });
 

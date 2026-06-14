@@ -17,6 +17,7 @@ import os
 import re
 import tempfile
 import time
+import sqlite3
 from datetime import datetime
 
 from config import settings
@@ -59,6 +60,24 @@ def clean_model_output(text: str) -> str:
     # 移除空白的 role 行
     text = re.sub(r'^\s*<(assistant|user|system)>\s*$', '', text, flags=re.MULTILINE)
     
+    # 将单独成行的数字与下一行内容合并（如 "1\n内容" → "1. 内容"）
+    lines = text.split('\n')
+    merged = []
+    skip_next = False
+    for i, line in enumerate(lines):
+        if skip_next:
+            skip_next = False
+            continue
+        if re.match(r'^\d+\.?\s*$', line) and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt:
+                num = line.strip().rstrip('.')
+                merged.append(f"{num}. {nxt}")
+                skip_next = True
+                continue
+        merged.append(line)
+    text = '\n'.join(merged)
+
     # 清理多余的空行
     text = re.sub(r'\n{3,}', '\n\n', text)
     
@@ -318,54 +337,108 @@ PERSONA_SYSTEM_PROMPT = """你是小易（知易），一个融合中国传统�
 # 参考 C:\D\projects\assistant\src\core\memory.ts
 
 class MemoryManager:
-    """对话记忆管理器 - 轻量级文件存储"""
+    """分层对话记忆管理器（短期/长期/压缩三层记忆）
+    
+    短期记忆: 当前会话的最近对话（≤20条），JSON文件存储，读写快
+    长期记忆: 从对话中提取的重要事实（带重要性评分），SQLite存储，持久化
+    压缩记忆: 对早期对话的定期摘要，减少上下文膨胀
+    """
+    
+    # ========== 层容量配置 ==========
+    SHORT_TERM_MAX = 20          # 短期记忆保留条数
+    LONG_TERM_DB_LIMIT = 100     # 长期记忆最多保留条数
+    COMPRESS_TRIGGER = 25        # 短期记忆超过此值触发压缩
+    COMPRESS_KEEP = 5            # 压缩后保留的最近条数
     
     def __init__(self, storage_dir: str = None):
         if storage_dir is None:
             storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'chat_memory')
         self.storage_dir = storage_dir
         os.makedirs(storage_dir, exist_ok=True)
-        logger.info(f"[Memory] 记忆管理器初始化, 存储目录: {storage_dir}")
+        
+        # 长期记忆使用 SQLite
+        self.ltm_path = os.path.join(storage_dir, 'long_term_memory.db')
+        self._init_ltm_db()
+        
+        logger.info(f"[Memory] 分层记忆管理器初始化, 存储目录: {storage_dir}")
+    
+    def _get_ltm_conn(self) -> sqlite3.Connection:
+        """获取长期记忆数据库连接"""
+        conn = sqlite3.connect(self.ltm_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def _init_ltm_db(self):
+        """初始化长期记忆数据库"""
+        with self._get_ltm_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS long_term_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    fact TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    importance REAL DEFAULT 0.5,
+                    source_timestamp TEXT,
+                    access_count INTEGER DEFAULT 0,
+                    last_accessed TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    time_range TEXT,       -- 覆盖的时间范围
+                    turn_range TEXT,       -- 覆盖的对话轮次范围
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ltm_user ON long_term_memories(user_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mem_sum_user ON memory_summaries(user_id)
+            """)
     
     def _get_user_file(self, user_id: str) -> str:
-        """获取用户记忆文件路径"""
+        """获取用户短期记忆文件路径"""
         safe_id = re.sub(r'[^\w]', '_', user_id)
         return os.path.join(self.storage_dir, f"user_{safe_id}.json")
     
     def _load_user_memory(self, user_id: str) -> dict:
-        """加载用户记忆"""
+        """加载用户短期记忆"""
         filepath = self._get_user_file(user_id)
         if os.path.exists(filepath):
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                logger.error(f"加载用户记忆失败: {e}")
+                logger.error(f"加载用户短期记忆失败: {e}")
         
         return {
             "user_id": user_id,
-            "preferences": {
-                "communication_style": "casual",
-                "language": "zh-CN"
-            },
+            "preferences": {"communication_style": "casual", "language": "zh-CN"},
             "conversation_history": [],
-            "user_facts": [],
+            "compressed_summaries": [],  # 压缩记忆：早期对话的摘要
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
     
     def _save_user_memory(self, user_id: str, data: dict):
-        """保存用户记忆"""
+        """保存用户短期记忆"""
         filepath = self._get_user_file(user_id)
         data["updated_at"] = datetime.now().isoformat()
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"保存用户记忆失败: {e}")
+            logger.error(f"保存用户短期记忆失败: {e}")
+    
+    # ========== 短期记忆（Short-term Memory） ==========
     
     def add_message(self, user_id: str, role: str, content: str, metadata: dict = None):
-        """添加对话消息"""
+        """添加对话消息到短期记忆，超出阈值时自动压缩"""
         memory = self._load_user_memory(user_id)
         message = {
             "role": role,
@@ -374,30 +447,152 @@ class MemoryManager:
             "metadata": metadata or {}
         }
         memory["conversation_history"].append(message)
-        # 保留最近 50 条
-        if len(memory["conversation_history"]) > 50:
-            memory["conversation_history"] = memory["conversation_history"][-50:]
+        
+        # 超出触发阈值 → 压缩早期对话到压缩记忆
+        if len(memory["conversation_history"]) > self.COMPRESS_TRIGGER:
+            self._compress_old_history(memory)
+        
+        # 超过短期上限 → 截断
+        if len(memory["conversation_history"]) > self.SHORT_TERM_MAX:
+            overflow = memory["conversation_history"][:-self.SHORT_TERM_MAX]
+            memory["conversation_history"] = memory["conversation_history"][-self.SHORT_TERM_MAX:]
+            # 将溢出的消息合并成一条压缩摘要
+            if overflow:
+                compressed = self._build_compressed_summary(overflow)
+                memory.setdefault("compressed_summaries", []).append(compressed)
+        
         self._save_user_memory(user_id, memory)
     
     def get_history(self, user_id: str, limit: int = 10) -> list:
-        """获取对话历史"""
+        """获取短期对话历史"""
         memory = self._load_user_memory(user_id)
         return memory["conversation_history"][-limit:]
     
-    def add_user_fact(self, user_id: str, fact: str):
-        """记录用户事实（长期记忆）"""
+    def _compress_old_history(self, memory: dict):
+        """将早期对话压缩为摘要"""
+        history = memory["conversation_history"]
+        # 保留最近 COMPRESS_KEEP 条，压缩其余的
+        if len(history) <= self.COMPRESS_KEEP * 2:
+            return
+        to_compress = history[:-self.COMPRESS_KEEP]
+        keep = history[-self.COMPRESS_KEEP:]
+        
+        compressed = self._build_compressed_summary(to_compress)
+        memory.setdefault("compressed_summaries", []).append(compressed)
+        memory["conversation_history"] = keep
+        logger.info(f"[Memory] 短期记忆压缩完成: {len(to_compress)}条 → 1条摘要")
+    
+    def _build_compressed_summary(self, messages: list) -> dict:
+        """构建压缩摘要（基于规则的简化版，不调用LLM以避免开销）"""
+        user_msgs = [m["content"][:100] for m in messages if m["role"] == "user"]
+        assistant_msgs = [m["content"][:100] for m in messages if m["role"] == "assistant"]
+        time_range = f"{messages[0]['timestamp'][:19]} ~ {messages[-1]['timestamp'][:19]}"
+        return {
+            "type": "compressed",
+            "user_msg_count": len(user_msgs),
+            "assistant_msg_count": len(assistant_msgs),
+            "user_topics": list(dict.fromkeys(user_msgs))[:3],
+            "assistant_topics": list(dict.fromkeys(assistant_msgs))[:3],
+            "time_range": time_range,
+            "created_at": datetime.now().isoformat()
+        }
+    
+    # ========== 长期记忆（Long-term Memory） ==========
+    
+    def add_long_term_fact(self, user_id: str, fact: str, category: str = 'general', importance: float = 0.5):
+        """存储长期记忆事实（自动去重）"""
+        with self._get_ltm_conn() as conn:
+            # 去重检查
+            existing = conn.execute(
+                "SELECT id FROM long_term_memories WHERE user_id = ? AND fact = ?",
+                (user_id, fact)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE long_term_memories SET access_count = access_count + 1, last_accessed = ? WHERE id = ?",
+                    (datetime.now().isoformat(), existing[0])
+                )
+                return
+            
+            conn.execute("""
+                INSERT INTO long_term_memories (user_id, fact, category, importance, source_timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, fact, category, importance, datetime.now().isoformat()))
+            
+            # 清理超出上限的旧事实（按重要性保留最高的N条）
+            conn.execute("""
+                DELETE FROM long_term_memories WHERE id NOT IN (
+                    SELECT id FROM long_term_memories WHERE user_id = ?
+                    ORDER BY importance DESC, access_count DESC
+                    LIMIT ?
+                ) AND user_id = ?
+            """, (user_id, self.LONG_TERM_DB_LIMIT, user_id))
+    
+    def get_long_term_facts(self, user_id: str, limit: int = 20, min_importance: float = 0.0) -> list:
+        """获取长期记忆事实（按重要性排序）"""
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT fact, category, importance, access_count, created_at
+                FROM long_term_memories
+                WHERE user_id = ? AND importance >= ?
+                ORDER BY importance DESC, access_count DESC
+                LIMIT ?
+            """, (user_id, min_importance, limit)).fetchall()
+            return [dict(r) for r in rows]
+    
+    def get_long_term_by_category(self, user_id: str, category: str, limit: int = 10) -> list:
+        """按分类获取长期记忆"""
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT fact, importance, access_count, created_at
+                FROM long_term_memories
+                WHERE user_id = ? AND category = ?
+                ORDER BY importance DESC
+                LIMIT ?
+            """, (user_id, category, limit)).fetchall()
+            return [dict(r) for r in rows]
+    
+    # ========== 压缩记忆（Compressed Memory） ==========
+    
+    def add_summary(self, user_id: str, summary: str, time_range: str = '', turn_range: str = ''):
+        """存储对话压缩摘要"""
+        with self._get_ltm_conn() as conn:
+            conn.execute("""
+                INSERT INTO memory_summaries (user_id, summary, time_range, turn_range)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, summary, time_range, turn_range))
+    
+    def get_summaries(self, user_id: str, limit: int = 5) -> list:
+        """获取对话压缩摘要"""
+        # 从 JSON 短期记忆获取压缩摘要
         memory = self._load_user_memory(user_id)
-        if fact not in memory["user_facts"]:
-            memory["user_facts"].append(fact)
-            # 保留最近 20 条事实
-            if len(memory["user_facts"]) > 20:
-                memory["user_facts"] = memory["user_facts"][-20:]
-            self._save_user_memory(user_id, memory)
+        summaries = memory.get("compressed_summaries", [])
+        
+        # 从 SQLite 长期记忆获取摘要
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT summary, time_range, turn_range, created_at
+                FROM memory_summaries
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (user_id, limit)).fetchall()
+            db_summaries = [dict(r) for r in rows]
+        
+        # 合并：先返回短期的（最近的），再补长期的
+        combined = summaries[-limit:] + db_summaries
+        return combined[:limit]
+    
+    # ========== 兼容原接口 ==========
+    
+    def add_user_fact(self, user_id: str, fact: str):
+        """兼容原接口：存入长期记忆"""
+        self.add_long_term_fact(user_id, fact, category='user_fact', importance=0.6)
     
     def get_user_facts(self, user_id: str) -> list:
-        """获取用户事实"""
-        memory = self._load_user_memory(user_id)
-        return memory.get("user_facts", [])
+        """兼容原接口：长短期合并返回"""
+        lt_facts = self.get_long_term_facts(user_id, limit=20)
+        return [f["fact"] for f in lt_facts]
     
     def update_preferences(self, user_id: str, preferences: dict):
         """更新用户偏好"""
@@ -411,35 +606,53 @@ class MemoryManager:
         return memory.get("preferences", {})
     
     def get_memory_context(self, user_id: str) -> str:
-        """生成用于 AI 提示词的记忆上下文"""
+        """
+        生成用于 AI 提示词的分层记忆上下文
+        按重要性递减排列：长期事实 > 压缩摘要 > 近期对话
+        """
         memory = self._load_user_memory(user_id)
         parts = []
         
-        # 用户事实
-        facts = memory.get("user_facts", [])
-        if facts:
-            parts.append("## 用户记忆")
-            for fact in facts[-5:]:
-                parts.append(f"- {fact}")
+        # 1. 长期记忆（最重要的）
+        lt_facts = self.get_long_term_facts(user_id, limit=8, min_importance=0.4)
+        if lt_facts:
+            parts.append("## 长期记忆（重要事实）")
+            for f in lt_facts:
+                parts.append(f"- [{f.get('category','general')}] {f['fact']} (重要性:{f['importance']:.1f})")
             parts.append("")
         
-        # 近期对话摘要
+        # 2. 压缩记忆（早期对话摘要）
+        compressed = memory.get("compressed_summaries", [])
+        if compressed:
+            parts.append("## 早期对话摘要（已压缩）")
+            for cs in compressed[-3:]:
+                topics = (cs.get("user_topics", []) or [])
+                topic_str = '; '.join(topics[:2]) if topics else '已压缩'
+                parts.append(f"- {cs.get('user_msg_count',0)}条用户消息 → {topic_str}")
+            parts.append("")
+        
+        # 3. 近期对话
         history = memory.get("conversation_history", [])
         if len(history) > 2:
             parts.append("## 近期对话")
-            for msg in history[-4:]:
+            for msg in history[-6:]:
                 role_name = "用户" if msg["role"] == "user" else "小易"
-                content = msg["content"][:80]
+                content = msg["content"][:100]
                 parts.append(f"- {role_name}: {content}")
             parts.append("")
         
         return "\n".join(parts) if parts else ""
     
     def clear_history(self, user_id: str):
-        """清空对话历史"""
+        """清空所有记忆层"""
+        # 清空短期
         memory = self._load_user_memory(user_id)
         memory["conversation_history"] = []
+        memory["compressed_summaries"] = []
         self._save_user_memory(user_id, memory)
+        # 清空长期
+        with self._get_ltm_conn() as conn:
+            conn.execute("DELETE FROM long_term_memories WHERE user_id = ?", (user_id,))
 
 
 # 全局记忆管理器

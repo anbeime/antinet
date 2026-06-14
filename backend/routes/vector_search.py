@@ -61,15 +61,50 @@ def _get_cache_path():
     return cache_dir / "card_embeddings.json"
 
 
-def _load_embeddings_cache():
-    """从磁盘加载已缓存的embeddings（废弃，保留路径兼容）"""
-    # 不再从磁盘加载旧版 embedding
-    pass
+def _load_embeddings_from_db() -> Dict[str, np.ndarray]:
+    """从数据库 knowledge_cards.embedding 列加载已持久化的向量"""
+    global db_manager
+    if db_manager is None:
+        return {}
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, embedding FROM knowledge_cards WHERE embedding IS NOT NULL AND embedding != ''")
+        rows = cursor.fetchall()
+        conn.close()
+        result = {}
+        for row in rows:
+            card_id = str(row[0])
+            try:
+                arr = json.loads(row[1])
+                result[card_id] = np.array(arr, dtype=np.float32)
+            except (json.JSONDecodeError, ValueError):
+                continue
+        if result:
+            logger.info(f"[Vector] 从数据库加载了 {len(result)} 条持久化向量")
+        return result
+    except Exception as e:
+        logger.warning(f"[Vector] 从数据库加载向量失败: {e}")
+        return {}
 
 
 def _save_card_embedding(card_id: str, embedding: np.ndarray):
-    """保存单个embedding到缓存（废弃）"""
-    pass  # TF-IDF 不需要逐卡保存，统一用 build_tfidf_index
+    """持久化保存向量到 knowledge_cards.embedding 列"""
+    global db_manager
+    if db_manager is None:
+        return
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        emb_list = embedding.tolist() if hasattr(embedding, 'tolist') else list(embedding)
+        cursor.execute(
+            "UPDATE knowledge_cards SET embedding = ? WHERE id = ?",
+            (json.dumps(emb_list, ensure_ascii=False), int(card_id))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f"[Vector] 持久化卡片 {card_id} 向量失败: {e}")
 
 
 def _build_tfidf_vectorizer() -> Any:
@@ -174,6 +209,10 @@ def build_qnn_embedding_index():
             logger.info("[Vector] 无卡片数据，跳过 QNN 索引构建")
             return
 
+        # 先尝试从数据库加载已持久化的向量
+        persisted = _load_embeddings_from_db()
+        logger.info(f"[Vector] 已持久化向量: {len(persisted)} 条")
+
         embeddings = []
         card_ids = []
         for row in rows:
@@ -183,10 +222,19 @@ def build_qnn_embedding_index():
             combined = (title + " " + content[:512]).strip()
             if not combined:
                 continue
+            
+            # 优先使用已持久化的向量
+            if card_id in persisted:
+                embeddings.append(persisted[card_id])
+                card_ids.append(card_id)
+                continue
+            
             try:
                 emb = svc.encode_text(combined)
                 embeddings.append(emb)
                 card_ids.append(card_id)
+                # 计算后将向量持久化到数据库
+                _save_card_embedding(card_id, emb)
             except Exception as e:
                 logger.warning(f"[Vector] 卡片 {card_id} 编码失败: {e}")
 
@@ -195,7 +243,7 @@ def build_qnn_embedding_index():
             _qnn_doc_ids = card_ids
             _qnn_card_embeddings = dict(zip(card_ids, embeddings))
             _qnn_embeddings_loaded = True
-            logger.info(f"[Vector] QNN 索引构建完成: {len(card_ids)} 个文档, {_qnn_vectors.shape[1]} 维")
+            logger.info(f"[Vector] QNN 索引构建完成: {len(card_ids)} 个文档（{len(persisted)} 条从DB加载，{len(embeddings)-len(persisted)} 条新计算）")
 
     except Exception as e:
         logger.error(f"[Vector] QNN 索引构建失败: {e}")
@@ -244,8 +292,37 @@ def _do_precompute_embeddings():
 
 
 def compute_and_save_embedding(card_id: str, title: str):
-    """新增卡片时调用：重建 TF-IDF 索引"""
+    """新增/更新卡片时调用：重建 TF-IDF 索引 + 持久化 QNN 向量"""
     build_tfidf_index()
+    # 异步计算并持久化 QNN 向量
+    if USE_QNN_EMBEDDING:
+        try:
+            from services.qnn_embedding_service import get_embedding_service
+            svc = get_embedding_service()
+            if not svc.initialized:
+                svc.initialize()
+            # 需要从DB获取完整内容
+            if db_manager:
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT content FROM knowledge_cards WHERE id = ?", (int(card_id),))
+                row = cursor.fetchone()
+                conn.close()
+                content = row[0] if row else ""
+                combined = (title + " " + (content or "")[:512]).strip()
+                if combined:
+                    emb = svc.encode_text(combined)
+                    _save_card_embedding(card_id, emb)
+                    # 更新内存缓存
+                    if _qnn_embeddings_loaded:
+                        _qnn_card_embeddings[card_id] = emb
+                        # 如果主矩阵已构建，追加新向量
+                        if _qnn_vectors is not None:
+                            _qnn_vectors = np.vstack([_qnn_vectors, emb.reshape(1, -1)])
+                            _qnn_doc_ids.append(card_id)
+                    logger.info(f"[Vector] 卡片 {card_id} 向量已计算并持久化")
+        except Exception as e:
+            logger.warning(f"[Vector] 卡片 {card_id} QNN 向量计算失败: {e}")
     return True
 
 

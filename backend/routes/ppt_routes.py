@@ -872,6 +872,10 @@ async def export_collection_to_ppt(request: ExportCollectionPPTRequest):
         saved_path = output_dir / saved_filename
         
         # 直接从卡片数据生成PPT（跳过Markdown序列化/反序列化，避免卡片合并和类型丢失）
+        try:
+            processor = EnhancedPPTProcessor()
+        except:
+            processor = PPTProcessor()
         if USE_ENHANCED:
             # 四色 -> EnhancedPPTProcessor 类型映射
             _CARD_TYPE_MAP = {

@@ -16,6 +16,8 @@ from pathlib import Path
 import shutil
 import zipfile
 import json
+import uuid
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -668,16 +670,52 @@ async def generate_ai_cards(
     file: UploadFile = File(...),
     max_cards: int = Form(20)
 ):
-    """使用 NPU AI 智能生成四色知识卡片"""
+    """使用 NPU AI 智能生成四色知识卡片，自动注册源文件"""
     # 先提取文本
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
         shutil.copyfileobj(file.file, tmp_file)
         tmp_path = tmp_file.name
-    
+
+    source_file_id = None
     try:
         from pypdf import PdfReader
         reader = PdfReader(tmp_path)
         full_text = "\n".join([p.extract_text() for p in reader.pages])
+
+        if not full_text.strip():
+            raise HTTPException(status_code=400, detail="无法从 PDF 提取文本")
+
+        # === 注册源文件 ===
+        try:
+            from database import DatabaseManager
+            from conf import settings
+            db = DatabaseManager(settings.DB_PATH)
+            source_file_id = str(uuid.uuid4())
+            project_root = Path(__file__).parent.parent
+            source_dir = project_root / "data" / "source_files"
+            source_dir.mkdir(parents=True, exist_ok=True)
+            stored_path = source_dir / f"{source_file_id}.pdf"
+            shutil.copy2(tmp_path, str(stored_path))
+
+            with open(tmp_path, 'rb') as f:
+                content_hash = hashlib.sha256(f.read()).hexdigest()
+
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT source_file_id FROM source_files WHERE content_hash = ?", (content_hash,))
+            existing = cursor.fetchone()
+            if existing:
+                source_file_id = existing[0]
+            else:
+                cursor.execute('''
+                    INSERT INTO source_files (source_file_id, original_name, stored_path, file_type, file_size, content_hash, markdown_content)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (source_file_id, file.filename or "untitled.pdf", str(stored_path), 'pdf', os.path.getsize(tmp_path), content_hash, full_text[:50000]))
+                conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"[PDF] 源文件注册失败（不影响卡片生成）: {e}")
+            source_file_id = None
         
         if not full_text.strip():
             raise HTTPException(status_code=400, detail="无法从 PDF 提取文本")
@@ -687,11 +725,11 @@ async def generate_ai_cards(
             try:
                 prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
 
-文档内容：
-{full_text[:6000]}
+文档内容（可能包含水印标记如"DRAFT"/"CONFIDENTIAL"等，请忽略水印，只提取正文）：
+{full_text[:8000]}
 
 请按以下格式生成{ max_cards}张知识卡片，每张卡片一行，用 | 分隔：
-类型(小写) | 标题(不超过30字) | 内容(不超过100字)
+类型(小写) | 标题(不超过50字) | 内容(不超过500字)
 
 类型说明：
 - fact: 客观事实和数据
@@ -702,9 +740,9 @@ async def generate_ai_cards(
 只输出卡片，不要其他内容。"""
 
                 result_text = await call_llm(
-                    system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
+                    system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片，能自动忽略水印文字。",
                     user_prompt=prompt,
-                    max_tokens=1000,
+                    max_tokens=2000,
                     agent_id="pdf-ai-cards",
                     temperature=0.4
                 )
@@ -722,17 +760,46 @@ async def generate_ai_cards(
                             cards.append({
                                 "id": f"ai-card-{i+1}",
                                 "type": card_type,
-                                "title": parts[1].strip()[:30],
-                                "content": parts[2].strip()[:100],
-                                "source": "AI生成"
+                                "title": parts[1].strip()[:80],
+                                "content": parts[2].strip()[:2000],
+                                "source": file.filename or "AI生成"
                             })
+
                     if cards:
+                        # 保存卡片到数据库并关联源文件
+                        saved_ids = []
+                        if source_file_id:
+                            try:
+                                from database import DatabaseManager
+                                from conf import settings
+                                db = DatabaseManager(settings.DB_PATH)
+                                conn = db.get_connection()
+                                cursor = conn.cursor()
+                                for card in cards:
+                                    cursor.execute('''
+                                        INSERT INTO knowledge_cards (title, content, card_type)
+                                        VALUES (?, ?, ?)
+                                    ''', (card["title"], card["content"], card["type"]))
+                                    card_id = cursor.lastrowid
+                                    saved_ids.append(card_id)
+                                    cursor.execute('''
+                                        INSERT INTO card_source_files (source_file_id, card_id, location_in_source)
+                                        VALUES (?, ?, ?)
+                                    ''', (source_file_id, card_id, f"AI生成-第{i+1}段"))
+                                conn.commit()
+                                conn.close()
+                                logger.info(f"[PDF] 已保存 {len(cards)} 张卡片并关联源文件 {source_file_id}")
+                            except Exception as e:
+                                logger.warning(f"[PDF] 卡片保存失败（仅影响持久化）: {e}")
+
                         return {
                             "success": True,
                             "cards": cards[:max_cards],
                             "count": len(cards),
                             "mode": "genie",
-                            "infer_time_ms": 0
+                            "infer_time_ms": 0,
+                            "source_file_id": source_file_id,
+                            "saved_card_ids": saved_ids if saved_ids else None
                         }
             except Exception as e:
                 logger.warning(f"[PDF] ai-cards Genie 推理失败，回退规则: {e}")
@@ -804,7 +871,7 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
     if not _check_genie_quick(timeout=1.5):
         return {"cards": [], "mode": "multi-agent-genie-down"}
 
-    truncated = text[:6000]
+    truncated = text[:10000]
 
     # ========== 步骤1: 通政司 - 内容分析与四色分类 ==========
     tongzhengsi_prompt = f"""你作为通政司，职责是分析文档内容并按四色分类法归纳。
@@ -818,7 +885,7 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
 3. 【风险】(yellow) - 潜在问题、风险、挑战
 4. 【行动】(red) - 建议、行动计划、措施
 
-每个分类列出 2-5 条要点，每条控制在 50 字以内。"""
+每个分类列出 2-5 条要点，每条控制在 100 字以内。"""
 
     t1 = time.time()
     try:
@@ -826,7 +893,7 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
             call_llm(
                 system_prompt="你是通政司，擅长文档分析与四色分类。",
                 user_prompt=tongzhengsi_prompt,
-                max_tokens=500,
+                max_tokens=1000,
                 agent_id="pdf-tongzhengsi",
                 temperature=0.4
             ),
@@ -849,8 +916,8 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
 通政司分析：
 {tongzhengsi_result}
 
-要求生成最多 {max_cards} 张卡片，每张一行，严格按此格式：
-类型(小写) | 标题(5-20字) | 内容(10-80字)
+    要求生成最多 {max_cards} 张卡片，每张一行，严格按此格式：
+类型(小写) | 标题(不超过50字) | 内容(不超过500字)
 
 类型必须是：fact / explanation / risk / action
 只输出卡片，不要序号和其他内容。"""
@@ -861,7 +928,7 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
             call_llm(
                 system_prompt="你是参谋司，擅长将分析转化为结构化知识卡片。",
                 user_prompt=canmousi_prompt,
-                max_tokens=800,
+                max_tokens=2000,
                 agent_id="pdf-canmousi",
                 temperature=0.5
             ),
@@ -892,8 +959,8 @@ async def _generate_cards_multi_agent(text: str, max_cards: int = 20) -> dict:
             raw_cards.append({
                 "id": f"agent-card-{i+1}",
                 "type": card_type,
-                "title": parts[1].strip()[:30],
-                "content": parts[2].strip()[:100],
+                "title": parts[1].strip()[:80],
+                "content": parts[2].strip()[:2000],
                 "source": "多智能体"
             })
 
@@ -928,6 +995,7 @@ async def generate_cards_from_text(data: dict):
     t0 = time.time()
     text = data.get("text", "")
     max_cards = data.get("max_cards", 20)
+    source_name = data.get("source_name", "AI生成")
     mode = (data.get("mode") or "rule").lower()
     if mode not in ("npu", "rule", "multi-agent", "auto"):
         mode = "rule"
@@ -959,10 +1027,10 @@ async def generate_cards_from_text(data: dict):
             prompt = f"""请分析以下文档内容，生成结构化的四色知识卡片。
 
 文档内容：
-{text[:6000]}
+{text[:8000]}
 
 请按以下格式生成{max_cards}张知识卡片，每张卡片一行，用 | 分隔：
-类型(小写) | 标题(不超过30字) | 内容(不超过100字)
+类型(小写) | 标题(不超过50字) | 内容(不超过500字)
 
 类型说明：
 - fact: 客观事实和数据
@@ -978,11 +1046,11 @@ async def generate_cards_from_text(data: dict):
                     call_llm(
                         system_prompt="你是知识管理专家，擅长从文档中提取四色知识卡片。",
                         user_prompt=prompt,
-                        max_tokens=800,
+                        max_tokens=2000,
                         agent_id="pdf-cards-from-text",
                         temperature=0.4
                     ),
-                    timeout=25.0,  # 硬超时：call_llm 自身会等 120s+，这里强制 25s 兜底
+                    timeout=30.0,
                 )
                 llm_ms = (time.time() - t_llm) * 1000
                 logger.info(f"[PDF/cards-from-text] LLM 返回 {len(result_text) if result_text else 0}字 耗时 {llm_ms:.0f}ms")
@@ -1000,9 +1068,9 @@ async def generate_cards_from_text(data: dict):
                             cards.append({
                                 "id": f"text-card-{i+1}",
                                 "type": card_type,
-                                "title": parts[1].strip()[:30],
-                                "content": parts[2].strip()[:100],
-                                "source": "AI生成"
+                                "title": parts[1].strip()[:80],
+                                "content": parts[2].strip()[:2000],
+                                "source": source_name
                             })
                     if cards:
                         elapsed = (time.time() - t0) * 1000
@@ -1032,9 +1100,9 @@ async def generate_cards_from_text(data: dict):
             cards.append({
                 "id": f"text-card-{i+1}",
                 "type": "fact" if len(line) > 20 else "action",
-                "title": line[:30],
-                "content": line[:100],
-                "source": "text-fallback"
+                "title": line[:50],
+                "content": line[:500],
+                "source": source_name
             })
         elapsed = (time.time() - t0) * 1000
         return {"success": True, "cards": cards, "count": len(cards), "mode": "fallback", "elapsed_ms": int(elapsed)}

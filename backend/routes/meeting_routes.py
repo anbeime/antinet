@@ -2082,9 +2082,46 @@ async def hybrid_question(request: HybridQuestionRequest):
     )
 
 
+@router.get("/cards/{card_id}/source-meeting")
+async def get_card_meeting_source(card_id: int):
+    """获取知识卡片对应的来源会议信息（卡片→会议溯源）"""
+    try:
+        db = get_db_manager()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            # 先查 knowledge_cards 的 source_meeting_id
+            cursor.execute("SELECT source_meeting_id FROM knowledge_cards WHERE id = ?", (card_id,))
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return {"has_source": False, "message": "该卡片无会议溯源信息"}
+            
+            meeting_id = row[0]
+            # 查会议详情
+            cursor.execute("""
+                SELECT meeting_id, topic, summary, decision, start_time, end_time
+                FROM meetings WHERE meeting_id = ?
+            """, (meeting_id,))
+            meeting_row = cursor.fetchone()
+            if not meeting_row:
+                return {"has_source": False, "message": "来源会议记录已不存在"}
+            
+            return {
+                "has_source": True,
+                "meeting_id": meeting_row[0],
+                "topic": meeting_row[1],
+                "summary": (meeting_row[2] or '')[:200],
+                "decision": (meeting_row[3] or '')[:200],
+                "start_time": meeting_row[4],
+                "end_time": meeting_row[5]
+            }
+    except Exception as e:
+        logger.error(f"获取卡片会议溯源失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/cards/save")
 async def save_meeting_card(request: SaveCardRequest):
-    """将会议产出的卡片保存到知识库"""
+    """将会议产出的卡片保存到知识库，同时建立会议→卡片溯源"""
     # 兼容前端发送的扁平结构 {type, title, content, category} 和后端的 {card, meeting_id, topic}
     if "card" in request.model_dump():
         card = request.card
@@ -2101,6 +2138,7 @@ async def save_meeting_card(request: SaveCardRequest):
     card_type = card.get("card_type", "blue")
     title = card.get("title", "会议卡片")
     content = card.get("content", "")
+    meeting_id = request.meeting_id or card.get("meeting_id")
     
     if not title.strip():
         raise HTTPException(status_code=400, detail="卡片标题不能为空")
@@ -2110,8 +2148,8 @@ async def save_meeting_card(request: SaveCardRequest):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO knowledge_cards (title, content, card_type, category, tags, related_cards, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO knowledge_cards (title, content, card_type, category, tags, related_cards, source_meeting_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 title[:100],
                 content,
@@ -2119,16 +2157,26 @@ async def save_meeting_card(request: SaveCardRequest):
                 '会议生成',
                 json.dumps(['会议', (topic or '')[:20]]),
                 json.dumps([]),
+                meeting_id,
                 datetime.now().isoformat()
             ))
             card_id = cursor.lastrowid
+            
+            # 同时写入会议卡片关联表
+            if meeting_id:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO meeting_card_relations (meeting_id, card_id, relation_type)
+                    VALUES (?, ?, 'generated')
+                """, (meeting_id, card_id))
+            
             conn.commit()
         
-        logger.info(f"[Meeting] 会议卡片已保存: {title[:30]}... (id={card_id})")
+        logger.info(f"[Meeting] 会议卡片已保存: {title[:30]}... (id={card_id}, meeting={meeting_id})")
         
         return {
             "success": True,
             "card_id": card_id,
+            "meeting_id": meeting_id,
             "message": f"卡片「{title}」已保存到知识库"
         }
     except Exception as e:
@@ -2189,293 +2237,379 @@ async def create_meeting_stream(request: MeetingRequest):
         except Exception:
             logger.info("[Meeting] 模型预热跳过（Genie可能未就绪）")
 
-        themes = [
-            "问题分析与信息收集",
-            "方案讨论与风险评估",
-            "决策制定与行动计划",
-            "深度论证与补充",
-            "最终确认与总结"
-        ]
-
-        all_speeches = []  # 累积所有发言，供后续Agent参考
+        # ========== 任务型会议引擎（替代旧的多轮发言制） ==========
+        # 使用意图识别→任务分解→技能分发→结果聚合的 ChatChain 风格会议
+        all_speeches = []
         all_rounds = []
-        extracted_cards = []  # 累积所有提取的卡片，会议结束时统一保存
+        extracted_cards = []
+        summary = ""
+        decision = ""
+        action_items = []
+        meeting_used_new_engine = False
 
-        for round_num in range(1, request.rounds + 1):
-            theme = themes[min(round_num - 1, len(themes) - 1)]
+        try:
+            from services.meeting_task_engine import get_meeting_task_engine
+            engine = get_meeting_task_engine()
+            engine.set_db_manager(get_db_manager())
 
-            # 每轮开始前：如果是第2轮及之后，先让GPU休息一下
-            if round_num > 1:
-                await asyncio.sleep(0.5)  # 轮次间短暂休息
-                _try_cleanup_gpu_memory()  # 尝试清理GPU显存
-
-            yield _sse_event("round_start", {
-                "round": round_num,
-                "theme": theme,
+            # 通知前端：开始制定会议计划
+            yield _sse_event("task_planning", {
+                "topic": request.topic,
                 "timestamp": datetime.now().isoformat()
             })
             await asyncio.sleep(0.1)
 
-            round_speeches = []
+            # Step 1-2: 意图识别 + 任务分解
+            plan = await engine.create_plan(request.topic, request.context or "")
 
-            # ========== 每轮开始前：密卷房 + 太史阁 统一查询知识库卡片 ==========
-            # 查询结果作为本轮所有 Agent 的共享背景信息，由通政司负责分发传达
-            round_knowledge_context = ""
-            try:
-                db = get_db_manager()
-                if db:
-                    search_query = f"{request.topic} {request.context}" if request.context else request.topic
-                    cards = db.search_cards(search_query, limit=8)
-                    if cards:
-                        lines = []
-                        lines.append("【知识库参考卡片 — 密卷房/太史阁检索，通政司分发】")
-                        lines.append(f"以下是与「{request.topic}」相关的知识卡片：")
-                        for i, card in enumerate(cards, 1):
-                            title = card.get('title', '无标题')
-                            content = (card.get('content', '') or '')[:120]
-                            card_type = card.get('card_type', '')
-                            type_tag = {'blue': '事实', 'green': '解释', 'yellow': '风险', 'red': '行动'}.get(card_type, '')
-                            lines.append(f"{i}. [{type_tag}] {title}：{content}...")
-                        round_knowledge_context = "\n".join(lines)
-                        logger.info(f"[Round {round_num}] 密卷房/太史阁检索到 {len(cards)} 条相关卡片，通政司即将分发")
-            except Exception as e:
-                logger.warning(f"[Round {round_num}] 知识库卡片检索失败: {e}")
-
-            for agent_id, agent_info in AGENT_MAPPING.items():
-                pixel_id = agent_info.get("pixel_id", agent_id)
-
-                # 通知前端：该Agent正在思考（驱动像素动画）
-                yield _sse_event("agent_speaking", {
-                    "agent_id": agent_id,
-                    "pixel_id": pixel_id,
-                    "agent_name": agent_info["name"],
-                    "round": round_num,
-                    "timestamp": datetime.now().isoformat()
-                })
-                await asyncio.sleep(0.1)
-
-                # 构建上下文 — 使用完整人设提示词
-                role_question = {
-                    "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
-                    "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
-                    "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
-                    "jianchayuan": f"关于「{request.topic}」，流程中最大的漏洞是什么？",
-                    "mijuanfang": f"关于「{request.topic}」，知识库中最重要的事实依据是什么？",
-                    "chengxiangfu": f"关于「{request.topic}」，最可执行的战略建议是什么？",
-                    "junjichu": f"基于以上知识库信息，关于「{request.topic}」的具体执行计划和分工是什么？",
-                    "zhihuishi": f"关于「{request.topic}」，综合裁决和下一步行动是什么？",
-                }.get(agent_id, f"关于「{request.topic}」，你的观点是什么？")
-
-                context_parts = [
-                    f"[{agent_info['name']}]{role_question}",
-                    f"主题：{request.topic}",
-                ]
-                if request.context:
-                    context_parts.append(f"背景：{request.context[:800]}")
-                context_parts.append(f"第{round_num}轮·{theme}")
-
-                # 注入知识库卡片背景信息
-                if round_knowledge_context:
-                    context_parts.append(f"\n{round_knowledge_context}\n")
-
-                user_prompt = "\n".join(context_parts)
-
-                # 闭环二：注入用户干预
-                pending_interventions = _user_interventions.get(meeting_id, [])
-                if pending_interventions:
-                    intervention_texts = []
-                    for iv in pending_interventions:
-                        if iv["type"] == "askFollowUp":
-                            intervention_texts.append(f"【用户追问】{iv['content']}")
-                        elif iv["type"] == "provideAdditionalContext":
-                            intervention_texts.append(f"【用户提供额外信息】{iv['content']}")
-                        elif iv["type"] == "adjustFocus":
-                            intervention_texts.append(f"【用户调整方向】请将讨论重心转向：{iv['content']}")
-                        elif iv["type"] == "terminateBranch":
-                            branch_name = {"risk": "风险分析", "explanation": "深度解释", "action": "行动方案"}.get(iv.get("target_branch", ""), "该分支")
-                            intervention_texts.append(f"【用户终止分支】请跳过{branch_name}的讨论，转向其他方面")
-                    if intervention_texts:
-                        user_prompt += "\n\n--- 用户干预 ---\n" + "\n".join(intervention_texts) + "\n--- 干预结束 ---\n"
-                    # 清除已处理的干预
-                    _user_interventions[meeting_id] = []
-
-                # 每个 Agent 的角色专属约束 — 只追加输出格式要求
-                role_hints = {
-                    "taishige": "\n直接回答，50字以内。",
-                    "jinjiyu": "\n只说风险点，50字以内。",
-                    "tongzhengsi": "\n只说核心信息，50字以内。",
-                    "jianchayuan": "\n只说漏洞，40字以内。",
-                    "mijuanfang": "\n引用卡片事实，40字以内。",
-                    "chengxiangfu": "\n只说建议，40字以内。",
-                    "junjichu": "\n列出分工和时间，50字以内。",
-                    "zhihuishi": "\n只说决策和下一步，60字以内。",
-                }
-                user_prompt += role_hints.get(agent_id, "\n直接回答，40字以内。")
-
-                # 如果有图片数据，仅密卷房使用视觉模型分析
-                if agent_id == "mijuanfang" and request.image_data:
-                    try:
-                        vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
-                        if vision_result:
-                            user_prompt += f"\n\n【图片分析结果】{vision_result}"
-                            logger.info(f"密卷房视觉分析成功: {len(vision_result)}字")
-                    except Exception as e:
-                        logger.warning(f"密卷房视觉分析失败: {e}")
-
-                # 使用完整人设调用LLM
-                # 使用心跳包装：LLM等待期间每5秒发送心跳，防止连接超时断开
-                llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
-                speech_content = None
-                try:
-                    while not llm_task.done():
-                        done, _ = await asyncio.wait({llm_task}, timeout=5.0)
-                        if done:
-                            speech_content = llm_task.result()
-                            break
-                        # LLM还在思考，发送心跳保持连接
-                        yield _sse_heartbeat()
-                except Exception as e:
-                    logger.warning(f"[Meeting] LLM调用异常: {e}")
-                finally:
-                    if not llm_task.done():
-                        llm_task.cancel()
-                        try:
-                            await llm_task
-                        except asyncio.CancelledError:
-                            pass
-
-                if not speech_content:
-                    # LLM不可用时的智能降级：基于角色生成有意义的回复
-                    speech_content = _generate_role_based_fallback(
-                        agent_info, request.topic, theme, round_num, round_speeches
-                    )
-
-                speech_data = {
-                    "agent_id": agent_id,
-                    "agent_name": agent_info["name"],
-                    "agent_title": agent_info["title"],
-                    "avatar": agent_info["avatar"],
-                    "system_prompt": agent_info["system_prompt"],
-                    "speech": speech_content,
-                    "timestamp": datetime.now().isoformat(),
-                    "cards_referenced": [],
-                    "pixel_id": pixel_id,
-                    "round": round_num
-                }
-
-                all_speeches.append(speech_data)
-                round_speeches.append(speech_data)
-
-                yield _sse_event("agent_speech", speech_data)
-                await asyncio.sleep(0.3)
-
-                # Agent 发言后等待一下，给 Genie 恢复时间再提取卡片
-                await asyncio.sleep(1.5)
-
-                # 提取四色卡片并推送前端（发言 > 30 字才提取）
-                if len(speech_content) > 30:
-                    try:
-                        extracted = await _extract_color_cards(
-                            agent_id, agent_info["name"], speech_content, request.topic
-                        )
-                        if extracted:
-                            # 收集卡片，后续统一保存
-                            extracted_cards.extend(extracted)
-                            
-                            yield _sse_event("agent_cards", {
-                                "agent_id": agent_id,
-                                "agent_name": agent_info["name"],
-                                "round": round_num,
-                                "cards": [
-                                    {
-                                        "card_type": c.get("type", "blue"),
-                                        "title": c.get("title", ""),
-                                        "content": c.get("content", ""),
-                                        "round": round_num
-                                    }
-                                    for c in extracted
-                                ]
-                            })
-                            logger.info(f"[Meeting] agent_cards: {agent_info['name']} → {len(extracted)}张卡片")
-                    except Exception as e:
-                        logger.error(f"[Meeting] agent_cards提取失败: {e}")
-
-                # Agent间间隔，让 Genie 恢复 (Both after speech and after card extraction)
-                await asyncio.sleep(0.8)
-
-            all_rounds.append({
-                "round": round_num,
-                "theme": theme,
-                "speeches": round_speeches
-            })
-
-            yield _sse_event("round_end", {
-                "round": round_num,
-                "theme": theme,
-                "speech_count": len(round_speeches),
+            # 通知前端：计划已就绪
+            yield _sse_event("task_plan", {
+                "intent": plan.intent,
+                "intent_confidence": plan.intent_confidence,
+                "workflow": plan.workflow_name or "动态分解",
+                "subtasks": [
+                    {"id": s.id, "description": s.description, "executor": s.executor_name}
+                    for s in plan.subtasks
+                ],
+                "total": len(plan.subtasks),
                 "timestamp": datetime.now().isoformat()
             })
             await asyncio.sleep(0.2)
 
-        # 生成最终决策（由指挥使综合所有讨论）
-        decision_prompt_parts = [
-            f"会议主题：{request.topic}",
-            f"经过{request.rounds}轮讨论，以下是所有Agent的发言记录：",
-            ""
-        ]
-        for s in all_speeches:
-            decision_prompt_parts.append(f"【{s['agent_name']}】：{s['speech']}")
+            # 构建进度回调 → SSE事件
+            async def sse_progress(event_type: str, data: Any):
+                if event_type == "plan_ready":
+                    pass  # 已在上方发送
+                elif event_type == "subtask_start":
+                    yield _sse_event("subtask_start", {
+                        "id": data["id"],
+                        "description": data["description"],
+                        "executor": data["executor"],
+                        "index": data["index"],
+                        "total": data["total"],
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    await asyncio.sleep(0.1)
+                    # 同时兼容旧的 agent_speaking 事件（驱动像素动画）
+                    yield _sse_event("agent_speaking", {
+                        "agent_id": data.get("executor", "mijuanfang"),
+                        "pixel_id": data.get("executor", "mijuanfang"),
+                        "agent_name": data.get("executor", "密卷房"),
+                        "round": 1,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                elif event_type == "subtask_done":
+                    if data.get("cards_count", 0) > 0:
+                        yield _sse_event("agent_cards", {
+                            "agent_id": data.get("id", "subtask"),
+                            "agent_name": data.get("id", "agent"),
+                            "round": 1,
+                            "cards": []
+                        })
+                    yield _sse_event("subtask_done", data)
+                elif event_type == "meeting_done":
+                    pass  # 会后处理
+                yield None  # 哨兵
 
-        decision_prompt_parts.append("")
-        decision_prompt_parts.append("请你作为总指挥，综合以上所有讨论，生成：")
-        decision_prompt_parts.append("1. 会议总结（2-3句话概括讨论要点）")
-        decision_prompt_parts.append("2. 最终决策（明确的决策结论）")
-        decision_prompt_parts.append("3. 行动项（3-5个具体的下一步行动，每项一行，用序号标注）")
-        decision_prompt_parts.append("请用以下格式输出：")
-        decision_prompt_parts.append("【总结】...")
-        decision_prompt_parts.append("【决策】...")
-        decision_prompt_parts.append("【行动项】")
-        decision_prompt_parts.append("1. ...")
+            # Step 3-4: 执行计划
+            # 创建一个收集器把 SSE 事件通过 yield 泵出去
+            sse_queue = []
 
-        decision_system = "你是八府巡按的总指挥使，负责综合各方意见做出最终裁决。请严格按照要求的格式输出。"
-        # 决策生成也加心跳保护
-        llm_task = asyncio.create_task(call_llm(decision_system, "\n".join(decision_prompt_parts)))
-        decision_text = None
-        try:
-            while not llm_task.done():
-                done, _ = await asyncio.wait({llm_task}, timeout=5.0)
-                if done:
-                    decision_text = llm_task.result()
-                    break
-                yield _sse_heartbeat()
+            async def on_progress(event_type: str, data: Any):
+                if event_type == "subtask_start":
+                    sse_queue.append(("subtask_start", {
+                        "id": data["id"],
+                        "description": data["description"],
+                        "executor": data["executor"],
+                        "index": data["index"],
+                        "total": data["total"],
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                    sse_queue.append(("agent_speaking", {
+                        "agent_id": data.get("executor", "mijuanfang"),
+                        "pixel_id": data.get("executor", "mijuanfang"),
+                        "agent_name": data.get("executor_name", "密卷房"),
+                        "round": 1,
+                        "timestamp": datetime.now().isoformat()
+                    }))
+                elif event_type == "subtask_done":
+                    status = data.get("status", "completed")
+                    if status == "completed":
+                        sse_queue.append(("agent_speech", {
+                            "agent_id": data.get("id", "task"),
+                            "agent_name": data.get("id", "密卷房"),
+                            "agent_title": "任务执行官",
+                            "avatar": "📋",
+                            "system_prompt": "",
+                            "speech": data.get("summary", "已完成")[:200],
+                            "timestamp": datetime.now().isoformat(),
+                            "cards_referenced": [],
+                            "pixel_id": data.get("id", "task"),
+                            "round": 1
+                        }))
+                    else:
+                        sse_queue.append(("agent_speech", {
+                            "agent_id": data.get("id", "task"),
+                            "agent_name": data.get("id", "密卷房"),
+                            "agent_title": "任务执行官",
+                            "avatar": "⚠️",
+                            "system_prompt": "",
+                            "speech": f"任务执行状态: {status}",
+                            "timestamp": datetime.now().isoformat(),
+                            "cards_referenced": [],
+                            "pixel_id": data.get("id", "task"),
+                            "round": 1
+                        }))
+                    sse_queue.append(("agent_cards", {
+                        "agent_id": data.get("id", "task"),
+                        "agent_name": data.get("id", "agent"),
+                        "round": 1,
+                        "cards": [
+                            {"card_type": c.get("card_type", "blue"),
+                             "title": c.get("title", ""),
+                             "content": c.get("content", ""),
+                             "round": 1}
+                            for c in data.get("cards", [])
+                        ]
+                    }))
+                elif event_type == "plan_ready":
+                    sse_queue.append(("task_plan", {
+                        "intent": data.get("intent", ""),
+                        "workflow": data.get("workflow", ""),
+                        "subtasks": data.get("subtasks", []),
+                        "total": data.get("total", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }))
+
+            result = await engine.execute_plan(plan, on_progress=on_progress)
+
+            # 泵出所有收集的 SSE 事件
+            for evt_type, evt_data in sse_queue:
+                yield _sse_event(evt_type, evt_data)
+                await asyncio.sleep(0.15)
+
+            # 从执行结果获取汇总信息
+            extracted_cards = result.cards
+            summary = result.summary[:300]
+            report = result.report
+
+            # 构建兼容的 all_speeches 和 all_rounds
+            all_speeches = [
+                {"agent_name": s.executor_name, "speech": s.description,
+                 "agent_id": s.id, "status": s.status.value}
+                for s in plan.subtasks
+            ]
+            all_rounds = [{
+                "round": 1,
+                "theme": f"任务型会议: {plan.workflow_name or plan.intent}",
+                "speeches": all_speeches
+            }]
+
+            action_items = [
+                f"[{s.executor_name}] {s.description[:60]}"
+                for s in plan.subtasks if s.status.value == "completed"
+            ]
+
+            meeting_used_new_engine = True
+            logger.info(f"[Meeting] 任务型会议引擎完成: {len(plan.subtasks)}个子任务, {len(extracted_cards)}张卡片")
+
         except Exception as e:
-            logger.warning(f"[Meeting] 决策LLM调用异常: {e}")
-        finally:
-            if not llm_task.done():
-                llm_task.cancel()
+            logger.warning(f"[Meeting] 任务型会议引擎失败，回退到经典模式: {e}")
+            meeting_used_new_engine = False
 
-        if not decision_text:
-            decision_text = _generate_fallback_decision(request.topic, all_speeches)
+        # 回退到经典模式：旧的多轮发言制
+        if not meeting_used_new_engine:
+            themes = ["问题分析与信息收集", "方案讨论与风险评估", "决策制定与行动计划", "深度论证与补充", "最终确认与总结"]
+            extracted_cards = []
+            all_speeches = []
+            all_rounds = []
 
-        # 解析决策文本
-        summary, decision, action_items = _parse_decision(decision_text, request.topic)
+            for round_num in range(1, request.rounds + 1):
+                theme = themes[min(round_num - 1, len(themes) - 1)]
+                if round_num > 1:
+                    await asyncio.sleep(0.5)
+                    _try_cleanup_gpu_memory()
 
-        yield _sse_event("meeting_decision", {
-            "summary": summary,
-            "decision": decision,
-            "action_items": action_items,
-            "timestamp": datetime.now().isoformat()
-        })
-        await asyncio.sleep(0.1)
+                yield _sse_event("round_start", {
+                    "round": round_num, "theme": theme, "timestamp": datetime.now().isoformat()
+                })
+                await asyncio.sleep(0.1)
+                round_speeches = []
 
-        # 分析共识/分歧/独家观点
-        diagnosis = {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
-        try:
-            diagnosis = await _analyze_consensus_divergence(all_speeches, request.topic)
-            yield _sse_event("diagnosis", diagnosis)
+                # 混合RAG检索（与之前相同）
+                round_knowledge_context = ""
+                try:
+                    from routes.enhanced_chat_routes import extract_keywords as _extract_keywords
+                    from routes import vector_search as _vs
+                    db = get_db_manager()
+                    if db:
+                        _vs.set_db_manager(db)
+                        background_text = f"{request.topic} {request.context}" if request.context else request.topic
+                        keywords = [request.topic] + _extract_keywords(background_text)
+                        keywords = list(dict.fromkeys(keywords))[:4]
+                        seen_ids = set()
+                        combined_cards = []
+                        for kw in keywords:
+                            try:
+                                results = _vs.search_hybrid(kw, limit=5)
+                                for r in results:
+                                    if r.id not in seen_ids:
+                                        seen_ids.add(r.id)
+                                        combined_cards.append(r)
+                            except:
+                                continue
+                        combined_cards.sort(key=lambda x: x.score, reverse=True)
+                        cards = combined_cards[:10]
+                        if cards:
+                            lines = ["【知识库参考卡片 — 密卷房/太史阁多角度检索，通政司分发】",
+                                     f"以下是与「{request.topic}」相关的知识卡片（关键词: {', '.join(keywords)}）："]
+                            for i, card in enumerate(cards, 1):
+                                title = card.title or '无标题'
+                                content = (card.content or '')[:120]
+                                type_tag = {'blue': '事实', 'green': '解释', 'yellow': '风险', 'red': '行动'}.get(card.card_type, '')
+                                lines.append(f"{i}. [{type_tag}] {title}：{content}...（相关度:{card.score:.2f}）")
+                            round_knowledge_context = "\n".join(lines)
+                            yield _sse_event("knowledge_supplement", {
+                                "round": round_num, "keywords": keywords, "total": len(cards),
+                                "cards": [{"card_type": c.card_type, "title": c.title, "content": (c.content or '')[:200], "score": c.score} for c in cards[:5]]
+                            })
+                except Exception as e:
+                    logger.warning(f"[Round {round_num}] 知识库卡片混合检索失败: {e}")
+
+                for agent_id, agent_info in AGENT_MAPPING.items():
+                    pixel_id = agent_info.get("pixel_id", agent_id)
+                    yield _sse_event("agent_speaking", {
+                        "agent_id": agent_id, "pixel_id": pixel_id,
+                        "agent_name": agent_info["name"], "round": round_num,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    await asyncio.sleep(0.1)
+
+                    role_question = {
+                        "taishige": f"关于「{request.topic}」，从历史经验看最关键的教训是什么？",
+                        "jinjiyu": f"关于「{request.topic}」，最大的风险点是什么？",
+                        "tongzhengsi": f"关于「{request.topic}」，最值得通报的核心信息是什么？",
+                        "jianchayuan": f"关于「{request.topic}」，流程中最大的漏洞是什么？",
+                        "mijuanfang": f"关于「{request.topic}」，知识库中最重要的事实依据是什么？",
+                        "chengxiangfu": f"关于「{request.topic}」，最可执行的战略建议是什么？",
+                        "junjichu": f"基于以上知识库信息，关于「{request.topic}」的具体执行计划和分工是什么？",
+                        "zhihuishi": f"关于「{request.topic}」，综合裁决和下一步行动是什么？",
+                    }.get(agent_id, f"关于「{request.topic}」，你的观点是什么？")
+
+                    user_prompt = "\n".join([
+                        f"[{agent_info['name']}]{role_question}",
+                        f"主题：{request.topic}",
+                        *(f"背景：{request.context[:800]}" if request.context else []),
+                        f"第{round_num}轮·{theme}",
+                        *(f"\n{round_knowledge_context}\n" if round_knowledge_context else []),
+                    ])
+
+                    pending_interventions = _user_interventions.get(meeting_id, [])
+                    if pending_interventions:
+                        intervention_texts = []
+                        for iv in pending_interventions:
+                            if iv["type"] == "askFollowUp":
+                                intervention_texts.append(f"【用户追问】{iv['content']}")
+                            elif iv["type"] == "provideAdditionalContext":
+                                intervention_texts.append(f"【用户提供额外信息】{iv['content']}")
+                            elif iv["type"] == "adjustFocus":
+                                intervention_texts.append(f"【用户调整方向】请将讨论重心转向：{iv['content']}")
+                            elif iv["type"] == "terminateBranch":
+                                branch_name = {"risk": "风险分析", "explanation": "深度解释", "action": "行动方案"}.get(iv.get("target_branch", ""), "该分支")
+                                intervention_texts.append(f"【用户终止分支】请跳过{branch_name}的讨论，转向其他方面")
+                        if intervention_texts:
+                            user_prompt += "\n\n--- 用户干预 ---\n" + "\n".join(intervention_texts) + "\n--- 干预结束 ---\n"
+                        _user_interventions[meeting_id] = []
+
+                    user_prompt += {
+                        "taishige": "\n直接回答，50字以内。", "jinjiyu": "\n只说风险点，50字以内。",
+                        "tongzhengsi": "\n只说核心信息，50字以内。", "jianchayuan": "\n只说漏洞，40字以内。",
+                        "mijuanfang": "\n引用卡片事实，40字以内。", "chengxiangfu": "\n只说建议，40字以内。",
+                        "junjichu": "\n列出分工和时间，50字以内。", "zhihuishi": "\n只说决策和下一步，60字以内。",
+                    }.get(agent_id, "\n直接回答，40字以内。")
+
+                    if agent_id == "mijuanfang" and request.image_data:
+                        try:
+                            vision_result = await _analyze_image_for_meeting(request.image_data, request.topic)
+                            if vision_result:
+                                user_prompt += f"\n\n【图片分析结果】{vision_result}"
+                        except Exception as e:
+                            logger.warning(f"密卷房视觉分析失败: {e}")
+
+                    llm_task = asyncio.create_task(call_llm(agent_info["system_prompt"], user_prompt, max_tokens=150))
+                    speech_content = None
+                    try:
+                        while not llm_task.done():
+                            done, _ = await asyncio.wait({llm_task}, timeout=5.0)
+                            if done:
+                                speech_content = llm_task.result()
+                                break
+                            yield _sse_heartbeat()
+                    except Exception as e:
+                        logger.warning(f"[Meeting] LLM调用异常: {e}")
+                    finally:
+                        if not llm_task.done():
+                            llm_task.cancel()
+                            try:
+                                await llm_task
+                            except asyncio.CancelledError:
+                                pass
+
+                    if not speech_content:
+                        speech_content = _generate_role_based_fallback(agent_info, request.topic, theme, round_num, round_speeches)
+
+                    speech_data = {
+                        "agent_id": agent_id, "agent_name": agent_info["name"],
+                        "agent_title": agent_info["title"], "avatar": agent_info["avatar"],
+                        "system_prompt": agent_info["system_prompt"], "speech": speech_content,
+                        "timestamp": datetime.now().isoformat(), "cards_referenced": [],
+                        "pixel_id": pixel_id, "round": round_num
+                    }
+                    all_speeches.append(speech_data)
+                    round_speeches.append(speech_data)
+                    yield _sse_event("agent_speech", speech_data)
+                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(1.5)
+
+                    if len(speech_content) > 30:
+                        try:
+                            extracted = await _extract_color_cards(agent_id, agent_info["name"], speech_content, request.topic)
+                            if extracted:
+                                extracted_cards.extend(extracted)
+                                yield _sse_event("agent_cards", {
+                                    "agent_id": agent_id, "agent_name": agent_info["name"], "round": round_num,
+                                    "cards": [{"card_type": c.get("type", "blue"), "title": c.get("title", ""), "content": c.get("content", ""), "round": round_num} for c in extracted]
+                                })
+                        except Exception as e:
+                            logger.error(f"[Meeting] agent_cards提取失败: {e}")
+                    await asyncio.sleep(0.8)
+
+                all_rounds.append({"round": round_num, "theme": theme, "speeches": round_speeches})
+                yield _sse_event("round_end", {"round": round_num, "theme": theme, "speech_count": len(round_speeches), "timestamp": datetime.now().isoformat()})
+                await asyncio.sleep(0.2)
+
+            # 经典模式的决策生成
+            summary, decision, action_items = await _generate_classic_decision(request.topic, all_speeches, meeting_id)
+            yield _sse_event("meeting_decision", {
+                "summary": summary, "decision": decision, "action_items": action_items, "timestamp": datetime.now().isoformat()
+            })
             await asyncio.sleep(0.1)
-        except Exception as e:
-            logger.error(f"共识分歧分析失败: {e}")
+
+            diagnosis = {"consensus": [], "divergence": [], "unique": [], "diagnosis_report": ""}
+            try:
+                diagnosis = await _analyze_consensus_divergence(all_speeches, request.topic)
+                yield _sse_event("diagnosis", diagnosis)
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                logger.error(f"共识分歧分析失败: {e}")
+        else:
+            # 新模式：用执行结果生成决策事件
+            yield _sse_event("meeting_decision", {
+                "summary": summary,
+                "decision": f"任务型会议完成，共执行 {len(plan.subtasks)} 个子任务",
+                "action_items": action_items,
+                "timestamp": datetime.now().isoformat()
+            })
 
         end_time = time.time()
         duration = end_time - start_time
@@ -2914,6 +3048,52 @@ async def create_meeting(request: MeetingRequest):
 
 # ==================== 辅助函数 ====================
 
+async def _generate_classic_decision(topic: str, all_speeches: list, meeting_id: str):
+    """经典模式的决策生成（提取为独立函数供新旧模式共用）"""
+    decision_prompt_parts = [
+        f"会议主题：{topic}",
+        f"以下是所有Agent的发言记录：",
+        ""
+    ]
+    for s in all_speeches:
+        decision_prompt_parts.append(f"【{s.get('agent_name','Agent')}】：{s.get('speech','')}")
+
+    decision_prompt_parts.append("")
+    decision_prompt_parts.append("请你作为总指挥，综合以上所有讨论，生成：")
+    decision_prompt_parts.append("1. 会议总结（2-3句话概括讨论要点）")
+    decision_prompt_parts.append("2. 最终决策（明确的决策结论）")
+    decision_prompt_parts.append("3. 行动项（3-5个具体的下一步行动，每项一行，用序号标注）")
+    decision_prompt_parts.append("请用以下格式输出：")
+    decision_prompt_parts.append("【总结】...")
+    decision_prompt_parts.append("【决策】...")
+    decision_prompt_parts.append("【行动项】")
+    decision_prompt_parts.append("1. ...")
+
+    decision_system = "你是八府巡按的总指挥使，负责综合各方意见做出最终裁决。请严格按照要求的格式输出。"
+    llm_task = asyncio.create_task(call_llm(decision_system, "\n".join(decision_prompt_parts)))
+    decision_text = None
+    try:
+        while not llm_task.done():
+            done, _ = await asyncio.wait({llm_task}, timeout=5.0)
+            if done:
+                decision_text = llm_task.result()
+                break
+    except Exception as e:
+        logger.warning(f"[Meeting] 决策LLM调用异常: {e}")
+    finally:
+        if not llm_task.done():
+            llm_task.cancel()
+            try:
+                await llm_task
+            except asyncio.CancelledError:
+                pass
+
+    if not decision_text:
+        decision_text = _generate_fallback_decision(topic, all_speeches)
+
+    return _parse_decision(decision_text, topic)
+
+
 def _auto_create_tasks_from_meeting(db, meeting_id: str, action_items: list, project_id: int = None):
     """闭环二：会议结束后自动从行动项创建GTD任务
     
@@ -3023,8 +3203,8 @@ def _auto_create_cards_from_meeting(db, meeting_id: str, topic: str, summary: st
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, explore_status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO knowledge_cards (title, content, card_type, category, project_id, tags, related_cards, source_meeting_id, explore_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['title'],
                     data['content'],
@@ -3033,9 +3213,15 @@ def _auto_create_cards_from_meeting(db, meeting_id: str, topic: str, summary: st
                     project_id,
                     json.dumps(['会议', '自动生成']),
                     json.dumps([]),
+                    meeting_id,
                     'pending'
                 ))
                 card_id = cursor.lastrowid
+                # 同时写入关联表
+                cursor.execute("""
+                    INSERT OR IGNORE INTO meeting_card_relations (meeting_id, card_id, relation_type)
+                    VALUES (?, ?, 'generated')
+                """, (meeting_id, card_id))
                 conn.commit()
                 created_cards.append({**data, 'id': card_id})
                 logger.info(f"自动从会议创建知识卡片: {data['title'][:30]}...")

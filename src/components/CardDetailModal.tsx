@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw, FolderOpen } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw, FolderOpen, Image, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
 import { cn, safeErrorDetail } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
-
+const IMAGE_API_BASE = () => getApiBaseUrl().replace(/\/api$/, '') + '/api/images';
 
 // 注册中文字体（本地文件，不依赖外部CDN）
 const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
@@ -263,6 +264,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [editContent, setEditContent] = useState('');
   const [editProjectId, setEditProjectId] = useState<number | null | undefined>(undefined);
   const [savingCard, setSavingCard] = useState(false);
+  const [editImages, setEditImages] = useState<ImageInfo[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
 
   // 全屏切换功能
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -271,6 +274,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // P0: 双向链接状态
   const [backlinks, setBacklinks] = useState<BacklinkCard[]>([]);
@@ -353,6 +357,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   // 源文件溯源状态
   const [sourceFileInfo, setSourceFileInfo] = useState<SourceFileInfo | null>(null);
   const [sourceFileLoading, setSourceFileLoading] = useState(false);
+
+  // 会议溯源状态
+  const [meetingSource, setMeetingSource] = useState<{
+    has_source: boolean;
+    meeting_id?: string;
+    topic?: string;
+    summary?: string;
+    decision?: string;
+    start_time?: string;
+    end_time?: string;
+    message?: string;
+  } | null>(null);
+  const [meetingSourceLoading, setMeetingSourceLoading] = useState(false);
 
   // 源文件 Markdown 查看器状态
   const [showSourceMarkdown, setShowSourceMarkdown] = useState(false);
@@ -567,6 +584,27 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     }
   }, [card]);
 
+  // 加载会议溯源信息
+  const loadMeetingSource = useCallback(async () => {
+    if (!card) return;
+    const cardId = parseInt(card.id);
+    if (isNaN(cardId)) return;
+    setMeetingSourceLoading(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/meeting/cards/${cardId}/source-meeting`);
+      if (res.ok) {
+        const data = await res.json();
+        setMeetingSource(data);
+      } else {
+        setMeetingSource(null);
+      }
+    } catch {
+      setMeetingSource(null);
+    } finally {
+      setMeetingSourceLoading(false);
+    }
+  }, [card]);
+
   // 加载源文件溯源信息
   const loadSourceFileInfo = useCallback(async () => {
     if (!card) return;
@@ -678,6 +716,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       loadBacklinks();
       loadCardIntegrations();
       loadSourceFileInfo();
+      loadMeetingSource();
       loadSiblingCards();
       loadChainWordSuggestions();  // 维度2: 加载链词推荐
       setSourceViewMode('markdown');  // 每次打开重置为 Markdown 视图
@@ -852,6 +891,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     setEditTitle(card.title);
     setEditContent(card.content);
     setEditProjectId(card.projectId);
+    setEditImages(card.images || []);
     setIsEditing(true);
   };
 
@@ -859,6 +899,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     setEditTitle(card.title);
     setEditContent(card.content);
     setEditProjectId(card.projectId);
+    setEditImages(card.images || []);
     setIsEditing(false);
   };
 
@@ -874,7 +915,8 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
       ...card,
       title: editTitle,
       content: editContent,
-      projectId: editProjectId
+      projectId: editProjectId,
+      images: editImages
     };
     try {
       await onUpdateCard(updatedCard);
@@ -885,6 +927,88 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     } finally {
       setSavingCard(false);
     }
+  };
+
+  // 上传单张图片
+  const uploadImage = async (file: File) => {
+    toast.info('正在上传图片...');
+    setUploadingCount(prev => prev + 1);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch(`${IMAGE_API_BASE()}/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.url) {
+          setEditImages(prev => [...prev, data]);
+          const imageMarkdown = `\n![${file.name}](${data.url})\n`;
+          setEditContent(prev => prev + imageMarkdown);
+          toast.success('图片已插入内容');
+        }
+      } else {
+        toast.error('图片上传失败');
+      }
+    } catch {
+      toast.error('图片上传失败');
+    } finally {
+      setUploadingCount(prev => prev - 1);
+    }
+  };
+
+  // 处理文件选择
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await uploadImage(file);
+      }
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // 处理粘贴图片
+  const handlePasteImage = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await uploadImage(file);
+        }
+        return;
+      }
+    }
+  };
+
+  // 处理拖放图片
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await uploadImage(file);
+      }
+    }
+  };
+
+  // 删除图片
+  const removeImage = async (imageId: string) => {
+    const image = editImages.find(img => img.id === imageId);
+    if (image) {
+      try {
+        await fetch(`${IMAGE_API_BASE()}/${image.filename}`, { method: 'DELETE' });
+      } catch {
+        console.error('删除图片失败');
+      }
+    }
+    setEditImages(prev => prev.filter(img => img.id !== imageId));
   };
 
   // 分享卡片
@@ -1376,9 +1500,86 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
+                  onPaste={handlePasteImage}
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
                   className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
-                  placeholder="输入卡片内容..."
+                  placeholder="输入卡片内容（支持粘贴、拖放图片）..."
                 />
+                {/* 图片附件 — 编辑模式 */}
+                <div className="mt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <Image size={14} className="inline mr-1" />
+                      图片附件
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleFileSelect}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingCount > 0}
+                        className="flex items-center px-2.5 py-1 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-md transition-colors disabled:opacity-50"
+                      >
+                        <Upload size={12} className="mr-1" />
+                        添加图片
+                      </button>
+                      {uploadingCount > 0 && (
+                        <span className="text-xs text-blue-500 animate-pulse">上传中...</span>
+                )}
+                {/* 会议溯源按钮 — 从会议生成的卡片，可溯源到会议记录 */}
+                {meetingSourceLoading && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-0.5 flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" />
+                    会议溯源加载中
+                  </span>
+                )}
+                {meetingSource?.has_source && (
+                  <a
+                    href={`/meeting/${encodeURIComponent(meetingSource.meeting_id || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-green-600 dark:text-green-400 px-2 py-0.5 bg-green-50 dark:bg-green-900/30 rounded-full flex items-center gap-1 hover:bg-green-100 dark:hover:bg-green-900/50 transition-colors cursor-pointer"
+                    title={`来源会议: ${meetingSource.topic || ''}`}
+                  >
+                    <FileText size={12} />
+                    <span>会议: {(meetingSource.topic || '').length > 10 ? (meetingSource.topic || '').slice(0, 10) + '..' : (meetingSource.topic || '')}</span>
+                  </a>
+                )}
+              </div>
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                    支持粘贴、拖放图片到内容区，或点击「添加图片」按钮
+                  </p>
+                  {/* 已上传图片预览 */}
+                  {editImages.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {editImages.map(image => (
+                        <div key={image.id} className="relative group">
+                          <img
+                            src={image.url.startsWith('http') ? image.url : `${getApiBaseUrl()}${image.url}`}
+                            alt={image.original_name}
+                            className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(image.id)}
+                            className="absolute -top-2 -right-2 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -1387,7 +1588,27 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   onMouseUp={handleTextSelect}
                   className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
                 >
-                  <ReactMarkdown>{card.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!href) return;
+                            e.preventDefault();
+                            window.open(href, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          {children}
+                        </a>
+                      )
+                    }}
+                  >{card.content}</ReactMarkdown>
                 </div>
                 {/* P0: 选中文本提示条 — 紧跟在内容下方 */}
                 {!isEditing && selectedText && (
@@ -2445,7 +2666,27 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <div className="flex-1 overflow-y-auto p-8">
                 <div className={`${getCardStyles(card.color).bgColor} border ${getCardStyles(card.color).borderColor} rounded-xl p-8`}>
                   <div className="text-lg leading-relaxed prose prose-gray dark:prose-invert max-w-none">
-                    <ReactMarkdown>{card.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!href) return;
+                              e.preventDefault();
+                              window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                          >
+                            {children}
+                          </a>
+                        )
+                      }}
+                    >{card.content}</ReactMarkdown>
                   </div>
                 </div>
                 
