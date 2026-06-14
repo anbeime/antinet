@@ -9,9 +9,9 @@ from typing import Optional
 from datetime import datetime
 
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
 logger = logging.getLogger(__name__)
@@ -137,11 +137,20 @@ def _add_type_tag(slide, left, top, w, h, label, bg_clr, text_clr=WHITE):
 
 
 def _add_textbox(slide, left, top, width, height, text, font_name, font_size, color,
-                 bold=False, alignment=PP_ALIGN.LEFT):
+                 bold=False, alignment=PP_ALIGN.LEFT, auto_shrink=True, anchor=MSO_ANCHOR.TOP):
     txbox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
     tf = txbox.text_frame
     tf.word_wrap = True
-    tf.auto_size = None
+    # Inject normAutofit into a:bodyPr for auto-shrink behavior
+    if auto_shrink:
+        from pptx.oxml.ns import qn
+        bodyPr = tf._txBody.find(qn('a:bodyPr'))
+        if bodyPr is not None:
+            for child in list(bodyPr):
+                if child.tag in (qn('a:spAutoFit'), qn('a:normAutofit')):
+                    bodyPr.remove(child)
+            autofit_elem = bodyPr.makeelement(qn('a:normAutofit'), {})
+            bodyPr.append(autofit_elem)
     p = tf.paragraphs[0]
     p.text = _sanitize(text)
     p.font.name = font_name
@@ -228,11 +237,12 @@ def _build_section_slide(slide, card_type, title, content, colors, slide_num, to
         title_font, 28, clr, bold=True,
     )
 
-    # 内容正文（占据卡片主体，16pt 跟随主题文字色）
+    # 内容正文（占据卡片主体，16pt 跟随主题文字色；启用自动缩放防止溢出）
     fs = 16 if len(content) < 400 else (14 if len(content) < 800 else 12)
     _add_textbox(
         slide, 0.7, 1.5, SLIDE_W - 1.4, SLIDE_H - 2.6,
         _sanitize(content), body_font, fs, colors["text"],
+        auto_shrink=True,
     )
 
     # 底部：左侧来源路径，右侧创建时间（小号灰色）
@@ -325,6 +335,39 @@ def _build_summary_slide(prs, cards, colors):
     )
 
 
+# ── Content Overflow Protection ──
+
+_MAX_CONTENT_CHARS = 800  # max chars before auto-shrink kicks in
+_MAX_CONTENT_CHARS_HARD = 2000  # force-split content beyond this
+
+def _split_long_content(title: str, content: str, card_type: str, source: str) -> list[dict]:
+    """Split overly long content across multiple logical slides."""
+    if len(content) <= _MAX_CONTENT_CHARS_HARD:
+        return [{"title": title, "content": content, "type": card_type, "source": source}]
+
+    # Split by paragraphs (double newline)
+    paragraphs = [p for p in content.split('\n\n') if p.strip()]
+    slides = []
+    current_chunk = []
+    current_len = 0
+    for para in paragraphs:
+        if current_len + len(para) > _MAX_CONTENT_CHARS_HARD and current_chunk:
+            slides.append("\n\n".join(current_chunk))
+            current_chunk = [para]
+            current_len = len(para)
+        else:
+            current_chunk.append(para)
+            current_len += len(para) + 2
+    if current_chunk:
+        slides.append("\n\n".join(current_chunk))
+
+    result = []
+    for i, chunk in enumerate(slides):
+        slide_title = f"{title}（续 {i+1}）" if i > 0 else title
+        result.append({"title": slide_title, "content": chunk, "type": card_type, "source": source})
+    return result
+
+
 # ── Public API ──
 
 def generate_pptx_direct(
@@ -346,7 +389,19 @@ def generate_pptx_direct(
     _build_cover_slide(prs, topic, colors, card_count=len(cards))
 
     total_cards = len(cards)
-    for idx, card in enumerate(cards):
+    slide_index = 1
+    expanded_cards = []
+    for card in cards:
+        sub_cards = _split_long_content(
+            card.get("title", ""),
+            card.get("content", ""),
+            card.get("type", "blue"),
+            card.get("source", source),
+        )
+        expanded_cards.extend(sub_cards)
+
+    total_slides = len(expanded_cards) + 2  # +cover +summary
+    for card in expanded_cards:
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         _build_section_slide(
             slide,
@@ -354,12 +409,13 @@ def generate_pptx_direct(
             card.get("title", ""),
             card.get("content", ""),
             colors,
-            idx + 1,
-            total_cards + 2,
+            slide_index,
+            total_slides,
             source=card.get("source", source),
         )
+        slide_index += 1
 
-    _build_summary_slide(prs, cards, colors)
+    _build_summary_slide(prs, expanded_cards, colors)
 
     if output_path is None:
         output_dir = Path("C:/D/zhiyi/generated")
