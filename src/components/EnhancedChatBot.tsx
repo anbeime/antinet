@@ -16,7 +16,7 @@ import {
   Music,
   Eye, Maximize2, Minimize2,
   Brain, GitBranch, FileSearch, CheckSquare,
-  Network, AlertTriangle
+  Network, AlertTriangle, Cpu, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -36,6 +36,7 @@ interface EnhancedChatBotProps {
   isOpen: boolean;
   onClose: () => void;
   onCardClick?: (card: CardReference) => void;
+  onSwitchToHermes?: () => void;
 }
 
 // Markdown 渲染组件 - 中国风配色（参考日历组件）
@@ -517,7 +518,7 @@ const generateLocalSuggestions = (query: string, hasImage: boolean, recentMessag
   return unique;
 };
 
-export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
+export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick, onSwitchToHermes }) => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>(loadSavedMessages);
   const [input, setInput] = useState('');
@@ -529,6 +530,9 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   });
   const [workflowMode, setWorkflowMode] = useState(() => {
     return localStorage.getItem('workflowMode') === 'true';
+  });
+  const [llmProvider, setLlmProvider] = useState(() => {
+    return localStorage.getItem('llmProvider') || 'nim';
   });
   const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
   const [detectedIntent, setDetectedIntent] = useState<{
@@ -1011,7 +1015,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               enable_evolution: true,
               enable_memory: true,
               enable_skill: true,
-              user_id: 'default_user'
+              user_id: 'default_user',
+              llm_provider: llmProvider
             })
           });
           
@@ -1411,6 +1416,21 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   <GitBranch className="w-5 h-5" />
                 </button>
                 <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${llmProvider === 'nim' ? 'bg-cyan-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const options = ['sensenova', 'nim', 'npu'];
+                    const idx = options.indexOf(llmProvider);
+                    const next = options[(idx + 1) % options.length];
+                    setLlmProvider(next);
+                    localStorage.setItem('llmProvider', next);
+                    const labels: Record<string, string> = { sensenova: '商汤SenseNova', nim: 'NVIDIA NIM', npu: '本地NPU' };
+                    toast.success(`LLM提供者已切换: ${labels[next] || next}`, { duration: 1500 });
+                  }}
+                  title={`当前LLM: ${llmProvider} - 点击切换`}
+                >
+                  <Cpu className="w-5 h-5" />
+                </button>
+                <button
                   className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
                   onClick={() => {
                     const newVal = !autoSpeak;
@@ -1431,6 +1451,15 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                   {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
                 </button>
               </span>
+              {onSwitchToHermes && (
+                <button
+                  className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
+                  onClick={onSwitchToHermes}
+                  title="切换到 Hermes 模式 (WebSocket)"
+                >
+                  <Zap className="w-5 h-5" />
+                </button>
+              )}
               <button
                 className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                 onClick={handleClear}

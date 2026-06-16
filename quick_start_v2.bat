@@ -67,6 +67,13 @@ start "Zhiyi Backend" cmd /k "cd /d backend && ..\venv_arm64\Scripts\python.exe 
 timeout /t 8 /nobreak >nul
 
 REM ========================================
+REM [3/6] Hermes WS Gateway (port 18119)
+REM ========================================
+echo [3/6] Starting Hermes WS Gateway...
+start "Hermes WS" cmd /k "cd /d backend && ..\venv_arm64\Scripts\python.exe ..\hermes_ws_server.py"
+timeout /t 3 /nobreak >nul
+
+REM ========================================
 REM [4/6] Zhiyi Frontend (port 3000)
 REM ========================================
 echo [4/6] Starting Zhiyi Frontend...
@@ -86,6 +93,7 @@ echo ========================================
 echo.
 echo   项目根目录: %cd%
 echo   后端:       http://localhost:8000
+echo   HermesWS:  ws://localhost:18119
 echo   前端:       http://localhost:3000
 echo   Genie:     http://localhost:8910
 echo ========================================

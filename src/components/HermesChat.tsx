@@ -1,8 +1,5 @@
-// src/components/HermesChat.tsx - Hermes 智能助手聊天组件
-// 使用 Hermes TUI Gateway，提供完整 AI 能力
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Send, Bot, User, Loader2, Trash2, Zap, Brain, Wrench, ChevronDown, ChevronUp, Copy, CheckCircle, ChevronRight } from 'lucide-react';
+import { X, Send, Bot, User, Loader2, Trash2, Zap, Brain, Wrench, ChevronDown, ChevronUp, Copy, CheckCircle, ChevronRight, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import hermesGateway, { HermesStreamEvent, HermesMessage } from '@/services/hermesGateway';
@@ -10,9 +7,9 @@ import hermesGateway, { HermesStreamEvent, HermesMessage } from '@/services/herm
 interface HermesChatProps {
   isOpen: boolean;
   onClose: () => void;
+  onSwitchMode?: () => void;
 }
 
-// 消息显示组件
 const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ content, isUser }) => {
   const [copied, setCopied] = useState(false);
 
@@ -22,11 +19,9 @@ const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ conten
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 简单的格式化渲染
   const renderContent = (text: string) => {
     if (!text) return null;
     
-    // 分割代码块
     const parts = text.split(/(```[\s\S]*?```)/g);
     
     return parts.map((part, i) => {
@@ -42,27 +37,20 @@ const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ conten
         );
       }
       
-      // 普通文本处理
       return part.split('\n').map((line, j) => {
-        // 标题
         if (line.startsWith('### ')) return <h3 key={`${i}-${j}`} className="text-base font-semibold mt-3 mb-1">{line.slice(4)}</h3>;
         if (line.startsWith('## ')) return <h2 key={`${i}-${j}`} className="text-lg font-semibold mt-4 mb-2">{line.slice(3)}</h2>;
         if (line.startsWith('# ')) return <h1 key={`${i}-${j}`} className="text-xl font-bold mt-4 mb-2">{line.slice(2)}</h1>;
         
-        // 列表
         if (line.startsWith('- ')) return <li key={`${i}-${j}`} className="ml-4 list-disc">{line.slice(2)}</li>;
         if (/^\d+\. /.test(line)) return <li key={`${i}-${j}`} className="ml-4 list-decimal">{line.replace(/^\d+\. /, '')}</li>;
         
-        // 引用
         if (line.startsWith('> ')) return <blockquote key={`${i}-${j}`} className="border-l-2 border-blue-500 pl-3 my-1 text-gray-600 dark:text-gray-400">{line.slice(2)}</blockquote>;
         
-        // 分割线
         if (line === '---') return <hr key={`${i}-${j}`} className="my-3 border-gray-300" />;
         
-        // 跳过单独成行的数字
         if (/^\d+\.?$/.test(line.trim())) return null;
         
-        // 粗体/斜体
         const formatted = line
           .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
           .replace(/\*([^*]+)\*/g, '<em>$1</em>')
@@ -92,7 +80,6 @@ const MessageContent: React.FC<{ content: string; isUser: boolean }> = ({ conten
   );
 };
 
-// 工具调用显示组件
 const ToolCallsDisplay: React.FC<{ tools: any[] }> = ({ tools }) => {
   const [expanded, setExpanded] = useState(false);
   
@@ -105,7 +92,7 @@ const ToolCallsDisplay: React.FC<{ tools: any[] }> = ({ tools }) => {
         className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:underline"
       >
         {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        调用了 {tools.length} 个工具
+        {tools.length} 个工具被调用
       </button>
       
       {expanded && (
@@ -129,7 +116,7 @@ const ToolCallsDisplay: React.FC<{ tools: any[] }> = ({ tools }) => {
   );
 };
 
-export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
+export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose, onSwitchMode }) => {
   const [messages, setMessages] = useState<Array<HermesMessage & { toolCalls?: any[]; isStreaming?: boolean }>>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -144,68 +131,25 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 连接 Hermes Gateway
-  useEffect(() => {
-    if (isOpen && !isConnected) {
-      hermesGateway.connect().then(() => {
-        setIsConnected(true);
-        toast.success('已连接到 Hermes 智能助手');
-        
-        // 添加欢迎消息
-        setMessages([{
-          id: 'welcome',
-          role: 'assistant',
-          content: `🤖 Hermes 智能助手已就绪！
-
-我可以帮您：
-• 访问系统知识数据库
-• 调用各种工具完成任务
-• 多 Agent 协同工作（8 个专业 Agent 并行处理）
-• 使用各种技能（Skills）处理复杂任务
-
-请告诉我您需要什么帮助？`,
-          timestamp: new Date().toISOString()
-        }]);
-      }).catch((err) => {
-        toast.error(`连接失败: ${err.message}`);
-        console.error(err);
-      });
-
-      // 监听事件
-      hermesGateway.onStream(handleStreamEvent);
-      hermesGateway.onError((err) => {
-        toast.error(`Hermes 错误: ${err.message}`);
-        setIsLoading(false);
-      });
-    }
-
-    return () => {
-      if (!isOpen) {
-        hermesGateway.disconnect();
-        setIsConnected(false);
-      }
-    };
-  }, [isOpen]);
-
-  // 流式事件处理
+  // 流式事件处理 - 使用 ref 避免 stale closure
   const handleStreamEvent = useCallback((event: HermesStreamEvent) => {
     switch (event.type) {
       case 'message.delta':
-        // 增量文本
         setMessages(prev => {
           const last = prev[prev.length - 1];
-          if (last && last.isStreaming && !last.toolCalls) {
-            return [{
+          if (last && last.isStreaming) {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
               ...last,
-              content: last.content + event.payload.delta,
-            }];
+              content: last.content + (event.payload.text || event.payload.delta || ''),
+            };
+            return updated;
           }
           return prev;
         });
         break;
 
       case 'message.complete':
-        // 消息完成
         setMessages(prev => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
@@ -214,7 +158,7 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
               ...last,
               content: event.payload.text || last.content,
               toolCalls: event.payload.tool_calls,
-              isStreaming: false
+              isStreaming: false,
             };
           }
           return updated;
@@ -223,7 +167,6 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
         break;
 
       case 'tool.start':
-        // 工具开始
         setMessages(prev => {
           const last = prev[prev.length - 1];
           if (last?.isStreaming) {
@@ -237,22 +180,96 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
         break;
 
       case 'tool.complete':
-        // 工具完成
         setMessages(prev => {
           return prev.map(msg => ({
             ...msg,
-            toolCalls: msg.toolCalls?.map((t: any) => 
+            toolCalls: msg.toolCalls?.map((t: any) =>
               t.name === event.payload.name ? { ...t, status: 'complete', result: event.payload.result } : t
             )
           }));
         });
         break;
 
+      case 'error':
+        setIsLoading(false);
+        toast.error(`Hermes 错误: ${event.payload?.message || '未知错误'}`);
+        break;
+
       case 'gateway.ready':
-        console.log('[Hermes] Gateway ready, skin:', event.payload);
+        console.log('[Hermes] Gateway ready:', event.payload);
         break;
     }
   }, []);
+
+  // 连接 Hermes Gateway
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let cancelled = false;
+
+    const connect = async () => {
+      try {
+        await hermesGateway.connect();
+        if (cancelled) return;
+        setIsConnected(true);
+        toast.success('已连接到 Hermes 智能助手');
+        
+        setMessages([{
+          id: 'welcome',
+          role: 'assistant',
+          content: `Hermes 智能助手已就绪！
+
+我可以帮您：
+• 访问系统知识数据库
+• 调用各种工具完成任务
+• 多 Agent 协同工作（8 个专业 Agent 并行处理）
+• 使用各种技能（Skills）处理复杂任务
+
+请告诉我您需要什么帮助？`,
+          timestamp: new Date().toISOString()
+        }]);
+      } catch (err: any) {
+        if (!cancelled) {
+          const msg = err.message || '';
+          if (msg.includes('timeout') || msg.includes('refused') || msg.includes('connect')) {
+            toast.error(
+              '无法连接 Hermes 服务。请确保已启动 hermes_ws_server.py：\n' +
+              '在终端执行: python hermes_ws_server.py',
+              { duration: 8000 }
+            );
+            setMessages([{
+              id: 'error-hint',
+              role: 'assistant',
+              content: `## 连接失败\n\nHermes WebSocket 服务未运行。\n\n请先启动 Hermes 网关:\n\`\`\`\npython hermes_ws_server.py\n\`\`\`\n\n或者使用右上角的 \\u003e 按钮切换到普通模式。`,
+              timestamp: new Date().toISOString()
+            }]);
+          } else {
+            toast.error(`连接失败: ${msg}`);
+          }
+          setIsConnected(false);
+        }
+      }
+    };
+
+    // 注册流式事件回调
+    const unsubscribe = hermesGateway.onStream(handleStreamEvent);
+    const unsubError = hermesGateway.onError((err) => {
+      if (!cancelled) {
+        toast.error(`Hermes 错误: ${err.message}`);
+        setIsLoading(false);
+      }
+    });
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+      unsubError();
+      hermesGateway.disconnect();
+      setIsConnected(false);
+    };
+  }, [isOpen, handleStreamEvent]);
 
   // 自动滚动
   useEffect(() => {
@@ -274,7 +291,6 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
     setInput('');
     setIsLoading(true);
 
-    // 添加用户消息
     const userMsg: HermesMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
@@ -283,7 +299,6 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    // 添加AI消息占位符
     const aiMsg: HermesMessage & { isStreaming?: boolean } = {
       id: `ai_${Date.now()}`,
       role: 'assistant',
@@ -297,7 +312,6 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
       await hermesGateway.sendMessage(text);
       updateSuggestedQuestions(text);
     } catch (error: any) {
-      console.error('Send error:', error);
       toast.error(`发送失败: ${error.message}`);
       setMessages(prev => {
         const updated = [...prev];
@@ -305,7 +319,7 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
         if (last?.isStreaming) {
           updated[updated.length - 1] = {
             ...last,
-            content: `❌ 错误: ${error.message}`,
+            content: `错误: ${error.message}`,
             isStreaming: false
           };
         }
@@ -354,7 +368,7 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
     try {
       await hermesGateway.call('session.branch', { session_id: hermesGateway.getSessionId(), action: 'clear' });
     } catch (e) {
-      // 忽略
+      // ignore
     }
     setMessages([]);
     toast.success('对话已清空');
@@ -413,6 +427,17 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
               >
                 <Zap className="w-4 h-4" />
               </Button>
+              {onSwitchMode && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-white hover:bg-white/20"
+                  onClick={onSwitchMode}
+                  title="切换到普通模式"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -433,10 +458,9 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* 能力展示 */}
           {showCapabilities && (
             <div className="mt-3 p-3 bg-white/10 rounded-lg text-sm">
-              <p className="font-semibold mb-2">🎯 Hermes 核心能力：</p>
+              <p className="font-semibold mb-2">Hermes 核心能力：</p>
               <ul className="space-y-1 text-white/90">
                 <li>• 知识库检索与问答</li>
                 <li>• 8 个专业 Agent 并行协同工作</li>
@@ -473,7 +497,6 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
                   }`}>
                     <MessageContent content={message.content} isUser={message.role === 'user'} />
                     
-                    {/* 工具调用显示 */}
                     {!message.isStreaming && message.toolCalls && message.toolCalls.length > 0 && (
                       <ToolCallsDisplay tools={message.toolCalls} />
                     )}
@@ -542,7 +565,7 @@ export const HermesChat: React.FC<HermesChatProps> = ({ isOpen, onClose }) => {
           
           <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
             <span>
-              {isConnected ? '🔗 Hermes Gateway 已连接' : '⚠️ 未连接'}
+              {isConnected ? 'Hermes Gateway 已连接' : '未连接'}
             </span>
             <span>Powered by Hermes Agent</span>
           </div>

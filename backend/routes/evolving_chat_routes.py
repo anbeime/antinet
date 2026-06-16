@@ -30,6 +30,7 @@ class EvolvingChatRequest(BaseModel):
     enable_skill: bool = Field(default=True, description="是否启用技能")
     enable_8agent: bool = Field(default=True, description="是否启用完整8-Agent流程")
     user_id: str = Field(default="default_user", description="用户ID")
+    llm_provider: str = Field(default="nim", description="LLM 提供者: sensenova / nim / npu")
 
 
 class CardSource(BaseModel):
@@ -120,7 +121,8 @@ class EvolvingChatEngine:
         enable_memory: bool,
         enable_skill: bool,
         enable_8agent: bool,
-        user_id: str
+        user_id: str,
+        llm_provider: str = "nim"
     ) -> EvolvingChatResponse:
         """处理自进化聊天"""
         
@@ -129,7 +131,7 @@ class EvolvingChatEngine:
         
         # 如果启用完整8-Agent流程
         if enable_8agent:
-            return await self._process_with_8agent(query, context, user_id)
+            return await self._process_with_8agent(query, context, user_id, llm_provider)
         
         # 1. 记忆检索（太史阁）
         memory_context = {}
@@ -139,7 +141,7 @@ class EvolvingChatEngine:
         # 2. 技能检测
         skill_used = None
         if enable_skill:
-            skill_result = await self._check_and_execute_skill(query, context)
+            skill_result = await self._check_and_execute_skill(query, context, llm_provider)
             if skill_result:
                 return EvolvingChatResponse(
                     response=skill_result["response"],
@@ -165,7 +167,8 @@ class EvolvingChatEngine:
             query,
             relevant_cards,
             memory_context,
-            evolution_info
+            evolution_info,
+            llm_provider
         )
         
         # 6. 存储对话记忆
@@ -201,14 +204,15 @@ class EvolvingChatEngine:
         self,
         query: str,
         context: Dict[str, Any],
-        user_id: str
+        user_id: str,
+        llm_provider: str = "nim"
     ) -> EvolvingChatResponse:
         """使用完整8-Agent流程处理"""
         try:
             from routes.eight_agent_engine import get_eight_agent_engine
             
             engine = get_eight_agent_engine()
-            result = await engine.process(query, context, user_id)
+            result = await engine.process(query, context, user_id, llm_provider)
             
             if result.get("status") == "success":
                 cards = result.get("four_color_cards", [])
@@ -293,11 +297,12 @@ class EvolvingChatEngine:
     async def _check_and_execute_skill(
         self,
         query: str,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        llm_provider: str = "nim"
     ) -> Optional[Dict[str, Any]]:
-        """检查并执行技能（内置 + Hermes）"""
+        """检查并执行技能（NIM 意图识别 + Hermes 技能）"""
         try:
-            # 1. 先检查内置 8-Agent 技能
+            # 1. 快速关键词匹配（内置技能）
             if self._skill_registry is not None:
                 skill_name = self._find_matching_skill(query)
                 if skill_name:
@@ -314,17 +319,52 @@ class EvolvingChatEngine:
                             "suggestions": self._generate_skill_suggestions(skill_name)
                         }
 
-            # 2. 检查 Hermes 技能（基于关键词匹配）
+            # 2. Hermes 技能（先用关键词匹配快检）
             from services.hermes_skill_loader import get_hermes_skill_loader
             loader = get_hermes_skill_loader()
-            skill = loader.find_matching(query)
-            if skill:
-                result = await skill.execute(query)
+            quick_skill = loader.find_matching(query)
+            if quick_skill:
+                result = await quick_skill.execute(query)
                 return {
-                    "skill_name": f"hermes:{skill.name}",
+                    "skill_name": f"hermes:{quick_skill.name}",
                     "response": result.get("result") or result.get("error", "技能执行失败"),
-                    "suggestions": [f"查看 {skill.name} 帮助", f"执行其他 {skill.name} 命令"]
+                    "suggestions": [f"查看 {quick_skill.name} 帮助", f"执行其他 {quick_skill.name} 命令"]
                 }
+
+            # 3. NIM 意图识别：让 LLM 判断是否该调用技能
+            if llm_provider != "npu":
+                all_skills = loader.list_skills()
+                if all_skills:
+                    skills_desc = "\n".join(
+                        f"- {s['name']}: {s.get('description', '')}"
+                        for s in all_skills if s.get('enabled', True)
+                    )
+                    intent_prompt = f"""判断用户是否需要调用以下某个技能来完成任务。
+如果匹配某个技能，只输出技能名称（如 minimax-docx），不要其他文字。
+如果不匹配任何技能，只输出 "none"。
+
+可用技能：
+{skills_desc}
+
+用户请求：{query}
+
+技能名称或 none："""
+                    llm_service = self._get_llm_service(llm_provider)
+                    if llm_service:
+                        intent_result = llm_service.chat(intent_prompt)
+                        if intent_result and hasattr(intent_result, 'content'):
+                            chosen = intent_result.content.strip().lower()
+                            logger.info(f"[EvolvingChat] NIM 技能意图识别结果: {chosen}")
+                            for s in all_skills:
+                                if s['name'].lower() == chosen:
+                                    skill = loader.get_skill(s['name'])
+                                    if skill:
+                                        result = await skill.execute(query)
+                                        return {
+                                            "skill_name": f"hermes:{skill.name}",
+                                            "response": result.get("result") or result.get("error", "技能执行失败"),
+                                            "suggestions": [f"查看 {skill.name} 帮助"]
+                                        }
 
         except Exception as e:
             logger.warning(f"[EvolvingChat] 技能执行失败: {e}")
@@ -506,12 +546,35 @@ class EvolvingChatEngine:
         
         return []
     
+    def _get_llm_service(self, provider: str):
+        """根据 provider 获取 LLM 服务，失败时回退到 NPU"""
+        try:
+            if provider == "nim":
+                from services.ai import get_ai_service
+                svc = get_ai_service("nim")
+                if svc:
+                    return svc
+                logger.warning("[EvolvingChat] NIM 不可用，回退到 NPU")
+            elif provider == "sensenova":
+                from services.ai import get_sensenova_service
+                svc = get_sensenova_service()
+                if svc:
+                    return svc
+                logger.warning("[EvolvingChat] SenseNova 不可用，回退到 NPU")
+            # 兜底使用 NPU
+            from services.ai import get_ai_service
+            return get_ai_service("npu")
+        except Exception as e:
+            logger.warning(f"[EvolvingChat] 获取LLM服务({provider})失败: {e}")
+            return None
+
     async def _generate_response(
         self,
         query: str,
         relevant_cards: List[Dict],
         memory_context: Dict[str, Any],
-        evolution_info: Dict[str, Any]
+        evolution_info: Dict[str, Any],
+        llm_provider: str = "nim"
     ) -> str:
         """生成回答"""
         
@@ -553,14 +616,13 @@ class EvolvingChatEngine:
         
         # 调用LLM生成回答
         try:
-            from services.ai import get_sensenova_service
-            llm_service = get_sensenova_service()
+            llm_service = self._get_llm_service(llm_provider)
             if llm_service:
                 result = llm_service.chat(prompt)
                 if result and hasattr(result, 'content'):
                     return result.content
         except Exception as e:
-            logger.warning(f"[EvolvingChat] LLM调用失败: {e}")
+            logger.warning(f"[EvolvingChat] LLM调用失败 (provider={llm_provider}): {e}")
         
         # Fallback到简单实现
         return self._simple_generate_response(query, relevant_cards, memory_context)
@@ -694,7 +756,8 @@ async def evolving_chat(request: EvolvingChatRequest):
             enable_memory=request.enable_memory,
             enable_skill=request.enable_skill,
             enable_8agent=request.enable_8agent,
-            user_id=request.user_id
+            user_id=request.user_id,
+            llm_provider=request.llm_provider
         )
         return result
     

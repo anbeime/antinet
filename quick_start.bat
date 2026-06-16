@@ -27,7 +27,7 @@ echo ========================================
 echo.
 
 REM Kill existing processes on ports (more reliable)
-powershell -Command "Get-NetTCPConnection -LocalPort 8910,8000,3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+powershell -Command "Get-NetTCPConnection -LocalPort 8910,8000,3000,18119 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 REM Check Genie dir
@@ -54,8 +54,14 @@ start "Zhiyi Backend (8000)" cmd /k "cd /d "%~dp0backend" && "%~dp0venv_arm64\Sc
 
 timeout /t 3 /nobreak >nul
 
-REM [X/3] Start Frontend
-echo [3/4] Starting Frontend (port 3000)...
+REM [3/4] Start Hermes WS Gateway
+echo [3/4] Starting Hermes WS Gateway (port 18119)...
+start "Hermes WS (18119)" cmd /k "cd /d "%~dp0" && "%~dp0venv_arm64\Scripts\python.exe" hermes_ws_server.py"
+
+timeout /t 3 /nobreak >nul
+
+REM [4/4] Start Frontend
+echo [4/4] Starting Frontend (port 3000)...
 start "Zhiyi Frontend (3000)" cmd /k "cd /d "%~dp0" && pnpm dev"
 
 echo.
@@ -67,6 +73,7 @@ if defined GENIE_DIR (
     echo   Genie:     http://localhost:8910
 )
 echo   Backend:  http://localhost:8000
+echo   HermesWS: ws://localhost:18119
 echo   Frontend: http://localhost:3000
 echo   API Docs: http://localhost:8000/docs
 echo ========================================

@@ -16,6 +16,7 @@ class AntinetLauncher:
     def __init__(self):
         self.backend_process = None
         self.frontend_process = None
+        self.hermes_ws_process = None
         self.project_root = Path(__file__).parent
         
     def print_banner(self):
@@ -90,9 +91,28 @@ class AntinetLauncher:
                 print(f"[✓] 简化后端进程已启动 (PID: {self.backend_process.pid})")
                 time.sleep(2)
             
+    def start_hermes_ws(self, python_exe):
+        """启动 Hermes WS Gateway"""
+        print("\n[2/4] 启动 Hermes WS Gateway...")
+        print("      - WebSocket 端口 18119")
+
+        hermes_ws_py = self.project_root / "hermes_ws_server.py"
+        if hermes_ws_py.exists():
+            self.hermes_ws_process = subprocess.Popen(
+                [python_exe, str(hermes_ws_py)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+            print(f"[✓] Hermes WS 进程已启动 (PID: {self.hermes_ws_process.pid})")
+            time.sleep(2)
+        else:
+            print(f"[!] 未找到 Hermes WS 入口: {hermes_ws_py}")
+
     def start_frontend(self):
         """启动前端服务"""
-        print("\n[2/3] 启动前端服务...")
+        print("\n[3/4] 启动前端服务...")
         
         node_modules = self.project_root / "node_modules" / ".bin"
         
@@ -149,7 +169,7 @@ class AntinetLauncher:
         
     def open_browser(self):
         """打开浏览器"""
-        print("\n[3/3] 正在打开浏览器...")
+        print("\n[4/4] 正在打开浏览器...")
         time.sleep(1)
         webbrowser.open("http://localhost:3000")
         print("[✓] 浏览器已打开 http://localhost:3000")
@@ -165,14 +185,18 @@ class AntinetLauncher:
         try:
             python_exe = self.check_venv()
             self.start_backend(python_exe)
+            self.start_hermes_ws(python_exe)
             self.start_frontend()
             self.open_browser()
             
             # 等待用户中断
-            if self.backend_process:
-                self.backend_process.wait()
-            if self.frontend_process:
-                self.frontend_process.wait()
+            processes = [self.backend_process, self.hermes_ws_process, self.frontend_process]
+            for p in processes:
+                if p:
+                    try:
+                        p.wait()
+                    except:
+                        pass
                 
         except KeyboardInterrupt:
             print("\n\n[!] 收到中断信号，正在停止服务...")
@@ -181,21 +205,14 @@ class AntinetLauncher:
             
     def stop_services(self):
         """停止所有服务"""
-        if self.backend_process:
-            try:
-                self.backend_process.terminate()
-                self.backend_process.wait(timeout=5)
-                print("  - 后端已停止")
-            except:
-                self.backend_process.kill()
-                
-        if self.frontend_process:
-            try:
-                self.frontend_process.terminate()
-                self.frontend_process.wait(timeout=5)
-                print("  - 前端已停止")
-            except:
-                self.frontend_process.kill()
+        for proc, name in [(self.backend_process, "后端"), (self.hermes_ws_process, "Hermes WS"), (self.frontend_process, "前端")]:
+            if proc:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                    print(f"  - {name}已停止")
+                except:
+                    proc.kill()
 
 def main():
     launcher = AntinetLauncher()

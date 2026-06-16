@@ -145,7 +145,8 @@ class EightAgentEngine:
         self,
         query: str,
         context: Dict[str, Any],
-        user_id: str = "default_user"
+        user_id: str = "default_user",
+        llm_provider: str = "nim"
     ) -> Dict[str, Any]:
         """
         处理用户查询的完整8-Agent流程
@@ -160,6 +161,10 @@ class EightAgentEngine:
         """
         
         await self.initialize()
+        
+        # 设置 LLM 提供者（影响所有 Agent 的 genie_client 调用）
+        from agents.shared_genie_client import genie_client
+        genie_client.set_provider(llm_provider)
         
         current_date = datetime.now().strftime("%Y-%m-%d")
         results = {}

@@ -1,13 +1,9 @@
-/**
- * 聊天按钮组件 - 触发增强版聊天机器人
- * 支持拖拽
- */
-
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, GripVertical } from 'lucide-react';
 import chatAvatar from '../pages/logo.gif';
 import { EnhancedChatBot } from './EnhancedChatBot';
+import { HermesChat } from './HermesChat';
 import { cn } from '@/lib/utils';
 
 interface ChatButtonProps {
@@ -22,6 +18,7 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
   onCardClick
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [hermesMode, setHermesMode] = useState(false);
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
@@ -83,7 +80,7 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
             </div>
 
             {/* 拖拽手柄 */}
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
+            <div className="absolute -bottom-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
               <GripVertical className="w-3 h-3 text-white" />
             </div>
 
@@ -102,12 +99,21 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 聊天窗口 */}
-      <EnhancedChatBot 
-        isOpen={isOpen} 
-        onClose={() => setIsOpen(false)}
-        onCardClick={onCardClick}
-      />
+      {/* 聊天窗口 - 默认使用 HermesChat */}
+      {hermesMode ? (
+        <HermesChat
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          onSwitchMode={() => setHermesMode(false)}
+        />
+      ) : (
+        <EnhancedChatBot 
+          isOpen={isOpen} 
+          onClose={() => setIsOpen(false)}
+          onCardClick={onCardClick}
+          onSwitchToHermes={() => setHermesMode(true)}
+        />
+      )}
     </>
   );
 };

@@ -46,28 +46,35 @@ class OpenAIService(BaseAI):
             return None
             
         if self._client is None:
-            config = openai.DefaultConfig(self.api_key)
-            
-            if self.api_provider == 'Azure':
-                config = openai.DefaultAzureConfig(self.api_key, self.api_base_url)
-                config.api_version = self.api_version
-            
             # 设置代理
+            http_client = None
             if self.api_proxy:
                 try:
                     from urllib.parse import urlparse
+                    import httpx
                     proxy_url = urlparse(self.api_proxy)
-                    transport = openai.OpenAI().http_client.transport
-                    if transport:
-                        transport.proxy = proxy_url
+                    http_client = httpx.Client(proxy=proxy_url.geturl())
                 except Exception as e:
                     logger.warning(f"[AI] 代理设置失败: {e}")
             
-            self._client = openai.OpenAI(
+            kwargs = dict(
                 api_key=self.api_key,
                 base_url=self.api_base_url,
                 timeout=self.api_timeout,
             )
+            if http_client:
+                kwargs['http_client'] = http_client
+            
+            if self.api_provider == 'Azure':
+                from openai import AzureOpenAI
+                self._client = AzureOpenAI(
+                    api_key=self.api_key,
+                    azure_endpoint=self.api_base_url,
+                    api_version=self.api_version or '2024-02-15-preview',
+                    timeout=self.api_timeout,
+                )
+            else:
+                self._client = openai.OpenAI(**kwargs)
         
         return self._client
     

@@ -31,28 +31,12 @@ class CardClassifierAgent:
         "anomaly_detection": 3.0,      # 异常检测标准差倍数
     }
     
-    def __init__(self, model_key: str = "qwen2.1.5b-int4"):
-        """
-        初始化卡片生成与分类 Agent
-        
-        Args:
-            model_key: 模型标识符（默认使用轻量分类模型）
-        """
+    def __init__(self, model_key: str = "builtin-rule"):
         self.model_key = model_key
-        self._model = None
-        self._load_model()
+        self._model = {"is_loaded": True}
     
     def _load_model(self):
-        """加载分类模型"""
-        # ===== MOCK START =====
-        # TODO: 替换为真实的NPU模型加载逻辑
-        # from scripts.model_loader import NPUModelLoader
-        # loader = NPUModelLoader(model_key=self.model_key)
-        # self._model = loader.load()
-        print(f"[CardClassifierAgent] 正在加载模型: {self.model_key}")
-        self._model = {"is_loaded": True}
-        print(f"[CardClassifierAgent] 模型加载成功")
-        # ===== MOCK END =====
+        pass
     
     def classify_cards(
         self,

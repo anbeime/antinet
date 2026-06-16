@@ -112,6 +112,10 @@ class HermesGatewayClient {
     }
     this.pendingRequests.clear();
     this.messageHistory = [];
+    this.streamCallbacks = [];
+    this.errorCallbacks = [];
+    this.sessionId = '';
+    this.reconnectAttempts = 0;
   }
 
   // 发送消息并获取流式响应
@@ -120,7 +124,6 @@ class HermesGatewayClient {
       throw new Error('Not connected to Hermes Gateway');
     }
 
-    // 先创建新session（如果需要）
     const sid = await this.ensureSession();
 
     const request = {
@@ -138,15 +141,15 @@ class HermesGatewayClient {
       this.pendingRequests.set(request.id, { resolve, reject });
       this.ws?.send(JSON.stringify(request));
 
-      // 超时处理
+      // 超时处理 - prompt.submit 返回很快（{status:"streaming"}），
+      // 真正的流式内容通过 events 推送
       setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (pending) {
           this.pendingRequests.delete(request.id);
           pending.reject(new Error('Request timeout'));
-          resolve(); // 仍需resolve以打破await
         }
-      }, 120000); // 2分钟超时
+      }, 120000);
     });
   }
 
@@ -196,6 +199,11 @@ class HermesGatewayClient {
     return () => {
       this.streamCallbacks = this.streamCallbacks.filter(cb => cb !== callback);
     };
+  }
+
+  // 取消订阅流式事件
+  offStream(callback: StreamCallback) {
+    this.streamCallbacks = this.streamCallbacks.filter(cb => cb !== callback);
   }
 
   // 订阅错误

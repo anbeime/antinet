@@ -104,6 +104,7 @@ export interface UnifiedChatRequest {
   context?: Record<string, any>;
   enable_8agent?: boolean;
   user_id?: string;
+  llm_provider?: string;  // sensenova / nim / npu
 }
 
 export interface UnifiedChatResponse {
@@ -145,7 +146,7 @@ async function nimChat(request: {
 export async function unifiedChat(
   request: UnifiedChatRequest
 ): Promise<UnifiedChatResponse> {
-  const { query, provider = 'hermes', context, enable_8agent, user_id } = request;
+  const { query, provider = 'hermes', context, enable_8agent, user_id, llm_provider } = request;
 
   if (provider === 'nim') {
     try {
@@ -193,6 +194,7 @@ export async function unifiedChat(
     enable_skill: true,
     enable_8agent: enable_8agent ?? false,
     user_id,
+    llm_provider: llm_provider || 'nim',
   });
 
   return {

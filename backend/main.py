@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 # ============================================================
 # 1. 路径设置（必须在导入之前）
 # ============================================================
-load_dotenv()
 if getattr(sys, 'frozen', False):
     # PyInstaller 打包后，exe 已在 backend/ 目录下
     backend_dir = os.path.dirname(sys.executable)
@@ -22,6 +21,7 @@ if getattr(sys, 'frozen', False):
 else:
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(backend_dir)
+load_dotenv(os.path.join(project_root, '.env'))
 
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)

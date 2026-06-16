@@ -250,7 +250,7 @@ class BookSkillGenerator:
         self._ai_service = None
 
     def _get_ai_service(self):
-        """获取 AI 服务实例（sensenova 优先用于方法论提取，NPU 兜底）"""
+        """获取 AI 服务实例（sensenova > nim > NPU 兜底）"""
         try:
             from services.ai.factory import get_sensenova_service, get_ai_service
             
@@ -260,9 +260,15 @@ class BookSkillGenerator:
                 logger.info("[BookSkill] 使用 Sensenova 进行方法论提取")
                 return sensenova
             
+            # 其次使用 NVIDIA NIM（如果已注册）
+            nim = get_ai_service('nim')
+            if nim and nim.is_available:
+                logger.info("[BookSkill] 使用 NVIDIA NIM 进行方法论提取")
+                return nim
+            
             # 兜底：本地模型（NPU）- 必须能实际使用
             npu = get_ai_service()  # 默认服务
-            if npu and npu.is_available and npu.name != 'sensenova':
+            if npu and npu.is_available and npu.name != 'sensenova' and npu.name != 'nim':
                 # 验证 NPU 是否已真正初始化
                 try:
                     if getattr(npu, '_initialized', False) or getattr(npu, '_load_model', lambda: False)():
@@ -907,12 +913,33 @@ class BookSkillGenerator:
             ai_error = str(e)
             logger.warning(f"[BookSkill] Sensenova 调用异常: {e}")
 
-        # 尝试2: 如果 Sensenova 失败，尝试 NPU
+        # 尝试2: 如果 Sensenova 失败，尝试 NIM
+        if not raw_methodologies:
+            try:
+                from services.ai.factory import get_ai_service
+                nim = get_ai_service('nim')
+                if nim and nim.is_available:
+                    prompt = BOOK_EXTRACTION_PROMPT.format(book_content=trimmed_content)
+                    logger.info(f"[BookSkill] 尝试 NVIDIA NIM 提取")
+                    response = nim.chat(prompt)
+                    if response and not response.is_error and response.content:
+                        raw_methodologies = self._parse_methodologies_from_ai_response(response.content)
+                        if raw_methodologies:
+                            ai_used = "nim"
+                            logger.info(f"[BookSkill] NIM 成功提取 {len(raw_methodologies)} 个方法论")
+                    elif response and response.is_error:
+                        ai_error = ai_error or response.error
+                        logger.warning(f"[BookSkill] NIM 返回错误: {response.error}")
+            except Exception as e:
+                ai_error = ai_error or str(e)
+                logger.warning(f"[BookSkill] NIM 调用异常: {e}")
+
+        # 尝试3: 如果 NIM 也失败，尝试 NPU
         if not raw_methodologies:
             try:
                 from services.ai.factory import get_ai_service
                 npu = get_ai_service()  # 默认服务（NPU）
-                if npu and npu.is_available and npu.name != 'sensenova':
+                if npu and npu.is_available and npu.name != 'sensenova' and npu.name != 'nim':
                     prompt = BOOK_EXTRACTION_PROMPT.format(book_content=trimmed_content)
                     logger.info(f"[BookSkill] 尝试 NPU ({npu.name}) 提取")
                     response = npu.chat(prompt)
