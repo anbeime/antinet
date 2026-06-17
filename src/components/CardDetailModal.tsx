@@ -275,6 +275,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editContentRef = useRef<HTMLTextAreaElement>(null);
 
   // P0: 双向链接状态
   const [backlinks, setBacklinks] = useState<BacklinkCard[]>([]);
@@ -945,7 +946,19 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         if (data.url) {
           setEditImages(prev => [...prev, data]);
           const imageMarkdown = `\n![${file.name}](${data.url})\n`;
-          setEditContent(prev => prev + imageMarkdown);
+          const ta = editContentRef.current;
+          if (ta) {
+            const pos = ta.selectionStart ?? ta.value.length;
+            const before = ta.value.substring(0, pos);
+            const after = ta.value.substring(pos);
+            setEditContent(before + imageMarkdown + after);
+            requestAnimationFrame(() => {
+              ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
+              ta.focus();
+            });
+          } else {
+            setEditContent(prev => prev + imageMarkdown);
+          }
           toast.success('图片已插入内容');
         }
       } else {
@@ -1498,6 +1511,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   </select>
                 </div>
                 <textarea
+                  ref={editContentRef}
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   onPaste={handlePasteImage}

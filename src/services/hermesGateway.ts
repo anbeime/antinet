@@ -164,7 +164,7 @@ class HermesGatewayClient {
       name: `zhiyi_${Date.now()}`
     });
 
-    this.sessionId = response.result?.session_id || '';
+    this.sessionId = response.session_id || '';
     return this.sessionId;
   }
 
@@ -275,13 +275,13 @@ class HermesGatewayClient {
   // 获取可用模型
   async getModels(): Promise<string[]> {
     const response = await this.call('model.options', {});
-    return response.result?.models || [];
+    return response.models || [];
   }
 
   // 获取可用命令
   async getCommands(): Promise<any[]> {
     const response = await this.call('commands.catalog', {});
-    return response.result?.commands || [];
+    return response.commands || [];
   }
 
   // 获取session历史
@@ -289,7 +289,7 @@ class HermesGatewayClient {
     const response = await this.call('session.history', {
       session_id: this.sessionId
     });
-    return response.result?.messages || [];
+    return response.messages || [];
   }
 
   // 中断当前操作

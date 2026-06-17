@@ -114,6 +114,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     projectId: projectId
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
   const [uploadingCount, setUploadingCount] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [projects, setProjects] = useState<{id: number; name: string}[]>([])
@@ -338,12 +339,23 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
             ...prev, 
             images: [...prev.images, data]
           }));
-          // 2. 自动插入到内容区（作为markdown图片）
+          // 2. 插入到光标位置（作为markdown图片）
           const imageMarkdown = `\n![${file.name}](${data.url})\n`;
-          setFormData(prev => ({ 
-            ...prev, 
-            content: prev.content + imageMarkdown
-          }));
+          const ta = contentRef.current;
+          if (ta) {
+            const pos = ta.selectionStart ?? ta.value.length;
+            const before = ta.value.substring(0, pos);
+            const after = ta.value.substring(pos);
+            const newContent = before + imageMarkdown + after;
+            setFormData(prev => ({ ...prev, content: newContent }));
+            // 恢复光标到插入内容之后
+            requestAnimationFrame(() => {
+              ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
+              ta.focus();
+            });
+          } else {
+            setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
+          }
           toast.success('图片已插入内容');
         }
       } else {
@@ -646,6 +658,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           <div>
             <label htmlFor="content" className="block text-sm font-medium mb-2">卡片内容 *</label>
             <textarea
+              ref={contentRef}
               id="content"
               name="content"
               value={formData.content}
