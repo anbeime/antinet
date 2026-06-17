@@ -160,11 +160,14 @@ class HermesGatewayClient {
     }
 
     // 创建新session
+    console.log('[HermesGateway] Creating session...');
     const response = await this.call('session.create', {
       name: `zhiyi_${Date.now()}`
     });
+    console.log('[HermesGateway] session.create response:', JSON.stringify(response));
 
     this.sessionId = response.session_id || '';
+    console.log('[HermesGateway] sessionId set to:', this.sessionId);
     return this.sessionId;
   }
 
