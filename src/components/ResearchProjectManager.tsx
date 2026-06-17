@@ -117,6 +117,16 @@ const RESEARCH_API_BASE = () => getApiBaseUrl() + '/api/research'
 const RenderContent: React.FC<{ content: string }> = ({ content }) => {
   if (!content) return null;
   
+  const isHTML = /^\s*(?:<!--|<(?:h[1-6]|div|p|table|ul|ol|pre|blockquote|hr|img|a|strong|em|br|span|section|article))/i.test(content);
+  
+  if (isHTML) {
+    return (
+      <div className="prose prose-gray dark:prose-invert max-w-none text-sm [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1"
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+  
   return (
     <div className="prose prose-gray dark:prose-invert max-w-none text-sm [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
       <ReactMarkdown>{content}</ReactMarkdown>
@@ -1253,7 +1263,7 @@ const ProjectDetailPanel: React.FC<{
                             <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${tc.color.replace('text-', 'bg-')}`} />
                             <div className="flex-1 min-w-0">
                               <div className="font-medium text-sm truncate">{card.title}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{card.content}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{card.content.replace(/<[^>]*>/g, '').trim()}</div>
                             </div>
                             {isLinked ? (
                               <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-300 dark:border-green-600">
