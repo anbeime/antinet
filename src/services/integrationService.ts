@@ -1,5 +1,5 @@
 // P0 功能前端 API 服务：双向链接 + 日历整合 + 卡片-任务关联
-import { API_BASE_URL } from '../config/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 // ============ 类型定义 ============
 
@@ -135,7 +135,7 @@ export interface CreateTaskFromCardResponse {
 // ============ API 辅助 ============
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${getApiBaseUrl()}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });
@@ -310,6 +310,6 @@ export const sourceFileService = {
 
   /** 下载源文件（原始格式，如 PDF） */
   async downloadSourceFile(sourceFileId: string): Promise<void> {
-    window.open(`${API_BASE_URL}/api/knowledge/source-files/${sourceFileId}/download`, '_blank');
+    window.open(`${getApiBaseUrl()}/api/knowledge/source-files/${sourceFileId}/download`, '_blank');
   },
 };

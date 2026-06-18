@@ -1118,18 +1118,19 @@ def convert_text(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
         # many lines into one <a:p>, and measuring the joined string would
         # blow the textbox past the canvas.
         text_width = max(visual_line_widths) if visual_line_widths else 0.0
+        # Add safety margin to account for font rendering differences
+        text_width *= 1.12
         # Total height assumes the visual line count from the SVG source;
-        # if PowerPoint wraps to more or fewer lines after the user resizes,
-        # the user resizes the height accordingly.
+        # add extra headroom to prevent overflow when PowerPoint reflows.
         text_height = (
             line_height_px * (len(visual_line_widths) - 1)
             + sum(paragraph_space_before)
-            + font_size * 1.5
+            + font_size * 1.8
         )
     else:
-        text_width = estimate_text_width(full_text, font_size, font_weight) * 1.05
-        text_height = font_size * 1.5
-    padding = font_size * 0.1
+        text_width = estimate_text_width(full_text, font_size, font_weight) * 1.15
+        text_height = font_size * 1.8
+    padding = font_size * 0.12
 
     # Adjust position based on text-anchor
     if text_anchor == 'middle':
@@ -1226,15 +1227,13 @@ def convert_text(elem: ET.Element, ctx: ConvertContext) -> ShapeResult | None:
     ext_cy = px_to_emu(box_h)
 
     # Paragraph mode: wrap="square" so text reflows when the user resizes,
-    # but NO spAutoFit — otherwise PowerPoint expands the frame to fit a
-    # long joined-up <a:p> on one line, blowing past the canvas. The cx we
-    # write below (longest SVG line) is the design target width;
-    # PowerPoint wraps long paragraphs inside this width.
+    # with normAutofit so PowerPoint shrinks font size when content exceeds
+    # the frame (prevents text from overflowing past the slide boundary).
     # Single-line text keeps wrap="none" + spAutoFit for tight fidelity.
     if paragraph_runs is not None:
         body_pr_xml = (
             '<a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" '
-            'anchor="t" anchorCtr="0"/>'
+            'anchor="t" anchorCtr="0">\n<a:normAutofit/>\n</a:bodyPr>'
         )
     else:
         body_pr_xml = (

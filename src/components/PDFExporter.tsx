@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, PDFViewer as ReactPDFViewer, Font } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, pdf, Font } from '@react-pdf/renderer';
 
 // 注册中文字体（使用 ?url 让 Vite 返回正确的 URL）
 // @react-pdf/renderer 在 Web Worker 中运行，必须用可 fetch 的 URL
@@ -213,31 +213,6 @@ interface PDFExporterProps {
   showPreview?: boolean;
 }
 
-// PDF 预览器组件
-const PDFPreviewModal: React.FC<{ 
-  isOpen: boolean; 
-  onClose: () => void; 
-  children: React.ReactNode 
-}> = ({ isOpen, onClose, children }) => {
-  if (!isOpen) return null;
-  
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-white dark:bg-gray-900 rounded-xl w-[90vw] h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h3 className="font-semibold">PDF 预览</h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-            ✕
-          </button>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // PDF 导出器组件
 const PDFExporter: React.FC<PDFExporterProps> = ({
   cards,
@@ -247,9 +222,41 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
   children,
   showPreview = true,
 }) => {
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const urlRef = useRef<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
+
+  const handlePreview = async () => {
+    if (cards.length === 0 || isPreviewing) return;
+    setIsPreviewing(true);
+    try {
+      const blob = await pdf(<PDFDocument cards={cards} title={title} author={author} />).toBlob();
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      previewUrlRef.current = url;
+      window.open('/pdf-viewer?url=' + encodeURIComponent(url), '_blank');
+      // 给新标签页足够时间加载（PDF 查看器会自行 fetch 该 URL 并转 ArrayBuffer）
+      setTimeout(() => {
+        if (previewUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          previewUrlRef.current = null;
+        }
+      }, 60000);
+    } catch (err) {
+      console.error('[PDFExporter] 预览失败:', err);
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
 
   if (cards.length === 0) {
     return (
@@ -263,59 +270,69 @@ const PDFExporter: React.FC<PDFExporterProps> = ({
   }
 
   return (
-    <>
-      <div className="flex gap-2">
-        <PDFDownloadLink
-          document={<PDFDocument cards={cards} title={title} author={author} />}
-          fileName={fileName}
-        >
-          {({ loading, error, url }) => {
-            if (loading || isGenerating) {
-              return (
-                <button
-                  disabled
-                  className="bg-blue-400 text-white px-4 py-2 rounded-lg cursor-wait"
-                >
-                  生成中...
-                </button>
-              );
-            }
-
-            if (error) {
-              return (
-                <button
-                  disabled
-                  className="bg-red-500 text-white px-4 py-2 rounded-lg cursor-not-allowed"
-                >
-                  生成失败
-                </button>
-              );
-            }
-
+    <div className="flex gap-2">
+      <PDFDownloadLink
+        document={<PDFDocument cards={cards} title={title} author={author} />}
+        fileName={fileName}
+      >
+        {({ loading, error, url }) => {
+          if (loading || isGenerating) {
             return (
+              <button
+                disabled
+                className="bg-blue-400 text-white px-4 py-2 rounded-lg cursor-wait"
+              >
+                {isGenerating ? '准备中...' : '生成中...'}
+              </button>
+            );
+          }
+
+          if (error) {
+            return (
+              <button
+                disabled
+                className="bg-red-500 text-white px-4 py-2 rounded-lg cursor-not-allowed"
+              >
+                生成失败
+              </button>
+            );
+          }
+
+          if (url && url !== urlRef.current) {
+            urlRef.current = url;
+            setIsGenerating(true);
+            fetch(url).then(r => r.blob()).then(b => {
+              setPdfBlob(b);
+              setIsGenerating(false);
+            }).catch(() => setIsGenerating(false));
+          }
+
+          return (
+            <div className="flex items-center gap-2">
               <button className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all">
                 {children || '导出 PDF'}
               </button>
-            );
-          }}
-        </PDFDownloadLink>
-        
-        {showPreview && (
-          <button
-            onClick={() => setShowPreviewModal(true)}
-            className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all"
-          >
-            预览
-          </button>
-        )}
-      </div>
+              {pdfBlob && (
+                <span className="text-xs text-green-600 dark:text-green-400">
+                  ✓ {Math.round(pdfBlob.size / 1024)}KB
+                </span>
+              )}
+            </div>
+          );
+        }}
+      </PDFDownloadLink>
 
-      <PDFPreviewModal isOpen={showPreviewModal} onClose={() => setShowPreviewModal(false)}>
-        <ReactPDFViewer width="100%" height="100%">
-          <PDFDocument cards={cards} title={title} author={author} />
-        </ReactPDFViewer>
-      </PDFPreviewModal>
-    </>
+      {showPreview && (
+        <button
+          onClick={handlePreview}
+          disabled={isPreviewing}
+          className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all disabled:opacity-60 disabled:cursor-wait"
+          title="在 PDF 查看器中预览（可编辑·保存为笔记）"
+        >
+          {isPreviewing ? '生成预览…' : '预览'}
+        </button>
+      )}
+    </div>
   );
 };
 

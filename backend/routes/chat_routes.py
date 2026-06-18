@@ -9,6 +9,7 @@ from typing import List, Optional, Dict, Any
 import logging
 import sys
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -609,6 +610,10 @@ def _generate_ai_response(query: str, cards: List[Dict]) -> str:
             response = response.replace(token, '')
         # 清理多余的空行
         response = '\n'.join(line.strip() for line in response.split('\n') if line.strip())
+        # 移除单独成行的数字（1, 2, 3 等单独占一行的情况）
+        lines = response.split('\n')
+        filtered = [line for line in lines if not re.match(r'^\d+\.?$', line.strip())]
+        response = '\n'.join(filtered)
         response = response.strip()
         
         if response and len(response) > 10:

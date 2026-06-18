@@ -31,14 +31,14 @@ interface CardExporterProps {
   showPPTVPreview?: boolean;
 }
 
-const API_BASE = getApiBaseUrl();
+const API_BASE = () => getApiBaseUrl();
 
 const CardExporter: React.FC<CardExporterProps> = ({
   cards,
   fileName = 'antinet_report',
   title = 'Antinet 分析报告',
   author = 'Antinet 智能知识管家',
-  apiBase = API_BASE,
+  apiBase = API_BASE(),
   onExportStart,
   onExportComplete,
   onExportError,

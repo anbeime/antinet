@@ -29,6 +29,10 @@ class HermesGatewayClient {
   private url: string;
   private sessionId: string = '';
   private messageHistory: HermesMessage[] = [];
+
+  public getMessageHistory(): HermesMessage[] {
+    return this.messageHistory;
+  }
   private streamCallbacks: StreamCallback[] = [];
   private errorCallbacks: ErrorCallback[] = [];
   private pendingRequests: Map<string, { resolve: (data: any) => void; reject: (err: Error) => void }> = new Map();
@@ -108,6 +112,10 @@ class HermesGatewayClient {
     }
     this.pendingRequests.clear();
     this.messageHistory = [];
+    this.streamCallbacks = [];
+    this.errorCallbacks = [];
+    this.sessionId = '';
+    this.reconnectAttempts = 0;
   }
 
   // 发送消息并获取流式响应
@@ -116,7 +124,6 @@ class HermesGatewayClient {
       throw new Error('Not connected to Hermes Gateway');
     }
 
-    // 先创建新session（如果需要）
     const sid = await this.ensureSession();
 
     const request = {
@@ -134,15 +141,15 @@ class HermesGatewayClient {
       this.pendingRequests.set(request.id, { resolve, reject });
       this.ws?.send(JSON.stringify(request));
 
-      // 超时处理
+      // 超时处理 - prompt.submit 返回很快（{status:"streaming"}），
+      // 真正的流式内容通过 events 推送
       setTimeout(() => {
         const pending = this.pendingRequests.get(request.id);
         if (pending) {
           this.pendingRequests.delete(request.id);
           pending.reject(new Error('Request timeout'));
-          resolve(); // 仍需resolve以打破await
         }
-      }, 120000); // 2分钟超时
+      }, 120000);
     });
   }
 
@@ -153,16 +160,19 @@ class HermesGatewayClient {
     }
 
     // 创建新session
+    console.log('[HermesGateway] Creating session...');
     const response = await this.call('session.create', {
       name: `zhiyi_${Date.now()}`
     });
+    console.log('[HermesGateway] session.create response:', JSON.stringify(response));
 
-    this.sessionId = response.result?.session_id || '';
+    this.sessionId = response.session_id || '';
+    console.log('[HermesGateway] sessionId set to:', this.sessionId);
     return this.sessionId;
   }
 
   // 调用RPC方法（同步等待响应）
-  private async call(method: string, params: any = {}): Promise<any> {
+  async call(method: string, params: any = {}): Promise<any> {
     return new Promise((resolve, reject) => {
       const id = `req_${++this.requestId}`;
       const request = {
@@ -192,6 +202,11 @@ class HermesGatewayClient {
     return () => {
       this.streamCallbacks = this.streamCallbacks.filter(cb => cb !== callback);
     };
+  }
+
+  // 取消订阅流式事件
+  offStream(callback: StreamCallback) {
+    this.streamCallbacks = this.streamCallbacks.filter(cb => cb !== callback);
   }
 
   // 订阅错误
@@ -263,13 +278,13 @@ class HermesGatewayClient {
   // 获取可用模型
   async getModels(): Promise<string[]> {
     const response = await this.call('model.options', {});
-    return response.result?.models || [];
+    return response.models || [];
   }
 
   // 获取可用命令
   async getCommands(): Promise<any[]> {
     const response = await this.call('commands.catalog', {});
-    return response.result?.commands || [];
+    return response.commands || [];
   }
 
   // 获取session历史
@@ -277,7 +292,7 @@ class HermesGatewayClient {
     const response = await this.call('session.history', {
       session_id: this.sessionId
     });
-    return response.result?.messages || [];
+    return response.messages || [];
   }
 
   // 中断当前操作

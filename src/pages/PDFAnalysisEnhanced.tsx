@@ -1,12 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import {
   FileText,
   Upload,
   BarChart3,
   CheckCircle,
-  Loader,
   FileDown,
   Layers,
   Scissors,
@@ -15,13 +14,9 @@ import {
   ArrowRight,
   FileType,
   FileSpreadsheet,
-  Download,
-  Eye,
   X,
-  AlertCircle,
   Image,
   FileImage,
-  Compress,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@/hooks/useTheme';
@@ -54,7 +49,7 @@ interface KnowledgeCard {
   createdAt: string;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = () => getApiBaseUrl()
 
 const PDFAnalysisEnhanced: React.FC = () => {
   useTheme();
@@ -126,7 +121,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     try {
       setProcessingStatus({ stage: 'extract', progress: 30, message: '正在提取文本...' });
       
-      const response = await fetch(`${API_BASE}/api/pdf/extract/text`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/extract/text`, {
         method: 'POST',
         body: formData
       });
@@ -174,7 +169,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     try {
       setProcessingStatus({ stage: 'analyze', progress: 30, message: '正在分析内容...' });
 
-      const response = await fetch(`${API_BASE}/api/pdf/generate/four-color-cards`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/generate/four-color-cards`, {
         method: 'POST',
         body: formData
       });
@@ -246,7 +241,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     });
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/merge`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/merge`, {
         method: 'POST',
         body: formData
       });
@@ -291,7 +286,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     formData.append('file', uploadedFile);
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/split`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/split`, {
         method: 'POST',
         body: formData
       });
@@ -338,7 +333,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
     });
 
     try {
-      const response = await fetch(`${API_BASE}/api/pdf/toolkit/images-to-pdf`, {
+      const response = await fetch(`${API_BASE()}/api/pdf/toolkit/images-to-pdf`, {
         method: 'POST',
         body: formData
       });
@@ -484,6 +479,7 @@ const PDFAnalysisEnhanced: React.FC = () => {
 
               <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-red-400 dark:hover:border-red-500 transition-colors">
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept={activeFeature === 'fromImages' ? ".jpg,.jpeg,.png,.bmp,.tiff" : ".pdf"}
                   onChange={activeFeature === 'fromImages' ? handleImageUpload : handleFileUpload}
@@ -740,7 +736,11 @@ const PDFAnalysisEnhanced: React.FC = () => {
                   </>
                 ) : activeFeature === 'convert' ? (
                   <>
-                    <RefreshCw className="w-16 h-16 mx-auto text-indigo-500 mb-4" />
+                    <div className="flex items-center justify-center gap-3 mb-4">
+                      <FileType className="w-12 h-12 text-blue-500" />
+                      <ArrowRight className="w-6 h-6 text-gray-400" />
+                      <FileSpreadsheet className="w-12 h-12 text-green-500" />
+                    </div>
                     <h3 className="text-lg font-semibold mb-2">格式转换</h3>
                     <p className="text-gray-600 dark:text-gray-400">转换为 Word、Excel 等格式</p>
                   </>

@@ -15,8 +15,6 @@ PdfReader = None
 
 def _lazy_load_pypdf():
     global PDF_AVAILABLE, PdfReader
-    if PDF_AVAILABLE:
-        return
     try:
         from pypdf import PdfReader as _PdfReader
         PdfReader = _PdfReader
@@ -38,6 +36,14 @@ class SimplePDFProcessor:
         """检查 PDF 功能是否可用"""
         return PDF_AVAILABLE
     
+    @staticmethod
+    def _is_garbled_text(text: str, threshold: float = 0.3) -> bool:
+        """检测文本是否乱码（CJK PDF 常见乱码特征）"""
+        if not text or len(text) < 10:
+            return False
+        control_count = sum(1 for c in text if ord(c) in range(0xFFF0, 0xFFFF) or c == '\ufffd')
+        return (control_count / max(len(text), 1)) > threshold
+
     def extract_text(self, pdf_path: str, preserve_layout: bool = False) -> Dict[str, Any]:
         """
         从 PDF 提取文本
@@ -56,11 +62,14 @@ class SimplePDFProcessor:
             pages = []
             full_text_parts = []
             total_chars = 0
+            garbled_detected = False
             
             for page_num, page in enumerate(reader.pages, 1):
                 text = page.extract_text()
                 char_count = len(text)
                 total_chars += char_count
+                if self._is_garbled_text(text):
+                    garbled_detected = True
                 
                 pages.append({
                     "page_number": page_num,
@@ -72,14 +81,23 @@ class SimplePDFProcessor:
             
             full_text = "\n".join(full_text_parts)
             
-            # 检测扫描/图片型 PDF：多页但几乎无文字 → 尝试 pdfplumber 回退
-            if page_count >= 1 and total_chars < max(100, page_count * 20):
+            # 检测是否需要回退：文字过少 或 检测到乱码
+            needs_fallback = (
+                (page_count >= 1 and total_chars < max(100, page_count * 20)) or
+                garbled_detected
+            )
+            
+            if needs_fallback:
                 try:
                     import pdfplumber
-                    logger.info(f"pypdf提取文字过少 ({total_chars}字符/{page_count}页)，尝试 pdfplumber 回退")
+                    logger.info(
+                        f"pypdf提取{'乱码' if garbled_detected else '文字过少'}"
+                        f" ({total_chars}字符/{page_count}页)，尝试 pdfplumber 回退"
+                    )
                     pages = []
                     full_text_parts = []
                     total_chars = 0
+                    garbled_detected = False
                     with pdfplumber.open(pdf_path) as plumb_pdf:
                         for page_num, page in enumerate(plumb_pdf.pages, 1):
                             text = page.extract_text() or ""
@@ -117,7 +135,8 @@ class SimplePDFProcessor:
                 "metadata": metadata,
                 "page_count": page_count,
                 "total_chars": total_chars,
-                "is_scanned": (page_count >= 1 and total_chars < max(100, page_count * 20))
+                "is_scanned": (page_count >= 1 and total_chars < max(100, page_count * 20)),
+                "garbled_detected": garbled_detected
             }
             
         except Exception as e:
@@ -128,7 +147,8 @@ class SimplePDFProcessor:
                 "pages": [],
                 "full_text": "",
                 "metadata": {},
-                "is_scanned": False
+                "is_scanned": False,
+                "garbled_detected": False
             }
     
     def extract_tables(self, pdf_path: str) -> Dict[str, Any]:

@@ -6,10 +6,12 @@ import logging
 import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
-import httpx
 import json
 
 logger = logging.getLogger(__name__)
+
+# 使用共享的 Genie API 客户端
+from agents.shared_genie_client import genie_client
 
 
 class RiskDetectorAgent:
@@ -170,12 +172,12 @@ class RiskDetectorAgent:
     async def _ai_based_detection(self, preprocessed_data: Dict, facts: Dict, user_query: str) -> List[Dict]:
         """
         基于AI的风险检测
-        
+       
         参数：
             preprocessed_data: 预处理数据
             facts: 事实卡片
             user_query: 用户查询
-        
+       
         返回：
             风险列表
         """
@@ -185,18 +187,18 @@ class RiskDetectorAgent:
             
             # 构建提示词
             prompt = f"""
-            你是Antinet系统的刑狱司，负责从数据中检测潜在风险。
+            你是Antinet系统的刑狱司，负责从对话内容和知识库中检测潜在风险。
             
             用户查询：{user_query}
             
-            数据摘要：
+            分析内容：
             {data_summary}
             
-            请检测潜在风险，包括：
-            1. 数据质量风险（缺失、异常、重复）
-            2. 业务趋势风险（下降、恶化、异常波动）
-            3. 合规风险（违反规则、超出阈值）
-            4. 操作风险（流程问题、执行错误）
+            请从以上内容中检测潜在风险，关注：
+            1. 内容风险（错误信息、误导性内容）
+            2. 知识风险（知识过时、不完整、矛盾）
+            3. 操作风险（流程问题、执行难点）
+            4. 质量风险（信息缺失、不准确）
             
             输出格式（JSON）：
             {{
@@ -379,23 +381,30 @@ class RiskDetectorAgent:
     def _prepare_data_summary(self, preprocessed_data: Dict, facts: Dict) -> str:
         """
         准备数据摘要
-        
+       
         参数：
             preprocessed_data: 预处理数据
             facts: 事实卡片
-        
+       
         返回：
             数据摘要文本
         """
         try:
             data = preprocessed_data.get("preprocessed_data", {})
-            quality_report = preprocessed_data.get("quality_report", {})
+            raw_data = data.get("data", [])
             
-            summary = f"""
-            数据规模：{len(data.get('data', []))}条记录
-            数据质量：完整性{quality_report.get('completeness', 1.0)} 准确性{quality_report.get('accuracy', 1.0)}
-            事实统计：总计{sum(len(v) for v in facts.values())}个（蓝{len(facts.get('blue', []))} 绿{len(facts.get('green', []))} 黄{len(facts.get('yellow', []))} 红{len(facts.get('red', []))}）
-            """
+            # 提取正文内容
+            text_content = ""
+            for item in raw_data:
+                text = item.get("text", "") if isinstance(item, dict) else str(item)
+                if len(text) > len(text_content):
+                    text_content = text
+            
+            # 截断过长文本
+            if len(text_content) > 3000:
+                text_content = text_content[:3000] + "\n...（内容过长已截断）"
+            
+            summary = text_content if text_content else "(无内容)"
             
             return summary
         
@@ -405,46 +414,20 @@ class RiskDetectorAgent:
     
     async def _call_genie_api(self, prompt: str) -> str:
         """
-        调用LLM推理（直接使用 genie 8910 HTTP API）
-        带重试逻辑：遇到429限流时等待后重试
+        调用LLM推理（使用共享 Genie API 客户端，自动串行化）
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "qwen2.5vl3b-8380-2.42",
-                            "messages": [
-                                {"role": "system", "content": "你是刑狱司，负责从数据中检测潜在风险。输出JSON格式，只输出JSON不要其他内容。"},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "size": 1024,
-                            "seed": 42,
-                            "temp": 0.7,
-                            "top_k": 1,
-                            "top_p": 1.0
-                        }
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        return content
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    wait_time = (attempt + 1) * 2  # 2, 4, 6 秒
-                    logger.warning(f"[刑狱司] 8910限流(429)，{wait_time}秒后重试 ({attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                    continue
-                logger.error(f"[刑狱司] 8910 Genie API HTTP错误: {e}")
-                break
-            except Exception as e:
-                logger.error(f"[刑狱司] 8910 Genie API不可用: {e}")
-                break
-        
-        return ""
+        try:
+            return await genie_client.call(
+                prompt,
+                system_prompt="你是刑狱司，负责从数据中检测潜在风险。输出JSON格式，只输出JSON不要其他内容。",
+                max_tokens=1024,
+                top_k=1,
+                top_p=1.0,
+                temperature=0.7
+            )
+        except Exception as e:
+            logger.error(f"[刑狱司] Genie API 调用失败: {e}")
+            return ""
     
     def _parse_json_response(self, response: Optional[str]) -> Dict:
         """

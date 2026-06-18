@@ -39,12 +39,103 @@ export type MessageRole = 'user' | 'assistant' | 'system' | 'skill';
 export type SceneType = 
   | 'general' 
   | 'card_search' 
+  | 'card_create'
   | 'image_analysis' 
   | 'skill_ppt' 
   | 'skill_excel' 
   | 'skill_word' 
   | 'greeting' 
+  | 'help'
+  | 'document_analysis'
+  | 'task_manage'
+  | 'performance_check'
+  | 'workflow'
+  | 'kg_organize';
+
+// 意图类型（9大核心意图）
+export type IntentType =
+  | 'create_card'
+  | 'search_cards'
+  | 'organize_cards'
+  | 'analyze_document'
+  | 'generate_ppt'
+  | 'manage_tasks'
+  | 'analyze_image'
+  | 'check_performance'
+  | 'complex_workflow'
+  | 'general_chat'
+  | 'greeting'
   | 'help';
+
+// 意图识别结果
+export interface IntentDetectionResult {
+  success: boolean;
+  query: string;
+  intent: {
+    primary: IntentType;
+    primary_name: string;
+    primary_emoji: string;
+    confidence: number;
+    alternative?: { intent: string; name: string }[];
+    needs_clarification?: boolean;
+    clarification_question?: string;
+  };
+  entities: {
+    topics: string[];
+    colors: string[];
+    time_range?: { raw: string; matched: string };
+    filters: Record<string, any>;
+    file_types: string[];
+    people: string[];
+  };
+}
+
+// 工作流模板
+export interface WorkflowTemplate {
+  template_id: string;
+  name: string;
+  description: string;
+  category: string;
+  estimated_steps: number;
+  estimated_time_minutes: number;
+  tags: string[];
+  icon: string;
+  primary_intent: string;
+}
+
+// 工作流步骤
+export interface WorkflowStep {
+  step_id: string;
+  name: string;
+  description: string;
+  status: string;
+  requires_input?: boolean;
+  input_prompt?: string;
+}
+
+// 工作流执行结果
+export interface WorkflowStartResult {
+  success: boolean;
+  execution_id?: string;
+  template_id?: string;
+  intent?: { primary: string; name: string; emoji: string };
+  total_steps?: number;
+  steps?: WorkflowStep[];
+  status?: string;
+  error?: string;
+}
+
+// 工作流状态
+export interface WorkflowStatus {
+  success: boolean;
+  execution_id?: string;
+  template_id?: string;
+  status?: string;
+  current_step?: number;
+  total_steps?: number;
+  steps?: WorkflowStep[];
+  execution_log?: string[];
+}
 
 // 聊天消息接口
 export interface ChatMessage {
@@ -275,15 +366,21 @@ class EnhancedChatService {
    * 获取场景图标
    */
   getSceneIcon(sceneType: SceneType): string {
-    const icons: Record<SceneType, string> = {
+    const icons: Record<string, string> = {
       'general': '💬',
       'card_search': '🔍',
+      'card_create': '📝',
       'image_analysis': '🖼️',
       'skill_ppt': '📊',
       'skill_excel': '📈',
       'skill_word': '📝',
       'greeting': '👋',
-      'help': '❓'
+      'help': '❓',
+      'document_analysis': '📄',
+      'task_manage': '✅',
+      'performance_check': '💻',
+      'workflow': '🔄',
+      'kg_organize': '🔗',
     };
     return icons[sceneType] || '💬';
   }
@@ -292,15 +389,21 @@ class EnhancedChatService {
    * 获取场景名称
    */
   getSceneName(sceneType: SceneType): string {
-    const names: Record<SceneType, string> = {
+    const names: Record<string, string> = {
       'general': '通用对话',
       'card_search': '知识查询',
+      'card_create': '创建卡片',
       'image_analysis': '图片分析',
       'skill_ppt': 'PPT生成',
       'skill_excel': 'Excel分析',
       'skill_word': 'Word生成',
       'greeting': '欢迎消息',
-      'help': '帮助信息'
+      'help': '帮助信息',
+      'document_analysis': '文档分析',
+      'task_manage': '任务管理',
+      'performance_check': '系统检查',
+      'workflow': '工作流执行',
+      'kg_organize': '知识组织',
     };
     return names[sceneType] || '未知场景';
   }
@@ -328,6 +431,117 @@ class EnhancedChatService {
     // 确保值在合理范围内 (0-1)
     const validScore = Math.max(0, Math.min(1, matchScore));
     return `相似度: ${(validScore * 100).toFixed(1)}%`;
+  }
+
+  /**
+   * 检测意图
+   */
+  async detectIntent(query: string, useLLM: boolean = false): Promise<IntentDetectionResult> {
+    try {
+      const response = await api.post<IntentDetectionResult>(`${API_BASE}/intent/detect`, {
+        query,
+        use_llm: useLLM,
+      });
+      return response;
+    } catch (error) {
+      console.error('意图检测失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取所有工作流模板
+   */
+  async getWorkflowTemplates(category?: string): Promise<any> {
+    try {
+      const url = category ? `${API_BASE}/workflow/templates?category=${encodeURIComponent(category)}` : `${API_BASE}/workflow/templates`;
+      return await api.get(url);
+    } catch (error) {
+      console.error('获取工作流模板失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 启动工作流
+   */
+  async startWorkflow(query: string, templateId?: string): Promise<WorkflowStartResult> {
+    try {
+      const response = await api.post<WorkflowStartResult>(`${API_BASE}/workflow/start`, {
+        query,
+        template_id: templateId,
+      });
+      return response;
+    } catch (error) {
+      console.error('启动工作流失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取工作流状态
+   */
+  async getWorkflowStatus(executionId: string): Promise<WorkflowStatus> {
+    try {
+      return await api.get(`${API_BASE}/workflow/status/${executionId}`);
+    } catch (error) {
+      console.error('获取工作流状态失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 取消工作流
+   */
+  async cancelWorkflow(executionId: string): Promise<{ success: boolean }> {
+    try {
+      return await api.post(`${API_BASE}/workflow/cancel/${executionId}`);
+    } catch (error) {
+      console.error('取消工作流失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取场景名称（支持新的意图类型）
+   */
+  getIntentName(intentType: IntentType): string {
+    const names: Record<string, string> = {
+      'create_card': '创建卡片',
+      'search_cards': '搜索卡片',
+      'organize_cards': '组织知识',
+      'analyze_document': '文档分析',
+      'generate_ppt': '生成PPT',
+      'manage_tasks': '任务管理',
+      'analyze_image': '图片分析',
+      'check_performance': '系统检查',
+      'complex_workflow': '复杂工作流',
+      'general_chat': '通用对话',
+      'greeting': '问候',
+      'help': '帮助',
+    };
+    return names[intentType] || intentType;
+  }
+
+  /**
+   * 获取意图图标
+   */
+  getIntentIcon(intentType: IntentType): string {
+    const icons: Record<string, string> = {
+      'create_card': '📝',
+      'search_cards': '🔍',
+      'organize_cards': '🔗',
+      'analyze_document': '📄',
+      'generate_ppt': '📊',
+      'manage_tasks': '✅',
+      'analyze_image': '🖼️',
+      'check_performance': '💻',
+      'complex_workflow': '🔄',
+      'general_chat': '💬',
+      'greeting': '👋',
+      'help': '❓',
+    };
+    return icons[intentType] || '💬';
   }
 }
 

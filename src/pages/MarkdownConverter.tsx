@@ -3,6 +3,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import {
   FileText,
   FileCode,
@@ -21,8 +22,10 @@ import {
   RefreshCw
 } from 'lucide-react';
 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 // API 配置
-const API_BASE = '/api/markdown-converter';
+const API_BASE = () => getApiBaseUrl() + '/api/markdown-converter';
 
 interface ConverterStatus {
   pandoc: { available: boolean; path: string | null };
@@ -52,6 +55,7 @@ const outputFormats = [
 
 const MarkdownConverter: React.FC = () => {
   // 状态
+  const [showSettings, setShowSettings] = useState(false);
   const [markdown, setMarkdown] = useState(`# 项目报告
 
 ## 流程图示例
@@ -93,13 +97,13 @@ graph TD
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [conversionResult, setConversionResult] = useState<ConversionResult | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   // 加载状态
   const loadStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/status`);
+      const response = await fetch(`${API_BASE()}/status`);
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
@@ -126,7 +130,7 @@ graph TD
       formData.append('output_format', selectedFormat);
       formData.append('render_mermaid', String(renderMermaid));
 
-      const response = await fetch(`${API_BASE}/convert/file`, {
+      const response = await fetch(`${API_BASE()}/convert/file`, {
         method: 'POST',
         body: formData,
       });
@@ -152,9 +156,14 @@ graph TD
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
+      setConversionResult({ success: true });
       setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      setTimeout(() => {
+        setSuccess(false);
+        setConversionResult(null);
+      }, 3000);
     } catch (err) {
+      setConversionResult({ success: false });
       setError(err instanceof Error ? err.message : 'Conversion failed');
     } finally {
       setLoading(false);
@@ -166,7 +175,7 @@ graph TD
     if (!markdown) return;
 
     try {
-      const response = await fetch(`${API_BASE}/mermaid/render`, {
+      const response = await fetch(`${API_BASE()}/mermaid/render`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,6 +207,27 @@ graph TD
   // 复制内容
   const handleCopy = () => {
     navigator.clipboard.writeText(markdown);
+  };
+
+  // 上传 Markdown 文件
+  const handleUploadFile = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.md,.markdown,text/markdown';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const text = await file.text();
+        setMarkdown(text);
+        toast?.success?.(`已加载: ${file.name}`);
+      }
+    };
+    input.click();
+  };
+
+  // 刷新状态
+  const handleRefreshStatus = () => {
+    loadStatus();
   };
 
   // 状态指示器颜色
@@ -241,6 +271,14 @@ graph TD
                 <span className={`w-2 h-2 rounded-full ${status?.pdfplumber ? 'bg-green-500' : 'bg-yellow-500'}`}></span>
                 <span className="text-sm text-gray-600 dark:text-gray-400">CSV 提取</span>
               </div>
+              {conversionResult && (
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${conversionResult.success ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {conversionResult.success ? '转换成功' : '转换失败'}
+                  </span>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setShowSettings(!showSettings)}
@@ -248,6 +286,14 @@ graph TD
             >
               <Settings size={16} />
               设置
+              <ChevronDown size={14} className={`transition-transform ${showSettings ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              onClick={handleRefreshStatus}
+              className="p-1.5 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+              title="刷新状态"
+            >
+              <RefreshCw size={16} />
             </button>
           </div>
 
@@ -292,6 +338,13 @@ graph TD
                 <span className="font-medium text-gray-900 dark:text-white">Markdown 编辑器</span>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleUploadFile}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="上传 Markdown 文件"
+                >
+                  <Upload size={16} />
+                </button>
                 <button
                   onClick={handleCopy}
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -447,23 +500,23 @@ graph TD
               </h3>
               <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
                 <li className="flex items-start gap-2">
-                  <span className="text-blue-500">1.</span>
+                  <ChevronRight size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                   <span>在左侧编辑器输入 Markdown 内容</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-blue-500">2.</span>
+                  <ChevronRight size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                   <span>使用 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">```mermaid</code> 代码块添加图表</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-blue-500">3.</span>
+                  <ChevronRight size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                   <span>使用 <code className="px-1 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">```csv</code> 代码块添加表格数据</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-blue-500">4.</span>
+                  <ChevronRight size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                   <span>选择输出格式，点击转换按钮</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-blue-500">5.</span>
+                  <ChevronRight size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
                   <span>Mermaid 图表将自动渲染为图片嵌入文档</span>
                 </li>
               </ul>

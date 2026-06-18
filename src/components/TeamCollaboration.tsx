@@ -1,488 +1,41 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+﻿import React, { useState, useEffect, useContext, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Permission } from '@/contexts/authContext';
 import {
   Users,
-  Network,
   FileCheck,
-  Lightbulb,
-  BarChart3,
-  Search,
   Clock,
-  UserPlus,
-  RefreshCw,
-  MessageSquare,
-  PieChart as PieChartIcon,
-  LineChart as LineChartIcon,
-  CheckCircle2,
   AlertCircle,
-  FileSearch,
-  Award,
   Edit3,
   Trash2,
   Plus,
   X,
   Send,
-  Settings,
   Save,
-  Crown,
-  Sparkles,
-  Play,
-  RotateCcw,
-  Download,
-  ChevronDown,
-  ChevronUp,
   Calendar,
-  Brain,
-GitBranch,
-  Eye
+  Library,
+  Bookmark,
+  MessageSquare,
+  Folder,
+  Layers,
+  Network,
+  Archive,
+  ArchiveRestore,
+  BarChart3,
+  Target,
+  CheckCircle2,
+  Circle,
+  PlayCircle
 } from 'lucide-react';
-import WikiEditor from './WikiEditor';
-import { teamMemberService, activityService, analyticsService, projectService } from '../services/dataService';
+import MeetingCardPanel, { CardDetailPopup } from './MeetingCardPanel';
+import { collaborationService, collaborationREST } from '../services/collaborationService';
+import { teamMemberService, activityService, projectService, researchProjectService } from '../services/dataService';
 import { toast } from 'sonner';
 import { AuthContext } from '../contexts/authContext';
-import * as echarts from 'echarts';
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  LineChart,
-  Line,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar
-} from 'recharts';
 
-// ========== 8-Agent会议面板组件(使用真实后端)==========
-const AgentMeetingPanel: React.FC = () => {
-  const [topic, setTopic] = useState('');
-  const [context, setContext] = useState('');
-  const [rounds, setRounds] = useState(3);
-  const [isLoading, setIsLoading] = useState(false);
-  const [meetingResult, setMeetingResult] = useState<any>(null);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
 
-  // 加载Agent信息
-  useEffect(() => {
-    const loadAgents = async () => {
-      try {
-        const response = await fetch(getApiBaseUrl() + '/api/meeting/agents');
-        if (response.ok) {
-          const data = await response.json();
-          setAgents(data);
-        }
-      } catch (error) {
-        console.error('加载Agent失败:', error);
-        // 使用默认数据
-        setAgents([
-          { id: 'taishige', name: '太史阁', title: '历史记录与反思官', avatar: '📚', color: 'from-blue-500 to-blue-600', description: '负责记录所有操作、决策和结果' },
-          { id: 'jinjiyu', name: '锦衣卫', title: '安全与情报收集官', avatar: '🛡️', color: 'from-red-500 to-red-600', description: '监控系统安全状态,识别潜在威胁' },
-          { id: 'tongzhengsi', name: '通政司', title: '信息与通讯中枢', avatar: '📡', color: 'from-green-500 to-green-600', description: '管理所有信息流,确保通讯畅通' },
-          { id: 'jianchayuan', name: '监察院', title: '监督与审计官', avatar: '🔍', color: 'from-purple-500 to-purple-600', description: '监督各项操作和流程的执行情况' },
-          { id: 'mijuanfang', name: '密卷房', title: '知识库与档案管理员', avatar: '📂', color: 'from-indigo-500 to-indigo-600', description: '负责非结构化知识的整理、归档' },
-          { id: 'chengxiangfu', name: '丞相府', title: '战略规划与决策支持官', avatar: '👑', color: 'from-yellow-500 to-yellow-600', description: '基于全局数据进行战略分析' },
-          { id: 'junjichu', name: '军机处', title: '任务执行与结果官', avatar: '⚔️', color: 'from-orange-500 to-orange-600', description: '执行具体任务,生成分析结果' },
-          { id: 'zhihuishi', name: '指挥使', title: '任务协调官', avatar: '🎯', color: 'from-teal-500 to-teal-600', description: '协调各部门工作,确保任务高效流转' },
-        ]);
-      }
-    };
-    loadAgents();
-  }, []);
-
-  const startMeeting = async () => {
-    if (!topic.trim()) {
-      toast.error('请输入会议主题');
-      return;
-    }
-    
-    setIsLoading(true);
-    toast.info('正在召集8-Agent进行讨论...');
-    
-    try {
-      const response = await fetch(getApiBaseUrl() + '/api/meeting/discuss', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: topic.trim(),
-          context: context.trim(),
-          rounds: rounds,
-          card_ids: []
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      
-      const result = await response.json();
-      setMeetingResult(result);
-      toast.success('8-Agent协作会议完成！');
-    } catch (error) {
-      console.error('会议创建失败:', error);
-      toast.error('会议创建失败,请检查后端服务');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resetMeeting = () => {
-    setMeetingResult(null);
-    setTopic('');
-    setContext('');
-    setExpandedRounds(new Set());
-    toast.info('会议已重置');
-  };
-
-  const toggleRound = (roundNum: number) => {
-    const newExpanded = new Set(expandedRounds);
-    if (newExpanded.has(roundNum)) {
-      newExpanded.delete(roundNum);
-    } else {
-      newExpanded.add(roundNum);
-    }
-    setExpandedRounds(newExpanded);
-  };
-
-  const exportResult = (format: 'json' | 'markdown') => {
-    if (!meetingResult) return;
-    
-    let content = '';
-    let filename = '';
-    
-    if (format === 'markdown') {
-      content = `# 8-Agent协作会议记录\n\n`;
-      content += `**主题**:${meetingResult.topic}\n\n`;
-      content += `**时间**:${meetingResult.start_time}\n\n`;
-      content += `**参与人员**:${meetingResult.participants.join('、')}\n\n`;
-      content += `**耗时**:${meetingResult.duration_seconds}秒\n\n`;
-      content += `---\n\n`;
-      
-      meetingResult.rounds.forEach((round: any) => {
-        content += `## 第${round.round}轮:${round.theme}\n\n`;
-        round.speeches.forEach((speech: any) => {
-          content += `### ${speech.agent_name}(${speech.agent_title})${speech.avatar}\n\n`;
-          const formatSpeechContent = (raw: string) => {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
-              }
-              return raw;
-            } catch {
-              return raw;
-            }
-          };
-          content += `${formatSpeechContent(speech.speech)}\n\n`;
-        });
-      });
-      
-const formatSpeechContent = (raw: string) => {
-            try {
-              const parsed = JSON.parse(raw);
-              if (Array.isArray(parsed)) {
-                return parsed.map((item: any) => `[${item.color}] ${item.content}`).join(' | ');
-              }
-              return raw;
-            } catch {
-              return raw;
-            }
-          };
-          const decisionText = (() => {
-            try {
-              const p = JSON.parse(meetingResult.decision);
-              return typeof p === 'string' ? p : JSON.stringify(p);
-            } catch { return meetingResult.decision; }
-          })();
-          let actionItems: string[] = meetingResult.action_items;
-          try {
-            if (typeof actionItems === 'string') actionItems = JSON.parse(actionItems);
-          } catch { /* use as-is */ }
-          if (!Array.isArray(actionItems)) actionItems = [actionItems];
-          content += `## 会议决策\n\n${decisionText}\n\n`;
-          content += `## 行动项\n\n`;
-          actionItems.forEach((item: string, idx: number) => {
-            content += `${idx + 1}. ${item}\n`;
-          });
-      
-      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.md`;
-    } else {
-      content = JSON.stringify(meetingResult, null, 2);
-      filename = `8Agent会议_${meetingResult.topic}_${new Date().toISOString().slice(0, 10)}.json`;
-    }
-    
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success('会议记录已导出');
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold mb-2 flex items-center">
-          <Crown className="mr-2 text-amber-600" />
-          8-Agent智能协作会议
-        </h2>
-        <p className="text-gray-600 dark:text-gray-300">
-          8位AI智能体基于后端数据库进行真实讨论,形成决策和行动方案
-        </p>
-      </div>
-
-      {/* 会议设置 */}
-      {!meetingResult && (
-        <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-          <div className="space-y-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium mb-2">会议主题 *</label>
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="输入需要讨论的主题,例如:新产品开发策略"
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">背景信息(可选)</label>
-              <textarea
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="提供相关背景信息,帮助Agent更好地理解议题..."
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none resize-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">讨论轮数</label>
-              <div className="flex space-x-2">
-                {[1, 2, 3, 4, 5].map((num) => (
-                  <button
-                    key={num}
-                    onClick={() => setRounds(num)}
-                    className={`px-4 py-2 rounded-lg border transition-colors ${
-                      rounds === num
-                        ? 'bg-amber-600 text-white border-amber-600'
-                        : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:border-amber-500'
-                    }`}
-                  >
-                    {num}轮
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 参会人员 */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-3">参会人员(8位Agent)</label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700"
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${agent.color} flex items-center justify-center text-white text-lg`}>
-                      {agent.avatar}
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{agent.name}</p>
-                      <p className="text-xs text-gray-500">{agent.title}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 开始按钮 */}
-          <button
-            onClick={startMeeting}
-            disabled={isLoading || !topic.trim()}
-            className="w-full py-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-semibold text-lg flex items-center justify-center transition-all"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                正在召集Agent讨论...
-              </>
-            ) : (
-              <>
-                <Sparkles size={20} className="mr-2" />
-                召开8-Agent协作会议
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* 会议结果 */}
-      {meetingResult && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="space-y-6"
-        >
-          {/* 结果头部 */}
-          <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-xl p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold">{meetingResult.topic}</h3>
-                <p className="text-amber-100 mt-1">
-                  {meetingResult.rounds.length}轮讨论 · {meetingResult.participants.length}位Agent参与 · 耗时{meetingResult.duration_seconds}秒
-                </p>
-              </div>
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => exportResult('markdown')}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
-                >
-                  <Download size={16} className="mr-1" />
-                  导出
-                </button>
-                <button
-                  onClick={resetMeeting}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm flex items-center transition-colors"
-                >
-                  <RotateCcw size={16} className="mr-1" />
-                  新会议
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 决策结果 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h4 className="font-semibold mb-3 flex items-center">
-              <CheckCircle2 className="mr-2 text-green-600" />
-              会议决策
-            </h4>
-            <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-              {(() => {
-                try {
-                  const parsed = JSON.parse(meetingResult.decision);
-                  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
-                } catch {
-                  return meetingResult.decision;
-                }
-              })()}
-            </p>
-          </div>
-
-          {/* 行动项 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-            <h4 className="font-semibold mb-3 flex items-center">
-              <Award className="mr-2 text-amber-600" />
-              行动项
-            </h4>
-            <ul className="space-y-2">
-              {(() => {
-                let items: string[] = meetingResult.action_items;
-                try {
-                  if (typeof items === 'string') items = JSON.parse(items);
-                } catch { /* use as-is */ }
-                return (Array.isArray(items) ? items : [items]).map((item: string, idx: number) => (
-                  <li key={idx} className="flex items-start">
-                    <span className="w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center justify-center text-sm mr-3 flex-shrink-0">
-                      {idx + 1}
-                    </span>
-                    <span className="text-gray-700 dark:text-gray-300">{item}</span>
-                  </li>
-                ));
-              })()}
-            </ul>
-          </div>
-
-          {/* 讨论记录 */}
-          <div className="bg-white dark:bg-gray-750 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <h4 className="font-semibold flex items-center">
-                <MessageSquare className="mr-2 text-blue-600" />
-                讨论记录
-              </h4>
-            </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700">
-              {meetingResult.rounds.map((round: any) => (
-                <div key={round.round} className="p-4">
-                  <button
-                    onClick={() => toggleRound(round.round)}
-                    className="w-full flex items-center justify-between text-left"
-                  >
-                    <div className="flex items-center">
-                      <span className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center text-sm font-bold mr-3">
-                        {round.round}
-                      </span>
-                      <span className="font-medium">{round.theme}</span>
-                    </div>
-                    {expandedRounds.has(round.round) ? (
-                      <ChevronUp size={20} className="text-gray-400" />
-                    ) : (
-                      <ChevronDown size={20} className="text-gray-400" />
-                    )}
-                  </button>
-                  
-                  {expandedRounds.has(round.round) && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      className="mt-4 space-y-3 pl-11"
-                    >
-                      {round.speeches.map((speech: any, idx: number) => (
-                        <div key={idx} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-                          <div className="flex items-center mb-2">
-                            <span className="text-lg mr-2">{speech.avatar}</span>
-                            <span className="font-medium text-sm">{speech.agent_name}</span>
-                            <span className="text-xs text-gray-500 ml-2">{speech.agent_title}</span>
-                          </div>
-                          {(() => {
-                            try {
-                              const parsed = JSON.parse(speech.speech);
-                              if (Array.isArray(parsed)) {
-                                return parsed.map((item: any, i: number) => (
-                                  <span key={i} className={`inline-block mr-2 text-sm ${
-                                    item.color === 'red' ? 'text-red-600 dark:text-red-400' :
-                                    item.color === 'blue' ? 'text-blue-600 dark:text-blue-400' :
-                                    item.color === 'green' ? 'text-green-600 dark:text-green-400' :
-                                    item.color === 'yellow' ? 'text-yellow-600 dark:text-yellow-400' :
-                                    'text-gray-700 dark:text-gray-300'
-                                  }`}>{item.content}</span>
-                                ));
-                              }
-                              return <span>{speech.speech}</span>;
-                            } catch {
-                              return <span>{speech.speech}</span>;
-                            }
-                          })()}
-                        </div>
-                      ))}
-                    </motion.div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-    </div>
-  );
-};
+// ========== 类型定义 ==========
 
 // ========== 类型定义 ==========
 interface TeamMember {
@@ -596,10 +149,10 @@ const EditModal: React.FC<EditModalProps> = ({ isOpen, onClose, title, children 
   );
 };
 
-// ========== 主组件 ==========
+// ========== 主组件==========
 const TeamCollaborationEnhanced: React.FC = () => {
-  const { userInfo, updatePermissions, hasPermission, isAdmin } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = useState<'integration' | 'realtime' | 'gaps' | 'reports' | 'projects' | 'knowledge-graph' | 'mindmap' | 'wiki-editor'>('integration');
+  const { userInfo, updatePermissions } = useContext(AuthContext);
+  const [activeTab, setActiveTab] = useState<'realtime' | 'projects' | 'mindmap'>('realtime');
   
   // 监听来自顶栏菜单的tab切换事件
   useEffect(() => {
@@ -631,7 +184,43 @@ const TeamCollaborationEnhanced: React.FC = () => {
   });
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  
+
+  // WebSocket 协作状态
+  const [collabUserId] = useState(() => {
+    let id = localStorage.getItem('collab_user_id');
+    if (!id) {
+      id = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      localStorage.setItem('collab_user_id', id);
+    }
+    return id;
+  });
+  const [connected, setConnected] = useState(false);
+  const [onlineCount, setOnlineCount] = useState(0);
+  const [discussionCards, setDiscussionCards] = useState<any[]>([]);
+  const [showCardPanel, setShowCardPanel] = useState(false);
+  const [referencedCards, setReferencedCards] = useState<any[]>([]);
+  const [previewCard, setPreviewCard] = useState<any | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const cardCacheRef = useRef<Map<string, any>>(new Map());
+
+  // 持久化消息到 localStorage
+  const MESSAGES_STORAGE_KEY = 'team_collab_messages';
+  useEffect(() => {
+    try {
+      localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages]);
+
+  // 新消息时自动滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  // 知识库卡片选择
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
+  const [topicCards, setTopicCards] = useState<any[]>([]);
+
   // 加载状态
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -640,7 +229,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const getDefaultProjects = (): Project[] => [
     {
       id: 1,
-      name: 'AI助手系统开发',
+       name: 'AI助手系统开发',
       description: '开发基于大语言模型的智能助手系统，提升团队协作效率',
       status: 'active',
       priority: 'high',
@@ -651,7 +240,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       tasks: [
         {
           id: 1,
-          title: '需求分析',
+           title: '需求分析',
           description: '分析用户需求和系统功能',
           status: 'completed',
           priority: 'high',
@@ -675,7 +264,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     },
     {
       id: 2,
-      name: '知识库重构',
+      name: '知识库重析',
       description: '重新设计和实现企业知识库系统，支持多模态内容管理',
       status: 'planning',
       priority: 'medium',
@@ -687,7 +276,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {
           id: 3,
           title: '架构设计',
-          description: '设计新的知识库架构',
+          description: '设计新的知识库架析',
           status: 'todo',
           priority: 'high',
           assignedTo: 2,
@@ -711,7 +300,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
         {
           id: 4,
           title: '用户调研',
-          description: '收集用户反馈和使用数据',
+          description: '收集用户反馈和使用数换',
           status: 'completed',
           priority: 'medium',
           assignedTo: 3,
@@ -744,11 +333,18 @@ const TeamCollaborationEnhanced: React.FC = () => {
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
-  // 项目管理状态
+// 项目管理状态
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-
-  // 全局错误监听, 捕获运行时异常并提示
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  // 项目类型过滤：团队项目 / 专题研究 / 已归档
+  const [projectTypeFilter, setProjectTypeFilter] = useState<'team' | 'topic' | 'archive'>('team');
+  // 本地维护已归档项目 id 集合
+  const [archivedProjectIds, setArchivedProjectIds] = useState<Set<number>>(new Set());
+  // 专题研究状态
+  const [researchProjects, setResearchProjects] = useState<any[]>([]);
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
       console.error('Global error', event.error || event.message, event);
@@ -764,13 +360,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
       window.removeEventListener('error', handleError);
       window.removeEventListener('unhandledrejection', handleRejection);
     };
-  }, []);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
-  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-
-  // 颜色配置
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+}, []);
 
   // 从后端API加载协作数据
   useEffect(() => {
@@ -786,22 +376,40 @@ const TeamCollaborationEnhanced: React.FC = () => {
         ]);
 
         // 设置团队成员数据
-        setTeamMembers(members.map((m, idx) => ({
+        const mappedMembers = members.map((m, idx) => ({
           ...m,
           id: m.id || idx + 1,
           avatar: m.avatar || '👤',
           online: m.online ?? Math.random() > 0.5,
           contribution: m.contribution || Math.floor(Math.random() * 100),
           permissions: m.permissions || ['read', 'write']
-        })));
+        }));
+        // 确保当前登录用户在成员列表中（用其昵称）
+        if (userInfo?.name && !mappedMembers.some((m: any) => m.name === userInfo.name)) {
+          mappedMembers.push({
+            id: Date.now() + 999,
+            name: userInfo.name,
+            role: userInfo.role || '成员',
+            avatar: userInfo.avatar || '👤',
+            online: true,
+            contribution: 0,
+            permissions: ['read', 'write']
+          });
+        }
+        setTeamMembers(mappedMembers);
 
-        // 同步当前用户权限：匹配到团队成员则使用其权限
-        const matchedMember = members.find((m: any) => m.name === userInfo.name);
-        if (matchedMember && matchedMember.permissions) {
-          updatePermissions(matchedMember.permissions, matchedMember.role, matchedMember.id);
+        // 记录最近活动用于展示
+        if (activities && activities.length > 0) {
+          console.info(`[协作] 最运${activities.length} 条活动已加载`);
         }
 
-        // 从后端加载项目数据
+// 同步当前用户权限：匹配到团队成员则使用其权限
+        const matchedMember = members.find((m: any) => m.name === userInfo.name);
+        if (matchedMember && matchedMember.permissions) {
+          updatePermissions(matchedMember.permissions as Permission[], matchedMember.role, matchedMember.id);
+        }
+
+        // 从后端加载项目数换
         try {
           const projectsData = await projectService.getAll();
           if (projectsData && projectsData.length > 0) {
@@ -831,7 +439,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             }));
             setProjects(mappedProjects);
           } else {
-            // 如果没有数据，使用默认示例项目
+            // 如果没有数据，使用默认示例项监
             setProjects(getDefaultProjects());
           }
         } catch (projectErr) {
@@ -847,14 +455,38 @@ const TeamCollaborationEnhanced: React.FC = () => {
           { id: 4, area: '测试覆盖', gapScore: 60, priority: '低', description: '测试覆盖率有待提高', suggestions: ['制定测试规范', '引入自动化测试'] }
         ]);
 
-        // 初始化协作消息
-        setMessages([
-          { id: 1, user: '张三', avatar: '👨‍💼', content: '我们需要制定一个新的产品创新策略,结合AI技术和用户体验研究的最新成果.', timestamp: '2026-02-20 10:30' },
-          { id: 2, user: '李四', avatar: '👩‍💻', content: '我认为可以从用户旅程地图入手,识别关键痛点和机会点,然后用AI技术来优化这些环节.', timestamp: '2026-02-20 10:35', replies: [
-            { id: 3, user: '王五', avatar: '👨‍🎨', content: '这个思路很好！我建议我们可以先做一个快速的用户调研,收集一些初步反馈.', timestamp: '2026-02-20 10:40' }
-          ]},
-          { id: 4, user: '赵六', avatar: '👩‍🔬', content: '我们还应该考虑技术可行性和资源限制,制定一个分阶段的实施计划.', timestamp: '2026-02-20 10:45' }
-        ]);
+        // 通过 WebSocket REST 加载历史活动
+        let loadedFromApi = false;
+        try {
+          const activities = await collaborationREST.getActivities(50);
+          if (activities && activities.length > 0) {
+            setMessages(activities.map((a: any, idx: number) => ({
+              id: idx + 1,
+              user: a.user || '未知',
+              avatar: a.avatar || '👤',
+              content: a.content || '',
+              timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '',
+              replies: []
+            })));
+            loadedFromApi = true;
+            console.info(`[协作] 加载了${activities.length} 条历史消息`);
+          }
+        } catch (e) {
+          console.info('[协作] REST加载失败，尝试本地缓存');
+        }
+        // REST 无数据时从 localStorage 恢复
+        if (!loadedFromApi) {
+          try {
+            const cached = localStorage.getItem(MESSAGES_STORAGE_KEY);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setMessages(parsed);
+                console.info(`[协作] 从本地缓存恢复了 ${parsed.length} 条消息`);
+              }
+            }
+          } catch {}
+        }
 
       } finally {
         setLoading(false);
@@ -864,25 +496,114 @@ const TeamCollaborationEnhanced: React.FC = () => {
     loadCollaborationData();
   }, []);
 
+  // 加载研究专题列表（用于知识卡片选择）
+  useEffect(() => {
+    researchProjectService.getAll().then(data => {
+      if (data && data.length > 0) {
+        setTopics(data);
+        setSelectedTopicId(data[0].id ?? null);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // 当选择专题变化时加载卡片
+  useEffect(() => {
+    if (!selectedTopicId) { setTopicCards([]); return; }
+    researchProjectService.getCards(selectedTopicId).then(cards => {
+      setTopicCards(cards || []);
+    }).catch(() => setTopicCards([]));
+  }, [selectedTopicId]);
+
+  // ========== WebSocket 实时协作连接 ==========
+  useEffect(() => {
+    if (!collabUserId) return;
+    
+    collaborationService.connect(collabUserId, userInfo.name, userInfo.avatar);
+    setConnected(true);
+    
+    const unsubscribe = collaborationService.onMessage((msg) => {
+      if (msg.type === 'history') {
+        console.log(`[协作] 收到历史数据: ${msg.activities?.length || 0} 条活加 ${msg.members?.length || 0} 名成员`);
+        if (msg.activities && msg.activities.length > 0) {
+          setMessages(msg.activities.map((a: any, idx: number) => ({
+            id: idx + 1,
+            user: a.user || '未知',
+            avatar: a.avatar || '👤',
+            content: a.content || '',
+            timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : '',
+            replies: []
+          })));
+        }
+        if (msg.members) {
+          setOnlineCount(msg.members.filter((m: any) => m.status === 'online').length);
+        }
+      } else if (msg.type === 'new_activity' && msg.activity) {
+        const a = msg.activity;
+        // 跳过发送者自己的消息（已在 handleSendMessage 中本地添加）
+        if (a.userId === collabUserId) return;
+        setMessages(prev => [...prev, {
+          id: Date.now(),
+          user: a.user || '未知',
+          avatar: a.avatar || '👤',
+          content: a.content || '',
+          timestamp: a.timestamp ? new Date(a.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
+          replies: []
+        }]);
+        // 滚动到底部
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      } else if (msg.type === 'user_online' || msg.type === 'user_offline') {
+        setOnlineCount(prev => msg.type === 'user_online' ? prev + 1 : Math.max(0, prev - 1));
+      }
+    });
+    
+    return () => {
+      unsubscribe();
+      collaborationService.disconnect();
+      setConnected(false);
+    };
+  }, [collabUserId]);
+
+  // 同步所有项目任务到 tasks 状态
+  useEffect(() => {
+    const allTasks: Task[] = projects.flatMap(p => p.tasks || []);
+    setTasks(allTasks);
+  }, [projects]);
+
+  // 维护卡片标题→对象的持久缓存，用于历史消息中的 @[卡片] 查找
+  useEffect(() => {
+    const cache = cardCacheRef.current;
+    [...topicCards, ...discussionCards, ...referencedCards].forEach(card => {
+      const key = card.title || card.name;
+      if (key) cache.set(key, card);
+    });
+  }, [topicCards, discussionCards, referencedCards]);
+
+  // 缓存历史消息中所有 @[卡片] 引用，确保旧消息中的卡片也可点击
+  useEffect(() => {
+    const cache = cardCacheRef.current;
+    const regex = /@\[([^\]]+)\]/g;
+    messages.forEach(msg => {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(msg.content)) !== null) {
+        const title = match[1];
+        if (!cache.has(title)) {
+          cache.set(title, { title, name: title, id: 'history_' + title, content: title });
+        }
+      }
+      (msg.replies || []).forEach(reply => {
+        regex.lastIndex = 0;
+        while ((match = regex.exec(reply.content)) !== null) {
+          const title = match[1];
+          if (!cache.has(title)) {
+            cache.set(title, { title, name: title, id: 'history_' + title, content: title });
+          }
+        }
+      });
+    });
+  }, [messages]);
+
   // ========== 团队成员管理 ==========
-  const handleAddMember = () => {
-    if (!hasPermission('admin') && !hasPermission('write')) {
-      toast.error('权限不足：需要管理或编辑权限才能添加成员');
-      return;
-    }
-    setEditingMember({ id: 0, name: '', role: '', email: '', avatar: '👤', online: false, contribution: 0, permissions: ['read', 'write'] });
-    setIsMemberModalOpen(true);
-  };
-
-  const handleEditMember = (member: TeamMember) => {
-    if (!hasPermission('admin') && !hasPermission('write')) {
-      toast.error('权限不足：需要管理或编辑权限才能编辑成员');
-      return;
-    }
-    setEditingMember({ ...member });
-    setIsMemberModalOpen(true);
-  };
-
   const handleSaveMember = async () => {
     if (!editingMember) return;
     
@@ -897,9 +618,9 @@ const TeamCollaborationEnhanced: React.FC = () => {
         await teamMemberService.update(editingMember.id, editingMember, userInfo.name);
         setTeamMembers(teamMembers.map(m => m.id === editingMember.id ? editingMember : m));
         toast.success('成员更新成功');
-        // 如果修改的是自己，同步权限到 AuthContext
+// 如果修改的是自己，同步权限到 AuthContext
         if (editingMember.name === userInfo.name && editingMember.permissions) {
-          updatePermissions(editingMember.permissions, editingMember.role, editingMember.id);
+          updatePermissions(editingMember.permissions as Permission[], editingMember.role, editingMember.id);
         }
       }
       setIsMemberModalOpen(false);
@@ -909,33 +630,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
     }
   };
 
-  const handleDeleteMember = async (id: number) => {
-    if (!hasPermission('admin')) {
-      toast.error('权限不足：仅管理员可删除成员');
-      return;
-    }
-    if (!confirm('确定要删除这个成员吗？')) return;
-    
-    try {
-      await teamMemberService.delete(id, userInfo.name);
-      setTeamMembers(teamMembers.filter(m => m.id !== id));
-      toast.success('成员删除成功');
-    } catch (err: any) {
-      toast.error(err?.message || '删除成员失败');
-    }
-  };
-
   // ========== 知识缺口管理 ==========
-  const handleAddGap = () => {
-    setEditingGap({ id: 0, area: '', gapScore: 50, priority: '中', description: '', suggestions: [] });
-    setIsGapModalOpen(true);
-  };
-
-  const handleEditGap = (gap: KnowledgeGap) => {
-    setEditingGap({ ...gap });
-    setIsGapModalOpen(true);
-  };
-
   const handleSaveGap = () => {
     if (!editingGap) return;
     
@@ -951,27 +646,44 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setEditingGap(null);
   };
 
-  const handleDeleteGap = (id: number) => {
-    if (!confirm('确定要删除这个知识缺口吗？')) return;
-    setKnowledgeGaps(knowledgeGaps.filter(g => g.id !== id));
-    toast.success('知识缺口删除成功');
-  };
-
   // ========== 协作消息管理 ==========
   const handleSendMessage = () => {
     if (!newMessage.trim()) return;
+    
+    // 持久化当前引用的卡片，用于后续历史消息渲染
+    referencedCards.forEach(card => {
+      const key = card.title || card.name;
+      if (key) cardCacheRef.current.set(key, card);
+    });
+    
+    const refs = referencedCards.map(c => `@[${c.title || c.name || '卡片'}]`).join(' ');
+    const fullContent = refs ? `${refs} ${newMessage}` : newMessage;
     
     const message: CollaborationMessage = {
       id: Date.now(),
       user: userInfo.name || '匿名用户',
       avatar: userInfo.avatar || '👤',
-      content: newMessage,
+      content: fullContent,
       timestamp: new Date().toLocaleString('zh-CN')
     };
     
-    setMessages([...messages, message]);
+    // 本地立即显示
+    setMessages(prev => [...prev, message]);
     setNewMessage('');
-    toast.success('消息发送成功');
+    setReferencedCards([]);
+    
+    // 通过 REST API 持久化到数据库并广播给所有在线用户
+    collaborationREST.addActivity({
+      user: message.user,
+      userId: collabUserId,
+      avatar: message.avatar,
+      action: '发言',
+      content: message.content,
+      type: 'message'
+    }).catch(err => console.warn('[协作] REST持久化失败:', err));
+    
+    // 滚动到底部
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
   const handleReply = (messageId: number) => {
@@ -997,15 +709,25 @@ const TeamCollaborationEnhanced: React.FC = () => {
       return m;
     }));
     
+    // 通过 WebSocket 发送评认
+    collaborationService.sendComment({
+      user: reply.user,
+      userId: collabUserId,
+      avatar: reply.avatar,
+      content: reply.content,
+      parentId: parentId,
+      targetId: parentId,
+      targetType: 'message'
+    });
+    
     setReplyingTo(null);
     setReplyContent('');
-    toast.success('回复发送成功');
   };
 
   // ========== 报告配置 ==========
   const handleSaveReportConfig = () => {
     // 这里可以保存到后端
-    toast.success('报告配置已保存');
+    toast.success('报告配置已保存')
     setIsReportConfigOpen(false);
   };
 
@@ -1141,92 +863,188 @@ const TeamCollaborationEnhanced: React.FC = () => {
     setIsTaskModalOpen(true);
   };
 
-  const handleSaveTask = () => {
+  const handleSaveTask = async () => {
     if (!editingTask) return;
-    
-    setProjects(projects.map(project => {
-      if (project.id === editingTask.projectId) {
-        let updatedTasks;
-        if (editingTask.id === 0) {
-          const newTask = { ...editingTask, id: Date.now() };
-          updatedTasks = [...project.tasks, newTask];
-        } else {
-          updatedTasks = project.tasks.map(t => t.id === editingTask.id ? editingTask : t);
-        }
-        
-        // 更新项目进度
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: editingTask.id === 0 
-          ? [...selectedProject.tasks, { ...editingTask, id: Date.now() }]
-          : selectedProject.tasks.map(t => t.id === editingTask.id ? editingTask : t)
-      });
+
+    const project = projects.find(p => p.id === editingTask.projectId);
+    if (!project) return;
+
+    let updatedTasks;
+    if (editingTask.id === 0) {
+      const newTask = { ...editingTask, id: Date.now() };
+      updatedTasks = [...project.tasks, newTask];
+    } else {
+      updatedTasks = project.tasks.map(t => t.id === editingTask.id ? editingTask : t);
     }
-    
+
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('保存任务到后端失败:', err);
+    }
+
+    setProjects(projects.map(p =>
+      p.id === editingTask.projectId ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === editingTask.projectId) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
+
     setIsTaskModalOpen(false);
     setEditingTask(null);
     toast.success(editingTask.id === 0 ? '任务添加成功' : '任务更新成功');
   };
 
-  const handleDeleteTask = (taskId: number) => {
-    if (!confirm('确定要删除这个任务吗？')) return;
-    
-    setProjects(projects.map(project => {
-      if (project.tasks.some(t => t.id === taskId)) {
-        const updatedTasks = project.tasks.filter(t => t.id !== taskId);
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: selectedProject.tasks.filter(t => t.id !== taskId)
-      });
+  const handleDeleteTask = async (taskId: number) => {
+    if (!confirm('确定要删除这个任务吗，')) return;
+
+    const project = projects.find(p => p.tasks.some(t => t.id === taskId));
+    if (!project) return;
+
+    const updatedTasks = project.tasks.filter(t => t.id !== taskId);
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('删除任务后端同步失败:', err);
     }
-    
+
+    setProjects(projects.map(p =>
+      p.id === project.id ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === project.id) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
+
     toast.success('任务删除成功');
   };
 
-  const handleToggleTask = (taskId: number) => {
-    setProjects(projects.map(project => {
-      if (project.tasks.some(t => t.id === taskId)) {
-        const updatedTasks = project.tasks.map(t => 
-          t.id === taskId 
-            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
-            : t
-        );
-        const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
-        const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
-        
-        return { ...project, tasks: updatedTasks, progress };
-      }
-      return project;
-    }));
-    
-    if (selectedProject) {
-      setSelectedProject({
-        ...selectedProject,
-        tasks: selectedProject.tasks.map(t => 
-          t.id === taskId 
-            ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
-            : t
-        )
-      });
+  const handleToggleTask = async (taskId: number) => {
+    const project = projects.find(p => p.tasks.some(t => t.id === taskId));
+    if (!project) return;
+
+    const updatedTasks = project.tasks.map(t =>
+      t.id === taskId
+        ? { ...t, status: t.status === 'completed' ? 'pending' : 'completed' as Task['status'] }
+        : t
+    );
+    const completedTasks = updatedTasks.filter(t => t.status === 'completed').length;
+    const progress = updatedTasks.length > 0 ? Math.round((completedTasks / updatedTasks.length) * 100) : 0;
+
+    try {
+      await projectService.update(project.id, { tasks: updatedTasks, progress });
+    } catch (err) {
+      console.error('切换任务状态后端同步失败:', err);
     }
+
+    setProjects(projects.map(p =>
+      p.id === project.id ? { ...p, tasks: updatedTasks, progress } : p
+    ));
+
+    if (selectedProject?.id === project.id) {
+      setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasks, progress } : null);
+    }
+  };
+
+  // ========== 归档/取消归档项目 ==========
+  const handleArchiveProject = (projectId: number) => {
+    setArchivedProjectIds(prev => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+        toast.success('项目已取消归档');
+      } else {
+        next.add(projectId);
+        toast.success('项目已归档');
+      }
+      return next;
+    });
+  };
+
+  // ========== 项目统计 useMemo ==========
+  const projectStats = useMemo(() => {
+    const filtered = projects.filter(p => !archivedProjectIds.has(p.id));
+    const total = filtered.length;
+    const allTasks = filtered.flatMap(p => p.tasks || []);
+    const totalTasks = allTasks.length;
+    const completedTasks = allTasks.filter(t => t.status === 'completed').length;
+    const inProgressTasks = allTasks.filter(t => t.status === 'in-progress').length;
+    const avgProgress = total > 0
+      ? Math.round(filtered.reduce((sum, p) => sum + (p.progress || 0), 0) / total)
+      : 0;
+    return { total, totalTasks, completedTasks, inProgressTasks, avgProgress };
+  }, [projects, archivedProjectIds]);
+
+  // 根据类型过滤项目
+  const filteredProjects = useMemo(() => {
+    if (projectTypeFilter === 'archive') {
+      return projects.filter(p => archivedProjectIds.has(p.id));
+    }
+    if (projectTypeFilter === 'team') {
+      return projects.filter(p => !archivedProjectIds.has(p.id));
+    }
+    return projects;
+  }, [projects, projectTypeFilter, archivedProjectIds]);
+
+  // ========== 辅助函数 ==========
+  const getProjectStatusText = (status: Project['status']) => {
+    switch (status) {
+      case 'completed': return '已完成';
+      case 'active':
+      case 'in-progress': return '进行中';
+      case 'planning': return '规划中';
+      case 'on-hold': return '已暂停';
+      case 'pending':
+      default: return '待开始';
+    }
+  };
+
+  const getProjectStatusBadge = (status: Project['status']) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800';
+      case 'active':
+      case 'in-progress':
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+      case 'on-hold':
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800';
+      case 'planning':
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border-purple-200 dark:border-purple-800';
+      case 'pending':
+      default:
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400 border-gray-200 dark:border-gray-700';
+    }
+  };
+
+  const getProjectStatusIcon = (status: Project['status']) => {
+    switch (status) {
+      case 'completed': return <CheckCircle2 size={14} className="text-green-600" />;
+      case 'active':
+      case 'in-progress': return <PlayCircle size={14} className="text-blue-600" />;
+      case 'on-hold': return <Circle size={14} className="text-amber-600" />;
+      case 'planning': return <Target size={14} className="text-purple-600" />;
+      case 'pending':
+      default: return <Circle size={14} className="text-gray-500" />;
+    }
+  };
+
+  // 计算距截止日期的剩余天数
+  const getDaysUntilDeadline = (endDate?: string) => {
+    if (!endDate) return null;
+    const end = new Date(endDate);
+    const now = new Date();
+    const diff = Math.ceil((end.getTime() - now.getTime()) / 86400000);
+    if (diff < 0) return { text: `已逾期 ${Math.abs(diff)} 天`, color: 'text-red-600' };
+    if (diff === 0) return { text: '今天截止', color: 'text-red-600' };
+    if (diff <= 7) return { text: `还剩 ${diff} 天`, color: 'text-amber-600' };
+    return { text: `${end.toLocaleDateString()}`, color: 'text-gray-500' };
   };
 
   // 渲染加载状态
@@ -1235,13 +1053,55 @@ const TeamCollaborationEnhanced: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">加载协作数据中...</p>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">加载协作数据中..</p>
         </div>
       </div>
     );
   }
 
-  // 渲染错误状态
+  const renderMessageContent = (text: string) => {
+    const allCards = [...topicCards, ...discussionCards];
+    const parts: Array<{ type: 'text' | 'card'; content: string; card?: any }> = [];
+    const regex = /@\[([^\]]+)\]/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+      }
+      const title = match[1];
+      const card = allCards.find(c => (c.title || c.name) === title) || cardCacheRef.current.get(title);
+      if (card) {
+        parts.push({ type: 'card', content: title, card });
+      } else {
+        parts.push({ type: 'text', content: `@[${title}]` });
+      }
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.slice(lastIndex) });
+    }
+
+    if (parts.length === 0) return text;
+
+    return parts.map((part, i) => {
+      if (part.type === 'card') {
+        return (
+          <span
+            key={i}
+            onClick={() => setPreviewCard(part.card)}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors text-xs font-medium"
+            title="点击查看卡片详情"
+          >
+            📌 {part.content}
+          </span>
+        );
+      }
+      return <span key={i}>{part.content}</span>;
+    });
+  };
+
   if (error) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
@@ -1262,21 +1122,8 @@ const TeamCollaborationEnhanced: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-      {/* 功能标签页 */}
+      {/* 功能标签顶*/}
       <div className="border-b border-gray-200 dark:border-gray-700 flex overflow-x-auto">
-        <button 
-          onClick={() => setActiveTab('integration')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'integration' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Network size={18} className="mr-2" />
-            <span>团队知识整合</span>
-          </div>
-        </button>
         <button 
           onClick={() => setActiveTab('realtime')}
           className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
@@ -1288,32 +1135,6 @@ const TeamCollaborationEnhanced: React.FC = () => {
           <div className="flex items-center justify-center">
             <Clock size={18} className="mr-2" />
             <span>实时协作编辑</span>
-          </div>
-        </button>
-        <button 
-          onClick={() => setActiveTab('gaps')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'gaps' 
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Lightbulb size={18} className="mr-2" />
-            <span>知识空白识别</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'reports'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <BarChart3 size={18} className="mr-2" />
-            <span>协作分析报告</span>
           </div>
         </button>
         <button
@@ -1329,722 +1150,437 @@ const TeamCollaborationEnhanced: React.FC = () => {
             <span>项目管理</span>
           </div>
         </button>
-        <button
-          onClick={() => setActiveTab('knowledge-graph')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'knowledge-graph'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <GitBranch size={18} className="mr-2" />
-            <span>知识图谱</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('mindmap')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'mindmap'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Brain size={18} className="mr-2" />
-            <span>思维导图</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setActiveTab('wiki-editor')}
-          className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
-            activeTab === 'wiki-editor'
-              ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
-              : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
-          }`}
-        >
-          <div className="flex items-center justify-center">
-            <Network size={18} className="mr-2" />
-            <span>知识网络</span>
-          </div>
-        </button>
+          <button
+            onClick={() => setActiveTab('mindmap')}
+            className={`flex-1 py-4 px-4 text-center border-b-2 transition-colors ${
+              activeTab === 'mindmap'
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium'
+                : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-750'
+            }`}
+          >
+            思维导图
+          </button>
       </div>
 
       {/* 内容区域 */}
-      <div className="p-6">
-        {/* 团队知识整合 */}
-        {activeTab === 'integration' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">团队知识整合</h2>
-                <p className="text-gray-600 dark:text-gray-300">AI智能识别重复和互补内容,生成完整的团队知识图谱</p>
-              </div>
-              <button 
-                onClick={handleAddMember}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <UserPlus size={18} className="mr-2" />
-                添加成员
-              </button>
-            </div>
+      <div className="p-3 sm:p-6">
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧:整合状态和进度 */}
-              <div className="lg:col-span-1 space-y-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 border border-blue-100 dark:border-blue-800"
-                >
-                  <h3 className="font-semibold text-blue-700 dark:text-blue-300 mb-3">整合进度</h3>
-                  <div className="space-y-2">
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>AI分析重复内容</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>识别互补知识</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-green-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>建立知识关联</span>
-                        <span>100%</span>
-                      </div>
-                      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                        <div className="h-full bg-purple-500 rounded-full w-full"></div>
-                      </div>
-                    </div>
-                  </div>
-                  <button className="mt-4 w-full flex items-center justify-center py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-                    <RefreshCw size={16} className="mr-2" />
-                    <span>重新整合</span>
-                  </button>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-                >
-                  <h3 className="font-semibold mb-3">整合发现</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现了12个重复的核心概念卡片</p>
-                    </div>
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">识别出8组互补的知识体系</p>
-                    </div>
-                    <div className="flex items-start">
-                      <CheckCircle2 size={18} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">建立了25个新的知识关联</p>
-                    </div>
-                    <div className="flex items-start">
-                      <AlertCircle size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">发现3个潜在的知识冲突点</p>
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-
-              {/* 右侧:团队成员和统计图表 */}
-              <div className="lg:col-span-2 grid grid-cols-1 gap-4">
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-                >
-                  <h3 className="font-semibold mb-3">团队成员 ({teamMembers.length})</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {teamMembers.map(member => (
-                      <div 
-                        key={member.id}
-                        className="flex items-center bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-full text-sm group relative"
-                      >
-                        <span className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-2">
-                          {member.avatar}
-                        </span>
-                        <span className="mr-2">{member.name}</span>
-                        <span className={`w-2 h-2 rounded-full ${member.online ? 'bg-green-500' : 'bg-gray-400'}`}></span>
-                        <div className="absolute right-0 top-0 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
-                          <button 
-                            onClick={() => handleEditMember(member)}
-                            className="p-1 bg-blue-500 text-white rounded-full hover:bg-blue-600"
-                          >
-                            <Edit3 size={12} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteMember(member.id)}
-                            className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0, transition: { delay: 0.3 } }}
-                  className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[300px]"
-                >
-                  <h3 className="font-semibold mb-3">知识整合结果分布</h3>
-                  <ResponsiveContainer width="100%" height="85%">
-                    <PieChart>
-                      <Pie
-                        data={teamMembers.map(m => ({ name: m.name, value: m.contribution || 0 }))}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      >
-                        {teamMembers.map((_entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </motion.div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* 实时协作编辑 */}
-        {activeTab === 'realtime' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold mb-2">实时协作编辑</h2>
-              <p className="text-gray-600 dark:text-gray-300">多人同时编辑和评论,加速知识发展过程</p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[500px] flex flex-col"
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                      <FileCheck size={16} />
-                    </div>
-                    <h3 className="font-semibold">产品创新策略讨论</h3>
-                    <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-2 py-0.5 rounded-full flex items-center">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>
-                      {teamMembers.filter(m => m.online).length}人在线
-                    </span>
-                  </div>
+                {activeTab === 'realtime' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold mb-1">实时协作编辑</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">多人同时编辑和评论，加速知识发展过程</p>
                 </div>
-
-                <div className="flex-1 bg-gray-50 dark:bg-gray-750 rounded-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto">
-                  <div className="space-y-4">
-                    {messages.map(message => (
-                      <div key={message.id} className="relative">
-                        <div className="flex items-start space-x-3">
-                          <span className="text-2xl">{message.avatar}</span>
-                          <div className="flex-1">
-                            <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
-                              <div className="flex justify-between items-center mb-1">
-                                <span className="font-medium text-sm">{message.user}</span>
-                                <span className="text-xs text-gray-500">{message.timestamp}</span>
-                              </div>
-                              <p className="text-gray-700 dark:text-gray-300">{message.content}</p>
-                            </div>
-                            <button 
-                              onClick={() => handleReply(message.id)}
-                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
-                            >
-                              回复
-                            </button>
-                            
-                            {/* 回复输入框 */}
-                            {replyingTo === message.id && (
-                              <div className="mt-2 flex items-center space-x-2">
-                                <input
-                                  type="text"
-                                  value={replyContent}
-                                  onChange={(e) => setReplyContent(e.target.value)}
-                                  placeholder="输入回复..."
-                                  className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
-                                  autoFocus
-                                />
-                                <button 
-                                  onClick={() => handleSendReply(message.id)}
-                                  className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                                >
-                                  <Send size={14} />
-                                </button>
-                                <button 
-                                  onClick={() => setReplyingTo(null)}
-                                  className="p-1.5 text-gray-500 hover:text-gray-700"
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            )}
-                            
-                            {/* 回复列表 */}
-                            {message.replies && message.replies.length > 0 && (
-                              <div className="mt-3 ml-4 space-y-3 border-l-2 border-gray-200 dark:border-gray-600 pl-4">
-                                {message.replies.map(reply => (
-                                  <div key={reply.id} className="flex items-start space-x-3">
-                                    <span className="text-xl">{reply.avatar}</span>
-                                    <div className="flex-1 bg-gray-100 dark:bg-gray-600 rounded-lg p-2">
-                                      <div className="flex justify-between items-center mb-1">
-                                        <span className="font-medium text-sm">{reply.user}</span>
-                                        <span className="text-xs text-gray-500">{reply.timestamp}</span>
-                                      </div>
-                                      <p className="text-sm text-gray-700 dark:text-gray-300">{reply.content}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-3">
+                  <span className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full ${connected ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+                    <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                    {connected ? `${onlineCount}人在线` : '未连接'}
+                  </span>
+                  <button
+                    onClick={() => setShowCardPanel(!showCardPanel)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition-colors ${showCardPanel ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+                  >
+                    <Library size={14} />
+                    知识卡片
+                  </button>
                 </div>
-
-                <div className="mt-4 flex">
-                  <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center mr-2 flex-shrink-0">
-                    👤
-                  </div>
-                  <div className="flex-1 flex items-center space-x-2">
-                    <input 
-                      type="text" 
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                      placeholder="添加你的想法或评论..." 
-                      className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
-                    />
-                    <button 
-                      onClick={handleSendMessage}
-                      disabled={!newMessage.trim()}
-                      className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
-                    >
-                      <Send size={16} />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        )}
-
-        {/* 知识空白识别 */}
-        {activeTab === 'gaps' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">知识空白识别</h2>
-                <p className="text-gray-600 dark:text-gray-300">智能发现团队知识体系中的空白点和机会点</p>
               </div>
-              <button 
-                onClick={handleAddGap}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <Plus size={18} className="mr-2" />
-                添加空白项
-              </button>
-            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* 左侧:知识空白列表 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="lg:col-span-1 space-y-4"
-              >
-                <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3 flex items-center">
-                    <FileSearch size={18} className="mr-2" />
-                    发现的知识空白 ({knowledgeGaps.length})
-                  </h3>
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {knowledgeGaps.map(gap => (
-                      <div 
-                        key={gap.id} 
-                        className={`p-3 rounded-lg border relative group ${
-                          gap.priority === '高' ? 'bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-800' :
-                          gap.priority === '中' ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-800' :
-                          'bg-blue-50 dark:bg-blue-950/30 border-blue-100 dark:border-blue-800'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <h4 className={`font-medium text-sm ${
-                            gap.priority === '高' ? 'text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'text-amber-800 dark:text-amber-300' :
-                            'text-blue-800 dark:text-blue-300'
-                          }`}>
-                            {gap.area}
-                          </h4>
-                          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
-                            <button 
-                              onClick={() => handleEditGap(gap)}
-                              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+              <div className={`grid gap-6 ${showCardPanel ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'}`}>
+                {/* 聊天面板 */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[400px] sm:h-[500px] flex flex-col ${showCardPanel ? 'lg:col-span-2' : ''}`}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                        <MessageSquare size={16} />
+                      </div>
+                      <h3 className="font-semibold">协作讨论</h3>
+                      <span className="text-xs text-gray-500">{messages.length} 条消息</span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 bg-gray-50 dark:bg-gray-750 rounded-lg p-4 border border-gray-200 dark:border-gray-700 overflow-y-auto">
+                    <div className="space-y-4">
+                      {messages.length === 0 && (
+                        <div className="text-center text-gray-400 py-8 text-sm">
+                          暂无消息，开始协作讨论吧
+                        </div>
+                      )}
+                      {messages.map(message => (
+                        <div key={message.id} className="relative">
+                          <div className="flex items-start space-x-3">
+                            <span className="text-2xl flex-shrink-0">{message.avatar}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm">
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="font-medium text-sm">{message.user}</span>
+                                  <span className="text-xs text-gray-500 flex-shrink-0 ml-2">{message.timestamp}</span>
+                                </div>
+                                <p className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap break-words">{renderMessageContent(message.content)}</p>
+                              </div>
+                              <button
+                                onClick={() => handleReply(message.id)}
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 ml-1"
+                              >
+                                回复
+                              </button>
+
+                              {replyingTo === message.id && (
+                                <div className="mt-2 flex items-center space-x-2">
+                                  <input
+                                    type="text"
+                                    value={replyContent}
+                                    onChange={(e) => setReplyContent(e.target.value)}
+                                    placeholder="输入回复..."
+                                    className="flex-1 px-3 py-2 sm:py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => handleSendReply(message.id)}
+                                    className="p-2 sm:p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                  >
+                                    <Send size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => setReplyingTo(null)}
+                                    className="p-2 sm:p-1.5 text-gray-500 hover:text-gray-700"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              )}
+
+                              {message.replies && message.replies.length > 0 && (
+                                <div className="mt-3 ml-4 space-y-3 border-l-2 border-gray-200 dark:border-gray-600 pl-4">
+                                  {message.replies.map(reply => (
+                                    <div key={reply.id} className="flex items-start space-x-3">
+                                      <span className="text-xl flex-shrink-0">{reply.avatar}</span>
+                                      <div className="flex-1 bg-gray-100 dark:bg-gray-600 rounded-lg p-2">
+                                        <div className="flex justify-between items-center mb-1">
+                                          <span className="font-medium text-sm">{reply.user}</span>
+                                          <span className="text-xs text-gray-500">{reply.timestamp}</span>
+                                        </div>
+                                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">{renderMessageContent(reply.content)}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </div>
+
+                    {referencedCards.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2 px-1">
+                        {referencedCards.map((card, idx) => (
+                          <span
+                            key={idx}
+                            onClick={() => setPreviewCard(card)}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800/60 transition-colors"
+                            title="点击查看卡片详情"
+                          >
+                            📌 {card.title || card.name || '卡片'}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-4 sticky bottom-0 bg-white dark:bg-gray-750 pt-2">
+                      <div className="hidden sm:flex items-end gap-2">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                          {userInfo.name?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={newMessage}
+                            onChange={(e) => setNewMessage(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                            placeholder="输入想法或建议.."
+                            className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                          />
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                                setDiscussionCards(prev => [...prev, fakeCard]);
+                                toast.success('已添加到知识卡片');
+                              }}
+                              disabled={!newMessage.trim()}
+                              className="p-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                              title="添加为知识卡片"
                             >
-                              <Edit3 size={14} />
+                              <Bookmark size={16} />
                             </button>
-                            <button 
-                              onClick={() => handleDeleteGap(gap.id)}
-                              className="p-1 hover:bg-red-200 dark:hover:bg-red-800 rounded text-red-600"
+                            <button
+                              onClick={handleSendMessage}
+                              disabled={!newMessage.trim()}
+                              className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
                             >
-                              <Trash2 size={14} />
+                              <Send size={16} />
                             </button>
                           </div>
                         </div>
-                        <p className="text-xs mt-1 opacity-80">{gap.description}</p>
-                        <div className="flex justify-between items-center mt-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            gap.priority === '高' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300' :
-                            gap.priority === '中' ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300' :
-                            'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
-                          }`}>
-                            {gap.priority}优先级
-                          </span>
-                          <span className="text-xs text-gray-500">缺口: {gap.gapScore}%</span>
+                      </div>
+                      {/* 移动端：输入框和按钮分两行，发送键在右下角容易点击 */}
+                      <div className="flex sm:hidden flex-col gap-2">
+                        <input
+                          type="text"
+                          value={newMessage}
+                          onChange={(e) => setNewMessage(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())}
+                          placeholder="输入想法或建议.."
+                          className="w-full bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-gray-800 transition-colors outline-none"
+                        />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white text-sm font-medium">
+                              {userInfo.name?.charAt(0) || '?'}
+                            </div>
+                            <span className="text-xs text-gray-400">协作讨论</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                const fakeCard = { id: 'card_' + Date.now(), title:'新知识卡片', content: newMessage || '讨论中产生的知识', card_type: 'blue' as const };
+                                setDiscussionCards(prev => [...prev, fakeCard]);
+                                toast.success('已添加到知识卡片');
+                              }}
+                              disabled={!newMessage.trim()}
+                              className="p-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-600 dark:text-gray-400 rounded-full transition-colors"
+                              title="添加为知识卡片"
+                            >
+                              <Bookmark size={18} />
+                            </button>
+                            <button
+                              onClick={handleSendMessage}
+                              disabled={!newMessage.trim()}
+                              className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-full transition-colors"
+                            >
+                              <Send size={20} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">知识机会点</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">AI技术与用户体验设计的交叉应用</p>
                     </div>
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">跨部门知识共享平台的建立</p>
+                  </motion.div>
+
+                {showCardPanel && (
+                  <motion.div
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700 h-[400px] sm:h-[500px] flex flex-col"
+                  >
+                    <div className="flex justify-between items-center mb-3">
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <Library size={16} className="text-blue-500" />
+                        知识卡片
+                      </h3>
+                      <span className="text-xs text-gray-500">{topicCards.length + discussionCards.length} 张</span>
                     </div>
-                    <div className="flex items-start">
-                      <Lightbulb size={18} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm">建立持续学习和知识更新的机制</p>
+                    {topics.length > 0 && (
+                      <select
+                        value={selectedTopicId ?? ''}
+                        onChange={e => setSelectedTopicId(Number(e.target.value) || null)}
+                        className="mb-3 px-2 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"
+                      >
+                        {topics.map(t => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    )}
+                    <div className="flex-1 overflow-y-auto">
+                      {topicCards.length === 0 && discussionCards.length === 0 ? (
+                        <div className="text-center text-gray-400 py-8 text-sm">
+                          选择上方专题加载卡片，或在讨论中点击 Bookmark 按钮添加知识卡片
+                        </div>
+                      ) : (
+                        <MeetingCardPanel cards={[...topicCards, ...discussionCards] as any} onSaveCard={(card) => {
+                            setReferencedCards(prev => [...prev, card]);
+                            toast.success('已添加卡片引用');
+                          }} />
+                      )}
                     </div>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 右侧:知识覆盖度雷达图 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                className="lg:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">知识领域覆盖度分析</h3>
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart outerRadius={150} data={knowledgeGaps.map(g => ({ subject: g.area, A: 100 - g.gapScore, fullMark: 100 }))}>
-                      <PolarGrid stroke="#e5e7eb" />
-                      <PolarAngleAxis dataKey="subject" />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} />
-                      <Radar
-                        name="知识覆盖度"
-                        dataKey="A"
-                        stroke="#8884d8"
-                        fill="#8884d8"
-                        fillOpacity={0.5}
-                      />
-                      <Tooltip />
-                      <Legend />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <h4 className="font-medium mb-2">空白填补建议</h4>
-                    <ul className="space-y-2 text-sm">
-                      {knowledgeGaps.slice(0, 3).map(gap => (
-                        <li key={gap.id} className="flex items-start">
-                          <CheckCircle2 size={16} className="text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                          <span>{gap.suggestions?.[0] || `加强${gap.area}能力建设`}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <h4 className="font-medium mb-2">预期效果</h4>
-                    <ul className="space-y-2 text-sm">
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>提高产品创新的准确性和成功率</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>缩短从创意到实施的周期</span>
-                      </li>
-                      <li className="flex items-start">
-                        <Award size={16} className="text-amber-500 mr-2 mt-0.5 flex-shrink-0" />
-                        <span>增强团队的市场竞争力</span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </motion.div>
+                  </motion.div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+
 
         {/* 协作分析报告 */}
-        {activeTab === 'reports' && (
+
+
+{/* 项目管理 */}
+        {activeTab === 'projects' && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">协作分析报告</h2>
-                <p className="text-gray-600 dark:text-gray-300">可视化团队知识贡献和协作模式分析</p>
+            {/* 顶部统计栏 - 5 卡片：项目数 + 任务数 + 进度 */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><Folder size={18} className="text-blue-600" /></div>
+                <div className="text-xl font-bold text-blue-600">{projectStats.total}</div>
+                <div className="text-xs text-gray-500 mt-0.5">总项目</div>
               </div>
-              <button 
-                onClick={() => setIsReportConfigOpen(true)}
-                className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
-              >
-                <Settings size={18} className="mr-2" />
-                配置报告
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><Layers size={18} className="text-indigo-600" /></div>
+                <div className="text-xl font-bold text-indigo-600">{projectStats.totalTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">总任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><CheckCircle2 size={18} className="text-green-600" /></div>
+                <div className="text-xl font-bold text-green-600">{projectStats.completedTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">已完成任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center">
+                <div className="flex justify-center mb-1"><PlayCircle size={18} className="text-blue-600" /></div>
+                <div className="text-xl font-bold text-blue-600">{projectStats.inProgressTasks}</div>
+                <div className="text-xs text-gray-500 mt-0.5">进行中任务</div>
+              </div>
+              <div className="bg-white dark:bg-gray-750 rounded-xl p-3 border border-gray-200 dark:border-gray-700 text-center col-span-2 md:col-span-1">
+                <div className="flex justify-center mb-1"><BarChart3 size={18} className="text-purple-600" /></div>
+                <div className="text-xl font-bold text-purple-600">{projectStats.avgProgress}%</div>
+                <div className="text-xs text-gray-500 mt-0.5">平均进度</div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg sm:text-xl font-bold">项目管理</h2>
+              <button onClick={handleAddProject} className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm flex-shrink-0">
+                <Plus size={16} className="sm:mr-2" /><span className="hidden sm:inline">新建项目</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 协作模式分析 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">协作模式分析</h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>同步协作</span>
-                      <span>{reportConfig.syncCollaboration}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${reportConfig.syncCollaboration}%` }}></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>异步协作</span>
-                      <span>{reportConfig.asyncCollaboration}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${reportConfig.asyncCollaboration}%` }}></div>
-                    </div>
-                  </div>
-                  <div className="p-3 mt-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-100 dark:border-blue-800">
-                    <p className="text-sm text-blue-800 dark:text-blue-300">
-                      团队倾向于异步协作模式,建议优化异步协作工具和流程,提高效率.
-                    </p>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 知识类型分布 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">知识类型分布</h3>
-                <div className="space-y-3">
-                  {[
-                    { label: '核心概念', value: reportConfig.coreConcepts, color: 'bg-blue-500' },
-                    { label: '关联链接', value: reportConfig.relatedLinks, color: 'bg-green-500' },
-                    { label: '参考来源', value: reportConfig.references, color: 'bg-yellow-500' },
-                    { label: '索引关键词', value: reportConfig.keywords, color: 'bg-red-500' }
-                  ].map(item => (
-                    <div key={item.label} className="flex items-center">
-                      <div className={`w-3 h-3 rounded-full mr-2 ${item.color}`}></div>
-                      <div className="flex-1">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span>{item.label}</span>
-                          <span>{item.value}%</span>
-                        </div>
-                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div className={`h-full ${item.color} rounded-full transition-all`} style={{ width: `${item.value}%` }}></div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* 协作效率指标 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.2 } }}
-                className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">协作效率指标</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center text-green-600 dark:text-green-400 mr-3">
-                        <CheckCircle2 size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">平均响应时间</p>
-                        <p className="text-xl font-bold">{reportConfig.avgResponseTime}</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">-15%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400 mr-3">
-                        <Users size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">参与度</p>
-                        <p className="text-xl font-bold">{reportConfig.participation}%</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">+8%</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400 mr-3">
-                        <Network size={20} />
-                      </div>
-                      <div>
-                        <p className="text-sm">知识关联度</p>
-                        <p className="text-xl font-bold">{reportConfig.knowledgeConnectivity}%</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-green-600 dark:text-green-400">+12%</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* 团队成员贡献 */}
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0, transition: { delay: 0.3 } }}
-                className="md:col-span-2 bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700"
-              >
-                <h3 className="font-semibold mb-3">团队成员贡献分析</h3>
-                <div className="h-[250px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={teamMembers.map(m => ({ name: m.name, 贡献值: m.contribution || 0 }))}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="贡献值" fill="#8884d8" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        )}
-
-        {/* 项目管理 */}
-        {activeTab === 'projects' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold mb-2">项目管理</h2>
-                <p className="text-gray-600 dark:text-gray-300">管理团队项目和任务分配，提高协作效率</p>
-              </div>
-              <button 
-                onClick={handleAddProject}
-                className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <Plus size={18} className="mr-2" />
-                新建项目
+            {/* 类型过滤 Tabs */}
+            <div className="flex space-x-2">
+              <button onClick={() => { setProjectTypeFilter('team'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'team' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                📁 团队项目 <span className="ml-1 text-xs opacity-70">{projects.filter(p => !archivedProjectIds.has(p.id)).length}</span>
+              </button>
+              <button onClick={() => { setProjectTypeFilter('topic'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'topic' ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                🔬 专题研究 <span className="ml-1 text-xs opacity-70">{researchProjects.length}</span>
+              </button>
+              <button onClick={() => { setProjectTypeFilter('archive'); setSelectedProject(null); }}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${projectTypeFilter === 'archive' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                🗄️ 已归档 <span className="ml-1 text-xs opacity-70">{archivedProjectIds.size}</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* 左侧:项目列表 */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="lg:col-span-1 space-y-4"
               >
                 <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <h3 className="font-semibold mb-3">团队项目</h3>
-                  <div className="space-y-3 max-h-[200px] overflow-y-auto">
-                    {projects.map(project => (
-                      <div 
-                        key={`team-${project.id}`}
-                        onClick={() => setSelectedProject(project)}
-                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                          selectedProject?.id === project.id 
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' 
-                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-sm">{project.name}</h4>
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            project.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                            project.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                          }`}>
-                            {project.status === 'completed' ? '已完成' : 
-                             project.status === 'in-progress' ? '进行中' : '待开始'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-gray-500">
-                          <span>{project.tasks.length} 个任务</span>
-                          <span>{new Date(project.endDate).toLocaleDateString()}</span>
-                        </div>
-                        <div className="mt-2">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>进度</span>
-                            <span>{project.progress}%</span>
-                          </div>
-                          <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-blue-500 rounded-full transition-all" 
-                              style={{ width: `${project.progress}%` }}
-                            ></div>
-                          </div>
-                        </div>
+                  {projectTypeFilter === 'team' && (
+                    <>
+                      <h3 className="font-semibold mb-3">团队项目</h3>
+                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                        {filteredProjects.map(project => {
+                          const days = getDaysUntilDeadline(project.endDate);
+                          const tasks = project.tasks || [];
+                          const completedTasks = tasks.filter(t => t.status === 'completed').length;
+                          return (
+                            <div
+                              key={`team-${project.id}`}
+                              onClick={() => setSelectedProject(project)}
+                              className={`p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
+                                selectedProject?.id === project.id
+                                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-sm'
+                                  : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-750'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <h4 className="font-medium text-sm flex items-center gap-1.5">
+                                  {getProjectStatusIcon(project.status)}
+                                  {project.name}
+                                </h4>
+                                <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs border ${getProjectStatusBadge(project.status)}`}>
+                                  {getProjectStatusText(project.status)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                                <span>{tasks.length} 个任务 · 已完成 {completedTasks}</span>
+                                {days && <span className={days.color}>{days.text}</span>}
+                              </div>
+                              <div className="mt-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span>进度</span>
+                                  <span>{project.progress}%</span>
+                                </div>
+                                <div className="h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-blue-500 rounded-full transition-all"
+                                    style={{ width: `${project.progress}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
 
-                  {/* 专题研究入口 */}
-                  <h3 className="font-semibold mt-4 mb-3 flex items-center">
-                    <span className="text-lg mr-1.5">📚</span>专题研究
-                  </h3>
-                  <UnifiedResearchList />
+                  {projectTypeFilter === 'topic' && (
+                    <>
+                      <h3 className="font-semibold mb-3 flex items-center"><span className="text-lg mr-1.5">📚</span>专题研究</h3>
+                      {researchProjects.length > 0 ? (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {researchProjects.map((rp: any) => (
+                            <div key={rp.id} className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <div className="font-medium text-sm">{rp.name}</div>
+                              {rp.description && <p className="text-xs text-gray-500 mt-0.5 truncate">{rp.description}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-400 text-sm">暂无专题研究</div>
+                      )}
+                    </>
+                  )}
+
+                  {projectTypeFilter === 'archive' && (
+                    <>
+                      <h3 className="font-semibold mb-3">已归档项目</h3>
+                      {archivedProjectIds.size > 0 ? (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {filteredProjects.map(project => (
+                            <div key={`arch-${project.id}`}
+                              onClick={() => { setSelectedProject(project); }}
+                              className="p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-750"
+                            >
+                              <div className="font-medium text-sm">{project.name}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">
+                                {project.tasks.length} 个任务 · 进度 {project.progress}%
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-center py-6 text-gray-400 text-sm">暂无已归档项目</p>
+                      )}
+                    </>
+                  )}
                 </div>
               </motion.div>
 
-              {/* 中间:项目详情和任务 */}
-              <motion.div 
+              {/* 中间:项目详情 */}
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0, transition: { delay: 0.1 } }}
                 className="lg:col-span-2 space-y-4"
@@ -2052,54 +1588,73 @@ const TeamCollaborationEnhanced: React.FC = () => {
                 {selectedProject ? (
                   <>
                     {/* 项目详情 */}
-                    <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                      <div className="flex justify-between items-start mb-4">
-                        <div>
-                          <h3 className="text-lg font-semibold">{selectedProject.name}</h3>
-                          <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{selectedProject.description}</p>
+                    <div className="bg-white dark:bg-gray-750 rounded-xl p-3 sm:p-4 border border-gray-200 dark:border-gray-700">
+                      <div className="flex justify-between items-start mb-3 sm:mb-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {getProjectStatusIcon(selectedProject.status)}
+                            <span className={`px-2 py-0.5 rounded-full text-xs border ${getProjectStatusBadge(selectedProject.status)}`}>
+                              {getProjectStatusText(selectedProject.status)}
+                            </span>
+                          </div>
+                          <h3 className="text-base sm:text-lg font-semibold truncate">{selectedProject.name}</h3>
+                          <p className="text-gray-600 dark:text-gray-300 text-xs sm:text-sm mt-1 line-clamp-2">{selectedProject.description}</p>
                         </div>
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => handleEditProject(selectedProject)}
-                            className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
-                          >
-                            <Edit3 size={16} />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteProject(selectedProject.id)}
-                            className="p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                          >
-                            <Trash2 size={16} />
+                        <div className="flex space-x-1 sm:space-x-2 flex-shrink-0 ml-2">
+                          <button onClick={() => handleEditProject(selectedProject)}
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                            title="编辑项目"><Edit3 size={14} /></button>
+                          <button onClick={() => handleDeleteProject(selectedProject.id)}
+                            className="p-1.5 sm:p-2 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                            title="删除项目"><Trash2 size={14} /></button>
+                          <button onClick={() => handleArchiveProject(selectedProject.id)}
+                            className={`p-1.5 sm:p-2 ${archivedProjectIds.has(selectedProject.id) ? 'text-amber-600 hover:text-blue-600' : 'text-gray-500 hover:text-amber-600'}`}
+                            title={archivedProjectIds.has(selectedProject.id) ? '取消归档' : '归档项目'}>
+                            {archivedProjectIds.has(selectedProject.id) ? <ArchiveRestore size={14} /> : <Archive size={14} />}
                           </button>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">{selectedProject.progress}%</div>
-                          <div className="text-xs text-gray-500">完成进度</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-3 sm:mb-4">
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-blue-600">{selectedProject.progress}%</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">完成进度</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
-                          <div className="text-xs text-gray-500">已完成任务</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-green-600">{selectedProject.tasks.filter(t => t.status === 'completed').length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">已完成</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-orange-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
-                          <div className="text-xs text-gray-500">进行中任务</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-blue-600">{selectedProject.tasks.filter(t => t.status === 'in-progress').length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">进行中</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
-                          <div className="text-xs text-gray-500">总任务数</div>
+                        <div className="text-center p-1 sm:p-0">
+                          <div className="text-lg sm:text-2xl font-bold text-gray-600">{selectedProject.tasks.length}</div>
+                          <div className="text-[10px] sm:text-xs text-gray-500">总任务数</div>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between text-sm">
+                      <div className="mb-3">
+                        <div className="flex justify-between text-xs sm:text-sm mb-1">
+                          <span className="text-gray-500">总进度</span>
+                          <span className="font-medium">{selectedProject.progress}%</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${selectedProject.progress >= 80 ? 'bg-green-500' : selectedProject.progress >= 40 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                            style={{ width: `${selectedProject.progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs sm:text-sm gap-2">
                         <div className="flex items-center space-x-2">
-                          <Calendar size={16} className="text-gray-500" />
-                          <span>截止日期: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
+                          <Calendar size={14} className="text-gray-500" />
+                          <span>截止: {new Date(selectedProject.endDate).toLocaleDateString()}</span>
+                          {(() => { const d = getDaysUntilDeadline(selectedProject.endDate); return d ? <span className={d.color}>({d.text})</span> : null; })()}
                         </div>
                         <div className="flex items-center space-x-2">
-                          <Users size={16} className="text-gray-500" />
+                          <Users size={14} className="text-gray-500" />
                           <span>{selectedProject.assignedMembers.length} 人参与</span>
                         </div>
                       </div>
@@ -2109,61 +1664,43 @@ const TeamCollaborationEnhanced: React.FC = () => {
                     <div className="bg-white dark:bg-gray-750 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
                       <div className="flex justify-between items-center mb-4">
                         <h3 className="font-semibold">任务列表</h3>
-                        <button 
-                          onClick={() => handleAddTask(selectedProject.id)}
-                          className="flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
-                        >
-                          <Plus size={14} className="mr-1" />
-                          添加任务
+                        <button onClick={() => handleAddTask(selectedProject.id)}
+                          className="flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors">
+                          <Plus size={14} className="mr-1" />添加任务
                         </button>
                       </div>
 
-                      <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                        {selectedProject.tasks.map(task => (
-                          <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
-                            <div className="flex items-center space-x-3 flex-1">
-                              <input
-                                type="checkbox"
-                                checked={task.status === 'completed'}
-                                onChange={() => handleToggleTask(task.id)}
-                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                              />
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>
-                                    {task.title}
-                                  </span>
-                                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                    task.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                                    task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                    'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                                  }`}>
-                                    {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
-                                  </span>
-                                </div>
-                                <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
-                                  <span>分配给: {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
-                                  {task.dueDate && <span>• 截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                      {selectedProject.tasks.length > 0 ? (
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                          {selectedProject.tasks.map(task => (
+                            <div key={task.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                              <div className="flex items-center space-x-3 flex-1">
+                                <input type="checkbox" checked={task.status === 'completed'}
+                                  onChange={() => handleToggleTask(task.id)}
+                                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" />
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`font-medium ${task.status === 'completed' ? 'line-through text-gray-500' : ''}`}>{task.title}</span>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${task.priority === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'}`}>
+                                      {task.priority === 'high' ? '高' : task.priority === 'medium' ? '中' : '低'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center space-x-2 mt-1 text-xs text-gray-500">
+                                    <span>分配至 {teamMembers.find(m => m.id === task.assignedTo)?.name || '未分配'}</span>
+                                    {task.dueDate && <span>截止: {new Date(task.dueDate).toLocaleDateString()}</span>}
+                                  </div>
                                 </div>
                               </div>
+                              <div className="flex space-x-1">
+                                <button onClick={() => handleEditTask(task)} className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"><Edit3 size={14} /></button>
+                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"><Trash2 size={14} /></button>
+                              </div>
                             </div>
-                            <div className="flex space-x-1">
-                              <button 
-                                onClick={() => handleEditTask(task)}
-                                className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
-                              >
-                                <Edit3 size={14} />
-                              </button>
-                              <button 
-                                onClick={() => handleDeleteTask(task.id)}
-                                className="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-6 text-gray-400 text-sm">暂无任务，点击"添加任务"创建</div>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -2178,19 +1715,17 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
         )}
 
-        {/* 知识图谱 */}
-        {activeTab === 'knowledge-graph' && <KnowledgeGraphPanel userInfo={userInfo} />}
-        
-        {/* 思维导图 */}
-        {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
-
-        {/* 知识网络/wiki编辑器 */}
-        {activeTab === 'wiki-editor' && (
-          <div className="h-[calc(100vh-200px)]">
-            <WikiEditor />
-          </div>
-        )}
+          {/* 思维导图 */}
+          {activeTab === 'mindmap' && <MindMapPanel userInfo={userInfo} />}
       </div>
+
+      {/* 卡片详情预览弹窗 */}
+      {previewCard && (
+        <CardDetailPopup
+          card={previewCard as any}
+          onClose={() => setPreviewCard(null)}
+        />
+      )}
 
       {/* 成员编辑弹窗 */}
       <EditModal 
@@ -2237,10 +1772,10 @@ const TeamCollaborationEnhanced: React.FC = () => {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
             >
               <option value="👤">👤 默认</option>
-              <option value="👨‍💼">👨‍💼 经理</option>
-              <option value="👩‍💻">👩‍💻 开发</option>
-              <option value="👨‍🎨">👨‍🎨 设计</option>
-              <option value="👩‍🔬">👩‍🔬 研究</option>
+              <option value="👨‍💼">👨‍💼经理</option>
+              <option value="👩‍💼">👩‍💼开发</option>
+              <option value="👨‍🎨">👨‍🎨设计</option>
+              <option value="👩‍🔬">👩‍🔬研究</option>
             </select>
           </div>
           <div className="flex items-center">
@@ -2440,7 +1975,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">参与度 (%)</label>
+            <label className="block text-sm font-medium mb-1">参与库(%)</label>
             <input
               type="number"
               min="0"
@@ -2509,7 +2044,7 @@ const TeamCollaborationEnhanced: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">开始日期</label>
+              <label className="block text-sm font-medium mb-1">开始日未</label>
               <input
                 type="date"
                 value={editingProject?.startDate || ''}
@@ -2668,376 +2203,16 @@ const TeamCollaborationEnhanced: React.FC = () => {
   );
 };
 
-interface KnowledgeGraphPanelProps {
+interface MindMapPanelProps {
   userInfo: { id: string; name: string; avatar: string; color: string };
 }
 
-const KnowledgeGraphPanel: React.FC<KnowledgeGraphPanelProps> = ({ userInfo }) => {
-  const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstanceRef = useRef<echarts.ECharts | null>(null);
-  const [cards, setCards] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedCard, setSelectedCard] = useState<any>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editContent, setEditContent] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showPreview, setShowPreview] = useState(true);
-
-  useEffect(() => {
-    const fetchCards = async () => {
-      try {
-        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=100');
-        const data = await res.json();
-        const fetched = Array.isArray(data) ? data : (data.cards || []);
-        setCards(fetched);
-        if (fetched.length > 0 && !selectedCard) {
-          setSelectedCard(fetched[0]);
-          setEditTitle(fetched[0].title || '');
-          setEditContent(fetched[0].content || '');
-        }
-      } catch (e) {
-        console.error('Failed to load cards:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchCards();
-  }, []);
-
-  const handleCardClick = (card: any) => {
-    setSelectedCard(card);
-    setEditTitle(card.title || '');
-    setEditContent(card.content || '');
-    setIsEditing(false);
-    setShowPreview(true);
-  };
-
-  const handleEditToggle = () => {
-    if (!isEditing) {
-      setEditTitle(selectedCard?.title || '');
-      setEditContent(selectedCard?.content || '');
-    }
-    setIsEditing(!isEditing);
-    setShowPreview(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (!selectedCard) return;
-    try {
-      const res = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${selectedCard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editTitle, content: editContent })
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setCards(prev => prev.map(c => c.id === selectedCard.id ? { ...c, ...updated } : c));
-        setSelectedCard({ ...selectedCard, title: editTitle, content: editContent });
-        setIsEditing(false);
-        toast.success('卡片已更新');
-      } else {
-        toast.error('更新失败');
-      }
-    } catch (e) {
-      toast.error('更新失败: ' + String(e));
-    }
-  };
-
-  const filteredCards = cards.filter(card =>
-    (card.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (card.content || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const colorMap: Record<string, string> = {
-    'blue': '#3b82f6',
-    'green': '#22c55e',
-    'yellow': '#eab308',
-    'red': '#ef4444'
-  };
-  const colorLabel: Record<string, string> = {
-    'blue': '蓝色',
-    'green': '绿色',
-    'yellow': '黄色',
-    'red': '红色'
-  };
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-
-    if (chartInstanceRef.current) {
-      chartInstanceRef.current.dispose();
-    }
-
-    const chart = echarts.init(chartRef.current);
-    chartInstanceRef.current = chart;
-
-    const nodes = cards.map((card: any) => ({
-      id: String(card.id),
-      name: card.title || `卡片${card.id}`,
-      category: card.card_type || 'blue',
-      symbolSize: 40 + (card.content?.length || 0) / 50,
-      itemStyle: {
-        color: colorMap[card.card_type] || colorMap['blue']
-      }
-    }));
-
-    nodes.push({
-      id: 'user',
-      name: userInfo.name || '当前用户',
-      category: 'user',
-      symbolSize: 50,
-      itemStyle: { color: '#8b5cf6' }
-    });
-
-    const links: any[] = [];
-    for (let i = 0; i < cards.length; i++) {
-      if (i > 0 && i < cards.length) {
-        links.push({ source: String(cards[i].id), target: String(cards[Math.max(0, i-1)].id), label: '关联' });
-      }
-    }
-    const userCardIdx = Math.floor(cards.length / 2);
-    if (cards.length > 0) {
-      links.push({ source: 'user', target: String(cards[userCardIdx].id), label: '创建' });
-    }
-
-    const categories = [
-      { name: '蓝色卡片' },
-      { name: '绿色卡片' },
-      { name: '黄色卡片' },
-      { name: '红色卡片' },
-      { name: '用户' }
-    ];
-
-    const option = {
-      tooltip: { trigger: 'item', formatter: (params: any) => `${params.name}` },
-      legend: { data: categories.map(c => c.name), top: 10 },
-      series: [{
-        type: 'graph',
-        layout: 'force',
-        data: nodes.map(node => ({
-          ...node,
-          label: { show: true, fontSize: 11 }
-        })),
-        links,
-        categories,
-        roam: true,
-        forceRepulsion: 500,
-        linkDistance: 120,
-        lineStyle: { color: 'source', curveness: 0.1 }
-      }]
-    };
-
-    chart.setOption(option);
-
-    // Click on graph node to select card
-    chart.off('click');
-    chart.on('click', (params: any) => {
-      const card = cards.find(c => String(c.id) === params.name || String(c.id) === params.data?.id);
-      if (card) handleCardClick(card);
-    });
-
-    return () => {
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
-        chartInstanceRef.current = null;
-      }
-    };
-  }, [cards, userInfo]);
-
-  const typeColorBg: Record<string, string> = {
-    'blue': 'bg-blue-100 dark:bg-blue-900/30',
-    'green': 'bg-green-100 dark:bg-green-900/30',
-    'yellow': 'bg-yellow-100 dark:bg-yellow-900/30',
-    'red': 'bg-red-100 dark:bg-red-900/30'
-  };
-
-return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-bold">团队知识图谱</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">点击左侧卡片或图谱节点查看详情并编辑</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setSelectedCard(null)}
-            className="flex items-center px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg"
-          >
-            <X size={14} className="mr-1" /> 清除选择
-          </button>
-          <button
-            onClick={() => window.location.reload()}
-            className="flex items-center px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
-          >
-            <RefreshCw size={14} className="mr-1" /> 刷新图谱
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12 text-gray-400">加载中...</div>
-      ) : (
-        <div className="flex gap-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
-          {/* Left: Card list */}
-          <div className="w-64 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="p-3 border-b border-gray-200 dark:border-gray-700">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="搜索卡片..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex gap-1 mt-2 flex-wrap">
-                {['blue','green','yellow','red'].map(t => (
-                  <span key={t} className={`text-xs px-1.5 py-0.5 rounded ${typeColorBg[t]} font-medium`} style={{ color: colorMap[t] }}>
-                    {colorLabel[t]}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              {filteredCards.length === 0 && (
-                <div className="text-center py-8 text-gray-400 text-sm">无匹配卡片</div>
-              )}
-              {filteredCards.map(card => (
-                <div
-                  key={card.id}
-                  onClick={() => handleCardClick(card)}
-                  className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors ${
-                    selectedCard?.id === card.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : ''
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    <div
-                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                      style={{ backgroundColor: colorMap[card.card_type] || colorMap['blue'] }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium truncate">{card.title || `卡片${card.id}`}</div>
-                      <div className="text-xs text-gray-400 mt-0.5 line-clamp-2">
-                        {card.content?.slice(0, 60) || '暂无内容'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="p-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-400 text-center">
-              共 {filteredCards.length} 张卡片
-            </div>
-          </div>
-
-          {/* Center: Graph */}
-          <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-3 overflow-hidden">
-            <div ref={chartRef} className="w-full h-full" />
-          </div>
-
-          {/* Right: Detail panel */}
-          <div className="w-80 flex-shrink-0 flex flex-col bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            {!selectedCard ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                <Eye size={32} className="mb-2 opacity-30" />
-                <p className="text-sm">选择左侧卡片查看详情</p>
-              </div>
-            ) : (
-              <>
-                <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: colorMap[selectedCard.card_type] || colorMap['blue'] }}
-                    />
-                    <span className="text-sm font-medium truncate max-w-[160px]">
-                      {selectedCard.title || `卡片${selectedCard.id}`}
-                    </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => setShowPreview(!showPreview)}
-                      className={`p-1.5 rounded-lg text-xs ${showPreview ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
-                      title="预览"
-                    >
-                      <Eye size={14} />
-                    </button>
-                    <button
-                      onClick={handleEditToggle}
-                      className={`p-1.5 rounded-lg text-xs ${isEditing ? 'bg-green-100 dark:bg-green-900/30 text-green-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}
-                      title="编辑"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-3">
-                  {isEditing ? (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs text-gray-500 mb-1 block">标题</label>
-                        <input
-                          type="text"
-                          value={editTitle}
-                          onChange={e => setEditTitle(e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-500 mb-1 block">内容</label>
-                        <textarea
-                          value={editContent}
-                          onChange={e => setEditContent(e.target.value)}
-                          rows={10}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-                        />
-                      </div>
-                      <button
-                        onClick={handleSaveEdit}
-                        className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center justify-center gap-1"
-                      >
-                        <Save size={14} className="mr-1" /> 保存修改
-                      </button>
-                    </div>
-                  ) : showPreview ? (
-                    <div>
-                      <div className="mb-3">
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${typeColorBg[selectedCard.card_type] || ''}`} style={{ color: colorMap[selectedCard.card_type] }}>
-                          {colorLabel[selectedCard.card_type] || '蓝色'} 卡片
-                        </span>
-                      </div>
-                      <h3 className="text-base font-semibold mb-2">{selectedCard.title || `卡片${selectedCard.id}`}</h3>
-                      <div className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
-                        {selectedCard.content || '暂无内容'}
-                      </div>
-                      {selectedCard.tags?.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-3">
-                          {(selectedCard.tags as string[]).map((tag: string) => (
-                            <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500">
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-sm text-gray-400 text-center py-8">预览已隐藏</div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-interface MindMapPanelProps {
-  userInfo: { id: string; name: string; avatar: string; color: string };
+interface MindNode {
+  id: string;
+  text: string;
+  children: MindNode[];
+  collapsed: boolean;
+  color: string;
 }
 
 const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
@@ -3070,8 +2245,8 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
     if (cards.length === 0) {
       return {
         id: 'root',
-        text: userInfo.name ? `${userInfo.name}的思维导图` : '团队思维导图',
-        children: [],
+          text: userInfo.name ? `${userInfo.name}的思维导图` : '团队思维导图',
+        children: [] as MindNode[],
         collapsed: false,
         color: '#8b5cf6'
       };
@@ -3091,15 +2266,15 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
       'red': '红色卡片'
     };
 
-    const children = Object.entries(byType).map(([type, typeCards]) => ({
+    const children: MindNode[] = Object.entries(byType).map(([type, typeCards]): MindNode => ({
       id: `type-${type}`,
       text: typeNames[type] || type,
       color: colorMap[type] || '#3b82f6',
       collapsed: false,
-      children: typeCards.slice(0, 10).map(card => ({
+      children: typeCards.slice(0, 10).map((card): MindNode => ({
         id: `card-${card.id}`,
         text: card.title?.slice(0, 20) || `卡片${card.id}`,
-        children: [],
+        children: [] as MindNode[],
         collapsed: false,
         color: colorMap[type] || '#3b82f6'
       }))
@@ -3114,7 +2289,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
     };
   };
 
-  const [root, setRoot] = useState(buildMindMap);
+  const [root, setRoot] = useState<MindNode>(() => buildMindMap());
   const [selectedNode, setSelectedNode] = useState<string | null>('root');
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
@@ -3128,47 +2303,47 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
   const addChildNode = (parentId: string) => {
     const newNode = {
       id: `node-${Date.now()}`,
-      text: '新主题',
-      children: [],
+      text: '新主颜',
+      children: [] as MindNode[],
       collapsed: false,
       color: nodeColors[Math.floor(Math.random() * nodeColors.length)]
     };
-    
-    const addToParent = (node: typeof root): typeof root => {
+
+    const addToParent = (node: MindNode): MindNode => {
       if (node.id === parentId) {
         return { ...node, children: [...node.children, newNode] };
       }
       return { ...node, children: node.children.map(addToParent) };
     };
-    
+
     setRoot(addToParent(root));
   };
 
   const deleteNode = (nodeId: string) => {
     if (nodeId === 'root') return;
-    
-    const deleteFromTree = (node: typeof root): typeof root => ({
+
+    const deleteFromTree = (node: MindNode): MindNode => ({
       ...node,
       children: node.children.filter(c => c.id !== nodeId).map(deleteFromTree)
     });
-    
+
     setRoot(deleteFromTree(root));
     setSelectedNode(null);
   };
 
   const updateNodeText = (nodeId: string, newText: string) => {
-    const updateInTree = (node: typeof root): typeof root => {
+    const updateInTree = (node: MindNode): MindNode => {
       if (node.id === nodeId) {
         return { ...node, text: newText };
       }
       return { ...node, children: node.children.map(updateInTree) };
     };
-    
+
     setRoot(updateInTree(root));
     setEditingNode(null);
   };
 
-  const renderNode = (node: typeof root, isRoot: boolean = false) => {
+  const renderNode = (node: MindNode, isRoot: boolean = false) => {
     const isSelected = selectedNode === node.id;
     const isEditing = editingNode === node.id;
 
@@ -3249,7 +2424,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
       </div>
       
       {loading ? (
-        <div className="text-center py-8">加载中...</div>
+        <div className="text-center py-8">加载中..</div>
       ) : (
         <>
           <div className="bg-white dark:bg-gray-750 rounded-xl p-8 border border-gray-200 dark:border-gray-700 min-h-[500px] overflow-auto">
@@ -3259,8 +2434,8 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
           </div>
           
           <div className="flex items-center justify-between text-sm text-gray-500">
-            <p>💡 双击节点编辑文字，点击节点添加/删除子节点</p>
-            <span>共 {cards.length} 张知识卡片</span>
+            <p>💡 双击节点编辑文字，点击节点添加删除子节点</p>
+            <span>全{cards.length} 张知识卡片</span>
           </div>
         </>
       )}
@@ -3269,7 +2444,7 @@ const MindMapPanel: React.FC<MindMapPanelProps> = ({ userInfo }) => {
 };
 
 // ========== 专题研究列表组件（嵌入团队项目管理面板） ==========
-const UnifiedResearchList: React.FC = () => {
+const UnifiedResearchList: React.FC<{ onSelect?: (project: any) => void }> = ({ onSelect }) => {
   const [researchProjects, setResearchProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -3297,13 +2472,13 @@ const UnifiedResearchList: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-4 text-sm text-gray-400">加载中...</div>;
+    return <div className="text-center py-4 text-sm text-gray-400">加载中..</div>;
   }
 
   if (researchProjects.length === 0) {
     return (
       <div className="text-center py-4 text-sm text-gray-400">
-        暂无专题研究，请在 GTD → 专题研究中创建
+        暂无专题研究，请到 GTD → 专题研究中创建
       </div>
     );
   }
@@ -3313,11 +2488,7 @@ const UnifiedResearchList: React.FC = () => {
       {researchProjects.map(project => (
         <div
           key={`research-${project.id}`}
-          onClick={() => {
-            // 导航到 GTD 中的专题研究
-            const event = new CustomEvent('navigateToResearch', { detail: { projectId: project.id } });
-            window.dispatchEvent(event);
-          }}
+          onClick={() => onSelect?.(project)}
           className={`p-3 rounded-lg border cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-750 ${
             colorMap[project.color || 'blue'] || colorMap.blue
           } border`}

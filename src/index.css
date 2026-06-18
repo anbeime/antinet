@@ -1,3 +1,6 @@
+/* 导入仿古暖棕宣纸风格配色 */
+@import './styles/theme-ancient.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

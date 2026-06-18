@@ -79,10 +79,10 @@ class AIServiceFactory:
 def get_ai_service(name: Optional[str] = None) -> Optional[BaseAI]:
     """
     获取 AI 服务的便捷函数
-    
+
     Args:
         name: 服务名称，None 则返回默认服务
-        
+
     Returns:
         BaseAI: AI 服务实例
     """
@@ -91,12 +91,17 @@ def get_ai_service(name: Optional[str] = None) -> Optional[BaseAI]:
     return AIServiceFactory.get_default()
 
 
+def get_sensenova_service() -> Optional[BaseAI]:
+    """获取 Sensenova 云服务（用于 chat/skill/workflow 场景）"""
+    return AIServiceFactory.get('sensenova')
+
+
 def create_ai_service(provider: str = 'npu', config: Optional[Dict[str, Any]] = None) -> Optional[BaseAI]:
     """
     创建指定提供者的 AI 服务
     
     Args:
-        provider: 提供者名称 ('openai', 'npu')
+        provider: 提供者名称 ('openai', 'npu', 'nim')
         config: 配置
         
     Returns:
@@ -106,6 +111,9 @@ def create_ai_service(provider: str = 'npu', config: Optional[Dict[str, Any]] = 
         return OpenAIService(config)
     elif provider == 'npu':
         return NPUService(config)
+    elif provider == 'nim':
+        # NVIDIA NIM 使用 OpenAI 兼容接口
+        return OpenAIService(config)
     else:
         logger.warning(f"[AI] 未知提供者: {provider}")
         return None

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, X, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import CalendarView from '@/components/CalendarView';
 import TaskListView from '@/components/TaskListView';
 import { toast } from 'sonner';
@@ -24,6 +25,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
   const [creating, setCreating] = useState(false);
   const [calendarFullscreen, setCalendarFullscreen] = useState(false);
   const [pageScale, setPageScale] = useState(1);
+  const [currentView, setCurrentView] = useState<'calendar' | 'list'>(initialView);
   const [formData, setFormData] = useState<NewTaskForm>({
     title: '',
     description: '',
@@ -33,6 +35,14 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
     remind_at: '',
     reminder_enabled: false
   });
+
+  // 从首页跳转时直接打开全屏日历
+  useEffect(() => {
+    if (localStorage.getItem('openCalendarFullscreen') === 'true') {
+      localStorage.removeItem('openCalendarFullscreen');
+      setCalendarFullscreen(true);
+    }
+  }, []);
 
   const handleCreateTask = async () => {
     if (!formData.title.trim()) {
@@ -63,7 +73,7 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         window.location.reload();
       } else {
         const err = await response.json();
-        toast.error(err.detail || '创建失败');
+        toast.error(safeErrorDetail(err.detail, '创建失败'));
       }
     } catch (error) {
       toast.error('创建失败');
@@ -78,9 +88,34 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold" style={{ color: '#8b4513', fontFamily: 'KaiTi, STKaiti, serif', letterSpacing: '0.05em' }}>任务管理</h1>
-            <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: '#f5ebe0', color: '#8b7355' }}>
-              任务 · 日历
-            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentView('list')}
+                className={`text-sm px-3 py-1 rounded-full transition-colors ${
+                  currentView === 'list'
+                    ? 'text-white' : ''
+                }`}
+                style={{
+                  backgroundColor: currentView === 'list' ? '#d4a574' : '#f5ebe0',
+                  color: currentView === 'list' ? '#fff' : '#8b7355'
+                }}
+              >
+                任务
+              </button>
+              <button
+                onClick={() => setCurrentView('calendar')}
+                className={`text-sm px-3 py-1 rounded-full transition-colors ${
+                  currentView === 'calendar'
+                    ? 'text-white' : ''
+                }`}
+                style={{
+                  backgroundColor: currentView === 'calendar' ? '#d4a574' : '#f5ebe0',
+                  color: currentView === 'calendar' ? '#fff' : '#8b7355'
+                }}
+              >
+                日历
+              </button>
+            </div>
           </div>
           
           <div className="flex items-center gap-1">
@@ -123,12 +158,12 @@ const GTDTaskManager: React.FC<GTDTaskManagerProps> = ({ initialView = 'list' })
       <div className="h-full" style={{ transform: `scale(${pageScale})`, transformOrigin: 'top left', width: pageScale < 1 ? `${100 / pageScale}%` : '100%' }}>
         <div className="h-full flex flex-col lg:flex-row">
         {/* 左侧：任务列表 */}
-        <div className="flex-1 overflow-hidden">
+        <div className={`overflow-hidden ${currentView === 'list' ? 'flex-1' : 'hidden lg:block lg:flex-1'}`}>
           <TaskListView />
         </div>
         
         {/* 右侧：日历面板 */}
-        <div className="w-full lg:w-[400px] border-t lg:border-t-0 lg:border-l overflow-x-auto" style={{ borderColor: '#e8ddd0' }}>
+        <div className={`${currentView === 'calendar' ? 'flex-1' : 'hidden lg:block lg:w-[400px]'} border-t lg:border-t-0 lg:border-l overflow-x-auto`} style={{ borderColor: '#e8ddd0' }}>
           {calendarFullscreen ? (
             <div className="fixed inset-0 z-50" style={{ backgroundColor: '#faf8f5' }}>
               <div className="absolute top-4 right-4 z-50 flex items-center gap-2">

@@ -149,6 +149,8 @@ def _md_to_pdf_bytes(md_content: str, title: str, theme: str) -> bytes:
         else:
             text = _escape_xml(stripped)
             text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+            text = re.sub(r'<b>\*', '<b>', text)
+            text = re.sub(r'\*</b>', '</b>', text)
             text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
             story.append(Paragraph(text, normal_style))
 

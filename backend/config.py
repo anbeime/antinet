@@ -1,201 +1,76 @@
-# backend/config.py - 配置文件
-# 知易智能知识管家 - 骁龙X Elite AIPC端侧AI应用
-# ============================================================
-# 硬件平台: 骁龙 X Elite (X1E-84-100)
-# SDK版本: QNN SDK v2.37 / v2.42 (多版本支持)
-# Backend: QNN HTP (Hexagon Tensor Processor) - 直接调用NPU
-# 模型: 支持多个QNN版本的模型
-# 模型目录: {PROJECT_ROOT}/models (自动下载脚本放置位置)
-# ============================================================
+"""
+⚠️ 配置模块 — 向后兼容 shim
 
-from pydantic_settings import BaseSettings
+此文件已重构为 conf/ 包，保持此文件仅用于向后兼容。
+新代码请直接: from conf.xxx import YYY
+"""
+import warnings
 from pathlib import Path
 from typing import Dict, Any
 import sys
 
+from conf import get_settings, Settings
+from conf.model import ModelRegistryConfig
+from conf.npu import NPUConfig
+from conf.database import DatabaseConfig
 
+# Suppress deprecation warning during migration period
+# TODO: Remove this file when all imports are migrated to conf/
+
+# 兼容 PyInstaller 的路径
 def _get_backend_dir() -> Path:
-    """获取后端目录（兼容 PyInstaller 打包）"""
     if getattr(sys, 'frozen', False):
-        # exe 已在 backend/ 目录下，直接用 exe 所在目录
         return Path(sys.executable).parent
     return Path(__file__).parent.absolute()
 
-
 def _get_project_root() -> Path:
-    """获取项目根目录（兼容 PyInstaller 打包）"""
     if getattr(sys, 'frozen', False):
-        # exe 在 backend/ 下，项目根目录是上一级
         return Path(sys.executable).parent.parent
     return Path(__file__).parent.parent.absolute()
 
-
-# 获取后端目录的绝对路径
 BACKEND_DIR = _get_backend_dir()
-# 获取项目根目录
 PROJECT_ROOT = _get_project_root()
 
-# 模型基础目录 - 支持多位置查找
-# 1. 优先查找 services/models（打包后的相对路径）
-# 2. 其次查找项目根目录下的 models
-# 3. 最后查找 C:\models（安装版路径）
 MODEL_BASE_DIRS = [
-    PROJECT_ROOT / "services" / "models",  # 打包后路径
-    PROJECT_ROOT / "models",                # 开发环境路径
-    Path("C:/models"),                     # 安装版路径
+    PROJECT_ROOT / "services" / "models",
+    PROJECT_ROOT / "models",
+    Path("C:/models"),
 ]
 
-class Settings(BaseSettings):
-    """应用配置 - 骁龙X Elite AIPC端侧AI配置"""
+# 模型注册表（委派到 conf.model）
+_model_registry = ModelRegistryConfig()
+MODEL_REGISTRY = _model_registry.MODEL_REGISTRY
+DEFAULT_CHAT_MODEL = _model_registry.DEFAULT_CHAT_MODEL
+DEFAULT_VISION_MODEL = _model_registry.DEFAULT_VISION_MODEL
+DEFAULT_EMBEDDING_MODEL = _model_registry.DEFAULT_EMBEDDING_MODEL
 
-    # 基础配置
-    APP_NAME: str = "知易智能知识管家"
-    APP_VERSION: str = "2.0.0"
-    DEBUG: bool = True
+# QNN SDK 路径
+_npu_config = NPUConfig()
+QNN_SDK_PATHS = _npu_config.QNN_SDK_PATHS
 
-    # 服务配置
-    HOST: str = "0.0.0.0"
-    PORT: int = 8001
+# 配置实例
+settings = get_settings()
 
-    # 模型配置（兼容旧代码）
-    MODEL_NAME: str = "llama3.2-3b"
-    MODEL_PATH: str = "C:/models/llama3.2-3b-8380-qnn2.37"
-    AUTO_LOAD_MODEL: bool = False
+# 向后兼容: DB_PATH (旧 Settings 直接有此字段, 新 conf 中在 DatabaseConfig)
+_db_config = DatabaseConfig()
+object.__setattr__(settings, 'DB_PATH', _db_config.DB_PATH)
+object.__setattr__(settings, 'DATA_DIR', _db_config.DATA_DIR)
 
-    # QNN配置
-    QNN_BACKEND: str = "HTP"
-    QNN_DEVICE: str = "NPU"
-    QNN_PERFORMANCE_MODE: str = "BURST"
-    QNN_LOG_LEVEL: str = "DEBUG"
-
-    # 数据配置
-    DATA_DIR: Path = BACKEND_DIR / "data"
-    DB_PATH: Path = BACKEND_DIR / "data" / "antinet.db"
-
-    # 安全配置
-    DATA_STAYS_LOCAL: bool = True
-    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024
-
-    model_config = {
-        "env_file": ".env",
-        "case_sensitive": True,
-        "extra": "ignore",
-        "env_prefix": "ZHIYI_",
-    }
-
-
-MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
-    "llama3.2-3b": {
-        "path": "C:/models/llama3.2-3b-8380-qnn2.37",  # 安装版路径
-        "alt_paths": [
-            str(PROJECT_ROOT / "services" / "models" / "llama3.2-3b-8380-qnn2.37"),  # 打包后路径
-            str(PROJECT_ROOT / "models" / "llama3.2-3b-8380-qnn2.37"),  # 开发环境
-        ],
-        "qnn_version": "2.37",
-        "type": "chat",
-        "context_length": 8192,
-        "description": "Llama 3.2 3B - 轻量级聊天模型",
-        "performance": "fast",
-        "recommended": True,
-    },
-    "qwen2.0-7b": {
-        "path": "C:/models/Qwen2.0-7B-SSD-8380-2.34",
-        "alt_paths": [
-            str(PROJECT_ROOT / "services" / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
-            str(PROJECT_ROOT / "models" / "Qwen2.0-7B-SSD-8380-2.34"),
-        ],
-        "qnn_version": "2.34",
-        "type": "chat",
-        "context_length": 8192,
-        "description": "Qwen 2.0 7B - 中文优化模型",
-        "performance": "medium",
-    },
-    "qwen2.5-vl-3b": {
-        "path": "C:/models/qwen2.5vl3b-8380-2.42",
-        "alt_paths": [
-            str(PROJECT_ROOT / "services" / "models" / "qwen2.5vl3b-8380-2.42"),
-            str(PROJECT_ROOT / "models" / "qwen2.5vl3b-8380-2.42"),
-        ],
-        "qnn_version": "2.42",
-        "type": "vision",
-        "context_length": 8192,
-        "description": "Qwen 2.5 VL 3B - 多模态视觉语言模型",
-        "requires_py312": True,
-        "requires_image": True,
-    },
-}
-
+# 向后兼容: QNN settings (旧 Settings 有 QNN_* 字段, 新 conf 中在 NPUConfig)
+_npu_config = NPUConfig()
+for attr in ['QNN_BACKEND', 'QNN_DEVICE', 'QNN_PERFORMANCE_MODE', 'QNN_LOG_LEVEL', 'QNN_SDK_VERSION']:
+    if hasattr(_npu_config, attr):
+        object.__setattr__(settings, attr, getattr(_npu_config, attr))
 
 def find_model_path(model_key: str) -> str:
-    """查找模型实际路径，支持多位置搜索"""
-    if model_key not in MODEL_REGISTRY:
-        return None
-
-    model_config = MODEL_REGISTRY[model_key]
-    primary_path = model_config.get("path")
-    alt_paths = model_config.get("alt_paths", [])
-
-    if Path(primary_path).exists():
-        return primary_path
-
-    for alt_path in alt_paths:
-        if Path(alt_path).exists():
-            return alt_path
-
-    return primary_path
-
-
-def _find_qnn_sdk_path(version: str) -> str:
-    """查找指定版本的 QNN SDK DLL 路径"""
-    version_dirs = {
-        "2.34": ["2.34.0.250626", "2.45.40.260406", "2.42.0.251225"],
-        "2.37": ["2.37.1.250807", "2.45.40.260406", "2.42.0.251225"],
-        "2.42": ["2.42.0.251225", "2.45.40.260406"],
-        "2.45": ["2.45.40.260406"],
-    }
-    for vdir in version_dirs.get(version, ["2.45.40.260406"]):
-        p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "arm64x-windows-msvc"
-        if p.exists():
-            return str(p)
-        p = PROJECT_ROOT / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc"
-        if p.exists():
-            return str(p)
-    return str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc")
-
-
-QNN_SDK_PATHS: Dict[str, str] = {
-    "2.34": _find_qnn_sdk_path("2.34"),
-    "2.37": _find_qnn_sdk_path("2.37"),
-    "2.42": _find_qnn_sdk_path("2.42"),
-    "2.45": _find_qnn_sdk_path("2.45"),
-}
-
+    return _model_registry.find_model_path(model_key)
 
 def find_qnn_sdk_path(version: str) -> str:
-    """查找 QNN SDK 实际路径"""
-    if version in QNN_SDK_PATHS:
-        sdk_path = QNN_SDK_PATHS[version]
-        if Path(sdk_path).exists():
-            return sdk_path
-
-    default_path = str(PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc")
-    if Path(default_path).exists():
-        return default_path
-
-    return default_path
-
-
-DEFAULT_CHAT_MODEL: str = "llama3.2-3b"
-DEFAULT_VISION_MODEL: str = "qwen2.5-vl-3b"
-DEFAULT_EMBEDDING_MODEL: str = "nomic-embed-text-v2-moe"
+    return _npu_config.get_sdk_path(version)
 
 __all__ = [
-    "Settings",
-    "settings",
-    "MODEL_REGISTRY",
-    "QNN_SDK_PATHS",
-    "find_model_path",
-    "find_qnn_sdk_path",
+    "Settings", "settings",
+    "MODEL_REGISTRY", "QNN_SDK_PATHS",
+    "find_model_path", "find_qnn_sdk_path",
+    "BACKEND_DIR", "PROJECT_ROOT", "MODEL_BASE_DIRS",
 ]
-
-settings = Settings()

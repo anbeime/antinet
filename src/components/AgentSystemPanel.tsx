@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Target, FileText, Lightbulb, AlertTriangle, Compass, BookOpen, Send, Loader } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 const API_BASE_URL = getApiBaseUrl() + ''
 

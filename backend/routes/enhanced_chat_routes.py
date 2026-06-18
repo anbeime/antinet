@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-增强版聊天路由 - 集成知识库查询、图片解析、技能调用
+增强版聊天路由 - 集成知识库查询、图片解析、技能调用、意图识别、工作流编排
 参考: https://github.com/anbeime/skill/tree/main/projects
-新增: 人设系统、记忆功能、语音对话
+新增: 人设系统、记忆功能、语音对话、9大意图识别、工作流引擎
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
@@ -17,9 +17,19 @@ import os
 import re
 import tempfile
 import time
+import sqlite3
 from datetime import datetime
 
 from config import settings
+
+# 新增：意图识别和工作流编排
+from routes.intent_recognition import (
+    IntentType, IntentResult, recognize_intent, recognize_intent_regex,
+    get_intent_display_name, get_intent_emoji
+)
+from routes.workflow_orchestrator import (
+    WorkflowOrchestrator, get_workflow_orchestrator, WorkflowStatus
+)
 
 
 def clean_model_output(text: str) -> str:
@@ -50,6 +60,24 @@ def clean_model_output(text: str) -> str:
     # 移除空白的 role 行
     text = re.sub(r'^\s*<(assistant|user|system)>\s*$', '', text, flags=re.MULTILINE)
     
+    # 将单独成行的数字与下一行内容合并（如 "1\n内容" → "1. 内容"）
+    lines = text.split('\n')
+    merged = []
+    skip_next = False
+    for i, line in enumerate(lines):
+        if skip_next:
+            skip_next = False
+            continue
+        if re.match(r'^\d+\.?\s*$', line) and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt:
+                num = line.strip().rstrip('.')
+                merged.append(f"{num}. {nxt}")
+                skip_next = True
+                continue
+        merged.append(line)
+    text = '\n'.join(merged)
+
     # 清理多余的空行
     text = re.sub(r'\n{3,}', '\n\n', text)
     
@@ -109,8 +137,25 @@ def set_db_manager(manager):
     except Exception as e:
         logger.warning(f"[Chat] 知识图谱模块连接失败: {e}")
 
-# 技能注册表
+# 技能注册表（兼容旧系统，同时桥接到 Hermes SkillRegistry）
 skill_registry: Dict[str, Dict[str, Any]] = {}
+
+def _get_hermes_skill_registry():
+    """惰性获取 Hermes SkillRegistry"""
+    try:
+        from services.skill_system import get_skill_registry
+        return get_skill_registry()
+    except ImportError:
+        return None
+
+# 场景→Hermes技能名映射
+SCENE_TO_HERMES_SKILL = {
+    "card_analysis": "four_color_card",
+    "knowledge_graph": "knowledge_graph_visualization",
+    "report_generation": "html_report",
+    "automation": "report_automation",
+    "skill_ppt": "ppt_generator",
+}
 
 # 场景检测模式
 SCENE_PATTERNS = {
@@ -198,9 +243,10 @@ class ImageAnalysisResult(BaseModel):
 
 
 class SceneType(str, Enum):
-    """场景类型"""
+    """场景类型 - 兼容旧版，映射到新版IntentType"""
     GENERAL = "general"
     CARD_SEARCH = "card_search"
+    CARD_CREATE = "card_create"              # 新增：创建卡片
     IMAGE_ANALYSIS = "image_analysis"
     SKILL_PPT = "skill_ppt"
     SKILL_EXCEL = "skill_excel"
@@ -208,6 +254,27 @@ class SceneType(str, Enum):
     GREETING = "greeting"
     HELP = "help"
     SELF_INTRO = "self_intro"
+    DOCUMENT_ANALYSIS = "document_analysis"   # 新增：文档分析
+    TASK_MANAGE = "task_manage"              # 新增：任务管理
+    PERFORMANCE_CHECK = "performance_check"   # 新增：性能检查
+    WORKFLOW = "workflow"                     # 新增：工作流
+    KG_ORGANIZE = "kg_organize"              # 新增：知识图谱组织
+
+# 意图到场景的映射
+INTENT_TO_SCENE = {
+    IntentType.CREATE_CARD: SceneType.CARD_CREATE,
+    IntentType.SEARCH_CARDS: SceneType.CARD_SEARCH,
+    IntentType.ORGANIZE_CARDS: SceneType.KG_ORGANIZE,
+    IntentType.ANALYZE_DOCUMENT: SceneType.DOCUMENT_ANALYSIS,
+    IntentType.GENERATE_PPT: SceneType.SKILL_PPT,
+    IntentType.MANAGE_TASKS: SceneType.TASK_MANAGE,
+    IntentType.ANALYZE_IMAGE: SceneType.IMAGE_ANALYSIS,
+    IntentType.CHECK_PERFORMANCE: SceneType.PERFORMANCE_CHECK,
+    IntentType.COMPLEX_WORKFLOW: SceneType.WORKFLOW,
+    IntentType.GREETING: SceneType.GREETING,
+    IntentType.HELP: SceneType.HELP,
+    IntentType.GENERAL_CHAT: SceneType.GENERAL,
+}
 
 
 class ChatRequest(BaseModel):
@@ -270,54 +337,108 @@ PERSONA_SYSTEM_PROMPT = """你是小易（知易），一个融合中国传统�
 # 参考 C:\D\projects\assistant\src\core\memory.ts
 
 class MemoryManager:
-    """对话记忆管理器 - 轻量级文件存储"""
+    """分层对话记忆管理器（短期/长期/压缩三层记忆）
+    
+    短期记忆: 当前会话的最近对话（≤20条），JSON文件存储，读写快
+    长期记忆: 从对话中提取的重要事实（带重要性评分），SQLite存储，持久化
+    压缩记忆: 对早期对话的定期摘要，减少上下文膨胀
+    """
+    
+    # ========== 层容量配置 ==========
+    SHORT_TERM_MAX = 20          # 短期记忆保留条数
+    LONG_TERM_DB_LIMIT = 100     # 长期记忆最多保留条数
+    COMPRESS_TRIGGER = 25        # 短期记忆超过此值触发压缩
+    COMPRESS_KEEP = 5            # 压缩后保留的最近条数
     
     def __init__(self, storage_dir: str = None):
         if storage_dir is None:
             storage_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'chat_memory')
         self.storage_dir = storage_dir
         os.makedirs(storage_dir, exist_ok=True)
-        logger.info(f"[Memory] 记忆管理器初始化, 存储目录: {storage_dir}")
+        
+        # 长期记忆使用 SQLite
+        self.ltm_path = os.path.join(storage_dir, 'long_term_memory.db')
+        self._init_ltm_db()
+        
+        logger.info(f"[Memory] 分层记忆管理器初始化, 存储目录: {storage_dir}")
+    
+    def _get_ltm_conn(self) -> sqlite3.Connection:
+        """获取长期记忆数据库连接"""
+        conn = sqlite3.connect(self.ltm_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def _init_ltm_db(self):
+        """初始化长期记忆数据库"""
+        with self._get_ltm_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS long_term_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    fact TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    importance REAL DEFAULT 0.5,
+                    source_timestamp TEXT,
+                    access_count INTEGER DEFAULT 0,
+                    last_accessed TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    time_range TEXT,       -- 覆盖的时间范围
+                    turn_range TEXT,       -- 覆盖的对话轮次范围
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_ltm_user ON long_term_memories(user_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_mem_sum_user ON memory_summaries(user_id)
+            """)
     
     def _get_user_file(self, user_id: str) -> str:
-        """获取用户记忆文件路径"""
+        """获取用户短期记忆文件路径"""
         safe_id = re.sub(r'[^\w]', '_', user_id)
         return os.path.join(self.storage_dir, f"user_{safe_id}.json")
     
     def _load_user_memory(self, user_id: str) -> dict:
-        """加载用户记忆"""
+        """加载用户短期记忆"""
         filepath = self._get_user_file(user_id)
         if os.path.exists(filepath):
             try:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except Exception as e:
-                logger.error(f"加载用户记忆失败: {e}")
+                logger.error(f"加载用户短期记忆失败: {e}")
         
         return {
             "user_id": user_id,
-            "preferences": {
-                "communication_style": "casual",
-                "language": "zh-CN"
-            },
+            "preferences": {"communication_style": "casual", "language": "zh-CN"},
             "conversation_history": [],
-            "user_facts": [],
+            "compressed_summaries": [],  # 压缩记忆：早期对话的摘要
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
     
     def _save_user_memory(self, user_id: str, data: dict):
-        """保存用户记忆"""
+        """保存用户短期记忆"""
         filepath = self._get_user_file(user_id)
         data["updated_at"] = datetime.now().isoformat()
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"保存用户记忆失败: {e}")
+            logger.error(f"保存用户短期记忆失败: {e}")
+    
+    # ========== 短期记忆（Short-term Memory） ==========
     
     def add_message(self, user_id: str, role: str, content: str, metadata: dict = None):
-        """添加对话消息"""
+        """添加对话消息到短期记忆，超出阈值时自动压缩"""
         memory = self._load_user_memory(user_id)
         message = {
             "role": role,
@@ -326,30 +447,152 @@ class MemoryManager:
             "metadata": metadata or {}
         }
         memory["conversation_history"].append(message)
-        # 保留最近 50 条
-        if len(memory["conversation_history"]) > 50:
-            memory["conversation_history"] = memory["conversation_history"][-50:]
+        
+        # 超出触发阈值 → 压缩早期对话到压缩记忆
+        if len(memory["conversation_history"]) > self.COMPRESS_TRIGGER:
+            self._compress_old_history(memory)
+        
+        # 超过短期上限 → 截断
+        if len(memory["conversation_history"]) > self.SHORT_TERM_MAX:
+            overflow = memory["conversation_history"][:-self.SHORT_TERM_MAX]
+            memory["conversation_history"] = memory["conversation_history"][-self.SHORT_TERM_MAX:]
+            # 将溢出的消息合并成一条压缩摘要
+            if overflow:
+                compressed = self._build_compressed_summary(overflow)
+                memory.setdefault("compressed_summaries", []).append(compressed)
+        
         self._save_user_memory(user_id, memory)
     
     def get_history(self, user_id: str, limit: int = 10) -> list:
-        """获取对话历史"""
+        """获取短期对话历史"""
         memory = self._load_user_memory(user_id)
         return memory["conversation_history"][-limit:]
     
-    def add_user_fact(self, user_id: str, fact: str):
-        """记录用户事实（长期记忆）"""
+    def _compress_old_history(self, memory: dict):
+        """将早期对话压缩为摘要"""
+        history = memory["conversation_history"]
+        # 保留最近 COMPRESS_KEEP 条，压缩其余的
+        if len(history) <= self.COMPRESS_KEEP * 2:
+            return
+        to_compress = history[:-self.COMPRESS_KEEP]
+        keep = history[-self.COMPRESS_KEEP:]
+        
+        compressed = self._build_compressed_summary(to_compress)
+        memory.setdefault("compressed_summaries", []).append(compressed)
+        memory["conversation_history"] = keep
+        logger.info(f"[Memory] 短期记忆压缩完成: {len(to_compress)}条 → 1条摘要")
+    
+    def _build_compressed_summary(self, messages: list) -> dict:
+        """构建压缩摘要（基于规则的简化版，不调用LLM以避免开销）"""
+        user_msgs = [m["content"][:100] for m in messages if m["role"] == "user"]
+        assistant_msgs = [m["content"][:100] for m in messages if m["role"] == "assistant"]
+        time_range = f"{messages[0]['timestamp'][:19]} ~ {messages[-1]['timestamp'][:19]}"
+        return {
+            "type": "compressed",
+            "user_msg_count": len(user_msgs),
+            "assistant_msg_count": len(assistant_msgs),
+            "user_topics": list(dict.fromkeys(user_msgs))[:3],
+            "assistant_topics": list(dict.fromkeys(assistant_msgs))[:3],
+            "time_range": time_range,
+            "created_at": datetime.now().isoformat()
+        }
+    
+    # ========== 长期记忆（Long-term Memory） ==========
+    
+    def add_long_term_fact(self, user_id: str, fact: str, category: str = 'general', importance: float = 0.5):
+        """存储长期记忆事实（自动去重）"""
+        with self._get_ltm_conn() as conn:
+            # 去重检查
+            existing = conn.execute(
+                "SELECT id FROM long_term_memories WHERE user_id = ? AND fact = ?",
+                (user_id, fact)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE long_term_memories SET access_count = access_count + 1, last_accessed = ? WHERE id = ?",
+                    (datetime.now().isoformat(), existing[0])
+                )
+                return
+            
+            conn.execute("""
+                INSERT INTO long_term_memories (user_id, fact, category, importance, source_timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            """, (user_id, fact, category, importance, datetime.now().isoformat()))
+            
+            # 清理超出上限的旧事实（按重要性保留最高的N条）
+            conn.execute("""
+                DELETE FROM long_term_memories WHERE id NOT IN (
+                    SELECT id FROM long_term_memories WHERE user_id = ?
+                    ORDER BY importance DESC, access_count DESC
+                    LIMIT ?
+                ) AND user_id = ?
+            """, (user_id, self.LONG_TERM_DB_LIMIT, user_id))
+    
+    def get_long_term_facts(self, user_id: str, limit: int = 20, min_importance: float = 0.0) -> list:
+        """获取长期记忆事实（按重要性排序）"""
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT fact, category, importance, access_count, created_at
+                FROM long_term_memories
+                WHERE user_id = ? AND importance >= ?
+                ORDER BY importance DESC, access_count DESC
+                LIMIT ?
+            """, (user_id, min_importance, limit)).fetchall()
+            return [dict(r) for r in rows]
+    
+    def get_long_term_by_category(self, user_id: str, category: str, limit: int = 10) -> list:
+        """按分类获取长期记忆"""
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT fact, importance, access_count, created_at
+                FROM long_term_memories
+                WHERE user_id = ? AND category = ?
+                ORDER BY importance DESC
+                LIMIT ?
+            """, (user_id, category, limit)).fetchall()
+            return [dict(r) for r in rows]
+    
+    # ========== 压缩记忆（Compressed Memory） ==========
+    
+    def add_summary(self, user_id: str, summary: str, time_range: str = '', turn_range: str = ''):
+        """存储对话压缩摘要"""
+        with self._get_ltm_conn() as conn:
+            conn.execute("""
+                INSERT INTO memory_summaries (user_id, summary, time_range, turn_range)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, summary, time_range, turn_range))
+    
+    def get_summaries(self, user_id: str, limit: int = 5) -> list:
+        """获取对话压缩摘要"""
+        # 从 JSON 短期记忆获取压缩摘要
         memory = self._load_user_memory(user_id)
-        if fact not in memory["user_facts"]:
-            memory["user_facts"].append(fact)
-            # 保留最近 20 条事实
-            if len(memory["user_facts"]) > 20:
-                memory["user_facts"] = memory["user_facts"][-20:]
-            self._save_user_memory(user_id, memory)
+        summaries = memory.get("compressed_summaries", [])
+        
+        # 从 SQLite 长期记忆获取摘要
+        with self._get_ltm_conn() as conn:
+            rows = conn.execute("""
+                SELECT summary, time_range, turn_range, created_at
+                FROM memory_summaries
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            """, (user_id, limit)).fetchall()
+            db_summaries = [dict(r) for r in rows]
+        
+        # 合并：先返回短期的（最近的），再补长期的
+        combined = summaries[-limit:] + db_summaries
+        return combined[:limit]
+    
+    # ========== 兼容原接口 ==========
+    
+    def add_user_fact(self, user_id: str, fact: str):
+        """兼容原接口：存入长期记忆"""
+        self.add_long_term_fact(user_id, fact, category='user_fact', importance=0.6)
     
     def get_user_facts(self, user_id: str) -> list:
-        """获取用户事实"""
-        memory = self._load_user_memory(user_id)
-        return memory.get("user_facts", [])
+        """兼容原接口：长短期合并返回"""
+        lt_facts = self.get_long_term_facts(user_id, limit=20)
+        return [f["fact"] for f in lt_facts]
     
     def update_preferences(self, user_id: str, preferences: dict):
         """更新用户偏好"""
@@ -363,35 +606,53 @@ class MemoryManager:
         return memory.get("preferences", {})
     
     def get_memory_context(self, user_id: str) -> str:
-        """生成用于 AI 提示词的记忆上下文"""
+        """
+        生成用于 AI 提示词的分层记忆上下文
+        按重要性递减排列：长期事实 > 压缩摘要 > 近期对话
+        """
         memory = self._load_user_memory(user_id)
         parts = []
         
-        # 用户事实
-        facts = memory.get("user_facts", [])
-        if facts:
-            parts.append("## 用户记忆")
-            for fact in facts[-5:]:
-                parts.append(f"- {fact}")
+        # 1. 长期记忆（最重要的）
+        lt_facts = self.get_long_term_facts(user_id, limit=8, min_importance=0.4)
+        if lt_facts:
+            parts.append("## 长期记忆（重要事实）")
+            for f in lt_facts:
+                parts.append(f"- [{f.get('category','general')}] {f['fact']} (重要性:{f['importance']:.1f})")
             parts.append("")
         
-        # 近期对话摘要
+        # 2. 压缩记忆（早期对话摘要）
+        compressed = memory.get("compressed_summaries", [])
+        if compressed:
+            parts.append("## 早期对话摘要（已压缩）")
+            for cs in compressed[-3:]:
+                topics = (cs.get("user_topics", []) or [])
+                topic_str = '; '.join(topics[:2]) if topics else '已压缩'
+                parts.append(f"- {cs.get('user_msg_count',0)}条用户消息 → {topic_str}")
+            parts.append("")
+        
+        # 3. 近期对话
         history = memory.get("conversation_history", [])
         if len(history) > 2:
             parts.append("## 近期对话")
-            for msg in history[-4:]:
+            for msg in history[-6:]:
                 role_name = "用户" if msg["role"] == "user" else "小易"
-                content = msg["content"][:80]
+                content = msg["content"][:100]
                 parts.append(f"- {role_name}: {content}")
             parts.append("")
         
         return "\n".join(parts) if parts else ""
     
     def clear_history(self, user_id: str):
-        """清空对话历史"""
+        """清空所有记忆层"""
+        # 清空短期
         memory = self._load_user_memory(user_id)
         memory["conversation_history"] = []
+        memory["compressed_summaries"] = []
         self._save_user_memory(user_id, memory)
+        # 清空长期
+        with self._get_ltm_conn() as conn:
+            conn.execute("DELETE FROM long_term_memories WHERE user_id = ?", (user_id,))
 
 
 # 全局记忆管理器
@@ -716,12 +977,12 @@ async def synthesize_response_with_llm(query: str, result: HybridSearchResult, u
 
 回答："""
     
-    # 尝试使用 NPU 模型生成（快速）- 直接实例化避免单例问题
+    # 尝试使用 NPU 模型生成
     try:
-        from models.model_loader import NPUModelLoader
-        loader = NPUModelLoader("llama3.2-3b")  # 直接实例化，使用快速的3B模型
+        from models.model_loader import get_model_loader
+        loader = get_model_loader("qwen2.0-7b")
         if not loader.is_loaded:
-            loader.load()  # 加载模型
+            loader.load()
         if loader and loader.is_loaded:
             response = loader.infer(prompt=prompt, max_new_tokens=512, temperature=0.3)
             if response and len(response) > 10:
@@ -740,11 +1001,10 @@ def _try_npu_generate(query: str, user_id: str = "default_user") -> Optional[str
     """尝试使用 NPU 模型生成回答（带人设和记忆）"""
     try:
         from models.model_loader import get_model_loader
-        loader = get_model_loader("qwen2.0-7b")  # 使用 Qwen 7B 中文优化模型
+        loader = get_model_loader("qwen2.0-7b")
         if not loader.is_loaded:
-            return None
+            loader.load()
         
-        # 构建带人设的提示词
         memory_context = memory_manager.get_memory_context(user_id)
         system_prompt = PERSONA_SYSTEM_PROMPT.format(
             current_time=datetime.now().strftime("%Y年%m月%d日 %H:%M"),
@@ -900,7 +1160,7 @@ async def analyze_image_base64(image_base64: str) -> Optional[ImageAnalysisResul
 
 def register_skill(name: str, description: str, trigger_patterns: List[str], 
                    handler: Callable, parameters: Dict[str, Any] = None):
-    """注册技能"""
+    """注册技能（同时桥接到 Hermes SkillRegistry）"""
     skill_registry[name] = {
         "name": name,
         "description": description,
@@ -909,6 +1169,13 @@ def register_skill(name: str, description: str, trigger_patterns: List[str],
         "parameters": parameters or {},
         "enabled": True
     }
+    # 同步注册到 Hermes SkillRegistry（如果有同名技能）
+    try:
+        hermes = _get_hermes_skill_registry()
+        if hermes and hermes.get_skill(name):
+            logger.debug(f"技能 {name} 已在 Hermes SkillRegistry 中可用")
+    except Exception:
+        pass
     logger.info(f"技能已注册: {name}")
 
 
@@ -1221,7 +1488,11 @@ async def enhanced_chat(request: ChatRequest):
                     response_data["reply"] = response_data["response"]
                     response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    response_data["response"] = f"该技能暂时不可用。"
+                    npu_text = _try_npu_generate(f"用户想要{scene_type.value}：{query}", user_id)
+                    if npu_text:
+                        response_data["response"] = f"🛠️ **{scene_type.value}指导**\n\n" + npu_text
+                    else:
+                        response_data["response"] = f"该技能暂时不可用。"
                 
         elif scene_type == SceneType.GREETING:
             response_data["response"] = "你好呀！我是小易。\n\n我可以帮您：\n\n* 记录想法 - 告诉我你的想法或任务\n* 搜索知识 - 查找已保存的信息\n* 分析数据 - 上传数据让我帮你分析\n* 智能问答 - 问任何问题"
@@ -1244,45 +1515,43 @@ async def enhanced_chat(request: ChatRequest):
                 response_data["response"] = "你好呀！我是小易，知易智能知识管家的AI助手，愿借古今智慧，助你从容应对！🍵✨"
             
         else:
-            # 通用对话 - 始终先搜索知识库，然后让LLM综合回答
-            result = hybrid_search_all(query, limit=5)
-            
-            if result.cards or result.kg_entities:
-                # 有搜索结果，用LLM综合生成自然语言回答
-                response_data["cards"] = result.cards[:3]
-                response_data["kg_entities"] = [
-                    {"id": e.id, "name": e.name, "type": e.entity_type, "description": e.description}
-                    for e in result.kg_entities[:3]
-                ]
-                
-                # 使用LLM综合检索结果生成自然语言回答（7B优先，3B兜底）
-                context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
-                quick_prompt = f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："
-                genie_text = await call_genie(
-                    [{"role": "user", "content": quick_prompt}],
-                    max_tokens=256, timeout_sec=60.0
+            # 通用对话 - 使用 RAG Pipeline（查询重写→混合检索→重排序→生成）
+            try:
+                from routes.rag_pipeline import run_pipeline
+                conv_history = []
+                if hasattr(request, 'conversation_history') and request.conversation_history:
+                    conv_history = [{"role": m.role, "content": m.content} for m in request.conversation_history[-4:]]
+                rag_ctx = await run_pipeline(
+                    query=query,
+                    history=conv_history,
+                    top_k=10,
+                    enable_rewrite=len(query) > 10,
+                    enable_rerank=True,
                 )
-                if genie_text:
-                    logger.info(f"[Chat] Genie响应长度: {len(genie_text)}")
-                    response_data["response"] = genie_text[:500]
-                    response_data["reply"] = response_data["response"]
-                    response_data["metadata"]["model"] = "genie-npu"
-                else:
-                    logger.warning("Genie生成失败，回退到简单格式")
-                    response_data["response"] = generate_hybrid_response(query, result)
-            else:
-                # 无匹配时，使用Genie快速响应（7B优先，3B兜底）
+                response_data["response"] = rag_ctx.llm_response
+                response_data["metadata"]["rag"] = {
+                    "rewritten_query": rag_ctx.rewritten_query,
+                    "retrieved_count": rag_ctx.metadata.get("retrieved_count", 0),
+                    "total_time": round(rag_ctx.metadata.get("total_time", 0), 2),
+                }
+                response_data["cards"] = [
+                    CardReference(
+                        card_id=c["id"], card_type=c.get("card_type", "blue"),
+                        title=c["title"], content=c["content"][:150],
+                        similarity=c.get("rerank_score", c.get("score", 0)),
+                        color=get_card_color(c.get("card_type", "blue"))
+                    ) for c in rag_ctx.reranked_chunks[:3]
+                ]
+            except Exception as e:
+                logger.error(f"[RAG] Pipeline 失败，回退直接 LLM: {e}")
                 genie_text = await call_genie(
                     [{"role": "user", "content": query}],
                     max_tokens=256, timeout_sec=60.0
                 )
                 if genie_text:
                     response_data["response"] = genie_text
-                    response_data["reply"] = genie_text
-                    response_data["metadata"]["model"] = "genie-npu"
                 else:
-                    logger.warning("[Chat] Genie不可用")
-                    response_data["response"] = f"关于「{query}」，我没有在知识库中找到相关信息。\n\n您可以：\n1. 换个关键词重新搜索\n2. 在知识库中创建相关卡片"
+                    response_data["response"] = f"关于「{query}」，我没有找到相关信息。换个关键词试试？"
         
         response_data["suggested_questions"] = generate_suggested_questions(
             scene_type,
@@ -1291,10 +1560,14 @@ async def enhanced_chat(request: ChatRequest):
             query
         )
         
-        # 自动提取卡片建议（不自动创建）
+        # 自动提取卡片建议（不自动创建）— LLM 主路径 + 规则降级
         try:
             from routes import auto_card
-            suggestions = auto_card.suggest_cards_api(query, response_data.get("response", ""))
+            kb_cards = response_data.get("cards", [])
+            suggestions = await auto_card.suggest_cards_api_async(
+                query, response_data.get("response", ""),
+                card_context=kb_cards,
+            )
             response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
         except Exception as e:
             logger.warning(f"卡片建议失败: {e}")
@@ -1476,6 +1749,12 @@ async def enhanced_chat_stream(request: ChatRequest):
                         ):
                             full_text += token
                             yield _sse_event("token", {"content": token})
+                        if not full_text:
+                            npu_text = _try_npu_generate(query, user_id) or generate_hybrid_response(query, result)
+                            full_text = npu_text
+                            for ch in npu_text:
+                                yield _sse_event("token", {"content": ch})
+                                await asyncio.sleep(0.02)
                     else:
                         yield _sse_event("meta", {"scene_type": "general"})
                         async for token in _call_genie_stream(
@@ -1484,6 +1763,12 @@ async def enhanced_chat_stream(request: ChatRequest):
                         ):
                             full_text += token
                             yield _sse_event("token", {"content": token})
+                        if not full_text:
+                            npu_text = _try_npu_generate(query, user_id) or f"关于「{query}」，我没有找到相关信息。"
+                            full_text = npu_text
+                            for ch in npu_text:
+                                yield _sse_event("token", {"content": ch})
+                                await asyncio.sleep(0.02)
 
                 # 最终事件：携带完整回复 + 元数据（确保所有值 JSON 可序列化）
                 yield _sse_event("done", {
@@ -1763,32 +2048,6 @@ def init_skills():
         parameters={"template": "string", "pages": "number"}
     )
     
-    # Excel分析技能
-    register_skill(
-        name="excel_analyzer",
-        description="分析Excel文件并生成报告",
-        trigger_patterns=[r"分析.*Excel", r"Excel.*分析", r"表格.*分析"],
-        handler=lambda query, context: {
-            "result": "Excel分析完成",
-            "file_path": "/generated/analysis.xlsx",
-            "metadata": {"charts": 3, "sheets": 2}
-        },
-        parameters={"file_path": "string", "analysis_type": "string"}
-    )
-    
-    # Word生成技能
-    register_skill(
-        name="word_generator",
-        description="生成Word文档",
-        trigger_patterns=[r"生成.*Word", r"创建.*Word", r"文档.*生成"],
-        handler=lambda query, context: {
-            "result": "Word文档生成成功",
-            "file_path": "/generated/document.docx",
-            "metadata": {"pages": 5, "template": "standard"}
-        },
-        parameters={"template": "string", "pages": "number"}
-    )
-    
     logger.info(f"已初始化 {len(skill_registry)} 个技能")
 
 
@@ -1950,6 +2209,413 @@ async def delete_draft(draft_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============ 意图识别 API ============
+
+class IntentDetectRequest(BaseModel):
+    """意图识别请求"""
+    query: str = Field(..., description="用户查询")
+    use_llm: bool = Field(default=False, description="是否使用LLM增强识别（默认关闭，正则已覆盖大多数场景）")
+
+
+@router.post("/intent/detect")
+async def detect_intent_endpoint(request: IntentDetectRequest):
+    """
+    意图识别接口 - 检测用户查询的意图类型
+    返回9大核心意图类型及实体提取结果
+    """
+    try:
+        # 获取LLM调用函数
+        async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+            from routes.enhanced_chat_routes import call_genie
+            return await call_genie(
+                [{"role": "user", "content": user_prompt}],
+                max_tokens=100, timeout_sec=15.0
+            )
+        
+        intent_result = await recognize_intent(
+            request.query,
+            call_llm_func=call_llm_fn if request.use_llm else None,
+            use_llm=request.use_llm
+        )
+        
+        return {
+            "success": True,
+            "query": request.query,
+            "intent": {
+                "primary": intent_result.primary_intent.value,
+                "primary_name": get_intent_display_name(intent_result.primary_intent),
+                "primary_emoji": get_intent_emoji(intent_result.primary_intent),
+                "confidence": round(intent_result.confidence, 2),
+                "alternative": [
+                    {"intent": i.value, "name": get_intent_display_name(i)}
+                    for i in intent_result.alternative_intents[:2]
+                ],
+                "needs_clarification": intent_result.needs_clarification,
+                "clarification_question": intent_result.clarification_question,
+            },
+            "entities": {
+                "topics": intent_result.entities.topics,
+                "colors": intent_result.entities.colors,
+                "time_range": intent_result.entities.time_range,
+                "filters": intent_result.entities.filters,
+                "file_types": intent_result.entities.file_types,
+                "people": intent_result.entities.people,
+            }
+        }
+    except Exception as e:
+        logger.error(f"意图识别失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============ 工作流 API ============
+
+class WorkflowStartRequest(BaseModel):
+    """启动工作流请求"""
+    query: str = Field(..., description="用户查询")
+    template_id: Optional[str] = Field(None, description="指定使用的工作流模板ID")
+    user_id: str = Field(default="default_user", description="用户ID")
+
+
+@router.get("/workflow/templates")
+async def list_workflow_templates(category: Optional[str] = None):
+    """获取所有工作流模板"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        await orchestrator.initialize()
+        
+        all_templates = orchestrator.get_all_templates()
+        
+        if category:
+            all_templates = [t for t in all_templates if t["category"] == category]
+        
+        return {
+            "success": True,
+            "total": len(all_templates),
+            "templates": all_templates,
+            "categories": sorted(set(t["category"] for t in all_templates)),
+        }
+    except Exception as e:
+        logger.error(f"获取工作流模板失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/workflow/start")
+async def start_workflow(request: WorkflowStartRequest):
+    """
+    启动工作流 - 根据用户意图自动选择或指定模板
+    """
+    try:
+        orchestrator = get_workflow_orchestrator()
+        await orchestrator.initialize()
+        
+        # 意图识别
+        async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+            from routes.enhanced_chat_routes import call_genie
+            return await call_genie(
+                [{"role": "user", "content": user_prompt}],
+                max_tokens=100, timeout_sec=15.0
+            )
+        
+        intent_result = await recognize_intent(
+            request.query,
+            call_llm_func=call_llm_fn,
+            use_llm=False  # 正则优先，不触发NPU
+        )
+        
+        # 生成工作流
+        execution = await orchestrator.generate_workflow(
+            request.query,
+            intent_result,
+            request.user_id
+        )
+        
+        if not execution:
+            return {"success": False, "error": "无法生成工作流"}
+        
+        return {
+            "success": True,
+            "execution_id": execution.execution_id,
+            "template_id": execution.template_id,
+            "intent": {
+                "primary": intent_result.primary_intent.value,
+                "name": get_intent_display_name(intent_result.primary_intent),
+                "emoji": get_intent_emoji(intent_result.primary_intent),
+            },
+            "total_steps": len(execution.steps),
+            "steps": [
+                {
+                    "step_id": s.step_id,
+                    "name": s.name,
+                    "description": s.description,
+                    "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                    "requires_input": s.requires_input,
+                    "input_prompt": s.input_prompt,
+                }
+                for s in execution.steps
+            ],
+            "status": execution.status.value if hasattr(execution.status, 'value') else str(execution.status),
+        }
+    except Exception as e:
+        logger.error(f"启动工作流失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/workflow/status/{execution_id}")
+async def get_workflow_status(execution_id: str):
+    """获取工作流执行状态"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        status = orchestrator.get_execution_status(execution_id)
+        
+        if not status:
+            return {"success": False, "error": "工作流不存在"}
+        
+        return {"success": True, **status}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/workflow/cancel/{execution_id}")
+async def cancel_workflow(execution_id: str):
+    """取消工作流执行"""
+    try:
+        orchestrator = get_workflow_orchestrator()
+        success = orchestrator.cancel_execution(execution_id)
+        
+        return {"success": success, "message": "工作流已取消" if success else "工作流不存在"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============ 聊天意图增强端点 ============
+
+class EnhancedChatRequestV2(BaseModel):
+    """增强版聊天请求（V2）- 带意图识别"""
+    query: str = Field(..., description="用户查询")
+    conversation_history: List[ChatMessage] = Field(default_factory=list)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    image_data: Optional[str] = Field(None)
+    session_id: Optional[str] = Field(None)
+    enable_workflow: bool = Field(default=False, description="是否启用工作流模式")
+    enable_intent_detection: bool = Field(default=True, description="是否启用意图识别")
+
+
+@router.post("/chat/v2")
+async def enhanced_chat_v2(request: EnhancedChatRequestV2):
+    """
+    增强版聊天接口 V2 - 集成意图识别和工作流
+    支持9大核心意图识别和动态工作流生成
+    """
+    try:
+        query = request.query
+        user_id = request.session_id or "default_user"
+        
+        # 记录用户消息
+        memory_manager.add_message(user_id, "user", query)
+        _extract_user_facts(query, user_id)
+        
+        response_data = {
+            "scene_type": "general",
+            "cards": [],
+            "skill_result": None,
+            "image_analysis": None,
+            "suggested_questions": [],
+            "intent": None,
+            "workflow": None,
+            "metadata": {
+                "timestamp": datetime.now().isoformat(),
+                "session_id": request.session_id,
+            }
+        }
+        
+        # 意图识别
+        intent_result = None
+        if request.enable_intent_detection:
+            async def call_llm_fn(system_prompt: str, user_prompt: str) -> Optional[str]:
+                return await call_genie(
+                    [{"role": "user", "content": user_prompt}],
+                    max_tokens=100, timeout_sec=15.0
+                )
+            
+            intent_result = await recognize_intent(
+                query,
+                call_llm_func=call_llm_fn,
+                use_llm=False  # 正则优先，不触发NPU
+            )
+            
+            response_data["intent"] = {
+                "primary": intent_result.primary_intent.value,
+                "name": get_intent_display_name(intent_result.primary_intent),
+                "emoji": get_intent_emoji(intent_result.primary_intent),
+                "confidence": round(intent_result.confidence, 2),
+            }
+            
+            # 映射到场景类型
+            scene_type = INTENT_TO_SCENE.get(intent_result.primary_intent, SceneType.GENERAL)
+            response_data["scene_type"] = scene_type.value
+        
+        # 工作流模式
+        if request.enable_workflow and intent_result:
+            orchestrator = get_workflow_orchestrator()
+            await orchestrator.initialize()
+            
+            execution = await orchestrator.generate_workflow(
+                query, intent_result, user_id
+            )
+            
+            if execution:
+                response_data["workflow"] = {
+                    "execution_id": execution.execution_id,
+                    "template_id": execution.template_id,
+                    "total_steps": len(execution.steps),
+                    "steps": [
+                        {
+                            "step_id": s.step_id,
+                            "name": s.name,
+                            "description": s.description,
+                            "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
+                        }
+                        for s in execution.steps
+                    ],
+                }
+        
+        # 图片处理
+        if request.image_data:
+            analysis = await analyze_image_base64(request.image_data)
+            if analysis:
+                response_data["image_analysis"] = analysis
+                response_data["response"] = generate_image_analysis_response(analysis)
+                response_data["metadata"]["model"] = "vision-agent"
+            else:
+                response_data["response"] = "图片分析服务暂时不可用，请稍后重试。"
+        
+        # 基于意图路由处理
+        elif intent_result:
+            intent = intent_result.primary_intent
+            
+            if intent == IntentType.SEARCH_CARDS:
+                cards = search_cards_semantic(query)
+                response_data["cards"] = cards
+                response_data["response"] = generate_card_search_response(query, cards)
+                
+            elif intent == IntentType.GENERATE_PPT:
+                skill_name = "ppt_generator"
+                if skill_name in skill_registry:
+                    skill_result = await execute_skill(skill_name, query, request.context)
+                    response_data["skill_result"] = skill_result
+                    response_data["response"] = generate_skill_response(skill_result)
+                else:
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": f"用户想要生成PPT：{query}"}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = f"🛠️ PPT生成指导\n\n" + (genie_text or "请指定PPT主题")
+                
+            elif intent in [IntentType.CREATE_CARD, IntentType.ORGANIZE_CARDS]:
+                # 使用8-Agent引擎处理
+                try:
+                    from routes.eight_agent_engine import get_eight_agent_engine
+                    engine = get_eight_agent_engine()
+                    result = await engine.process(query, {"query": query}, user_id)
+                    
+                    if result.get("status") == "success":
+                        cards_data = result.get("four_color_cards", [])
+                        response_data["cards"] = [
+                            CardReference(
+                                card_id=c.get("card_id", ""),
+                                card_type=c.get("card_type", "blue"),
+                                title=c.get("title", ""),
+                                content=c.get("content", ""),
+                                similarity=1.0,
+                                color=c.get("card_type", "blue")
+                            )
+                            for c in cards_data[:6]
+                        ]
+                        report = result.get("report", {})
+                        response_data["response"] = report.get("text", f"已为您分析「{query}」，生成{len(cards_data)}张知识卡片")
+                    else:
+                        response_data["response"] = f"正在分析「{query}」..." 
+                except Exception as e:
+                    logger.warning(f"8-Agent分析失败: {e}")
+                    response_data["response"] = f"关于「{query}」，我已准备好进行分析，请稍后..." 
+                
+            elif intent == IntentType.CHECK_PERFORMANCE:
+                try:
+                    import psutil
+                    cpu = psutil.cpu_percent(interval=1)
+                    mem = psutil.virtual_memory()
+                    disk = psutil.disk_usage('/')
+                    response_data["response"] = f"""💻 **系统状态报告**
+
+🖥️ CPU 使用率: {cpu}%
+💾 内存使用率: {mem.percent}% (可用: {mem.available // (1024**2)} MB)
+📁 磁盘使用率: {disk.percent}% (可用: {disk.free // (1024**3)} GB)
+
+系统运行正常。"""
+                except ImportError:
+                    response_data["response"] = "系统监控模块未安装（需要 psutil）"
+                    
+            elif intent in [IntentType.GREETING, IntentType.HELP]:
+                response_data["response"] = "你好！我是小易。\n\n我可以帮您：\n* 📝 创建知识卡片 - 四色卡片体系\n* 🔍 搜索知识库 - 语义搜索\n* 📊 生成PPT报告\n* 📄 分析文档/PDF\n* 🖼️ 分析图片\n* ✅ 管理GTD任务\n* 🔗 构建知识图谱\n* 🏛️ 启动虚拟朝堂会议"
+                
+            else:
+                # 通用对话 + 知识库检索
+                result = hybrid_search_all(query, limit=5)
+                if result.cards or result.kg_entities:
+                    response_data["cards"] = result.cards[:3]
+                    context_text = "\n".join([f"- {c.title}: {c.content[:100]}" for c in result.cards[:3]])
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": f"根据知识库回答：{query}\n\n知识：{context_text}\n\n简洁回答："}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = genie_text or generate_hybrid_response(query, result)
+                else:
+                    genie_text = await call_genie(
+                        [{"role": "user", "content": query}],
+                        max_tokens=256, timeout_sec=60.0
+                    )
+                    response_data["response"] = genie_text or f"关于「{query}」，您可以尝试换个方式提问。"
+        
+        else:
+            # 无意图识别回退到旧逻辑
+            scene_type = detect_scene(query)
+            response_data["scene_type"] = scene_type.value
+            # ...使用原有逻辑（后续可重构）
+        
+        # 生成建议问题
+        response_data["suggested_questions"] = generate_suggested_questions(
+            SceneType(response_data["scene_type"]) if response_data["scene_type"] in [s.value for s in SceneType] else SceneType.GENERAL,
+            request.context,
+            response_data.get("cards", []),
+            query
+        )
+        
+        # 自动卡片建议 — LLM 主路径 + 规则降级
+        try:
+            from routes import auto_card
+            suggestions = await auto_card.suggest_cards_api_async(
+                query, response_data.get("response", "")
+            )
+            response_data["card_suggestions"] = suggestions.get("suggestions", [])[:3]
+        except Exception:
+            pass
+        
+        memory_manager.add_message(user_id, "assistant", response_data.get("response", ""))
+        
+        return ChatResponse(
+            response=response_data.get("response", ""),
+            scene_type=SceneType(response_data["scene_type"]) if response_data["scene_type"] in [s.value for s in SceneType] else SceneType.GENERAL,
+            cards=response_data.get("cards", []),
+            card_suggestions=response_data.get("card_suggestions", []),
+            suggested_questions=response_data.get("suggested_questions", []),
+            metadata=response_data.get("metadata", {}),
+        )
+        
+    except Exception as e:
+        logger.error(f"V2聊天处理失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
+
+
 # 初始化
 init_skills()
 
@@ -2000,4 +2666,115 @@ async def memory_stats():
         return stats
     except Exception as e:
         logger.error(f"获取太史阁统计失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============ 链词机制 API（维度2：智能关联）============
+
+@router.get("/chain/stats")
+async def get_chain_stats():
+    """获取链词统计信息"""
+    try:
+        from services.chain_word_extractor import get_chain_word_extractor
+        extractor = get_chain_word_extractor()
+        
+        # 从数据库加载卡片
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards ORDER BY created_at DESC LIMIT 100")
+        cards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        # 构建链词索引
+        chain_index = extractor.build_chain_index(cards, use_llm=False, max_pairs=50)
+        
+        stats = extractor.get_chain_stats()
+        return {
+            "stats": stats,
+            "chain_index": chain_index,
+            "sample_chains": [
+                {"source": k, "targets": v[:3]} 
+                for k, v in list(chain_index.items())[:5]
+            ]
+        }
+    except Exception as e:
+        logger.error(f"链词统计失败: {e}")
+        return {"stats": {}, "chain_index": {}, "error": str(e)}
+
+
+@router.get("/chain/suggest/{card_id}")
+async def get_chain_suggestions(card_id: str, top_k: int = 5):
+    """基于链词获取相关卡片推荐"""
+    try:
+        from services.chain_word_extractor import get_chain_word_extractor
+        extractor = get_chain_word_extractor()
+        
+        # 获取当前卡片
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards WHERE id = ?", [card_id])
+        row = cursor.fetchone()
+        if not row:
+            return {"error": "卡片不存在"}
+        
+        card = dict(row)
+        
+        # 构建链词索引
+        cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards WHERE id != ? LIMIT 50", [card_id])
+        other_cards = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        
+        chain_index = extractor.build_chain_index([card] + other_cards, use_llm=False, max_pairs=30)
+        
+        # 获取推荐
+        suggestions = extractor.suggest_related_cards(card, chain_index, top_k=top_k)
+        
+        # 获取推荐卡片的详细信息
+        if suggestions:
+            card_ids = [s["card_id"] for s in suggestions]
+            placeholders = ",".join(["?" for _ in card_ids])
+            cursor = db_manager.get_connection().cursor()
+            cursor.execute(f"SELECT id, card_type, title, content FROM knowledge_cards WHERE id IN ({placeholders})", card_ids)
+            card_map = {str(r["id"]): dict(r) for r in cursor.fetchall()}
+            
+            for s in suggestions:
+                related_card = card_map.get(s["card_id"])
+                if related_card:
+                    s["title"] = related_card["title"]
+                    s["content"] = related_card["content"][:100]
+                    s["card_type"] = related_card["card_type"]
+        
+        return {
+            "current_card": card,
+            "suggestions": suggestions,
+            "total": len(suggestions)
+        }
+    except Exception as e:
+        logger.error(f"链词推荐失败: {e}")
+        return {"suggestions": [], "error": str(e)}
+
+
+@router.post("/chain/build")
+async def build_chain_index_force(limit: int = 100, use_llm: bool = False):
+    """强制重新构建链词索引"""
+    try:
+        from services.chain_word_extractor import get_chain_word_extractor
+        extractor = get_chain_word_extractor()
+        
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, card_type, title, content FROM knowledge_cards ORDER BY created_at DESC LIMIT ?", [limit])
+        cards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        chain_index = extractor.build_chain_index(cards, use_llm=use_llm, max_pairs=limit)
+        stats = extractor.get_chain_stats()
+        
+        return {
+            "status": "built",
+            "cards_processed": len(cards),
+            "chain_index": chain_index,
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"构建链词索引失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,13 +1,9 @@
-/**
- * 聊天按钮组件 - 触发增强版聊天机器人
- * 支持拖拽
- */
-
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, GripVertical } from 'lucide-react';
 import chatAvatar from '../pages/logo.gif';
 import { EnhancedChatBot } from './EnhancedChatBot';
+import { HermesChat } from './HermesChat';
 import { cn } from '@/lib/utils';
 
 interface ChatButtonProps {
@@ -22,9 +18,9 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
   onCardClick
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [hermesMode, setHermesMode] = useState(false);
   const [position, setPosition] = useState(initialPosition);
   const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef<HTMLDivElement>(null);
   const dragStartPos = useRef({ x: 0, y: 0 });
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -63,26 +59,28 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
         {!isOpen && (
           <motion.div
             key="chat-button"
-            ref={dragRef}
             onMouseDown={handleMouseDown}
-            style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+            style={{ 
+              transform: `translate(${position.x}px, ${position.y}px)`,
+              right: '24px'
+            }}
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             className={cn(
-              "fixed z-40 cursor-move bottom-6 right-6",
+              "fixed z-50 cursor-move bottom-24 sm:top-1/2 sm:bottom-auto",
               className
             )}
           >
             <div
               onClick={() => setIsOpen(true)}
-              className="w-14 h-14 cursor-pointer relative"
+              className="w-16 h-16 sm:w-14 sm:h-14 cursor-pointer relative"
             >
-              <img src={chatAvatar} alt="智能助手" className="w-14 h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
+              <img src={chatAvatar} alt="智能助手" className="w-16 h-16 sm:w-14 sm:h-14 object-contain drop-shadow-lg hover:scale-110 transition-transform" />
             </div>
 
             {/* 拖拽手柄 */}
-            <div className="absolute -top-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
+            <div className="absolute -bottom-2 -right-2 w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
               <GripVertical className="w-3 h-3 text-white" />
             </div>
 
@@ -101,12 +99,21 @@ export const ChatButton: React.FC<ChatButtonProps> = ({
         )}
       </AnimatePresence>
 
-      {/* 聊天窗口 */}
-      <EnhancedChatBot 
-        isOpen={isOpen} 
-        onClose={() => setIsOpen(false)}
-        onCardClick={onCardClick}
-      />
+      {/* 聊天窗口 - 默认使用 HermesChat */}
+      {hermesMode ? (
+        <HermesChat
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          onSwitchMode={() => setHermesMode(false)}
+        />
+      ) : (
+        <EnhancedChatBot 
+          isOpen={isOpen} 
+          onClose={() => setIsOpen(false)}
+          onCardClick={onCardClick}
+          onSwitchToHermes={() => setHermesMode(true)}
+        />
+      )}
     </>
   );
 };

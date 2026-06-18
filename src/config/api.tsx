@@ -12,7 +12,12 @@ const getApiBaseUrl = (): string => {
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
+// 注意：此值为模块加载时一次性计算，在移动设备网络切换后可能失效。
+// 需要实时获取时，请使用 getApiBaseUrl() 函数或从 '@/lib/apiConfig' 导入。
 export const API_BASE_URL = getApiBaseUrl();
+
+// 实时获取 API Base URL（推荐在移动端使用）
+export const getApiBaseUrlDynamic = getApiBaseUrl;
 
 // API端点定义
 export const API_ENDPOINTS = {

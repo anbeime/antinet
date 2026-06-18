@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Cpu, RefreshCw, Send, AlertCircle, MessageSquare, Trash2, Copy, Check, Wifi, WifiOff } from 'lucide-react';
+import { Cpu, RefreshCw, Send, AlertCircle, MessageSquare, Trash2, Copy, Check, Wifi, WifiOff, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 
@@ -154,7 +154,7 @@ const GenieNPUTest: React.FC = () => {
   return (
     <div className={`min-h-screen p-4 md:p-6 ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gray-50 text-gray-900'}`}>
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl">
               <Cpu className="w-6 h-6 text-white" />
@@ -180,7 +180,7 @@ const GenieNPUTest: React.FC = () => {
               <RefreshCw className="w-5 h-5" />
             </button>
           </div>
-        </div>
+        </motion.div>
 
         {serviceAvailable && loadedModel && (
           <div className="mb-4 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700 dark:text-blue-300">
@@ -189,8 +189,9 @@ const GenieNPUTest: React.FC = () => {
         )}
 
         {!serviceAvailable && (
-          <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300">
-            请运行「启动视觉模型服务.bat」启动 GenieAPIService (端口 8910)
+          <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>请运行「启动视觉模型服务.bat」启动 GenieAPIService (端口 8910)</span>
           </div>
         )}
 
@@ -278,6 +279,15 @@ const GenieNPUTest: React.FC = () => {
                         : theme === 'dark' ? 'bg-gray-700 rounded-bl-md' : 'bg-gray-100 rounded-bl-md'
                     }`}>
                       <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+                      {msg.role === 'assistant' && (
+                        <button
+                          onClick={() => copyToClipboard(msg.content, idx)}
+                          className="mt-1 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                          title="复制"
+                        >
+                          {copiedIdx === idx ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-gray-400" />}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

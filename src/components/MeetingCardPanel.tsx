@@ -33,7 +33,7 @@ interface MeetingCardPanelProps {
 /**
  * 卡片详情弹窗
  */
-const CardDetailPopup: React.FC<{
+export const CardDetailPopup: React.FC<{
   card: MeetingCard;
   onClose: () => void;
 }> = ({ card, onClose }) => {
@@ -126,10 +126,11 @@ const MeetingCardItem: React.FC<{
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`rounded-lg border ${style.border} ${style.bg} p-2.5 transition-all hover:border-opacity-70`}
+      className={`rounded-lg border ${style.border} ${style.bg} p-3 sm:p-2.5 transition-all hover:border-opacity-70 cursor-pointer active:scale-[0.98]`}
+      onClick={() => onClick?.(card)}
     >
-      {/* 卡片头部：类型标签 + 标题 + 保存按钮 */}
-      <div className="flex items-start justify-between gap-2">
+      {/* 卡片头部：类型标签 + 标题 + 详情/保存按钮 */}
+      <div className="flex items-start justify-between gap-2" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <span className={`${style.badge} text-white text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap`}>
             {icon} {typeName}
@@ -142,24 +143,33 @@ const MeetingCardItem: React.FC<{
             {card.title}
           </span>
         </div>
-        {onSave && (
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => onSave(card)}
-            disabled={card.saved}
-            className={`flex-shrink-0 p-1 rounded transition-colors ${
-              card.saved
-                ? 'text-green-400 cursor-default'
-                : 'text-gray-500 hover:text-blue-400 hover:bg-blue-900/30'
-            }`}
-            title={card.saved ? '已保存到知识库' : '保存到知识库'}
+            onClick={() => onClick?.(card)}
+            className="p-1 rounded text-gray-500 hover:text-blue-400 hover:bg-blue-900/30 transition-colors"
+            title="查看详情"
           >
-            {card.saved ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+            <span className="text-xs">ℹ️</span>
           </button>
-        )}
+          {onSave && (
+            <button
+              onClick={() => onSave(card)}
+              disabled={card.saved}
+              className={`flex-shrink-0 p-1 rounded transition-colors ${
+                card.saved
+                  ? 'text-green-400 cursor-default'
+                  : 'text-gray-500 hover:text-blue-400 hover:bg-blue-900/30'
+              }`}
+              title={card.saved ? '已添加到输入框' : '添加到输入框'}
+            >
+              {card.saved ? <BookmarkCheck className="w-4 h-4 sm:w-3.5 sm:h-3.5" /> : <Bookmark className="w-4 h-4 sm:w-3.5 sm:h-3.5" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 卡片内容 */}
-      <div className="mt-1.5">
+      <div className="mt-1.5" onClick={e => e.stopPropagation()}>
         <p
           className={`text-gray-400 text-xs leading-relaxed ${
             !expanded && card.content.length > 60 ? 'line-clamp-2' : ''
@@ -260,7 +270,7 @@ const MeetingCardPanel: React.FC<MeetingCardPanelProps> = ({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {displayCards.map((card, idx) => (
                 <MeetingCardItem
                   key={`${card.source}-${card.title}-${idx}`}

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 from .base import BaseAI, AIResponse
 from .openai_service import OpenAIService
 from .npu_service import NPUService
-from .factory import AIServiceFactory, get_ai_service, create_ai_service
+from .factory import AIServiceFactory, get_ai_service, create_ai_service, get_sensenova_service
 
 __all__ = [
     'BaseAI',
@@ -24,4 +24,5 @@ __all__ = [
     'AIServiceFactory',
     'get_ai_service',
     'create_ai_service',
+    'get_sensenova_service',
 ]

@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
 # ============================================================
 # 1. 路径设置（必须在导入之前）
@@ -20,6 +21,7 @@ if getattr(sys, 'frozen', False):
 else:
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(backend_dir)
+load_dotenv(os.path.join(project_root, '.env'))
 
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
@@ -119,10 +121,42 @@ print("[OK] 数据库初始化完成")
 # ============================================================
 # 6. AI 服务初始化（使用新的 AI 服务模块）
 # ============================================================
-from services.ai import AIServiceFactory
+from services.ai.factory import AIServiceFactory, create_ai_service
 
 AIServiceFactory.create_default_services()
-print("[OK] AI 服务工厂已初始化")
+
+# 仅本地模型 (NPU/Genie)，不再注册云端 Sensenova
+# 如需使用 Sensenova 云端模型，可取消下方注释
+# _sensenova_cfg = {
+#     'api_key': 'sk-aMuGLXz1jMSznP9zSUxOfS4uTG7wlsFI',
+#     'base_url': 'https://token.sensenova.cn/v1',
+#     'model': 'sensenova-6.7-flash-lite',
+#     'timeout': 60,
+#     'max_tokens': 2048,
+#     'temperature': 1.0,
+# }
+# _sensenova = create_ai_service('openai', _sensenova_cfg)
+# if _sensenova:
+#     AIServiceFactory.register('sensenova', _sensenova, set_default=False)
+#     print("[OK] Sensenova 服务已注册（chat/skill/workflow 专用）")
+
+# 注册 NVIDIA NIM 服务（API Key 通过环境变量 NVIDIA_API_KEY 设置）
+_nim_cfg = {
+    'api_key': os.getenv('NVIDIA_API_KEY', ''),
+    'base_url': 'https://integrate.api.nvidia.com/v1',
+    'model': 'minimaxai/minimax-m2.7',
+    'timeout': 60,
+    'max_tokens': 8192,
+    'temperature': 1.0,
+}
+_nim = create_ai_service('nim', _nim_cfg)
+if _nim and _nim_cfg['api_key']:
+    AIServiceFactory.register('nim', _nim, set_default=False)
+    print("[OK] NVIDIA NIM 服务已注册")
+elif _nim:
+    print("[SKIP] NVIDIA NIM 服务跳过：未设置 NVIDIA_API_KEY 环境变量")
+
+print("[OK] AI 服务工厂已初始化（仅本地模型）")
 
 # ============================================================
 # 6.5 AI 模型预热（使用 QAI/QAIRT SDK 的本地模型，无须 Ollama）
@@ -154,7 +188,9 @@ def register_router(module_name: str):
                 print(f"[WARN] {module_name} 无 router 属性")
         return False
     except Exception as e:
+        import traceback
         print(f"[WARN] 无法导入 {module_name}: {e}")
+        traceback.print_exc()
         return False
 
 # 核心路由 - 使用各自的 prefix
@@ -204,6 +240,9 @@ register_router("routes.pdf_edit_routes")  # PDF 文本编辑
 register_router("routes.design_system_routes")  # 统一设计系统
 register_router("routes.ppt_preview_routes")  # PPT 预览（增强版）
 register_router("routes.ppt_native_routes")  # PPT 原生形状生成（SVG→DrawingML）
+register_router("routes.collab_docs_routes")  # 协作文档 CRUD + 版本 + 权限
+register_router("routes.file_browser_routes")  # 文件浏览器 + 卡片索引联动层
+register_router("routes.auth_routes")  # JWT 认证
 
 # ============================================================
 # 9. 初始化各模块的数据库连接
@@ -277,10 +316,29 @@ try:
     from routes import vector_search
     vector_search.set_db_manager(db_manager)
     vector_search.init_on_startup()
-    vector_search._precompute_all_embeddings_async()
     print("[OK] vector_search 数据库已连接，embedding 已初始化")
+
+    from routes import rag_pipeline
+    rag_pipeline.set_db_manager(db_manager)
+    print("[OK] rag_pipeline 数据库已连接")
+
+    from routes import auth_routes
+    auth_routes.set_db_manager(db_manager)
+    print("[OK] auth_routes 数据库已连接")
+
+    from middleware import audit
+    audit.set_db_manager(db_manager)
+    print("[OK] audit 中间件数据库已连接")
 except Exception as e:
     print(f"[WARN] vector_search: {e}")
+
+# 初始化协作文档路由数据库
+try:
+    from routes import collab_docs_routes
+    collab_docs_routes.set_db_manager(db_manager)
+    print("[OK] collab_docs_routes 数据库已连接")
+except Exception as e:
+    print(f"[WARN] collab_docs_routes: {e}")
 
 try:
     from routes import collaboration_routes
@@ -320,17 +378,129 @@ async def debug_routes():
 # 11. 启动服务
 # ============================================================
 if __name__ == "__main__":
+    import socket
+    import subprocess
     import uvicorn
+    import sys
+    import traceback
+
+    def _excepthook(exc_type, exc_value, exc_tb):
+        msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        sys.stderr.write(f"[UNCAUGHT] {msg}\n")
+        try:
+            with open("uncaught.log", "a", encoding="utf-8") as f:
+                f.write(f"\n[{__import__('datetime').datetime.now()}] {msg}\n")
+        except Exception:
+            pass
+    sys.excepthook = _excepthook
+
+    try:
+        from services.global_error_handler import install_global_handlers
+        install_global_handlers()
+    except Exception:
+        pass
+    
+    # 检查端口是否被占用，如果是则释放
+    def check_and_free_port(port: int):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex(('127.0.0.1', port))
+                if result == 0:
+                    print(f"[PORT] 端口 {port} 已被占用，尝试释放...")
+                    output = subprocess.run(
+                        ['powershell', '-Command',
+                         f"Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    import time
+                    time.sleep(2)
+                    # 再次检查
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                        s2.settimeout(1)
+                        result2 = s2.connect_ex(('127.0.0.1', port))
+                        if result2 == 0:
+                            print(f"[WARN] 无法释放端口 {port}，请手动关闭占用进程")
+                            return False
+                        else:
+                            print(f"[OK] 端口 {port} 已释放")
+                            return True
+                else:
+                    print(f"[OK] 端口 {port} 可用")
+                    return True
+        except Exception as e:
+            print(f"[WARN] 检查端口 {port} 时出错: {e}")
+            return True  # 继续尝试启动
+    
+    check_and_free_port(app_config.PORT)
+    
+    # 打印所有已注册路由（便于诊断 404）
+    print(f"\n{'─'*50}")
+    print(f"已注册路由 ({len([r for r in app.routes if hasattr(r, 'path')])} 条):")
+    for route in sorted(app.routes, key=lambda r: getattr(r, 'path', '')):
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            print(f"  {route.path:50s} {route.methods}")
+    print(f"{'─'*50}")
     
     print(f"\n{'='*50}")
     print(f"启动 {app_config.APP_NAME} v{app_config.APP_VERSION}")
     print(f"服务地址: http://{app_config.HOST}:{app_config.PORT}")
     print(f"{'='*50}\n")
     
-    uvicorn.run(
-        app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
-        host=app_config.HOST,
-        port=app_config.PORT,
-        reload=False,
-        log_level="info"
-    )
+    _auto_restart = os.environ.get("ZHIYI_AUTO_RESTART", "1") == "1"
+    _attempt = 0
+    while True:
+        try:
+            uvicorn.run(
+                app,  # 直接传递 app 对象（PyInstaller frozen 模式需要，避免 "main:app" 字符串导入失败）
+                host=app_config.HOST,
+                port=app_config.PORT,
+                reload=False,
+                log_level="info"
+            )
+            break
+        except KeyboardInterrupt:
+            raise
+        except SystemExit as e:
+            if not _auto_restart or e.code == 0:
+                break
+            _attempt += 1
+            print(f"[WATCHDOG] uvicorn SystemExit({e.code}); restart #{_attempt} in 2s")
+            check_and_free_port(app_config.PORT)
+            import time as _t; _t.sleep(2)
+            continue
+        except BaseException as e:
+            _attempt += 1
+            print(f"[WATCHDOG] uvicorn crashed: {e!r}; restart #{_attempt} in 2s")
+            traceback.print_exc()
+            check_and_free_port(app_config.PORT)
+            import time as _t; _t.sleep(2)
+            continue
+
+# 初始化技能热插拔系统
+try:
+    from services.skill_hotplug import init_hotplug_manager
+    hotplug_mgr = init_hotplug_manager()
+    hotplug_mgr.start_watching()
+    print("[OK] 技能热插拔系统已初始化")
+except Exception as e:
+    print(f"[WARN] 技能热插拔系统初始化失败: {e}")
+register_router("routes.skill_hotplug_routes")  # 技能热插拔管理
+register_router("routes.chain_word_routes")  # 链词机制
+
+# 初始化链词提取器
+try:
+    from services.chain_word_extractor import get_chain_word_extractor
+    extractor = get_chain_word_extractor()
+    print("[OK] 链词提取器已初始化")
+except Exception as e:
+    print(f"[WARN] 链词提取器初始化失败: {e}")
+register_router("routes.ppf_routes")  # PPF 自动化处理流程
+
+# 初始化 PPF 处理器
+try:
+    from services.ppf_processor import init_ppf_processor
+    init_ppf_processor(db_manager=db_manager)
+    print("[OK] PPF 处理器已初始化")
+except Exception as e:
+    print(f"[WARN] PPF 处理器初始化失败: {e}")

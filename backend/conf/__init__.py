@@ -9,15 +9,17 @@ from .ai import AIConfig, OpenAIConfig
 from .npu import NPUConfig
 from .database import DatabaseConfig
 from .app import AppConfig
+from .model import ModelRegistryConfig
 
 __all__ = [
     'BaseConfig',
-    'Settings', 
+    'Settings',
     'AIConfig',
     'OpenAIConfig',
     'NPUConfig',
     'DatabaseConfig',
     'AppConfig',
+    'ModelRegistryConfig',
     'get_settings',
 ]
 

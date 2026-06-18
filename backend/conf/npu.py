@@ -52,12 +52,12 @@ class NPUConfig(BaseConfig):
         for version, dirs in version_dirs.items():
             for vdir in dirs:
                 # 优先 arm64x-windows-msvc（ARM64EC）
-                p = project_root / "QAIRT" / vdir / "lib" / "arm64x-windows-msvc"
+                p = project_root.parent / "QAIRT_Runtime" / "arm64x-windows-msvc"
                 if p.exists():
                     self.QNN_SDK_PATHS[version] = str(p)
                     break
                 # 备选 aarch64-windows-msvc（原生 ARM64）
-                p = project_root / "QAIRT" / vdir / "lib" / "aarch64-windows-msvc"
+                p = project_root.parent / "QAIRT_Runtime" / "aarch64-windows-msvc"
                 if p.exists():
                     self.QNN_SDK_PATHS[version] = str(p)
                     break
@@ -68,7 +68,7 @@ class NPUConfig(BaseConfig):
         project_root = settings.PROJECT_ROOT
         
         self.MODEL_BASE_DIRS = [
-            project_root / "models",
+            project_root.parent / "models",
         ]
     
     def get_sdk_path(self, version: Optional[str] = None) -> str:
@@ -82,9 +82,9 @@ class NPUConfig(BaseConfig):
             if Path(sdk_path).exists():
                 return sdk_path
         
-        # 默认返回 v2.45 路径
+        # 默认返回 QAIRT_Runtime 路径
         default_path = str(
-            get_settings().PROJECT_ROOT / "QAIRT" / "2.45.40.260406" / "lib" / "arm64x-windows-msvc"
+            get_settings().PROJECT_ROOT.parent / "QAIRT_Runtime" / "arm64x-windows-msvc"
         )
         if Path(default_path).exists():
             return default_path

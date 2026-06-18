@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactDOM from 'react-dom';
-import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, pdf, Font } from '@react-pdf/renderer';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import { safeErrorDetail } from '@/lib/utils';
 import { 
   Book, 
   Plus, 
@@ -14,22 +16,21 @@ import {
   CheckSquare,
   ArrowRight,
   Clock,
-  Tag,
   Layers,
   PlusCircle,
-  Copy,
+  Search,
   Maximize2,
-  Link,
   ExternalLink,
   TrendingUp,
   Network,
   AlertTriangle,
   Circle,
   CheckCircle2,
-  Eye,
   UserPlus,
   ListTodo,
   Loader2,
+  FileText,
+  Presentation,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
@@ -39,8 +40,8 @@ import {
   GtdTask
 } from '@/services/dataService';
 import CreateCardModal from './CreateCardModal';
-import KnowledgeGraph from './KnowledgeGraph';
 import CardDetailModal from '@/components/CardDetailModal';
+import KanbanBoard from './KanbanBoard';
 
 // 类型转换：将ProjectCard转换为KnowledgeCard格式
 interface KnowledgeCardForDetail {
@@ -90,10 +91,7 @@ interface ProjectCard {
 interface ResearchProjectManagerProps {
   onSelectProject?: (project: ResearchProject) => void;
   selectedProjectId?: number | null;
-}
-
-interface AllCardsResponse {
-  cards: ProjectCard[];
+  showDeepLinkButton?: boolean;
 }
 
 const colorOptions = [
@@ -113,33 +111,26 @@ const cardTypeConfig: Record<string, { name: string; color: string; bgColor: str
   red:    { name: '行动', color: 'text-red-700',    bgColor: 'bg-red-50',    borderColor: 'border-red-200',    darkBgColor: 'dark:bg-red-950/40',    darkBorderColor: 'dark:border-red-800',    icon: '📕', headerBg: 'bg-red-500' },
 };
 
-const RESEARCH_API_BASE = getApiBaseUrl() + '/api/research'
+const RESEARCH_API_BASE = () => getApiBaseUrl() + '/api/research'
 
-// ========== 内容渲染组件（处理图片） ==========
+// ========== 内容渲染组件 ==========
 const RenderContent: React.FC<{ content: string }> = ({ content }) => {
   if (!content) return null;
   
-  const parts = content.split(/(!\[image\]\([^)]+\))/g);
+  const isHTML = /^\s*(?:<!--|<(?:h[1-6]|div|p|table|ul|ol|pre|blockquote|hr|img|a|strong|em|br|span|section|article))/i.test(content);
+  
+  if (isHTML) {
+    return (
+      <div className="prose prose-gray dark:prose-invert max-w-none text-sm [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1"
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
   
   return (
-    <span>
-      {parts.map((part, index) => {
-        const imageMatch = part.match(/!\[image\]\(([^)]+)\)/);
-        if (imageMatch) {
-          const url = imageMatch[1];
-          return (
-            <img 
-              key={index} 
-              src={url} 
-              alt="card image" 
-              className="max-w-full h-auto rounded my-1"
-              style={{ maxHeight: '80px' }}
-            />
-          );
-        }
-        return <span key={index}>{part}</span>;
-      })}
-    </span>
+    <div className="prose prose-gray dark:prose-invert max-w-none text-sm [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
   );
 };
 
@@ -162,614 +153,8 @@ const formatDate = (dateStr?: string) => {
 };
 
 // ========== 专题卡片详情弹窗组件（全屏级别）- 用于ProjectDetailPanel内部 ==========
-const ResearchCardDetailModal: React.FC<{
-  card: ProjectCard;
-  onClose: () => void;
-  onConvertToTask: (id: number) => void;
-  onUpdate?: (cardId: number, updates: { title: string; content: string; card_type?: string; related_cards?: number[] }) => void;
-  projectId?: number;
-  allProjects?: ResearchProject[];
-  onRelatedCardClick?: (cardId: number) => void;
-  onSaveSuccess?: () => void;
-}> = ({ card, onClose, onConvertToTask, onUpdate, projectId, allProjects = [], onRelatedCardClick, onSaveSuccess }) => {
-  const typeConfig = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(card.title);
-  const [editContent, setEditContent] = useState(card.content);
-  const [showProjectSelector, setShowProjectSelector] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(card.project_id || projectId || null);
-  
-  // 关联卡片功能
-  const [showRelatedCards, setShowRelatedCards] = useState(false);
-  const [relatedCards, setRelatedCards] = useState<number[]>(card.related_cards || []);
-  const [allCards, setAllCards] = useState<ProjectCard[]>([]);
-  const [relatedSearch, setRelatedSearch] = useState('');
-  const [suggestedCards, setSuggestedCards] = useState<{id: number; title: string; card_type: string; category?: string; reason: string; score: number}[]>([]);
-  
-  // 加载所有卡片 + backlink 数据 + 联想推荐
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        // 加载所有卡片
-        const res = await fetch(getApiBaseUrl() + '/api/knowledge/cards?limit=10000');
-        const data: AllCardsResponse = await res.json();
-        setAllCards(data.cards || []);
-        
-        // 从 backlinks 表补充关联（确保关闭重开不丢）
-        try {
-          const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/backlinks`);
-          const backlinks = await blRes.json();
-          const blIds = backlinks.map((b: any) => b.id);
-          
-          const flRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/forwardlinks`);
-          const forwardlinks = await flRes.json();
-          const flIds = forwardlinks.map((f: any) => f.id);
-          
-          // 合并：related_cards字段 + backlinks + forwardlinks
-          const allRelatedIds = new Set([...(card.related_cards || []), ...blIds, ...flIds]);
-          setRelatedCards([...allRelatedIds]);
-        } catch (e) {
-          console.warn('加载backlink数据失败，使用原有related_cards:', e);
-        }
-        
-        // 加载联想推荐
-        try {
-          const sugRes = await fetch(getApiBaseUrl() + `/api/research/cards/${card.id}/suggested-relations?limit=8`);
-          const sugData = await sugRes.json();
-          setSuggestedCards(sugData.suggestions || []);
-        } catch (e) {
-          console.warn('加载联想推荐失败:', e);
-        }
-      } catch (e) {
-        console.error('加载卡片失败:', e);
-      }
-    };
-    loadData();
-  }, [card.id]);
-  
-  // 过滤可关联的卡片
-  const availableCards = allCards.filter(c => 
-    c.id !== card.id && 
-    !relatedCards.includes(c.id) &&
-    (c.title.toLowerCase().includes(relatedSearch.toLowerCase()) || 
-     c.content.toLowerCase().includes(relatedSearch.toLowerCase()))
-  ).slice(0, 20);
-  
-  // 添加关联
-  const addRelatedCard = (targetId: number) => {
-    if (!relatedCards.includes(targetId)) {
-      setRelatedCards([...relatedCards, targetId]);
-    }
-  };
-  
-  // 移除关联
-  const removeRelatedCard = (targetId: number) => {
-    setRelatedCards(relatedCards.filter(id => id !== targetId));
-  };
-  
-  // 保存关联（双写：knowledge_cards.related_cards + card_backlinks表）
-  const saveRelatedCards = async () => {
-    try {
-      // 1. 更新 knowledge_cards 的 related_cards 字段
-      const response = await fetch(getApiBaseUrl() + `/api/knowledge/cards/${card.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: card.card_type,
-          title: editTitle,
-          content: editContent,
-          category: card.category,
-          related_cards: relatedCards
-        })
-      });
-      
-      if (response.ok) {
-        // 2. 同步到 card_backlinks 双向链接表（确保双向性）
-        // 后端 update_card 已经会自动同步，这里额外确认
-        try {
-          // 获取已有的backlinks
-          const blRes = await fetch(getApiBaseUrl() + `/api/backlinks/card/${card.id}/forwardlinks`);
-          const existingForward = await blRes.json();
-          const existingTargetIds = new Set(existingForward.map((f: any) => f.id));
-          
-          // 新增的关联需要写入backlinks
-          for (const targetId of relatedCards) {
-            if (!existingTargetIds.has(targetId)) {
-              await fetch(getApiBaseUrl() + '/api/backlinks/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  source_card_id: card.id,
-                  target_card_id: targetId,
-                  link_text: 'manual'
-                })
-              });
-              // 双向
-              await fetch(getApiBaseUrl() + '/api/backlinks/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  source_card_id: targetId,
-                  target_card_id: card.id,
-                  link_text: 'manual'
-                })
-              });
-            }
-          }
-        } catch (e) {
-          console.warn('同步backlinks失败（非致命）:', e);
-        }
-        
-        toast.success('关联已保存');
-        setShowRelatedCards(false);
-        // 从联想推荐中移除已关联的
-        setSuggestedCards(prev => prev.filter(s => !relatedCards.includes(s.id)));
-        onUpdate?.(card.id, { title: editTitle, content: editContent, related_cards: relatedCards });
-      }
-    } catch (e) {
-      toast.error('保存关联失败');
-    }
-  };
-
-  const handleCopy = () => {
-    const text = `[${typeConfig.name}] ${card.title}\n\n${card.content}`;
-    navigator.clipboard?.writeText(text);
-    toast.success('已复制到剪贴板');
-  };
-
-  const handleSaveEdit = async () => {
-    if (!editTitle.trim()) {
-      toast.error('标题不能为空');
-      return;
-    }
-    try {
-      const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards/${card.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editTitle,
-          content: editContent,
-          related_cards: relatedCards
-        })
-      });
-      const result = await response.json();
-      if (response.ok) {
-        toast.success('保存成功');
-        setIsEditing(false);
-        onUpdate?.(card.id, { title: editTitle, content: editContent, related_cards: relatedCards });
-      } else {
-        console.error('保存失败:', result);
-        toast.error(`保存失败: ${result.detail || '未知错误'}`);
-      }
-    } catch (err: any) {
-      console.error('保存失败:', err);
-      toast.error(`保存失败: ${err.message || '网络错误'}`);
-    }
-  };
-
-  const handleChangeProject = async (newProjectId: number | null) => {
-    try {
-      const response = await fetch(`${RESEARCH_API_BASE}/cards/${card.id}/link-project`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: newProjectId })
-      });
-      if (response.ok) {
-        setSelectedProjectId(newProjectId);
-        setShowProjectSelector(false);
-        toast.success(newProjectId ? '已关联专题' : '已取消关联');
-      }
-    } catch (err) {
-      toast.error('关联失败');
-    }
-  };
-
-  const handleSaveCardEdit = async () => {
-    try {
-      const response = await fetch(`${RESEARCH_API_BASE}/projects/${projectId}/cards/${card.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editTitle,
-          content: editContent,
-          related_cards: relatedCards
-        })
-      });
-      if (response.ok) {
-        toast.success('保存成功');
-        onSaveSuccess?.();
-        onUpdate?.(card.id, { title: editTitle, content: editContent, related_cards: relatedCards });
-        onClose(); // 保存成功后关闭弹窗
-      } else {
-        const data = await response.json();
-        toast.error(data.message || '保存失败');
-      }
-    } catch (err) {
-      toast.error('保存失败');
-    }
-  };
-
-  const renderContent = (content: string) => {
-    if (!content) return '暂无内容';
-    
-    const parts = content.split(/(!\[image\]\([^)]+\))/g);
-    
-    return parts.map((part, index) => {
-      const imageMatch = part.match(/!\[image\]\(([^)]+)\)/);
-      if (imageMatch) {
-        const url = imageMatch[1];
-        return (
-          <img 
-            key={index} 
-            src={url} 
-            alt="card image" 
-            className="max-w-full h-auto rounded-lg my-2 border border-gray-200 dark:border-gray-600"
-          />
-        );
-      }
-      // 处理换行和其他格式
-      const formatted = part
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/`(.+?)`/g, '<code class="px-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">$1</code>')
-        .replace(/\n/g, '<br/>');
-      return <span key={index} dangerouslySetInnerHTML={{ __html: formatted }} />;
-    });
-  };
-
-  const handlePasteImage = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (!file) return;
-        
-        toast.info('正在上传图片...');
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        try {
-          const response = await fetch(`${RESEARCH_API_BASE}/upload/image`, {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.url) {
-              const imageMarkdown = `\n![image](${data.url})\n`;
-              setEditContent(prev => prev + imageMarkdown);
-              toast.success('图片已插入');
-            }
-          } else {
-            toast.error('图片上传失败');
-          }
-        } catch (err) {
-          console.error('上传图片失败:', err);
-          toast.error('图片上传失败');
-        }
-        return;
-      }
-    }
-  };
-
-  const currentProject = allProjects.find(p => p.id === selectedProjectId);
-
-  return (
-    <Portal>
-      <div 
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-        style={{ margin: 0, padding: '24px' }}
-        onClick={onClose}
-      >
-        <motion.div
-          initial={{ scale: 0.92, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.92, opacity: 0 }}
-          transition={{ type: 'spring', damping: 28, stiffness: 350 }}
-          className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl flex flex-col"
-          style={{ 
-            width: '90vw', 
-            maxWidth: '800px', 
-            maxHeight: '85vh',
-            minHeight: '400px',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* 顶部颜色条 */}
-          <div className={`h-2 rounded-t-2xl ${typeConfig.headerBg}`} />
-          
-          {/* 头部 */}
-          <div className={`px-8 py-6 ${typeConfig.bgColor} ${typeConfig.darkBgColor} border-b ${typeConfig.borderColor} ${typeConfig.darkBorderColor}`}>
-            <div className="flex items-start justify-between">
-              <div className="flex items-start space-x-4 flex-1 min-w-0 pr-4">
-                <span className="text-4xl mt-1 flex-shrink-0">{typeConfig.icon}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${typeConfig.bgColor} ${typeConfig.color} border ${typeConfig.borderColor}`}>
-                      {typeConfig.name}
-                    </span>
-                    {card.category && (
-                      <span className="text-xs text-gray-500 flex items-center">
-                        <Tag className="w-3 h-3 mr-1" />
-                        {card.category}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400">ID: {card.id}</span>
-                  </div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight break-words">
-                    {card.title}
-                  </h2>
-                </div>
-              </div>
-              <div className="flex items-center space-x-1 flex-shrink-0">
-                <button
-                  onClick={handleCopy}
-                  className="p-2.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-xl transition-colors"
-                  title="复制内容"
-                >
-                  <Copy className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={onClose}
-                  className="p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 内容区域 - 可滚动 */}
-          <div className="flex-1 overflow-y-auto px-8 py-6" style={{ minHeight: '200px' }}>
-            {isEditing ? (
-              <div className="space-y-4">
-                <input
-                  value={editTitle}
-                  onChange={e => setEditTitle(e.target.value)}
-                  className="w-full text-2xl font-bold px-3 py-2 border rounded-lg dark:bg-gray-700"
-                  placeholder="卡片标题"
-                />
-                <textarea
-                  value={editContent}
-                  onChange={e => setEditContent(e.target.value)}
-                  onPaste={handlePasteImage}
-                  className="w-full h-64 px-3 py-2 border rounded-lg resize-none dark:bg-gray-700"
-                  placeholder="卡片内容（支持粘贴图片）"
-                />
-              </div>
-            ) : (
-              <div 
-              className="text-base text-gray-700 dark:text-gray-200 leading-relaxed break-words whitespace-pre-wrap"
-              style={{ whiteSpace: 'pre-wrap' }}
-            >
-              {renderContent(card.content)}
-            </div>
-            )}
-            
-            {/* 关联卡片面板 */}
-            {showRelatedCards && (
-              <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center">
-                    <Link className="w-4 h-4 mr-2" />
-                    关联卡片
-                  </h4>
-                  <button
-                    onClick={saveRelatedCards}
-                    className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                  >
-                    保存关联
-                  </button>
-                </div>
-                
-                {/* 已关联卡片列表 */}
-                {relatedCards.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs text-gray-500 mb-2">已关联 ({relatedCards.length})</p>
-                    <div className="flex flex-wrap gap-2">
-                      {relatedCards.map(relId => {
-                        const relCard = allCards.find(c => c.id === relId);
-                        return relCard ? (
-                          <div key={relId} className="flex items-center px-2 py-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 text-sm">
-                            <button
-                              onClick={() => onRelatedCardClick?.(relId)}
-                              className="flex items-center hover:text-blue-600"
-                            >
-                              <span className={`w-2 h-2 rounded-full mr-1.5 ${
-                                relCard.card_type === 'blue' ? 'bg-blue-500' :
-                                relCard.card_type === 'green' ? 'bg-green-500' :
-                                relCard.card_type === 'yellow' ? 'bg-yellow-500' :
-                                relCard.card_type === 'red' ? 'bg-red-500' : 'bg-gray-400'
-                              }`} />
-                              <span className="truncate max-w-[150px]">{relCard.title}</span>
-                              <ExternalLink className="w-3 h-3 ml-1" />
-                            </button>
-                            <button
-                              onClick={() => removeRelatedCard(relId)}
-                              className="ml-2 text-gray-400 hover:text-red-500"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : null;
-                      })}
-                    </div>
-                  </div>
-                )}
-                
-                {/* 联想推荐区 */}
-                {suggestedCards.length > 0 && (
-                  <div className="mb-4">
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mb-2 flex items-center">
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      联想推荐
-                    </p>
-                    <div className="space-y-1">
-                      {suggestedCards
-                        .filter(s => !relatedCards.includes(s.id))
-                        .slice(0, 6)
-                        .map(s => (
-                        <div key={s.id} className="flex items-center justify-between px-2 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-100 dark:border-amber-800/40 text-sm">
-                          <div className="flex items-center flex-1 min-w-0">
-                            <span className={`w-2 h-2 rounded-full mr-1.5 flex-shrink-0 ${
-                              s.card_type === 'blue' ? 'bg-blue-500' :
-                              s.card_type === 'green' ? 'bg-green-500' :
-                              s.card_type === 'yellow' ? 'bg-yellow-500' :
-                              s.card_type === 'red' ? 'bg-red-500' : 'bg-gray-400'
-                            }`} />
-                            <span className="truncate">{s.title}</span>
-                            <span className="ml-2 text-xs text-amber-500 flex-shrink-0">{s.reason}</span>
-                          </div>
-                          <button
-                            onClick={() => addRelatedCard(s.id)}
-                            className="ml-2 text-blue-500 hover:text-blue-700 flex-shrink-0"
-                            title="添加关联"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* 手动搜索添加关联 */}
-                <div>
-                  <p className="text-xs text-gray-500 mb-2">搜索添加</p>
-                  <input
-                    type="text"
-                    value={relatedSearch}
-                    onChange={e => setRelatedSearch(e.target.value)}
-                    placeholder="搜索卡片标题或内容..."
-                    className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-800 mb-2"
-                  />
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {availableCards.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => addRelatedCard(c.id)}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 rounded flex items-center justify-between"
-                      >
-                        <div className="flex items-center min-w-0">
-                          <span className={`w-2 h-2 rounded-full mr-1.5 flex-shrink-0 ${
-                            c.card_type === 'blue' ? 'bg-blue-500' :
-                            c.card_type === 'green' ? 'bg-green-500' :
-                            c.card_type === 'yellow' ? 'bg-yellow-500' :
-                            c.card_type === 'red' ? 'bg-red-500' : 'bg-gray-400'
-                          }`} />
-                          <span className="truncate">{c.title}</span>
-                        </div>
-                        <Plus className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 底部操作栏 */}
-          <div className="px-8 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 rounded-b-2xl flex items-center justify-between">
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              {card.created_at && (
-                <span className="flex items-center">
-                  <Clock className="w-4 h-4 mr-1.5" />
-                  {formatDate(card.created_at)}
-                </span>
-              )}
-              <button
-                onClick={() => setShowProjectSelector(true)}
-                className="flex items-center px-2 py-1 text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded hover:bg-purple-200 dark:hover:bg-purple-900/50"
-              >
-                <Tag className="w-3 h-3 mr-1" />
-                {currentProject ? currentProject.name : '关联专题'}
-              </button>
-              <button
-                onClick={() => setShowRelatedCards(!showRelatedCards)}
-                className="flex items-center px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-900/50"
-              >
-                <Link className="w-3 h-3 mr-1" />
-                关联卡片 ({relatedCards.length})
-              </button>
-            </div>
-            <div className="flex items-center space-x-3">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={() => { setIsEditing(false); setEditTitle(card.title); setEditContent(card.content); }}
-                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleSaveCardEdit}
-                    className="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-                  >
-                    保存
-                  </button>
-                </>
-              ) : (
-<>
-                  <button
-                    data-edit-btn="true"
-                    onClick={() => setIsEditing(true)}
-                    className="flex items-center px-4 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg"
-                  >
-                    <Edit2 className="w-4 h-4 mr-1.5" />
-                    编辑
-                  </button>
-                  {card.card_type === 'red' && (
-                    <button
-                      onClick={() => { onConvertToTask(card.id); onClose(); }}
-                      className="flex items-center px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors font-medium"
-                    >
-                      <ArrowRight className="w-4 h-4 mr-1.5" />
-                      转换为任务
-                    </button>
-                  )}
-                  <button
-                    onClick={onClose}
-                    className="px-5 py-2 text-sm text-gray-600 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                  >
-                    关闭
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* 专题选择弹窗 */}
-          {showProjectSelector && (
-            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50" onClick={() => setShowProjectSelector(false)}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-80 max-h-96 overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <h3 className="font-bold mb-4">选择专题</h3>
-                <button
-                  onClick={() => handleChangeProject(null)}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 mb-2"
-                >
-                  不关联专题
-                </button>
-                {allProjects.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => handleChangeProject(p.id!)}
-                    className={`w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 mb-1 ${selectedProjectId === p.id ? 'bg-purple-100 dark:bg-purple-900/30' : ''}`}
-                  >
-                    {p.icon} {p.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </motion.div>
-      </div>
-    </Portal>
-  );
-};
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// ResearchCardDetailModal 已移除，改用标准 CardDetailModal
 
 // ========== 专题详情全屏面板 ==========
 const ProjectDetailPanel: React.FC<{
@@ -777,18 +162,20 @@ const ProjectDetailPanel: React.FC<{
   onClose: () => void;
   onConvertCardToTask: (cardId: number) => void;
   allProjects?: ResearchProject[];
-}> = ({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
-  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'network'>('cards');
-  const [showKnowledgeGraph, setShowKnowledgeGraph] = useState(false);
+}> = React.memo(({ project, onClose, onConvertCardToTask, allProjects = [] }) => {
+  const allProjectsList = allProjects;
+  const [activeTab, setActiveTab] = useState<'cards' | 'tasks' | 'workflow' | 'kanban' | 'network'>('cards');
+  const [networkTabOpened, setNetworkTabOpened] = useState(false);
   const [tasks, setTasks] = useState<GtdTask[]>([]);
   const [cards, setCards] = useState<ProjectCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCard, setSelectedCard] = useState<ProjectCard | null>(null);
   const [showCardDetail, setShowCardDetail] = useState(false);
-  const [taskRefreshTrigger, setTaskRefreshTrigger] = useState(0);  // 触发 CardDetailModal 刷新任务列表
+  const [taskRefreshTrigger, setTaskRefreshTrigger] = useState(0);
   const [showCreateCard, setShowCreateCard] = useState(false);
-  // 任务编辑弹窗
+  const [showMoveCard, setShowMoveCard] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
+  const [previewCard, setPreviewCard] = useState<ProjectCard | null>(null);
   const [editTaskTitle, setEditTaskTitle] = useState('');
   const [editTaskDesc, setEditTaskDesc] = useState('');
   const [editTaskPriority, setEditTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
@@ -806,13 +193,26 @@ const ProjectDetailPanel: React.FC<{
   const [unconvertedCards, setUnconvertedCards] = useState<ProjectCard[]>([]);
   const [exportingPPT, setExportingPPT] = useState(false);
   const [pptResult, setPptResult] = useState<{ filename: string; success: boolean; message: string } | null>(null);
-  
+  const loadIdRef = useRef(0);
+
+  // 添加已有卡片弹窗状态
+  const [showLinkCard, setShowLinkCard] = useState(false);
+  const [linkableCards, setLinkableCards] = useState<Array<{id: number; card_type: string; title: string; content: string; is_linked: boolean; created_at: string}>>([]);
+  const [selectedLinkCardIds, setSelectedLinkCardIds] = useState<Set<number>>(new Set());
+  const [linkableLoading, setLinkableLoading] = useState(false);
+  const [linkingCards, setLinkingCards] = useState(false);
+  const [linkCardSearchQuery, setLinkCardSearchQuery] = useState('');
 
   const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
 
   useEffect(() => {
     loadData();
   }, [project.id]);
+
+  // 外部任务刷新触发卡片重载
+  useEffect(() => {
+    if (taskRefreshTrigger > 0) loadData();
+  }, [taskRefreshTrigger]);
 
   const loadData = async () => {
     if (!project.id) return;
@@ -886,7 +286,64 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
-  
+  const loadLinkableCards = async () => {
+    if (!project.id) return;
+    setLinkableLoading(true);
+    try {
+      const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/linkable-cards`);
+      if (res.ok) {
+        const data = await res.json();
+        setLinkableCards(data);
+      }
+    } catch (err) {
+      console.error('加载可关联卡片失败:', err);
+    } finally {
+      setLinkableLoading(false);
+    }
+  };
+
+  const handleLinkCards = async () => {
+    if (!project.id || selectedLinkCardIds.size === 0) return;
+    setLinkingCards(true);
+    try {
+      const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/link-cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card_ids: Array.from(selectedLinkCardIds) })
+      });
+      if (res.ok) {
+        toast.success(`已关联 ${selectedLinkCardIds.size} 张卡片到专题`);
+        setShowLinkCard(false);
+        setSelectedLinkCardIds(new Set());
+        refreshCards();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(safeErrorDetail(err.detail, '关联卡片失败'));
+      }
+    } catch {
+      toast.error('关联卡片失败');
+    } finally {
+      setLinkingCards(false);
+    }
+  };
+
+  // 按需导出单张卡片为PDF
+  const handleExportCardPDF = async (card: ProjectCard) => {
+    try {
+      const blob = await pdf(<ProjectPDF cards={[card]} projectName={card.title} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${card.title || '卡片'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PDF 已导出');
+    } catch {
+      toast.error('PDF 导出失败');
+    }
+  };
 
   // 导出专题为PPT
   const handleExportPPT = async () => {
@@ -1000,7 +457,7 @@ const ProjectDetailPanel: React.FC<{
       
       if (response.ok) {
         toast.success('卡片已删除');
-        loadData();
+        refreshCards();
       } else {
         const data = await response.json();
         toast.error(data.detail || '删除失败');
@@ -1010,10 +467,10 @@ const ProjectDetailPanel: React.FC<{
     }
   };
 
-  const handleConvertToTask = async (cardId: number) => {
+  const handleConvertToTask = async (cardId: number, onComplete?: () => void) => {
     try {
       // 1. 先将卡片转换为任务
-      const response = await fetch(`${RESEARCH_API_BASE}/cards/${cardId}/to-task`, { method: 'POST' });
+      const response = await fetch(`${RESEARCH_API_BASE()}/cards/${cardId}/to-task`, { method: 'POST' });
       if (response.ok) {
         const data = await response.json();
         const taskId = data.task_id || data.id;
@@ -1028,9 +485,10 @@ const ProjectDetailPanel: React.FC<{
         }
         
         toast.success('已转换为任务并关联到专题');
-        loadData();
+        await loadData();  // 等待数据刷新完成
         onConvertCardToTask(cardId);
         setTaskRefreshTrigger(prev => prev + 1);
+        onComplete?.();  // 通知完成，可用于关闭弹窗
       } else {
         const errData = await response.json().catch(() => ({}));
         toast.error(errData.detail || '转换失败，请确认后端已重启');
@@ -1056,47 +514,50 @@ const ProjectDetailPanel: React.FC<{
       });
       if (res.ok) {
         toast.success('任务已更新');
-        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, title: editTaskTitle, description: editTaskDesc, priority: editTaskPriority, category: editTaskCategory, due_date: editTaskDueDate } : t));
+        setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, title: editTaskTitle, description: editTaskDesc, priority: editTaskPriority, category: editTaskCategory, due_date: editTaskDueDate } as GtdTask : t));
         setEditingTask(null);
         loadProjectStats();
       } else {
         const err = await res.json().catch(() => ({}));
-        toast.error(err.detail || '更新失败');
+        toast.error(safeErrorDetail(err.detail, '更新失败'));
       }
     } catch { toast.error('更新失败'); }
     finally { setSavingTask(false); }
   };
 
-  const cardStats = { blue: 0, green: 0, yellow: 0, red: 0 };
-  cards.forEach(c => { if (cardStats.hasOwnProperty(c.card_type)) cardStats[c.card_type as keyof typeof cardStats]++; });
+  const cardStats = useMemo(() => {
+    const stats = { blue: 0, green: 0, yellow: 0, red: 0 };
+    cards.forEach(c => { if (stats.hasOwnProperty(c.card_type)) stats[c.card_type as keyof typeof stats]++; });
+    return stats;
+  }, [cards]);
 
   return (
     <Portal>
       <div className="fixed inset-0 z-[9990] bg-gray-50 dark:bg-gray-900 flex flex-col overflow-y-auto" style={{ margin: 0 }}>
         {/* 顶部导航栏 */}
         <div className={`flex-shrink-0 ${colorOpt.bg} dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm`}>
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
               <button
                 onClick={onClose}
-                className="flex items-center px-3 py-2 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm"
+                className="flex items-center px-2 sm:px-3 py-2 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm flex-shrink-0"
               >
                 <ChevronLeft className="w-4 h-4 mr-1" />
-                返回列表
+                <span className="hidden sm:inline">返回列表</span>
               </button>
-              <div className="flex items-center space-x-3">
-                <span className="text-3xl">{project.icon || '📚'}</span>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900 dark:text-white">{project.name}</h1>
+              <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+                <span className="text-2xl sm:text-3xl flex-shrink-0">{project.icon || '📚'}</span>
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-base sm:text-xl font-bold text-gray-900 dark:text-white truncate">{project.name}</h1>
                   {project.description && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{project.description}</p>
+                    <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5 truncate">{project.description}</p>
                   )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1 sm:space-x-3 flex-wrap gap-1">
               {/* 四色统计 */}
-              <div className="hidden sm:flex items-center space-x-2 bg-white dark:bg-gray-700 rounded-lg px-3 py-1.5 shadow-sm">
+              <div className="hidden md:flex items-center space-x-2 bg-white dark:bg-gray-700 rounded-lg px-3 py-1.5 shadow-sm">
                 {Object.entries(cardTypeConfig).map(([type, config]) => (
                   <span key={type} className="flex items-center space-x-1">
                     <span className="text-sm">{config.icon}</span>
@@ -1105,27 +566,56 @@ const ProjectDetailPanel: React.FC<{
                 ))}
               </div>
               
-              <PDFDownloadLink
-                document={<ProjectPDF cards={cards} projectName={project.name} />}
-                fileName={`${project.name}-专题卡片.pdf`}
-                className="flex items-center px-3 py-1.5 text-sm text-white bg-red-600 hover:bg-red-700 disabled:bg-gray-400 rounded-lg transition-colors shadow-sm"
+              
+
+              <button
+                onClick={() => { setActiveTab('network'); setNetworkTabOpened(true); }}
+                className={`flex items-center px-2 sm:px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${
+                  activeTab === 'network'
+                    ? 'text-white bg-indigo-600 hover:bg-indigo-700'
+                    : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                }`}
+                title="查看专题知识网络"
               >
-                {({ loading }) => (
-                  loading ? '生成中...' : '导出PDF'
-                )}
-              </PDFDownloadLink>
-              {/*<button*/}
-              {/*  onClick={() => setShowKnowledgeGraph(!showKnowledgeGraph)}*/}
-              {/*  className={`flex items-center px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm ${*/}
-              {/*    showKnowledgeGraph*/}
-              {/*      ? 'text-white bg-indigo-600 hover:bg-indigo-700'*/}
-              {/*      : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'*/}
-              {/*  }`}*/}
-              {/*  title="查看专题知识网络"*/}
-              {/*>*/}
-              {/*  <Network className="w-4 h-4 mr-1" />*/}
-              {/*  {showKnowledgeGraph ? '关闭网络' : '知识网络'}*/}
-              {/*</button>*/}
+                <Network className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">知识网络</span>
+              </button>
+              <button
+                onClick={handleExportPPT}
+                disabled={exportingPPT}
+                className="flex items-center px-2 sm:px-3 py-1.5 text-sm rounded-lg transition-colors shadow-sm text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+                title="导出为PPT"
+              >
+                {exportingPPT ? <span className="hidden sm:inline">生成中...</span> : <><Presentation className="w-4 h-4 sm:mr-1" /><span className="hidden sm:inline">导出PPT</span></>}
+              </button>
+              {pptResult && (
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded ${pptResult.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {pptResult.success ? '✅' : '❌'}
+                    <span className="hidden sm:inline ml-1">{pptResult.message}</span>
+                  </span>
+                  {pptResult.success && pptResult.filename && (
+                    <button
+                      onClick={() => handleDownloadPPT(pptResult.filename)}
+                      className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+                      title="下载PPT文件"
+                    >
+                      下载
+                    </button>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  const shareUrl = `${window.location.origin}/research?project=${project.id}`;
+                  navigator.clipboard?.writeText(shareUrl);
+                  toast.success('分享链接已复制');
+                }}
+                className="flex items-center px-2 py-1.5 text-sm text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
+                title="分享专题"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
               <button
                 onClick={onClose}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -1137,11 +627,11 @@ const ProjectDetailPanel: React.FC<{
 
           
           {/* Tab 切换 */}
-          <div className="max-w-7xl mx-auto px-6">
-            <div className="flex space-x-1">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex space-x-1 overflow-x-auto whitespace-nowrap scrollbar-thin">
               <button
                 onClick={() => setActiveTab('cards')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'cards'
                     ? 'border-purple-500 text-purple-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1152,7 +642,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
 <button
                 onClick={() => setActiveTab('tasks')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'tasks'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1163,7 +653,7 @@ const ProjectDetailPanel: React.FC<{
               </button>
               <button
                 onClick={() => setActiveTab('workflow')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'workflow'
                     ? 'border-green-500 text-green-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1173,8 +663,19 @@ const ProjectDetailPanel: React.FC<{
                 工作流概览
               </button>
               <button
-                onClick={() => setActiveTab('network')}
-                className={`flex items-center px-5 py-3 text-sm font-medium border-b-2 transition-colors ${
+                onClick={() => setActiveTab('kanban')}
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
+                  activeTab === 'kanban'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <ListTodo className="w-4 h-4 mr-2" />
+                看板视图
+              </button>
+              <button
+                onClick={() => { setActiveTab('network'); setNetworkTabOpened(true); }}
+                className={`flex items-center px-4 sm:px-5 py-3 text-sm font-medium border-b-2 transition-colors flex-shrink-0 ${
                   activeTab === 'network'
                     ? 'border-indigo-500 text-indigo-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -1189,7 +690,7 @@ const ProjectDetailPanel: React.FC<{
 
         {/* 内容区域 - 可滚动 */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
             {loading ? (
               <div className="flex justify-center py-20">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
@@ -1204,13 +705,22 @@ const ProjectDetailPanel: React.FC<{
                       <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                         研究卡片
                       </h2>
-                      <button
-                        onClick={() => setShowCreateCard(true)}
-                        className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
-                      >
-                        <PlusCircle className="w-4 h-4 mr-1.5" />
-                        新建卡片
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { loadLinkableCards(); setShowLinkCard(true); }}
+                          className="flex items-center px-4 py-2 border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-sm font-medium"
+                        >
+                          <Plus className="w-4 h-4 mr-1.5" />
+                          添加已有卡片
+                        </button>
+                        <button
+                          onClick={() => setShowCreateCard(true)}
+                          className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium shadow-sm"
+                        >
+                          <PlusCircle className="w-4 h-4 mr-1.5" />
+                          新建卡片
+                        </button>
+                      </div>
                     </div>
 
                     {cards.length === 0 ? (
@@ -1224,6 +734,14 @@ const ProjectDetailPanel: React.FC<{
                         >
                           创建第一张卡片
                         </button>
+                        <div className="mt-3">
+                          <button
+                            onClick={() => { loadLinkableCards(); setShowLinkCard(true); }}
+                            className="px-6 py-2.5 border border-purple-300 dark:border-purple-600 text-purple-600 dark:text-purple-400 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors font-medium"
+                          >
+                            从知识库添加已有卡片
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1244,7 +762,7 @@ const ProjectDetailPanel: React.FC<{
                                     {tc.name}
                                   </span>
 </div>
-                                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex items-center space-x-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                   {card.card_type === 'red' && (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleConvertToTask(card.id); }}
@@ -1254,12 +772,26 @@ const ProjectDetailPanel: React.FC<{
                                       转任务
                                     </button>
                                   )}
-<button
+                                  <button
                                     onClick={(e) => { e.stopPropagation(); setSelectedCard(card); setShowCardDetail(true); }}
                                     className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
                                     title="查看详情"
                                   >
                                     <Maximize2 className="w-4 h-4 text-gray-500" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleExportCardPDF(card); }}
+                                    className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    title="导出 PDF"
+                                  >
+                                    <FileText className="w-4 h-4 text-gray-500" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setPreviewCard(card); }}
+                                    className="p-1.5 hover:bg-white/60 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                                    title="知识卡片预览"
+                                  >
+                                    {convertProjectCardToKnowledgeCard(card).color === 'blue' ? '📘' : convertProjectCardToKnowledgeCard(card).color === 'green' ? '📗' : convertProjectCardToKnowledgeCard(card).color === 'yellow' ? '📒' : '📕'}
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }}
@@ -1293,19 +825,6 @@ const ProjectDetailPanel: React.FC<{
                             </motion.div>
                           );
                         })}
-                      </div>
-                    )}
-                    
-                    {/* 知识网络视图 */}
-                    {showKnowledgeGraph && cards.length > 0 && (
-                      <div className="mt-6 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-4">
-                        <h3 className="text-sm font-semibold mb-3 flex items-center text-gray-700 dark:text-gray-300">
-                          <Network className="w-4 h-4 mr-2 text-indigo-500" />
-                          专题知识网络
-                        </h3>
-                        <div className="h-80 rounded-lg overflow-hidden">
-                          <KnowledgeGraph filterProjectId={project.id} />
-                        </div>
                       </div>
                     )}
                   </div>
@@ -1364,21 +883,21 @@ const ProjectDetailPanel: React.FC<{
                                 <Circle className="w-5 h-5" />
                               )}
                             </button>
-                            <div className="flex-1 min-w-0 mr-3">
-                              <h4 className={`font-medium ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
+                            <div className="flex-1 min-w-0 mr-2 sm:mr-3">
+                              <h4 className={`font-medium text-sm sm:text-base ${task.is_completed ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-white'}`}>
                                 {task.title}
                               </h4>
                               {task.description && (
-                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{task.description}</p>
+                                <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 truncate mt-0.5">{task.description}</p>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                               {task.assigned_to_name && (
-                                <span className="text-xs px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
+                                <span className="hidden sm:inline text-xs px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full">
                                   {task.assigned_to_name}
                                 </span>
                               )}
-                              <span className={`text-xs px-2.5 py-1 rounded-full ${
+                              <span className={`text-xs px-2 sm:px-2.5 py-1 rounded-full ${
                                 task.priority === 'high' ? 'bg-red-100 text-red-700' :
                                 task.priority === 'medium' ? 'bg-amber-100 text-amber-700' :
                                 'bg-green-100 text-green-700'
@@ -1399,7 +918,7 @@ const ProjectDetailPanel: React.FC<{
                                     } else throw new Error();
                                   } catch { toast.error('删除失败'); }
                                 }}
-                                className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                                className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
                                 title="删除任务"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1507,16 +1026,16 @@ const ProjectDetailPanel: React.FC<{
                         <Layers className="w-5 h-5 mr-2" />
                         专题工作流
                       </h3>
-                      <div className="flex items-center gap-2 text-sm text-indigo-700 dark:text-indigo-300">
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/50 rounded">事实卡片</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 rounded">解释分析</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/50 rounded">风险识别</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-red-100 dark:bg-red-900/50 rounded">行动决策</span>
-                        <ArrowRight className="w-4 h-4" />
-                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/50 rounded">GTD 任务</span>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-sm text-indigo-700 dark:text-indigo-300">
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/50 rounded text-xs sm:text-sm">事实卡片</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-green-100 dark:bg-green-900/50 rounded text-xs sm:text-sm">解释分析</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/50 rounded text-xs sm:text-sm">风险识别</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-red-100 dark:bg-red-900/50 rounded text-xs sm:text-sm">行动决策</span>
+                        <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900/50 rounded text-xs sm:text-sm">GTD 任务</span>
                       </div>
                       <p className="mt-3 text-xs text-indigo-600/70 dark:text-indigo-400/70">
                         完整闭环：事实 → 解释 → 风险 → 行动 → 任务执行，通过双向链接和日历事件串联所有环节
@@ -1525,12 +1044,40 @@ const ProjectDetailPanel: React.FC<{
                   </div>
                 )}
 
+                {/* ===== 看板视图 Tab ===== */}
+                {activeTab === 'kanban' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-6">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">看板视图</h2>
+                    </div>
+                    {tasks.length === 0 ? (
+                      <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700">
+                        <ListTodo className="w-16 h-16 mx-auto mb-4 text-gray-200 dark:text-gray-600" />
+                        <p className="text-gray-500 dark:text-gray-400 text-lg">暂无任务</p>
+                        <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">创建任务或将红色卡片转换为任务后将显示在看板中</p>
+                      </div>
+                    ) : (
+                      <KanbanBoard
+                        tasks={tasks}
+                        projectId={project.id!}
+                        onTasksChange={() => loadData()}
+                        onTaskStatusUpdate={(taskId, newStatus) => {
+                          // 乐观更新：立即修改本地任务状态，无需等待 refetch
+                          setTasks(prev => prev.map(t =>
+                            t.id === taskId ? { ...t, kanban_status: newStatus as GtdTask['kanban_status'] } : t
+                          ));
+                        }}
+                      />
+                    )}
+                  </div>
+                )}
+
                 {/* ===== 知识网络 Tab ===== */}
-                {activeTab === 'network' && (
-                  <div style={{ height: 'calc(100vh - 160px)' }}>
+                {activeTab === 'network' && networkTabOpened && (
+                  <div className="min-h-[300px]" style={{ height: 'calc(100vh - 160px)', maxHeight: '80dvh' }}>
                     {cards.length > 0 ? (
                       <iframe
-                        src={`/knowledge-graph?card=${cards[0].id}`}
+                        src={`/knowledge-graph?card=${cards[0]?.id || ''}`}
                         className="w-full h-full border-0 rounded-xl"
                         title="专题知识网络"
                       />
@@ -1550,56 +1097,49 @@ const ProjectDetailPanel: React.FC<{
           </div>
         </div>
 
-        {/* ===== 卡片详情弹窗 - 使用全局CardDetailModal ===== */}
-        <CardDetailModal
-          isOpen={showCardDetail && selectedCard !== null}
-          onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
-          card={selectedCard ? convertProjectCardToKnowledgeCard(selectedCard) : null}
-          allCards={cards.map(convertProjectCardToKnowledgeCard)}
-          onDelete={async (cardId: string) => {
-            try {
-              await fetch(`${RESEARCH_API_BASE}/cards/${cardId}`, { method: 'DELETE' });
-              setCards(prev => prev.filter(c => String(c.id) !== cardId));
+        {/* ===== 卡片详情弹窗 - 使用标准 CardDetailModal ===== */}
+        {showCardDetail && selectedCard && (
+          <CardDetailModal
+            isOpen={true}
+            card={convertProjectCardToKnowledgeCard(selectedCard)}
+            allCards={cards.map(convertProjectCardToKnowledgeCard)}
+            onClose={() => { setShowCardDetail(false); setSelectedCard(null); }}
+            onDelete={async (id: string) => {
+              await fetch(`${RESEARCH_API_BASE()}/cards/${id}`, { method: 'DELETE' });
+              setCards(prev => prev.filter(c => String(c.id) !== id));
               setShowCardDetail(false);
               setSelectedCard(null);
               toast.success('卡片已删除');
-            } catch {
-              toast.error('删除失败');
-            }
-          }}
-          onRelatedCardClick={(cardId: string) => {
-            const targetCard = cards.find(c => String(c.id) === cardId);
-            if (targetCard) {
-              setSelectedCard(targetCard);
-            }
-          }}
-          onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
-            try {
-              const response = await fetch(`${RESEARCH_API_BASE}/cards/${updatedCard.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  title: updatedCard.title,
-                  content: updatedCard.content,
-                  type: updatedCard.color,
-                  related_cards: updatedCard.relatedCards.map(Number)
-                })
-              });
-              if (response.ok) {
+              refreshCards();
+            }}
+            onRelatedCardClick={(id: string) => {
+              const target = cards.find(c => String(c.id) === id);
+              if (target) { setSelectedCard(target); }
+            }}
+            onUpdateCard={async (updatedCard) => {
+              try {
+                const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/cards/${updatedCard.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: updatedCard.title,
+                    content: updatedCard.content,
+                    card_type: updatedCard.color,
+                    related_cards: updatedCard.relatedCards?.map(Number),
+                  })
+                });
+                if (!res.ok) throw new Error('更新失败');
                 const updated = convertKnowledgeCardToProjectCard(updatedCard);
                 setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
                 toast.success('卡片已更新');
+                refreshCards();
+              } catch {
+                toast.error('卡片更新失败');
               }
-            } catch {
-              toast.error('更新失败');
-            }
-          }}
-          onCreateRecommendedCard={(title: string, reason: string) => {
-            // 可以在这里实现推荐卡片创建的逻辑
-            toast.info(`推荐创建: ${title}`);
-          }}
-          refreshTrigger={taskRefreshTrigger}
-        />
+            }}
+            onCreateRecommendedCard={(title: string) => toast.info(`推荐: ${title}`)}
+          />
+        )}
 
         {/* ===== 创建卡片弹窗 - 复用首页 CreateCardModal ===== */}
         <CreateCardModal
@@ -1607,10 +1147,203 @@ const ProjectDetailPanel: React.FC<{
           onClose={() => setShowCreateCard(false)}
           onSave={handleCreateCardSave}
           initialColor="blue"
-          existingCards={cards.map(c => ({ id: String(c.id), title: c.title }))}
+          existingCards={cards.map(c => ({ id: String(c.id), title: c.title, content: c.content }))}
           projectId={project.id}
           projectName={project.name}
         />
+
+        {/* 移动到其他专题弹窗 */}
+        {showMoveCard && selectedCard && allProjectsList.length > 0 && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowMoveCard(false)}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md mx-4 p-4 sm:p-6" onClick={e => e.stopPropagation()}>
+              <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">移动卡片到其他专题</h3>
+              <p className="text-xs sm:text-sm text-gray-500 mb-3 truncate">
+                将《{selectedCard.title}》移动到：
+              </p>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {allProjectsList.filter(p => p.id !== project.id).map(p => (
+                  <button
+                    key={p.id}
+                    onClick={async () => {
+                      try {
+                        await fetch(`${RESEARCH_API_BASE()}/cards/${selectedCard.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ project_id: p.id })
+                        });
+                        toast.success(`已移动到《${p.name}》`);
+                        setShowMoveCard(false);
+                        refreshCards();
+                      } catch {
+                        toast.error('移动失败');
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2.5 sm:py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 text-sm"
+                  >
+                    <span>{p.icon || '📚'}</span>
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 添加已有卡片弹窗 */}
+        {showLinkCard && (
+          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/50 p-4" onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); setLinkCardSearchQuery(''); }}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="text-base sm:text-lg font-semibold">添加已有卡片到专题</h3>
+                <button onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); setLinkCardSearchQuery(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                {/* 搜索框 */}
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={linkCardSearchQuery}
+                    onChange={e => setLinkCardSearchQuery(e.target.value)}
+                    placeholder="搜索卡片标题或内容..."
+                    className="w-full pl-9 pr-4 py-2 border border-gray-200 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  />
+                </div>
+                {linkableLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" />
+                  </div>
+                ) : linkableCards.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    <Layers className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p>没有可添加的卡片</p>
+                    <p className="text-sm mt-1">知识库中所有卡片都已加入专题</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(() => {
+                      const q = linkCardSearchQuery.toLowerCase().trim();
+                      const filtered = q
+                        ? linkableCards.filter(c => c.title.toLowerCase().includes(q) || c.content.toLowerCase().includes(q))
+                        : linkableCards;
+                      return filtered.length === 0 ? (
+                          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                            <Search className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                            <p>未找到匹配的卡片</p>
+                            <p className="text-sm mt-1">请尝试其他关键词</p>
+                          </div>
+                      ) : filtered.map(card => {
+                        const isSelected = selectedLinkCardIds.has(card.id);
+                        const tc = cardTypeConfig[card.card_type] || cardTypeConfig.blue;
+                        const isLinked = card.is_linked;
+                        return (
+                          <div
+                            key={card.id}
+                            onClick={() => {
+                              if (isLinked) return;
+                              const next = new Set(selectedLinkCardIds);
+                              if (isSelected) next.delete(card.id); else next.add(card.id);
+                              setSelectedLinkCardIds(next);
+                            }}
+                            className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                              isLinked
+                                ? 'border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 opacity-75 cursor-default'
+                                : isSelected
+                                  ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20 cursor-pointer'
+                                  : 'border-gray-200 dark:border-gray-700 hover:border-purple-300 dark:hover:border-purple-600 cursor-pointer'
+                            }`}
+                          >
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 border-2 ${
+                              isLinked ? 'bg-green-500 border-green-500' : isSelected ? 'bg-purple-600 border-purple-600' : 'border-gray-300 dark:border-gray-500'
+                            }`}>
+                              {isLinked ? <CheckCircle2 className="w-4 h-4 text-white" /> : isSelected && <CheckCircle2 className="w-4 h-4 text-white" />}
+                            </div>
+                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${tc.color.replace('text-', 'bg-')}`} />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm truncate">{card.title}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{card.content.replace(/<[^>]*>/g, '').trim()}</div>
+                            </div>
+                            {isLinked ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-300 dark:border-green-600">
+                                已加入
+                              </span>
+                            ) : (
+                              <span className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${tc.bgColor} ${tc.color} border ${tc.borderColor}`}>
+                                {tc.name}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      });})()}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {selectedLinkCardIds.size > 0 ? `已选择 ${selectedLinkCardIds.size} 张卡片` : '请选择要加入专题的卡片'}
+                </span>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowLinkCard(false); setSelectedLinkCardIds(new Set()); setLinkCardSearchQuery(''); }}
+                    className="px-5 py-2.5 text-gray-600 bg-gray-200 dark:bg-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleLinkCards}
+                    disabled={selectedLinkCardIds.size === 0 || linkingCards}
+                    className="px-6 py-2.5 bg-purple-600 text-white rounded-xl hover:bg-purple-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {linkingCards ? '关联中...' : `加入专题 (${selectedLinkCardIds.size})`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 知识卡片预览弹窗 (CardDetailModal) */}
+        {previewCard && (
+          <CardDetailModal
+            isOpen={true}
+            card={convertProjectCardToKnowledgeCard(previewCard)}
+            allCards={cards.map(convertProjectCardToKnowledgeCard)}
+            onClose={() => setPreviewCard(null)}
+            onDelete={async (id: string) => {
+              await fetch(`${RESEARCH_API_BASE()}/cards/${id}`, { method: 'DELETE' });
+              setCards(prev => prev.filter(c => String(c.id) !== id));
+              setPreviewCard(null);
+              toast.success('卡片已删除');
+            }}
+            onRelatedCardClick={(id: string) => {
+              const target = cards.find(c => String(c.id) === id);
+              if (target) setPreviewCard(target);
+            }}
+            onUpdateCard={async (updatedCard: KnowledgeCardForDetail) => {
+              try {
+                const res = await fetch(`${RESEARCH_API_BASE()}/projects/${project.id}/cards/${updatedCard.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    title: updatedCard.title,
+                    content: updatedCard.content,
+                    card_type: updatedCard.color,
+                    related_cards: updatedCard.relatedCards?.map(Number),
+                  })
+                });
+                if (!res.ok) throw new Error('更新失败');
+                const updated = convertKnowledgeCardToProjectCard(updatedCard);
+                setCards(prev => prev.map(c => String(c.id) === updatedCard.id ? { ...c, ...updated } : c));
+                toast.success('卡片已更新');
+              } catch {
+                toast.error('卡片更新失败');
+              }
+            }}
+            onCreateRecommendedCard={(title: string) => toast.info(`推荐: ${title}`)}
+          />
+        )}
 
         {/* 任务编辑弹窗 */}
         {editingTask && (
@@ -1672,7 +1405,7 @@ const ProjectDetailPanel: React.FC<{
       </div>
     </Portal>
   );
-};
+});
 
 // 注册中文字体（本地文件，不依赖外部CDN）
 const FONT_URL_REGULAR = new URL('/fonts/NotoSansSC-Regular.ttf', import.meta.url).href;
@@ -1740,7 +1473,8 @@ const ProjectPDF: React.FC<ProjectPDFProps> = ({ cards, projectName }) => (
 // ========== 主组件 ==========
 const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   onSelectProject,
-  selectedProjectId
+  selectedProjectId,
+  showDeepLinkButton = false
 }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ResearchProject[]>([]);
@@ -1751,7 +1485,21 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
   const [openProject, setOpenProject] = useState<ResearchProject | null>(null);
   const [newProject, setNewProject] = useState({ name: '', description: '', color: 'blue', icon: '📚' });
 
+  const autoOpened = useRef(false);
+
   useEffect(() => { loadProjects(); }, []);
+
+  // 当从URL传入selectedProjectId时，自动打开对应专题（仅首次）
+  useEffect(() => {
+    if (autoOpened.current) return;
+    if (selectedProjectId && projects.length > 0) {
+      const project = projects.find(p => p.id === selectedProjectId);
+      if (project) {
+        setOpenProject(project);
+        autoOpened.current = true;
+      }
+    }
+  }, [selectedProjectId, projects]);
 
   const loadProjects = async () => {
     try {
@@ -1832,10 +1580,10 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+          className="flex items-center px-3 sm:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
         >
-          <Plus className="w-4 h-4 mr-1" />
-          新建专题
+          <Plus className="w-4 h-4 sm:mr-1" />
+          <span className="hidden sm:inline">新建专题</span>
         </motion.button>
       </div>
 
@@ -1854,12 +1602,16 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
         <div className="space-y-3">
           {projects.map((project) => {
             const colorOpt = colorOptions.find(c => c.value === project.color) || colorOptions[0];
+            const isSelected = selectedProjectId === project.id;
             return (
               <motion.div
                 key={project.id}
                 whileHover={{ y: -1 }}
-                className={`rounded-xl border-2 ${colorOpt.border} bg-white dark:bg-gray-800 hover:shadow-md transition-all cursor-pointer overflow-hidden`}
-                onClick={() => setOpenProject(project)}
+                className={`rounded-xl border-2 ${isSelected ? `${colorOpt.border} ring-2 ring-blue-400` : colorOpt.border} bg-white dark:bg-gray-800 hover:shadow-md transition-all cursor-pointer overflow-hidden`}
+                onClick={() => {
+                  onSelectProject?.(project);
+                  setOpenProject(project);
+                }}
               >
                 <div className={`flex items-center justify-between p-4 ${colorOpt.bg} dark:bg-gray-800`}>
                   <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -1875,22 +1627,31 @@ const ResearchProjectManager: React.FC<ResearchProjectManagerProps> = ({
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+                  {showDeepLinkButton && project.id && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate(`/research?project=${project.id}`); }}
+                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      title="深链接"
+                    >
+                      <ExternalLink className="w-4 h-4 text-gray-500" />
+                    </button>
+                  )}
+                  <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0 ml-1 sm:ml-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditingProject(project); setShowEditModal(true); }}
-                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 sm:p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       title="编辑"
                     >
-                      <Edit2 className="w-4 h-4 text-gray-500" />
+                      <Edit2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-500" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id!); }}
-                      className="p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                      className="p-1.5 sm:p-2 hover:bg-white/50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       title="删除"
                     >
-                      <Trash2 className="w-4 h-4 text-red-500" />
+                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
                     </button>
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
                   </div>
                 </div>
               </motion.div>

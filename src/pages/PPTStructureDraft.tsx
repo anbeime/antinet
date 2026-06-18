@@ -11,7 +11,6 @@ import {
   Loader2,
   Copy,
   Download,
-  RefreshCw,
   Lightbulb,
   Target,
   Zap,
@@ -19,12 +18,13 @@ import {
   ChevronDown,
   ChevronRight,
   Trash2,
-  Edit3,
-  Save
+  Edit3
 } from 'lucide-react';
 
+import { getApiBaseUrl } from '@/lib/apiConfig';
+
 // API 配置
-const API_BASE = '/api/ppt-structure';
+const API_BASE = () => getApiBaseUrl() + '/api/ppt-structure';
 
 interface Section {
   section_id: string;
@@ -84,7 +84,7 @@ const PPTStructureDraft: React.FC = () => {
   // 加载MECE信息
   const loadMeceInfo = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/mece-info`);
+      const response = await fetch(`${API_BASE()}/mece-info`);
       if (response.ok) {
         const data = await response.json();
         setMeceInfo(data.mece);
@@ -110,7 +110,7 @@ const PPTStructureDraft: React.FC = () => {
     setSuccess(false);
 
     try {
-      const response = await fetch(`${API_BASE}/generate`, {
+      const response = await fetch(`${API_BASE()}/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -246,7 +246,7 @@ const PPTStructureDraft: React.FC = () => {
   // 清空草稿
   const handleClear = async () => {
     try {
-      await fetch(`${API_BASE}/clear`, { method: 'DELETE' });
+      await fetch(`${API_BASE()}/clear`, { method: 'DELETE' });
       setDraft(null);
     } catch (err) {
       console.error('Failed to clear drafts:', err);

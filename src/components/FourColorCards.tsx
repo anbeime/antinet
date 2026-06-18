@@ -140,21 +140,21 @@ export default function FourColorCards() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [speakingCardId, setSpeakingCardId] = useState<string | null>(null);
-  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const speakCard = async (card: CardType) => {
     if (speakingCardId === card.card_id) {
-      if (currentAudio) {
-        currentAudio.pause();
-        setCurrentAudio(null);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
       setSpeakingCardId(null);
       return;
     }
 
-    if (currentAudio) {
-      currentAudio.pause();
-      setCurrentAudio(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
 
     try {
@@ -162,7 +162,7 @@ export default function FourColorCards() {
       if (result?.audio_url) {
         const filename = result.audio_url.split('/').pop() || '';
         const audio = speechService.playAudio(speechService.getAudioUrl(filename));
-        setCurrentAudio(audio);
+        audioRef.current = audio;
         setSpeakingCardId(card.card_id);
         audio.onended = () => setSpeakingCardId(null);
       }

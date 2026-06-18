@@ -4,8 +4,9 @@ import { Cpu, RefreshCw, Send, AlertCircle, Eye, MessageSquare, ImageIcon, Play,
 import { toast } from 'sonner';
 import { useTheme } from '@/hooks/useTheme';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 
-const API_BASE = getApiBaseUrl() + '/api/genie-playground'
+const API_BASE = () => getApiBaseUrl() + '/api/genie-playground'
 
 interface GenieModel {
   id: string;
@@ -69,7 +70,7 @@ const GeniePlayground: React.FC = () => {
 
   const fetchModels = async () => {
     try {
-      const res = await fetch(`${API_BASE}/models`);
+      const res = await fetch(`${API_BASE()}/models`);
       if (res.ok) {
         const data = await res.json();
         setModels(data.models || []);
@@ -81,7 +82,7 @@ const GeniePlayground: React.FC = () => {
 
   const checkService = async () => {
     try {
-      const res = await fetch(`${API_BASE}/service-status`);
+      const res = await fetch(`${API_BASE()}/service-status`);
       if (res.ok) {
         const data = await res.json();
         setServiceAvailable(data.available);
@@ -174,7 +175,7 @@ const GeniePlayground: React.FC = () => {
       // 视觉模型 + 图片 -> 用 vision-chat 接口
       if (isVisionModel && hasImage) {
         // 视觉模型 + 图片 -> 用 vision-chat 接口
-        const res = await fetch(`${API_BASE}/vision-chat`, {
+        const res = await fetch(`${API_BASE()}/vision-chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -195,8 +196,8 @@ const GeniePlayground: React.FC = () => {
           setMessages(prev => [...prev, { role: 'assistant', content: data.response || '(无响应)' }]);
         } else {
           const err = await res.json();
-          toast.error(err.detail || '视觉对话失败');
-          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${err.detail || '视觉对话失败'}` }]);
+          toast.error(safeErrorDetail(err.detail, '视觉对话失败'));
+          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${safeErrorDetail(err.detail, '视觉对话失败')}` }]);
         }
       } else {
         // 纯文本聊天 -> 用流式接口
@@ -206,7 +207,7 @@ const GeniePlayground: React.FC = () => {
           { role: 'user', content: text },
         ];
 
-        const res = await fetch(`${API_BASE}/chat/stream`, {
+        const res = await fetch(`${API_BASE()}/chat/stream`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -254,8 +255,8 @@ const GeniePlayground: React.FC = () => {
           setStreamContent('');
         } else {
           const err = await res.json();
-          toast.error(err.detail || '聊天失败');
-          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${err.detail || '聊天失败'}` }]);
+          toast.error(safeErrorDetail(err.detail, '聊天失败'));
+          setMessages(prev => [...prev, { role: 'assistant', content: `[错误] ${safeErrorDetail(err.detail, '聊天失败')}` }]);
         }
       }
     } catch (e: any) {
@@ -270,7 +271,7 @@ const GeniePlayground: React.FC = () => {
     setBatchRunning(true);
     setBatchResults([]);
     try {
-      const res = await fetch(`${API_BASE}/batch-test`, { method: 'POST' });
+      const res = await fetch(`${API_BASE()}/batch-test`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         setBatchResults(data.results || []);
@@ -332,7 +333,7 @@ const GeniePlayground: React.FC = () => {
         {serviceAvailable && currentModelName && (
           <div className="mb-4 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-700 dark:text-green-300 flex items-center space-x-2">
             <Wifi className="w-4 h-4" />
-            <span>当前已加载: <strong>{currentModelName}</strong> ({currentModelType === 'vision' ? '视觉' : '聊天'}模型) — NPU 同时只能运行一个模型</span>
+            <span>当前已加载: <strong>{currentModelName}</strong> ({currentModelType === 'vision' ? '视觉' : '聊天'}模型){loadedModels.length > 1 && <span className="ml-2 text-green-500">· 已加载 {loadedModels.length} 个模型</span>}</span>
           </div>
         )}
 

@@ -4,9 +4,12 @@ import {
   FileText, Upload, Download, X, CheckCircle, XCircle,
   RefreshCw, Filter, Building2, DollarSign, AlertTriangle,
   Loader, ChevronDown, ChevronUp, Trash2, FileSpreadsheet,
-  Clock, Tag, ShieldAlert,
+  Clock, Tag, ShieldAlert, Paperclip, Archive, FileWarning,
+  ExternalLink,
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface Invoice {
   id: number;
@@ -25,6 +28,9 @@ interface Invoice {
   status: string;
   engine_used: string | null;
   created_at: string;
+  file_size?: number | null;
+  has_source_file?: boolean;
+  source_url?: string | null;
 }
 
 interface InvoiceItem {
@@ -72,6 +78,45 @@ const InvoiceManager: React.FC = () => {
 
   // exporting
   const [exporting, setExporting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+
+  // task creation
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [linkedTaskId, setLinkedTaskId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedInvoice) setLinkedTaskId(null);
+  }, [selectedInvoice]);
+
+  const handleCreateTask = async () => {
+    if (!selectedInvoice) return;
+    setCreatingTask(true);
+    try {
+      const res = await fetch(api(`/api/invoice/${selectedInvoice.id}/create-task`), { method: 'POST' });
+      if (res.status === 409) {
+        const taskId = Number(res.headers.get('X-Existing-Task-Id'));
+        setLinkedTaskId(taskId);
+        toast('报销任务已存在', {
+          description: '点击"查看任务"跳转管理',
+          action: { label: '查看任务', onClick: () => window.location.href = '/gtd-tasks' },
+        });
+      } else if (res.ok) {
+        const data = await res.json();
+        setLinkedTaskId(data.task_id);
+        toast('报销任务已创建', {
+          description: `优先级: ${data.priority === 'high' ? '高' : data.priority === 'medium' ? '中' : '低'}`,
+          action: { label: '查看任务', onClick: () => window.location.href = '/gtd-tasks' },
+        });
+      } else {
+        const err = await res.json().catch(() => ({ detail: '创建失败' }));
+        toast.error(safeErrorDetail(err.detail, '创建报销任务失败'));
+      }
+    } catch {
+      toast.error('创建报销任务失败，请检查后端服务');
+    } finally {
+      setCreatingTask(false);
+    }
+  };
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -180,7 +225,8 @@ const InvoiceManager: React.FC = () => {
           alert(`管线执行异常: ${failed || '未知错误'}\n文件已导出但不含公式校验列`);
         } else if (advanced && data.pipeline_ok) {
           const steps = data.pipeline.map((p: any) => p.step).join(' → ');
-          alert(`高级导出完成\n管线: ${steps}`);
+          const links = data.source_links ?? 0;
+          alert(`高级导出完成\n管线: ${steps}\n源文件链接: ${links} 条`);
         }
         const link = document.createElement('a');
         link.href = api(data.download_url);
@@ -192,6 +238,64 @@ const InvoiceManager: React.FC = () => {
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleDownloadSource = (inv: Invoice) => {
+    if (!inv.has_source_file) {
+      alert('此发票的源文件已不存在(可能被手动删除),无法下载');
+      return;
+    }
+    const url = inv.source_url || api(`/api/invoice/source/${inv.id}`);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = inv.filename || `invoice_${inv.id}`;
+    link.target = '_self';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadSourcesArchive = async () => {
+    if (invoices.length === 0) {
+      alert('当前筛选条件下无发票,无需打包');
+      return;
+    }
+    setArchiving(true);
+    try {
+      const params = new URLSearchParams();
+      if (sellerFilter) params.set('seller', sellerFilter);
+      if (fromDate) params.set('from_date', fromDate);
+      if (toDate) params.set('to_date', toDate);
+      params.set('include_missing', 'true');
+      const res = await fetch(api(`/api/invoice/sources-archive?${params}`));
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || '打包失败');
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] || `invoices_sources_${Date.now()}.zip`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) {
+      alert(`打包源文件失败: ${e?.message || e}`);
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const formatFileSize = (bytes?: number | null) => {
+    if (!bytes || bytes <= 0) return '-';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   };
 
   return (
@@ -244,6 +348,12 @@ const InvoiceManager: React.FC = () => {
           <button onClick={() => handleExport(true)} disabled={exporting}
             className="flex items-center space-x-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
             <FileSpreadsheet className="w-4 h-4" /><span>高级导出(公式)</span>
+          </button>
+          <button onClick={handleDownloadSourcesArchive} disabled={archiving || invoices.length === 0}
+            className="flex items-center space-x-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+            title="按当前筛选条件,把所有发票源文件打成 ZIP 留档">
+            {archiving ? <Loader className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+            <span>{archiving ? '打包中…' : '打包源文件'}</span>
           </button>
           <button onClick={() => { fetchInvoices(); fetchStats(); }}
             className="flex items-center space-x-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
@@ -367,6 +477,13 @@ const InvoiceManager: React.FC = () => {
                           {inv.is_excluded ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> :
                            <XCircle className="w-3.5 h-3.5 text-red-400" />}
                         </button>
+                        <button onClick={() => handleDownloadSource(inv)}
+                          className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
+                          title={inv.has_source_file ? `下载源文件留档 (${formatFileSize(inv.file_size)})` : '源文件已缺失'}>
+                          {inv.has_source_file
+                            ? <Paperclip className="w-3.5 h-3.5 text-blue-500" />
+                            : <FileWarning className="w-3.5 h-3.5 text-gray-400" />}
+                        </button>
                         <button onClick={() => handleDelete(inv.id)}
                           className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-red-400"
                           title="删除">
@@ -423,6 +540,22 @@ const InvoiceManager: React.FC = () => {
                       <p className="text-xs text-gray-400">识别引擎</p>
                       <p className="text-sm">{selectedInvoice.engine_used === 'pdfplumber' ? 'PDF文本提取' :
                         selectedInvoice.engine_used === 'qwen2.5vl' ? 'Qwen2.5-VL 视觉OCR' : '-'}</p>
+                    </div>
+                    <div className={`p-3 rounded-lg col-span-2 ${
+                      selectedInvoice.has_source_file
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800'
+                        : 'bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800'
+                    }`}>
+                      <p className="text-xs text-gray-400 mb-1 flex items-center">
+                        <Paperclip className="w-3 h-3 mr-1" />源文件留档
+                      </p>
+                      <p className="font-mono text-xs break-all">{selectedInvoice.filename}</p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        大小: {formatFileSize(selectedInvoice.file_size)}
+                        {selectedInvoice.has_source_file
+                          ? <span className="text-green-600 ml-2">● 已归档</span>
+                          : <span className="text-amber-600 ml-2">● 源文件已缺失</span>}
+                      </p>
                     </div>
                   </div>
 
@@ -521,7 +654,43 @@ const InvoiceManager: React.FC = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex space-x-3">
+                  <div className="flex flex-wrap gap-3">
+                    {selectedInvoice.is_excluded ? (
+                      <button disabled
+                        className="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm bg-gray-200 text-gray-400 cursor-not-allowed">
+                        <XCircle className="w-4 h-4" />
+                        <span>不报销</span>
+                      </button>
+                    ) : linkedTaskId ? (
+                      <button onClick={() => window.location.href = '/gtd-tasks'}
+                        className="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm bg-green-500 text-white hover:bg-green-600 transition-colors">
+                        <ExternalLink className="w-4 h-4" />
+                        <span>查看任务 →</span>
+                      </button>
+                    ) : (
+                      <button onClick={handleCreateTask} disabled={creatingTask}
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                          creatingTask
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-blue-500 text-white hover:bg-blue-600'
+                        }`}>
+                        {creatingTask ? <Loader className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                        <span>{creatingTask ? '创建中...' : '创建报销任务'}</span>
+                      </button>
+                    )}
+                    <button onClick={() => handleDownloadSource(selectedInvoice)}
+                      disabled={!selectedInvoice.has_source_file}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                        selectedInvoice.has_source_file
+                          ? 'bg-blue-500 text-white hover:bg-blue-600'
+                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}
+                      title={selectedInvoice.has_source_file
+                        ? `下载原始上传文件: ${selectedInvoice.filename}`
+                        : '源文件已丢失,无法下载'}>
+                      <Download className="w-4 h-4" />
+                      <span>下载源文件</span>
+                    </button>
                     <button onClick={() => handleToggleExclude(selectedInvoice)}
                       className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm transition-colors ${
                         selectedInvoice.is_excluded

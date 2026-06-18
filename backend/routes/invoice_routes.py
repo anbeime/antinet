@@ -12,15 +12,18 @@ Invoice API Routes — 发票处理与查询
 """
 import logging
 import os
+import re
 import sys
 import json
 import shutil
+import zipfile
 import tempfile
+import io
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, BackgroundTasks, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -86,6 +89,16 @@ class InvoiceInfo(BaseModel):
     status: str = "pending"
     engine_used: Optional[str] = None
     created_at: str
+    file_size: Optional[int] = None
+    has_source_file: bool = False
+    source_url: Optional[str] = None
+
+
+def _safe_filename(name: str, fallback: str = "invoice") -> str:
+    """Sanitize a filename for use in download Content-Disposition."""
+    name = (name or fallback).strip()
+    name = re.sub(r"[\\/:*?\"<>|\r\n\t]", "_", name)
+    return name[:120] or fallback
 
 
 class InvoiceListResponse(BaseModel):
@@ -118,7 +131,13 @@ def _clean_amount(v) -> Optional[float]:
     return None
 
 
-def _row_to_invoice(row) -> InvoiceInfo:
+def _row_to_invoice(row, source_url_builder=None) -> InvoiceInfo:
+    file_path = row["file_path"]
+    has_source = bool(file_path) and os.path.exists(file_path)
+    file_size = row["file_size"] or (os.path.getsize(file_path) if has_source else None)
+    source_url = None
+    if source_url_builder and has_source:
+        source_url = source_url_builder(row["id"])
     return InvoiceInfo(
         id=row["id"],
         filename=row["filename"],
@@ -136,6 +155,9 @@ def _row_to_invoice(row) -> InvoiceInfo:
         status=row["status"],
         engine_used=row["engine_used"],
         created_at=row["created_at"],
+        file_size=file_size,
+        has_source_file=has_source,
+        source_url=source_url,
     )
 
 
@@ -162,6 +184,10 @@ async def scan_invoices(
 
     Level 1: pdfplumber text extraction (searchable PDF)
     Level 2: Qwen2.5-VL vision OCR (scanned documents)
+
+    Source files are ALWAYS preserved on disk (./data/invoices/), even when
+    recognition fails, so users can re-process them later or compare against
+    the extracted fields.
     """
     if not files:
         raise HTTPException(status_code=400, detail="no files provided")
@@ -170,12 +196,16 @@ async def scan_invoices(
     processed_ids = []
 
     for file in files:
-        # Save uploaded file
+        # Save uploaded file (always, before processing, to preserve source for archival)
         safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
         file_path = INVOICE_DIR / safe_name
         content = await file.read()
         with open(file_path, "wb") as f:
             f.write(content)
+        try:
+            file_size = os.path.getsize(file_path)
+        except OSError:
+            file_size = 0
 
         # Process invoice
         from skills.invoice_skill import process_invoice, save_invoice_to_db
@@ -186,16 +216,42 @@ async def scan_invoices(
             processed_ids.append(invoice_id)
             results.append({
                 "filename": file.filename,
+                "stored_as": safe_name,
                 "status": result.get("status"),
                 "engine_used": result.get("engine_used"),
                 "invoice_id": invoice_id,
             })
         except Exception as e:
             logger.error(f"[Invoice] Processing failed for {file.filename}: {e}")
+            # Preserve the source file by recording a failed entry; user can still
+            # download the original via /api/invoice/source/{id} and re-scan later.
+            try:
+                conn = _get_conn()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO invoices
+                        (filename, file_path, file_size, status, error_message,
+                         engine_used, created_at, updated_at)
+                    VALUES (?, ?, ?, 'failed', ?, NULL, ?, ?)
+                """, (
+                    file.filename,
+                    str(file_path),
+                    file_size,
+                    str(e)[:500],
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                ))
+                conn.commit()
+                failed_id = cursor.lastrowid
+            except Exception as db_err:
+                logger.error(f"[Invoice] Failed to record failed-scan entry: {db_err}")
+                failed_id = None
             results.append({
                 "filename": file.filename,
+                "stored_as": safe_name,
                 "status": "failed",
                 "error": str(e),
+                "invoice_id": failed_id,
             })
 
     return {
@@ -208,6 +264,7 @@ async def scan_invoices(
 
 @router.get("/list", response_model=InvoiceListResponse)
 async def list_invoices(
+    request: Request,
     seller: Optional[str] = Query(None, description="Filter by seller name"),
     from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -248,13 +305,15 @@ async def list_invoices(
         f"SELECT * FROM invoices WHERE {where_clause} ORDER BY created_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset],
     )
-    invoices = [_row_to_invoice(row) for row in cursor.fetchall()]
+    base = str(request.base_url).rstrip("/")
+    invoices = [_row_to_invoice(row, source_url_builder=lambda i, _b=base: f"{_b}/api/invoice/source/{i}") for row in cursor.fetchall()]
 
     return InvoiceListResponse(status="ok", count=total, invoices=invoices)
 
 
 @router.get("/query", response_model=InvoiceListResponse)
 async def query_invoices(
+    request: Request,
     seller: Optional[str] = Query(None),
     buyer: Optional[str] = Query(None),
     from_date: Optional[str] = Query(None, alias="from"),
@@ -296,12 +355,13 @@ async def query_invoices(
         f"SELECT * FROM invoices WHERE {where_clause} ORDER BY invoice_date DESC LIMIT ?",
         params + [limit],
     )
-    invoices = [_row_to_invoice(row) for row in cursor.fetchall()]
+    base = str(request.base_url).rstrip("/")
+    invoices = [_row_to_invoice(row, source_url_builder=lambda i, _b=base: f"{_b}/api/invoice/source/{i}") for row in cursor.fetchall()]
     return InvoiceListResponse(status="ok", count=total, invoices=invoices)
 
 
 @router.get("/detail/{invoice_id}")
-async def get_invoice_detail(invoice_id: int):
+async def get_invoice_detail(invoice_id: int, request: Request):
     """Get detailed invoice info including line items"""
     conn = _get_conn()
     cursor = conn.cursor()
@@ -310,7 +370,8 @@ async def get_invoice_detail(invoice_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="invoice not found")
 
-    invoice = _row_to_invoice(row)
+    base = str(request.base_url).rstrip("/")
+    invoice = _row_to_invoice(row, source_url_builder=lambda i, _b=base: f"{_b}/api/invoice/source/{i}")
     cursor.execute("SELECT * FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
     items = [dict(item) for item in cursor.fetchall()]
 
@@ -349,9 +410,11 @@ async def include_invoice(invoice_id: int):
 
 @router.get("/export")
 async def export_invoices(
+    request: Request,
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
     format: str = Query("xlsx", description="xlsx or csv"),
+    include_source_link: bool = Query(True, description="Append a HYPERLINK column to the original source file"),
 ):
     """Export invoices to Excel or CSV"""
     conn = _get_conn()
@@ -371,22 +434,36 @@ async def export_invoices(
     if not rows:
         raise HTTPException(status_code=404, detail="no invoices found for export")
 
+    base_url = str(request.base_url).rstrip("/")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    source_link_written = 0
+
     if format == "csv":
         filename = f"invoices_export_{timestamp}.csv"
         output_path = OUTPUT_DIR / filename
         import csv
         with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            writer.writerow(["ID", "发票号码", "发票代码", "开票日期", "销售方", "销售方税号",
-                             "购买方", "购买方税号", "金额", "税额", "价税合计", "状态", "识别引擎"])
+            header = ["ID", "发票号码", "发票代码", "开票日期", "销售方", "销售方税号",
+                      "购买方", "购买方税号", "金额", "税额", "价税合计", "状态", "识别引擎"]
+            if include_source_link:
+                header.append("源文件下载")
+            writer.writerow(header)
             for r in rows:
-                writer.writerow([
+                row_data = [
                     r["id"], r["invoice_number"], r["invoice_code"], r["invoice_date"],
                     r["seller_name"], r["seller_tax_id"], r["buyer_name"], r["buyer_tax_id"],
                     r["amount"], r["tax_amount"], r["total_amount"],
                     r["status"], r["engine_used"],
-                ])
+                ]
+                if include_source_link:
+                    fp = r["file_path"]
+                    if fp and os.path.exists(fp):
+                        row_data.append(f"{base_url}/api/invoice/source/{r['id']}")
+                        source_link_written += 1
+                    else:
+                        row_data.append("")
+                writer.writerow(row_data)
     else:
         filename = f"invoices_export_{timestamp}.xlsx"
         output_path = OUTPUT_DIR / filename
@@ -411,21 +488,31 @@ async def export_invoices(
         df = pd.DataFrame(data)
         df.to_excel(output_path, index=False, engine="openpyxl")
 
+        if include_source_link:
+            try:
+                id_to_path = {r["id"]: r["file_path"] for r in rows}
+                source_link_written = _add_source_file_column(output_path, base_url, id_to_path)
+            except Exception as e:
+                logger.warning(f"[Invoice] Failed to add source file column: {e}")
+
     return {
         "status": "ok",
         "filename": filename,
         "path": str(output_path),
         "download_url": f"/api/excel/download/{filename}",
         "count": len(rows),
+        "source_links": source_link_written,
     }
 
 
 @router.get("/export-advanced")
 async def export_invoices_advanced(
+    request: Request,
     from_date: Optional[str] = Query(None, alias="from"),
     to_date: Optional[str] = Query(None, alias="to"),
     add_formulas: bool = Query(True, description="Add formula columns via minimax-xlsx"),
     run_validation: bool = Query(True, description="Run formula_check.py after export"),
+    include_source_link: bool = Query(True, description="Append a HYPERLINK column to the original source file"),
 ):
     """
     Advanced Excel export using minimax-xlsx scripts (subprocess calls).
@@ -457,6 +544,7 @@ async def export_invoices_advanced(
     if not rows:
         raise HTTPException(status_code=404, detail="no invoices found for export")
 
+    base_url = str(request.base_url).rstrip("/")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = f"invoices_advanced_{timestamp}"
     xlsx_path = OUTPUT_DIR / f"{base_name}.xlsx"
@@ -494,6 +582,14 @@ async def export_invoices_advanced(
     }
 
     if not add_formulas:
+        if include_source_link:
+            try:
+                id_to_path = {r["id"]: r["file_path"] for r in rows}
+                written = _add_source_file_column(xlsx_path, base_url, id_to_path, col_letter="O")
+                result["source_links"] = written
+            except Exception as e:
+                logger.warning(f"[Invoice] Failed to add source-link column (no-formula): {e}")
+                result["source_links"] = 0
         return result
 
     # Step 2: Unpack with xlsx_unpack.py
@@ -574,6 +670,27 @@ async def export_invoices_advanced(
         except Exception:
             pass
 
+    # Step 6: Append the source-file download HYPERLINK column (column O),
+    # right after the validation column (N). Always runs — gives the auditor
+    # a one-click way to compare an extracted row with the original scan.
+    if include_source_link:
+        try:
+            id_to_path = {r["id"]: r["file_path"] for r in rows}
+            written = _add_source_file_column(xlsx_path, base_url, id_to_path, col_letter="O")
+            result["source_links"] = written
+            result["pipeline"].append({
+                "step": "add_source_link_column",
+                "exit_code": 0,
+                "rows_with_link": written,
+            })
+        except Exception as e:
+            logger.warning(f"[Invoice] Failed to add source-link column (advanced): {e}")
+            result["pipeline"].append({
+                "step": "add_source_link_column",
+                "exit_code": 1,
+                "stderr": str(e)[:200],
+            })
+
     result["pipeline_ok"] = all(
         p.get("exit_code", -1) == 0 for p in result["pipeline"]
     )
@@ -581,7 +698,7 @@ async def export_invoices_advanced(
 
 
 @router.get("/problems")
-async def get_problem_invoices():
+async def get_problem_invoices(request: Request):
     """List invoices with processing issues"""
     conn = _get_conn()
     cursor = conn.cursor()
@@ -591,7 +708,8 @@ async def get_problem_invoices():
         "ORDER BY created_at DESC"
     )
     rows = cursor.fetchall()
-    invoices = [_row_to_invoice(row) for row in rows]
+    base = str(request.base_url).rstrip("/")
+    invoices = [_row_to_invoice(row, source_url_builder=lambda i, _b=base: f"{_b}/api/invoice/source/{i}") for row in rows]
     return InvoiceListResponse(status="ok", count=len(invoices), invoices=invoices)
 
 
@@ -665,3 +783,340 @@ async def delete_invoice(invoice_id: int):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="invoice not found")
     return {"status": "ok", "message": f"Invoice #{invoice_id} deleted"}
+
+
+# ---- Source file archival ----
+
+_MIME_BY_EXT = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".ofd": "application/ofd",
+}
+
+
+def _media_type_for(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    return _MIME_BY_EXT.get(ext, "application/octet-stream")
+
+
+def _add_source_file_column(
+    xlsx_path: Path,
+    base_url: str,
+    id_to_path: Dict[int, str],
+    *,
+    col_letter: str = "O",
+    col_header: str = "源文件下载",
+) -> int:
+    """
+    Append a HYPERLINK column to an existing xlsx so each row links back to
+    the original uploaded source file. Returns the number of rows that got
+    a real link (rows with a missing source file are left blank).
+
+    `id_to_path` maps invoice id -> file_path on disk; missing keys/paths are
+    treated as "no archive copy" and the cell is left empty.
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(xlsx_path)
+    ws = wb.active
+
+    header_row = 1
+    # Find the first data row (header is row 1, data starts at row 2)
+    first_data_row = header_row + 1
+    last_data_row = ws.max_row
+
+    # Write header
+    ws[f"{col_letter}{header_row}"] = col_header
+    ws[f"{col_letter}{header_row}"].font = ws[f"A{header_row}"].font
+    ws[f"{col_letter}{header_row}"].fill = ws[f"A{header_row}"].fill
+
+    base = base_url.rstrip("/")
+    written = 0
+    for r in range(first_data_row, last_data_row + 1):
+        id_cell = ws.cell(row=r, column=1).value
+        try:
+            inv_id = int(id_cell)
+        except (TypeError, ValueError):
+            continue
+        file_path = id_to_path.get(inv_id)
+        if not file_path or not os.path.exists(file_path):
+            ws.cell(row=r, column=ws[f"{col_letter}1"].column, value="源文件缺失").font = ws.cell(row=r, column=1).font
+            continue
+        url = f"{base}/api/invoice/source/{inv_id}"
+        display = _safe_filename(os.path.basename(file_path), fallback=f"invoice_{inv_id}")
+        cell = ws.cell(row=r, column=ws[f"{col_letter}1"].column)
+        cell.value = f'=HYPERLINK("{url}","下载源文件:{display}")'
+        cell.hyperlink = url  # openpyxl also exposes a clickable link on hover
+        cell.font = ws.cell(row=r, column=1).font.copy(color="0563C1", underline="single")
+        written += 1
+
+    # Adjust column width
+    try:
+        col_idx = ws[f"{col_letter}1"].column
+        letter_dim = ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter]
+        letter_dim.width = max(letter_dim.width or 0, 40)
+    except Exception:
+        pass
+
+    wb.save(xlsx_path)
+    return written
+
+
+def _lookup_invoice_row(invoice_id: int):
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+    row = cursor.fetchone()
+    return conn, row
+
+
+@router.get("/source/{invoice_id}")
+async def download_source_file(invoice_id: int):
+    """
+    Download the original uploaded invoice file for archival/comparison.
+
+    The source file is preserved on disk in INVOICE_DIR whenever an invoice
+    is uploaded (even when recognition fails), so users can compare it with
+    the extracted fields in the Excel export.
+    """
+    conn, row = _lookup_invoice_row(invoice_id)
+    try:
+        if not row:
+            raise HTTPException(status_code=404, detail="invoice not found")
+
+        file_path = row["file_path"]
+        if not file_path or not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=410,
+                detail="source file no longer exists on disk (was it manually removed?)",
+            )
+
+        download_name = _safe_filename(row["filename"], fallback=f"invoice_{invoice_id}")
+        return FileResponse(
+            path=file_path,
+            filename=download_name,
+            media_type=_media_type_for(file_path),
+        )
+    finally:
+        conn.close()
+
+
+@router.get("/sources-archive")
+async def download_sources_archive(
+    seller: Optional[str] = Query(None, description="Filter by seller name"),
+    from_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    excluded: Optional[bool] = Query(None, description="Filter by excluded status"),
+    include_missing: bool = Query(False, description="Include invoices whose source file is missing as a manifest.txt entry"),
+):
+    """
+    Bundle all original invoice source files matching the filters into a single
+    ZIP archive for archival. Useful for handing the raw scans to auditors or
+    keeping an offline copy alongside the Excel export.
+    """
+    conn = _get_conn()
+    cursor = conn.cursor()
+    where = []
+    params = []
+
+    if seller:
+        where.append("seller_name LIKE ?")
+        params.append(f"%{seller}%")
+    if from_date:
+        where.append("invoice_date >= ?")
+        params.append(from_date)
+    if to_date:
+        where.append("invoice_date <= ?")
+        params.append(to_date)
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if excluded is not None:
+        where.append("is_excluded = ?")
+        params.append(1 if excluded else 0)
+
+    where_clause = " AND ".join(where) if where else "1=1"
+    cursor.execute(
+        f"SELECT id, filename, file_path, invoice_number, invoice_date, seller_name, "
+        f"total_amount, status, engine_used FROM invoices WHERE {where_clause} ORDER BY created_at DESC",
+        params,
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="no invoices match the filter")
+
+    # Build ZIP in memory so we can stream it as a single response and avoid
+    # leaving temp files behind.
+    buf = io.BytesIO()
+    manifest_lines = [
+        "发票源文件留档清单 (Invoice Source File Archive)",
+        f"生成时间: {datetime.now().isoformat()}",
+        f"记录总数: {len(rows)}",
+        f"筛选: seller={seller or '*'}, from={from_date or '*'}, to={to_date or '*'}, "
+        f"status={status or '*'}, excluded={excluded}",
+        "-" * 80,
+        f"{'ID':<6}{'发票号码':<18}{'开票日期':<14}{'销售方':<30}{'价税合计':<14}{'引擎':<10}{'源文件':<10}{'文件名'}",
+    ]
+    missing_ids: List[int] = []
+    seen_names: Dict[str, int] = {}
+
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for r in rows:
+            inv_id = r["id"]
+            original = r["filename"] or f"invoice_{inv_id}"
+            archive_name = _safe_filename(original, fallback=f"invoice_{inv_id}")
+            archive_name = f"{inv_id:04d}_{archive_name}"
+            # Disambiguate duplicate basenames inside the archive
+            if archive_name in seen_names:
+                seen_names[archive_name] += 1
+                stem, ext = os.path.splitext(archive_name)
+                archive_name = f"{stem}_{seen_names[archive_name]}{ext}"
+            else:
+                seen_names[archive_name] = 0
+
+            file_path = r["file_path"]
+            if file_path and os.path.exists(file_path):
+                try:
+                    zf.write(file_path, arcname=archive_name)
+                    file_status = "OK"
+                except OSError as e:
+                    file_status = f"ERR({e})"
+                    missing_ids.append(inv_id)
+            else:
+                file_status = "MISSING"
+                missing_ids.append(inv_id)
+
+            manifest_lines.append(
+                f"{inv_id:<6}{str(r['invoice_number'] or ''):<18}"
+                f"{str(r['invoice_date'] or ''):<14}"
+                f"{str(r['seller_name'] or '')[:28]:<30}"
+                f"{str(r['total_amount'] if r['total_amount'] is not None else ''):<14}"
+                f"{str(r['engine_used'] or ''):<10}"
+                f"{file_status:<10}{original}"
+            )
+
+        if missing_ids and include_missing:
+            manifest_lines.append("-" * 80)
+            manifest_lines.append(
+                f"以下 {len(missing_ids)} 条记录的源文件已缺失,仅在清单中保留条目: "
+                + ", ".join(str(i) for i in missing_ids)
+            )
+        elif missing_ids:
+            manifest_lines.append(
+                f"提示: {len(missing_ids)} 条记录源文件已缺失(未写入ZIP),如需清单仍记入请加 include_missing=true"
+            )
+
+        zf.writestr("manifest.txt", "\n".join(manifest_lines))
+
+    buf.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_name = f"invoices_sources_{timestamp}.zip"
+    return _serve_zip_buffer(buf, zip_name)
+
+
+def _serve_zip_buffer(buf: io.BytesIO, filename: str):
+    """
+    Helper to stream an in-memory ZIP buffer through FastAPI as a downloadable
+    attachment. Built in-memory so no temp files leak on disk.
+    """
+    from fastapi.responses import Response
+    data = buf.getvalue()
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(data)),
+        },
+    )
+
+
+# ---- GTD Task Integration ----
+
+@router.post("/{invoice_id}/create-task")
+async def create_invoice_task(invoice_id: int):
+    """Create a GTD reimbursement task from an invoice"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,))
+    invoice = cursor.fetchone()
+    if not invoice:
+        conn.close()
+        raise HTTPException(status_code=404, detail="invoice not found")
+
+    cursor.execute(
+        "SELECT id FROM gtd_tasks WHERE source_type = 'invoice' AND source_id = ?",
+        (invoice_id,)
+    )
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail=f"报销任务已存在",
+            headers={"X-Existing-Task-Id": str(existing["id"])}
+        )
+
+    seller = invoice["seller_name"] or "未知商家"
+    amount = invoice["total_amount"] or 0
+    inv_date = invoice["invoice_date"] or "未知日期"
+    inv_number = invoice["invoice_number"] or "无号码"
+
+    description = (
+        f"发票报销任务\n"
+        f"商家: {seller}\n"
+        f"金额: ¥{float(amount):.2f}\n"
+        f"开票日期: {inv_date}\n"
+        f"发票号码: {inv_number}"
+    )
+
+    try:
+        amt = float(amount)
+        if amt > 10000:
+            priority = "high"
+        elif amt > 1000:
+            priority = "medium"
+        else:
+            priority = "low"
+    except (ValueError, TypeError):
+        priority = "low"
+
+    now = datetime.now().isoformat()
+    cursor.execute(
+        """INSERT INTO gtd_tasks (title, description, priority, category, source_type, source_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'invoice', ?, ?, ?)""",
+        (f"报销 - {seller}", description, priority, "inbox", invoice_id, now, now)
+    )
+    task_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "message": f"报销任务已创建（{priority}优先级）",
+        "priority": priority,
+    }
+
+
+@router.get("/{invoice_id}/tasks")
+async def get_invoice_tasks(invoice_id: int):
+    """List GTD tasks associated with an invoice"""
+    conn = _get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM gtd_tasks WHERE source_type = 'invoice' AND source_id = ? ORDER BY created_at DESC",
+        (invoice_id,)
+    )
+    tasks = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return {"status": "ok", "tasks": tasks, "count": len(tasks)}

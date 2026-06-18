@@ -54,14 +54,33 @@ class OpenAIConfig(BaseConfig):
         return bool(self.APIKey)
 
 
+class NIMConfig(BaseConfig):
+    """NVIDIA NIM API 配置"""
+
+    APIKey: str = Field(default="", description="NVIDIA NIM API Key")
+    APIBaseURL: str = Field(default="https://integrate.api.nvidia.com/v1", description="NVIDIA NIM API 地址")
+    APIModel: str = Field(default="minimaxai/minimax-m2.7", description="NVIDIA NIM 模型名称")
+    APITimeout: int = Field(default=60, description="请求超时时间(秒)")
+    APIMaxTokens: int = Field(default=8192, description="最大生成token数")
+    APITemperature: float = Field(default=1.0, description="温度参数")
+
+    class Config:
+        env_prefix = "ZHIYI_NIM_"
+
+    @property
+    def is_enabled(self) -> bool:
+        return bool(self.APIKey)
+
+
 class AIConfig(BaseConfig):
     """AI 配置主类"""
     
     # AI 提供商配置
     OpenAI: OpenAIConfig = Field(default_factory=OpenAIConfig)
+    NIM: NIMConfig = Field(default_factory=NIMConfig)
     
     # 默认 AI 提供者
-    default_provider: str = Field(default="openai", description="默认AI提供者: openai, npu")
+    default_provider: str = Field(default="openai", description="默认AI提供者: openai, npu, nim")
     
     # 本地模型配置
     use_local_model: bool = Field(default=True, description="优先使用本地NPU模型")
@@ -77,5 +96,7 @@ class AIConfig(BaseConfig):
         
         if provider == "openai":
             return self.OpenAI
+        elif provider == "nim":
+            return self.NIM
         # 可以扩展其他提供者
         return self.OpenAI

@@ -69,6 +69,7 @@ lerna-debug.log*
 venv/
 venv_arm64/
 venv_x64/
+venv_stt/
 venv_mineru/
 backend/venv/
 __pycache__/

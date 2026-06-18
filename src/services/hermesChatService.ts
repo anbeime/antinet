@@ -9,10 +9,8 @@
  */
 
 import { getApiBaseUrl } from '@/lib/apiConfig';
-import { 
-  evolvingChatService, 
-  EvolvingChatRequest, 
-  EvolvingChatResponse 
+import {
+  evolvingChatService,
 } from './evolvingChatService';
 
 const HERMES_API_BASE = getApiBaseUrl() + '/api/hermes';
@@ -98,7 +96,7 @@ export const hermesChatService = new HermesChatService();
 
 // ==================== 统一聊天接口 ====================
 
-export type AIProvider = 'hermes' | 'evolving';
+export type AIProvider = 'hermes' | 'evolving' | 'nim';
 
 export interface UnifiedChatRequest {
   query: string;
@@ -106,6 +104,7 @@ export interface UnifiedChatRequest {
   context?: Record<string, any>;
   enable_8agent?: boolean;
   user_id?: string;
+  llm_provider?: string;  // sensenova / nim / npu
 }
 
 export interface UnifiedChatResponse {
@@ -117,12 +116,51 @@ export interface UnifiedChatResponse {
 }
 
 /**
+ * NIM 聊天 - 通过 Hermes API 使用 NVIDIA NIM
+ */
+async function nimChat(request: {
+  query: string;
+  context?: Record<string, any>;
+  user_id?: string;
+}) {
+  const response = await fetch(`${HERMES_API_BASE}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      message: request.query,
+      session_id: `nim_${Date.now()}`,
+      user_id: request.user_id || 'default_user',
+      enable_8agent: false,
+      context: request.context || {},
+      provider: 'nim',
+    }),
+  });
+
+  if (!response.ok) throw new Error(`NIM 请求失败 (${response.status})`);
+  return await response.json();
+}
+
+/**
  * 统一聊天服务 - 根据 provider 选择 AI 引擎
  */
 export async function unifiedChat(
   request: UnifiedChatRequest
 ): Promise<UnifiedChatResponse> {
-  const { query, provider = 'hermes', context, enable_8agent, user_id } = request;
+  const { query, provider = 'hermes', context, enable_8agent, user_id, llm_provider } = request;
+
+  if (provider === 'nim') {
+    try {
+      const result = await nimChat({ query, context, user_id });
+      return {
+        response: result.response,
+        cards: result.cards || [],
+        provider: 'nim',
+        mode: result.mode,
+      };
+    } catch (error) {
+      console.warn('[NIM] 失败，回退到 Evolving...');
+    }
+  }
 
   if (provider === 'hermes') {
     try {
@@ -156,11 +194,10 @@ export async function unifiedChat(
     enable_skill: true,
     enable_8agent: enable_8agent ?? false,
     user_id,
+    llm_provider: llm_provider || 'nim',
   });
 
   return {
-    response: evolvingResult.response,
-    cards: evolvingResult.cards || [],
     provider: 'evolving',
     ...evolvingResult,
   };
@@ -197,6 +234,9 @@ export function useHermesAI() {
     }
   }, [enabled]);
 
+  // 当前 provider
+  const currentProvider: AIProvider = (localStorage.getItem('ai_provider') as AIProvider) || 'hermes';
+
   // 切换 AI 引擎
   const toggleAI = useCallback(() => {
     const newEnabled = !enabled;
@@ -206,12 +246,13 @@ export function useHermesAI() {
 
   // 设置 AI 引擎
   const setAIProvider = useCallback((provider: AIProvider) => {
-    setEnabled(provider === 'hermes');
+    setEnabled(provider !== 'evolving');
     localStorage.setItem('ai_provider', provider);
   }, []);
 
   return {
-    enabled,           // true = Hermes, false = Evolving
+    enabled,           // true = Hermes/NIM, false = Evolving
+    currentProvider,
     toggleAI,
     setAIProvider,
     hermesReady: health.hermes_ready,

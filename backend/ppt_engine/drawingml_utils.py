@@ -434,22 +434,37 @@ def is_cjk_char(ch: str) -> bool:
 
 
 def estimate_text_width(text: str, font_size: float, font_weight: str = '400') -> float:
-    """Estimate text width in SVG pixels."""
+    """Estimate text width in SVG pixels.
+
+    Uses per-glyph heuristics with a conservative bias so that the estimated
+    width is slightly wider than reality — PowerPoint text frames sized at
+    this width should never clip the rendered glyphs.
+    """
+    CJK_PUNCT = set(
+        '\u3000\u3001\u3002\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f'
+        '\u3010\u3011\u3014\u3015\u3016\u3017\u3018\u3019\u301a\u301b\u301c\u301d\u301e'
+        '\uff01\uff02\uff03\uff04\uff05\uff06\uff07\uff08\uff09\uff0a'
+        '\uff0b\uff0c\uff0d\uff0e\uff0f\uff1a\uff1b\uff1c\uff1d\uff1e\uff1f'
+        '\uff20\uff3b\uff3c\uff3d\uff3e\uff3f\uff40\uff5b\uff5c\uff5d\uff5e'
+        '\u2018\u2019\u201c\u201d\u2026\u2014\u2013'
+    )
     width = 0.0
     for ch in text:
-        if is_cjk_char(ch):
+        if is_cjk_char(ch) or ch in CJK_PUNCT:
             width += font_size
         elif ch == ' ':
-            width += font_size * 0.3
-        elif ch in 'mMwWOQ':
+            width += font_size * 0.35
+        elif ch in 'mMwWOQ@%':
             width += font_size * 0.75
-        elif ch in 'iIlj1!|':
+        elif ch in 'iIlj1!|.,;:\'"`':
             width += font_size * 0.3
+        elif ch in '\t':
+            width += font_size * 2.0
         else:
-            width += font_size * 0.55
+            width += font_size * 0.58
 
     if font_weight in ('bold', '600', '700', '800', '900'):
-        width *= 1.05
+        width *= 1.06
 
     return width
 

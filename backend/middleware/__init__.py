@@ -9,6 +9,8 @@ from .cors import setup_cors
 from .compression import setup_compression
 from .concurrency import ConcurrencyControlMiddleware
 from .recovery import setup_recovery
+from .auth import JWTAuthMiddleware
+from .audit import AuditLogMiddleware
 
 __all__ = [
     'RequestLoggingMiddleware',
@@ -17,6 +19,8 @@ __all__ = [
     'setup_compression',
     'ConcurrencyControlMiddleware',
     'setup_recovery',
+    'JWTAuthMiddleware',
+    'AuditLogMiddleware',
     'create_middleware_stack',
 ]
 
@@ -34,6 +38,12 @@ def create_middleware_stack(app):
     
     # 设置压缩
     setup_compression(app)
+    
+    # 添加 JWT 认证（单机使用已关闭，如需开启去掉下面注释）
+    # app.add_middleware(JWTAuthMiddleware)
+    
+    # 添加审计日志
+    app.add_middleware(AuditLogMiddleware)
     
     # 添加请求日志
     app.add_middleware(RequestLoggingMiddleware)
