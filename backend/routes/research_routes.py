@@ -656,7 +656,7 @@ async def get_linkable_cards(project_id: int):
 
 
 @router.post("/projects/{project_id}/link-cards")
-async def link_cards_to_project(project_id: int, card_ids: List[int] = Body(...)):
+async def link_cards_to_project(project_id: int, card_ids: List[int] = Body(..., embed=True)):
     """批量关联卡片到专题"""
     try:
         conn = get_db()
@@ -687,7 +687,7 @@ async def link_cards_to_project(project_id: int, card_ids: List[int] = Body(...)
 
 
 @router.post("/projects/{project_id}/unlink-cards")
-async def unlink_cards_from_project(project_id: int, card_ids: List[int] = Body(...)):
+async def unlink_cards_from_project(project_id: int, card_ids: List[int] = Body(..., embed=True)):
     """批量取消关联卡片"""
     try:
         conn = get_db()

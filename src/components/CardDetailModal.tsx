@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Document, Page, Text, View, StyleSheet, PDFDownloadLink, Font } from '@react-pdf/renderer';
-import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw, FolderOpen, Image, Upload } from 'lucide-react';
+import { X, ChevronRight, ExternalLink, Share2, Edit2, Trash2, Clock, Lightbulb, Plus, Link2, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BarChart3, ListTodo, Calendar, MapPin, Maximize2, Minimize2, Copy, ZoomIn, ZoomOut, FileText, Download, ChevronDown, FilePen, FileType, FileSpreadsheet, Link, Network, Loader, Loader2, History, Eye, FileSearch, CheckCircle2, Circle, AlertCircle, GitBranch, RefreshCw, FolderOpen, Image, Upload, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { backlinkService, cardTaskService, calendarEventService, sourceFileService, type BacklinkCard, type BacklinkStats, type TaskWithRelation, type CalendarEvent, type SourceFileInfo } from '../services/integrationService';
 import type { SiblingCardsResponse, SiblingCard } from '../services/dataService';
@@ -9,6 +9,7 @@ import { cn, safeErrorDetail } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import RichTextEditor from './RichTextEditor';
 
 const IMAGE_API_BASE = () => getApiBaseUrl().replace(/\/api$/, '') + '/api/images';
 
@@ -266,6 +267,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   const [savingCard, setSavingCard] = useState(false);
   const [editImages, setEditImages] = useState<ImageInfo[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const [contentEditorMode, setContentEditorMode] = useState<'markdown' | 'rich'>('markdown');
 
   // 全屏切换功能
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -894,6 +896,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     setEditProjectId(card.projectId);
     setEditImages(card.images || []);
     setIsEditing(true);
+    setContentEditorMode('markdown');
   };
 
   const cancelEditing = () => {
@@ -902,6 +905,56 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
     setEditProjectId(card.projectId);
     setEditImages(card.images || []);
     setIsEditing(false);
+    setContentEditorMode('markdown');
+  };
+
+  // 简单的 Markdown 转 HTML 转换（用于富文本模式）
+  const markdownToSimpleHtml = (md: string): string => {
+    if (!md || !md.trim()) return '';
+    let html = md;
+    // 标题
+    html = html.replace(/^### (.*$)/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.*$)/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.*$)/gm, '<h1>$1</h1>');
+    // 粗体
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+    // 斜体
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/_(.*?)_/g, '<em>$1</em>');
+    // 删除线
+    html = html.replace(/~~(.*?)~~/g, '<s>$1</s>');
+    // 行内代码
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // 链接
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    // 图片
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:8px 0;" />');
+    // 引用
+    html = html.replace(/^> (.*$)/gm, '<blockquote style="border-left:3px solid #ccc;padding-left:1em;margin:1em 0;color:#666;">$1</blockquote>');
+    // 分割线
+    html = html.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #ccc;margin:1.5em 0;" />');
+    // 无序列表
+    html = html.replace(/^\* (.*$)/gm, '<li>$1</li>');
+    html = html.replace(/^- (.*$)/gm, '<li>$1</li>');
+    // 有序列表
+    html = html.replace(/^\d+\. (.*$)/gm, '<li>$1</li>');
+    // 段落
+    html = html.split('\n\n').map(p => {
+      if (p.startsWith('<') || !p.trim()) return p;
+      return `<p style="margin:0.5em 0;">${p}</p>`;
+    }).join('\n');
+    return html;
+  };
+
+  // 切换内容编辑模式
+  const handleContentEditorModeChange = (mode: 'markdown' | 'rich') => {
+    if (mode === 'rich' && contentEditorMode === 'markdown') {
+      // Markdown -> 富文本：转换内容
+      const htmlContent = markdownToSimpleHtml(editContent);
+      setEditContent(htmlContent);
+    }
+    setContentEditorMode(mode);
   };
 
   // 保存编辑
@@ -931,8 +984,7 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
   };
 
   // 上传单张图片
-  const uploadImage = async (file: File) => {
-    toast.info('正在上传图片...');
+  const uploadImageAndReturn = async (file: File): Promise<{ url: string } | null> => {
     setUploadingCount(prev => prev + 1);
     const formData = new FormData();
     formData.append('file', file);
@@ -945,29 +997,38 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
         const data = await response.json();
         if (data.url) {
           setEditImages(prev => [...prev, data]);
-          const imageMarkdown = `\n![${file.name}](${data.url})\n`;
-          const ta = editContentRef.current;
-          if (ta) {
-            const pos = ta.selectionStart ?? ta.value.length;
-            const before = ta.value.substring(0, pos);
-            const after = ta.value.substring(pos);
-            setEditContent(before + imageMarkdown + after);
-            requestAnimationFrame(() => {
-              ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
-              ta.focus();
-            });
-          } else {
-            setEditContent(prev => prev + imageMarkdown);
-          }
-          toast.success('图片已插入内容');
+          return data;
         }
-      } else {
-        toast.error('图片上传失败');
       }
+      return null;
     } catch {
-      toast.error('图片上传失败');
+      return null;
     } finally {
       setUploadingCount(prev => prev - 1);
+    }
+  };
+
+  const uploadImage = async (file: File) => {
+    toast.info('正在上传图片...');
+    const data = await uploadImageAndReturn(file);
+    if (data?.url) {
+      const imageMarkdown = `\n![${file.name}](${data.url})\n`;
+      const ta = editContentRef.current;
+      if (ta) {
+        const pos = ta.selectionStart ?? ta.value.length;
+        const before = ta.value.substring(0, pos);
+        const after = ta.value.substring(pos);
+        setEditContent(before + imageMarkdown + after);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
+          ta.focus();
+        });
+      } else {
+        setEditContent(prev => prev + imageMarkdown);
+      }
+      toast.success('图片已插入内容');
+    } else {
+      toast.error('图片上传失败');
     }
   };
 
@@ -987,7 +1048,11 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
 
   // 处理粘贴图片
   const handlePasteImage = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. 先处理独立的图片文件粘贴
+    const items = clipboardData.items;
     for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         e.preventDefault();
@@ -996,6 +1061,80 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
           await uploadImage(file);
         }
         return;
+      }
+    }
+
+    // 2. 处理富文本内容（文字+嵌入图片）
+    const html = clipboardData.getData('text/html');
+    const plainText = clipboardData.getData('text/plain');
+    if (html) {
+      const imgMatches = Array.from(html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi));
+      
+      if (imgMatches.length > 0) {
+        e.preventDefault();
+
+        const uploadedUrls: string[] = [];
+        const externalUrls: string[] = [];
+
+        for (const match of imgMatches) {
+          const src = match[1];
+          
+          if (src.startsWith('data:image/')) {
+            const base64Data = src.split(',')[1];
+            const mimeMatch = src.match(/data:image\/([^;]+);/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'png';
+            const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
+            
+            try {
+              const byteCharacters = atob(base64Data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: mimeType });
+              const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+              
+              toast.info('正在上传粘贴的图片...');
+              const data = await uploadImageAndReturn(file);
+              if (data?.url) {
+                uploadedUrls.push(data.url);
+              }
+            } catch (err) {
+              console.error('处理粘贴图片失败:', err);
+            }
+          } else if (src.startsWith('http://') || src.startsWith('https://')) {
+            externalUrls.push(src);
+          }
+        }
+
+        // 组装最终内容：文字 + 所有图片引用
+        const text = plainText || html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        let finalContent = text;
+        for (const url of uploadedUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+        for (const url of externalUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+
+        const ta = editContentRef.current;
+        if (ta) {
+          const pos = ta.selectionStart ?? ta.value.length;
+          const before = editContent.substring(0, pos);
+          const after = editContent.substring(pos);
+          setEditContent(before + finalContent + after);
+          requestAnimationFrame(() => {
+            ta.selectionStart = ta.selectionEnd = pos + finalContent.length;
+            ta.focus();
+          });
+        } else {
+          setEditContent(prev => prev + finalContent);
+        }
+
+        if (uploadedUrls.length > 0) {
+          toast.success(`已上传 ${uploadedUrls.length} 张图片`);
+        }
       }
     }
   };
@@ -1510,16 +1649,60 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                     ))}
                   </select>
                 </div>
-                <textarea
-                  ref={editContentRef}
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  onPaste={handlePasteImage}
-                  onDrop={handleDrop}
-                  onDragOver={(e) => e.preventDefault()}
-                  className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
-                  placeholder="输入卡片内容（支持粘贴、拖放图片）..."
-                />
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      <FileText size={14} className="inline mr-1" />
+                      内容
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleContentEditorModeChange('markdown')}
+                        className={`px-3 py-1 text-xs rounded-md transition-colors flex items-center gap-1 ${
+                          contentEditorMode === 'markdown'
+                            ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                            : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <FileText size={12} />
+                        Markdown
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleContentEditorModeChange('rich')}
+                        className={`px-3 py-1 text-xs rounded-md transition-colors flex items-center gap-1 ${
+                          contentEditorMode === 'rich'
+                            ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                            : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        <Type size={12} />
+                        富文本
+                      </button>
+                    </div>
+                  </div>
+                  {contentEditorMode === 'markdown' ? (
+                    <textarea
+                      ref={editContentRef}
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      onPaste={handlePasteImage}
+                      onDrop={handleDrop}
+                      onDragOver={(e) => e.preventDefault()}
+                      className="w-full min-h-[50vh] text-lg leading-relaxed bg-white/50 dark:bg-gray-700/50 border-2 border-blue-500 rounded-lg p-4 focus:outline-none resize-y"
+                      placeholder="输入卡片内容（支持粘贴、拖放图片）..."
+                    />
+                  ) : (
+                    <div className="border-2 border-purple-500 rounded-lg overflow-hidden">
+                      <RichTextEditor
+                        content={editContent}
+                        onChange={setEditContent}
+                        placeholder="使用富文本编辑器..."
+                      />
+                    </div>
+                  )}
+                </div>
                 {/* 图片附件 — 编辑模式 */}
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
@@ -1602,27 +1785,31 @@ const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   onMouseUp={handleTextSelect}
                   className="text-lg select-text prose prose-gray dark:prose-invert max-w-none"
                 >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!href) return;
-                            e.preventDefault();
-                            window.open(href, '_blank', 'noopener,noreferrer');
-                          }}
-                        >
-                          {children}
-                        </a>
-                      )
-                    }}
-                  >{card.content}</ReactMarkdown>
+                  {card.content && card.content.trim().startsWith('<') ? (
+                    <div dangerouslySetInnerHTML={{ __html: card.content }} />
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!href) return;
+                              e.preventDefault();
+                              window.open(href, '_blank', 'noopener,noreferrer');
+                            }}
+                          >
+                            {children}
+                          </a>
+                        )
+                      }}
+                    >{card.content}</ReactMarkdown>
+                  )}
                 </div>
                 {/* P0: 选中文本提示条 — 紧跟在内容下方 */}
                 {!isEditing && selectedText && (

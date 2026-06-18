@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, BarChart3, Copy, Check } from 'lucide-react';
+import { X, Save, Link, Search, FileText, FolderOpen, Tag, Plus, Trash2, Edit3, Eye, Network, ChevronRight, ChevronDown, Clock, Users, BarChart3, Copy, Check, Type } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import WikiGraphView from './WikiGraphView';
 import KnowledgeGraph from './KnowledgeGraph';
 import { renderMarkdown as renderMarkdownUtil } from '@/lib/utils';
+import RichTextEditor from './RichTextEditor';
 
 interface WikiPage {
   id: string;
@@ -78,6 +79,7 @@ const WikiEditor = () => {
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['articles', 'concepts', 'entities']));
   const [copied, setCopied] = useState(false);
+  const [editorMode, setEditorMode] = useState<'markdown' | 'rich'>('markdown');
 
   useEffect(() => {
     loadPages();
@@ -390,6 +392,20 @@ const WikiEditor = () => {
           </button>
           <div className="h-6 w-px bg-gray-300" />
           <button
+            onClick={() => {
+              if (editorMode === 'markdown') {
+                setEditorMode('rich');
+              } else {
+                setEditorMode('markdown');
+              }
+            }}
+            className={`p-2 rounded-lg ${editorMode === 'rich' ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100'}`}
+            title={editorMode === 'markdown' ? '切换到富文本编辑' : '切换到 Markdown 编辑'}
+          >
+            <Type className="w-5 h-5" />
+          </button>
+          <div className="h-6 w-px bg-gray-300" />
+          <button
             onClick={copyRenderedContent}
             className={`p-2 rounded-lg hover:bg-gray-100 ${copied ? 'text-green-600' : ''}`}
             title="复制排版内容"
@@ -541,16 +557,33 @@ const WikiEditor = () => {
               <div className="flex-1 flex overflow-hidden">
                 {(viewMode === 'edit' || viewMode === 'split') && (
                   <div className={`${viewMode === 'split' ? 'w-1/2' : 'w-full'} flex flex-col border-r border-gray-200`}>
-                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm text-gray-600">
-                      编辑模式 {editMode ? '(可编辑)' : '(只读)'}
+                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm text-gray-600 flex items-center justify-between">
+                      <span>编辑模式 {editMode ? '(可编辑)' : '(只读)'} - {editorMode === 'markdown' ? 'Markdown' : '富文本'}</span>
+                      <button
+                        onClick={() => setEditorMode('markdown')}
+                        className="text-xs text-purple-600 hover:text-purple-800"
+                      >
+                        切换到 Markdown
+                      </button>
                     </div>
-                    <textarea
-                      value={content}
-                      onChange={e => setContent(e.target.value)}
-                      disabled={!editMode}
-                      placeholder="使用 [[页面标题]] 创建双向链接..."
-                      className="flex-1 p-4 resize-none focus:outline-none disabled:bg-white"
-                    />
+                    {editorMode === 'markdown' ? (
+                      <textarea
+                        value={content}
+                        onChange={e => setContent(e.target.value)}
+                        disabled={!editMode}
+                        placeholder="使用 [[页面标题]] 创建双向链接..."
+                        className="flex-1 p-4 resize-none focus:outline-none disabled:bg-white"
+                      />
+                    ) : (
+                      <div className="flex-1 overflow-auto">
+                        <RichTextEditor
+                          content={content}
+                          onChange={setContent}
+                          onSave={(html) => setContent(html)}
+                          placeholder="使用富文本编辑器..."
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 {(viewMode === 'preview' || viewMode === 'split') && (

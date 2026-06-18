@@ -265,62 +265,90 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         if (!file) return;
         
         await uploadImage(file);
-        return;  // 独立图片只处理第一张
+        return;
       }
     }
 
-    // 2. 处理富文本内容中的嵌入图片（base64 或 URL）
+    // 2. 处理富文本内容（文字+嵌入图片）
     const html = clipboardData.getData('text/html');
+    const plainText = clipboardData.getData('text/plain');
     if (html) {
-      const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi);
-      let hasImages = false;
+      const imgMatches = Array.from(html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi));
       
-      for (const match of imgMatches) {
-        const src = match[1];
-        hasImages = true;
-        
-        if (src.startsWith('data:image/')) {
-          // base64 图片，需要提取并上传
-          e.preventDefault();
-          const base64Data = src.split(',')[1];
-          const mimeMatch = src.match(/data:image\/([^;]+);/);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'png';
-          const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
+      if (imgMatches.length > 0) {
+        e.preventDefault();
+
+        // 解析所有图片，上传base64并记录外部URL
+        const uploadedUrls: string[] = [];
+        const externalUrls: string[] = [];
+
+        for (const match of imgMatches) {
+          const src = match[1];
           
-          try {
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: mimeType });
-            const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+          if (src.startsWith('data:image/')) {
+            const base64Data = src.split(',')[1];
+            const mimeMatch = src.match(/data:image\/([^;]+);/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'png';
+            const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
             
-            toast.info('正在上传粘贴的图片...');
-            await uploadImage(file);
-          } catch (err) {
-            console.error('处理粘贴图片失败:', err);
+            try {
+              const byteCharacters = atob(base64Data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: mimeType });
+              const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+              
+              toast.info('正在上传粘贴的图片...');
+              const data = await uploadImageAndReturn(file);
+              if (data?.url) {
+                uploadedUrls.push(data.url);
+              }
+            } catch (err) {
+              console.error('处理粘贴图片失败:', err);
+            }
+          } else if (src.startsWith('http://') || src.startsWith('https://')) {
+            externalUrls.push(src);
           }
         }
-        // 外部 URL 图片暂不处理（保持原样）
-      }
-      
-      // 如果检测到图片，等待上传完成后再处理内容
-      if (hasImages) {
-        // 延迟一下让图片上传完成，然后提示用户
-        setTimeout(() => {
-          if (formData.images.length > 0) {
-            toast.success('粘贴内容中的图片已上传');
-          }
-        }, 500);
+
+        // 组装最终内容：文字 + 所有图片引用
+        const text = plainText || html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        let finalContent = text;
+        for (const url of uploadedUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+        for (const url of externalUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+
+        // 在光标位置插入
+        const ta = contentRef.current;
+        if (ta) {
+          const pos = ta.selectionStart ?? ta.value.length;
+          const before = ta.value.substring(0, pos);
+          const after = ta.value.substring(pos);
+          const newContent = before + finalContent + after;
+          setFormData(prev => ({ ...prev, content: newContent }));
+          requestAnimationFrame(() => {
+            ta.selectionStart = ta.selectionEnd = pos + finalContent.length;
+            ta.focus();
+          });
+        } else {
+          setFormData(prev => ({ ...prev, content: prev.content + finalContent }));
+        }
+
+        if (uploadedUrls.length > 0) {
+          toast.success(`已上传 ${uploadedUrls.length} 张图片`);
+        }
       }
     }
   };
 
-  // 上传单张图片
-  const uploadImage = async (file: File) => {
-    toast.info('正在上传图片...');
+  // 上传单张图片并返回结果（供批量处理使用）
+  const uploadImageAndReturn = async (file: File): Promise<{ url: string } | null> => {
     setUploadingCount(prev => prev + 1);
     const formDataUpload = new FormData();
     formDataUpload.append('file', file);
@@ -334,38 +362,45 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.url) {
-          // 1. 添加到图片列表（备用）
-          setFormData(prev => ({ 
-            ...prev, 
+          setFormData(prev => ({
+            ...prev,
             images: [...prev.images, data]
           }));
-          // 2. 插入到光标位置（作为markdown图片）
-          const imageMarkdown = `\n![${file.name}](${data.url})\n`;
-          const ta = contentRef.current;
-          if (ta) {
-            const pos = ta.selectionStart ?? ta.value.length;
-            const before = ta.value.substring(0, pos);
-            const after = ta.value.substring(pos);
-            const newContent = before + imageMarkdown + after;
-            setFormData(prev => ({ ...prev, content: newContent }));
-            // 恢复光标到插入内容之后
-            requestAnimationFrame(() => {
-              ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
-              ta.focus();
-            });
-          } else {
-            setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
-          }
-          toast.success('图片已插入内容');
+          return data;
         }
-      } else {
-        toast.error('图片上传失败');
       }
+      return null;
     } catch (err) {
       console.error('上传图片失败:', err);
-      toast.error('图片上传失败');
+      return null;
     } finally {
       setUploadingCount(prev => prev - 1);
+    }
+  };
+
+  // 上传单张图片（直接插入到内容中）
+  const uploadImage = async (file: File) => {
+    toast.info('正在上传图片...');
+    const data = await uploadImageAndReturn(file);
+    if (data?.url) {
+      const imageMarkdown = `\n![${file.name}](${data.url})\n`;
+      const ta = contentRef.current;
+      if (ta) {
+        const pos = ta.selectionStart ?? ta.value.length;
+        const before = ta.value.substring(0, pos);
+        const after = ta.value.substring(pos);
+        const newContent = before + imageMarkdown + after;
+        setFormData(prev => ({ ...prev, content: newContent }));
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
+          ta.focus();
+        });
+      } else {
+        setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
+      }
+      toast.success('图片已插入内容');
+    } else {
+      toast.error('图片上传失败');
     }
   };
 
