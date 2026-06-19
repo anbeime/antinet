@@ -38,58 +38,19 @@ jobs:
           touch /tmp/found_dirs.txt
           
           # File patterns
-          cat > /tmp/file_patterns.txt << 'ENDOFPATTERNS'
-test_*.py
-*_test.py
-*_tests.py
-test-*.py
-*-test.py
-*test*.py
-*test*.js
-*test*.ts
-quick_*_test.py
-*_api_test.py
-*_env_test.py
-validate_*.py
-generate_*.py
-reset_*.py
-temp_*.py
-simple_*.py
-run_*_test.py
-import_preset_*.py
-insert_sample_*.py
-inspect_*.py
-database_*.py
-*.pyc
-*.pyo
-*.pyd
-*.so
-*.dylib
-*.dll
-*.class
-*.o
-*.obj
-*.exe
-*.log
-*.tmp
-*.temp
-*.swp
-*.swo
-*.bak
-*.orig
-*.rej
-.DS_Store
-Thumbs.db
-desktop.ini
-*.min.js
-*.min.css
-*.map
-bundle.js
-bundle.css
-requirements_*.txt
-问题诊断报告*.md
-诊断报告*.md
-ENDOFPATTERNS
+          printf '%s\n' \
+            'test_*.py' '*_test.py' '*_tests.py' 'test-*.py' '*-test.py' \
+            '*test*.py' '*test*.js' '*test*.ts' \
+            'quick_*_test.py' '*_api_test.py' '*_env_test.py' \
+            'validate_*.py' 'generate_*.py' 'reset_*.py' 'temp_*.py' 'simple_*.py' \
+            'run_*_test.py' 'import_preset_*.py' 'insert_sample_*.py' \
+            'inspect_*.py' 'database_*.py' \
+            '*.pyc' '*.pyo' '*.pyd' '*.so' '*.dylib' '*.dll' '*.class' \
+            '*.o' '*.obj' '*.exe' '*.log' '*.tmp' '*.temp' '*.swp' '*.swo' \
+            '*.bak' '*.orig' '*.rej' '.DS_Store' 'Thumbs.db' 'desktop.ini' \
+            '*.min.js' '*.min.css' '*.map' 'bundle.js' 'bundle.css' \
+            'requirements_*.txt' '问题诊断报告*.md' '诊断报告*.md' \
+            > /tmp/file_patterns.txt
           
           # Scan file patterns
           while IFS= read -r pattern; do
@@ -107,84 +68,23 @@ ENDOFPATTERNS
           done < /tmp/file_patterns.txt
           
           # Directory patterns
-          cat > /tmp/dir_patterns.txt << 'ENDOFDIRS'
-tests
-test
-__tests__
-__test__
-spec
-specs
-__pycache__
-.pytest_cache
-htmlcov
-cover
-.tox
-.nox
-.hypothesis
-.eggs
-dist
-build
-develop-eggs
-downloads
-eggs
-lib
-lib64
-parts
-sdist
-var
-wheels
-instance
-.webassets-cache
-.scrapy
-site
-.pybuilder
-target
-.ipynb_checkpoints
-profile_default
-__pypackages__
-.venv
-venv
-env
-ENV
-env.bak
-venv.bak
-.ropeproject
-.spyderproject
-.spyproject
-nbproject
-.komodotools
-.idea_modules
-.history
-.nyc_output
-.grunt
-bower_components
-.rpt_cache
-.next
-.nuxt
-.temp
-.cache
-.serverless
-.fusebox
-.dynamodb
-.vscode-test
-.vscode-test-container
-.devcontainer
-.vs
-BenchmarkDotNet.Artifacts
-artifacts
-_ReSharper
-_TeamCity
-_NCrunch_
-AutoTest.Net
-.sass-cache
-node_modules
-.terraform
-.vagrant
-packer_cache
-.idea
-.vscode
-tools
-ENDOFDIRS
+          printf '%s\n' \
+            'tests' 'test' '__tests__' '__test__' 'spec' 'specs' \
+            '__pycache__' '.pytest_cache' 'htmlcov' 'cover' '.tox' '.nox' \
+            '.hypothesis' '.eggs' 'dist' 'build' 'develop-eggs' 'downloads' \
+            'eggs' 'lib' 'lib64' 'parts' 'sdist' 'var' 'wheels' 'instance' \
+            '.webassets-cache' '.scrapy' 'site' '.pybuilder' 'target' \
+            '.ipynb_checkpoints' 'profile_default' '__pypackages__' \
+            '.venv' 'venv' 'env' 'ENV' 'env.bak' 'venv.bak' '.ropeproject' \
+            '.spyderproject' '.spyproject' 'nbproject' '.komodotools' \
+            '.idea_modules' '.history' '.nyc_output' '.grunt' \
+            'bower_components' '.rpt_cache' '.next' '.nuxt' '.temp' '.cache' \
+            '.serverless' '.fusebox' '.dynamodb' '.vscode-test' \
+            '.vscode-test-container' '.devcontainer' '.vs' \
+            'BenchmarkDotNet.Artifacts' 'artifacts' '_ReSharper' '_TeamCity' \
+            '_NCrunch_' 'AutoTest.Net' '.sass-cache' 'node_modules' \
+            '.terraform' '.vagrant' 'packer_cache' '.idea' '.vscode' 'tools' \
+            > /tmp/dir_patterns.txt
           
           # Scan directory patterns
           while IFS= read -r pattern; do
