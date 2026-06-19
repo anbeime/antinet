@@ -30,6 +30,7 @@ import TeamCollaboration from "@/pages/TeamCollaboration";
 
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
+import InvestmentResearchPage from "@/pages/InvestmentResearchPage";
 import { ReminderNotification } from "@/components/ReminderNotification";
 import { AuthProvider } from '@/contexts/authContext';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
           <Route path="/invoice" element={<InvoicePage />} />
           <Route path="/team-collaboration" element={<TeamCollaboration />} />
+          <Route path="/investment-research" element={<InvestmentResearchPage />} />
           <Route path="/remotion" element={
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
               <Home initialTab="remotion" />

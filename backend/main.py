@@ -229,6 +229,7 @@ register_router("routes.markdown_converter_routes")
 register_router("routes.meeting_routes")
 register_router("routes.speech_routes")
 register_router("routes.research_routes")
+register_router("routes.investment_research_routes")  # 投研场景（行业/公司/策略/机会/风险/卡片）
 register_router("routes.ppt_structure_routes")
 register_router("routes.image_routes")  # 图片上传路由
 register_router("routes.analysis_routes")

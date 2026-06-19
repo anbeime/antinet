@@ -31,7 +31,8 @@ import {
   Copy,
   ZoomIn,
   Menu,
-  Calendar
+  Calendar,
+  BarChart3,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
@@ -1209,6 +1210,7 @@ const Home: React.FC<HomeProps> = ({ initialTab }) => {
                     { icon: <Table size={20} />, title: '发票识别', desc: '发票OCR提取', link: 'tab:excel-analysis', subFeature: 'invoice', gradient: 'from-green-500 to-emerald-400' },
                     { icon: <ListTodo size={20} />, title: '任务管理', desc: 'GTD任务管理', link: 'tab:data-management', gradient: 'from-purple-500 to-violet-400' },
                     { icon: <ListTodo size={20} />, title: '日历日程', desc: '日历与日程规划提醒', link: '/gtd-tasks', subFeature: 'calendar', gradient: 'from-purple-500 to-violet-400' },
+                    { icon: <BarChart3 size={20} />, title: '投研工作台', desc: '行业/公司研究、机会与风险、四色研究卡片', link: '/investment-research', gradient: 'from-indigo-500 to-blue-400' },
                     { icon: <Users size={20} />, title: '虚拟会议', desc: '8智能体像素虚拟智能协作会议', link: 'tab:virtual-office-meeting', gradient: 'from-red-500 to-rose-400' },
                     { icon: <Users size={20} />, title: '团队协作', desc: '局域网团队协作与任务协同工作台', link: 'tab:team-collaboration', subFeature: 'tasks', gradient: 'from-red-500 to-rose-400' },
                     { icon: <FolderOpen size={20} />, title: '文件浏览', desc: '文件浏览器与卡片索引联动', link: '/knowledge-graph?tab=files', gradient: 'from-teal-500 to-emerald-400' },
