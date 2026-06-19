@@ -80,7 +80,7 @@ export const npuService = {
    */
   async analyze(request: AnalyzeRequest): Promise<AnalyzeResponse> {
     try {
-      const response = await fetch(`${API_BASE}/generate/cards`, {
+      const response = await fetch(`${API_BASE}/agent/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -135,7 +135,7 @@ export const npuService = {
    */
   async generateReport(request: AnalyzeRequest): Promise<any> {
     try {
-      const response = await fetch(`${API_BASE}/generate/report`, {
+      const response = await fetch(`${API_BASE}/automation/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,7 +206,7 @@ export const npuService = {
    */
   async updateCard(id: string, card: Partial<Card>): Promise<Card> {
     try {
-      const response = await fetch(`${API_BASE}/cards/${id}`, {
+      const response = await fetch(`${API_BASE}/knowledge/cards/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -230,7 +230,7 @@ export const npuService = {
    */
   async deleteCard(id: string): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE}/cards/${id}`, {
+      const response = await fetch(`${API_BASE}/knowledge/cards/${id}`, {
         method: 'DELETE',
       });
 
@@ -320,7 +320,7 @@ export const npuService = {
    */
   async getSystemInfo(): Promise<any> {
     try {
-      const response = await fetch(getApiBaseUrl() + '/');
+      const response = await fetch(getApiBaseUrl() + '/api/health');
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);

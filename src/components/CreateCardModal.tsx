@@ -12,13 +12,15 @@ import {
   AlertCircle,
   Image,
   Upload,
-  FolderOpen
+  FolderOpen,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
-const API_BASE = getApiBaseUrl()
-// 确保 API_BASE 不以 /api 结尾，避免重复
-const IMAGE_API_BASE = API_BASE.replace(/\/api$/, '') + '/api/images'
+const API_BASE = () => getApiBaseUrl()
+const IMAGE_API_BASE = () => API_BASE().replace(/\/api$/, '') + '/api/images'
 
 // 图片信息类型
 interface ImageInfo {
@@ -112,7 +114,9 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     projectId: projectId
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const contentRef = useRef<HTMLTextAreaElement>(null)
   const [uploadingCount, setUploadingCount] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [projects, setProjects] = useState<{id: number; name: string}[]>([])
 
   // 加载专题列表
@@ -261,68 +265,96 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         if (!file) return;
         
         await uploadImage(file);
-        return;  // 独立图片只处理第一张
+        return;
       }
     }
 
-    // 2. 处理富文本内容中的嵌入图片（base64 或 URL）
+    // 2. 处理富文本内容（文字+嵌入图片）
     const html = clipboardData.getData('text/html');
+    const plainText = clipboardData.getData('text/plain');
     if (html) {
-      const imgMatches = html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi);
-      let hasImages = false;
+      const imgMatches = Array.from(html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi));
       
-      for (const match of imgMatches) {
-        const src = match[1];
-        hasImages = true;
-        
-        if (src.startsWith('data:image/')) {
-          // base64 图片，需要提取并上传
-          e.preventDefault();
-          const base64Data = src.split(',')[1];
-          const mimeMatch = src.match(/data:image\/([^;]+);/);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'png';
-          const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
+      if (imgMatches.length > 0) {
+        e.preventDefault();
+
+        // 解析所有图片，上传base64并记录外部URL
+        const uploadedUrls: string[] = [];
+        const externalUrls: string[] = [];
+
+        for (const match of imgMatches) {
+          const src = match[1];
           
-          try {
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: mimeType });
-            const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+          if (src.startsWith('data:image/')) {
+            const base64Data = src.split(',')[1];
+            const mimeMatch = src.match(/data:image\/([^;]+);/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'png';
+            const ext = mimeType === 'jpeg' ? 'jpg' : mimeType;
             
-            toast.info('正在上传粘贴的图片...');
-            await uploadImage(file);
-          } catch (err) {
-            console.error('处理粘贴图片失败:', err);
+            try {
+              const byteCharacters = atob(base64Data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: mimeType });
+              const file = new File([blob], `pasted_image.${ext}`, { type: mimeType });
+              
+              toast.info('正在上传粘贴的图片...');
+              const data = await uploadImageAndReturn(file);
+              if (data?.url) {
+                uploadedUrls.push(data.url);
+              }
+            } catch (err) {
+              console.error('处理粘贴图片失败:', err);
+            }
+          } else if (src.startsWith('http://') || src.startsWith('https://')) {
+            externalUrls.push(src);
           }
         }
-        // 外部 URL 图片暂不处理（保持原样）
-      }
-      
-      // 如果检测到图片，等待上传完成后再处理内容
-      if (hasImages) {
-        // 延迟一下让图片上传完成，然后提示用户
-        setTimeout(() => {
-          if (formData.images.length > 0) {
-            toast.success('粘贴内容中的图片已上传');
-          }
-        }, 500);
+
+        // 组装最终内容：文字 + 所有图片引用
+        const text = plainText || html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        let finalContent = text;
+        for (const url of uploadedUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+        for (const url of externalUrls) {
+          finalContent += `\n![image](${url})`;
+        }
+
+        // 在光标位置插入
+        const ta = contentRef.current;
+        if (ta) {
+          const pos = ta.selectionStart ?? ta.value.length;
+          const before = ta.value.substring(0, pos);
+          const after = ta.value.substring(pos);
+          const newContent = before + finalContent + after;
+          setFormData(prev => ({ ...prev, content: newContent }));
+          requestAnimationFrame(() => {
+            ta.selectionStart = ta.selectionEnd = pos + finalContent.length;
+            ta.focus();
+          });
+        } else {
+          setFormData(prev => ({ ...prev, content: prev.content + finalContent }));
+        }
+
+        if (uploadedUrls.length > 0) {
+          toast.success(`已上传 ${uploadedUrls.length} 张图片`);
+        }
       }
     }
   };
 
-  // 上传单张图片
-  const uploadImage = async (file: File) => {
-    toast.info('正在上传图片...');
+  // 上传单张图片并返回结果（供批量处理使用）
+  const uploadImageAndReturn = async (file: File): Promise<{ url: string } | null> => {
     setUploadingCount(prev => prev + 1);
     const formDataUpload = new FormData();
     formDataUpload.append('file', file);
     
     try {
-      const response = await fetch(`${IMAGE_API_BASE}/upload`, {
+      const response = await fetch(`${IMAGE_API_BASE()}/upload`, {
         method: 'POST',
         body: formDataUpload
       });
@@ -330,27 +362,45 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.url) {
-          // 1. 添加到图片列表（备用）
-          setFormData(prev => ({ 
-            ...prev, 
+          setFormData(prev => ({
+            ...prev,
             images: [...prev.images, data]
           }));
-          // 2. 自动插入到内容区（作为markdown图片）
-          const imageMarkdown = `\n![${file.name}](${data.url})\n`;
-          setFormData(prev => ({ 
-            ...prev, 
-            content: prev.content + imageMarkdown
-          }));
-          toast.success('图片已插入内容');
+          return data;
         }
-      } else {
-        toast.error('图片上传失败');
       }
+      return null;
     } catch (err) {
       console.error('上传图片失败:', err);
-      toast.error('图片上传失败');
+      return null;
     } finally {
       setUploadingCount(prev => prev - 1);
+    }
+  };
+
+  // 上传单张图片（直接插入到内容中）
+  const uploadImage = async (file: File) => {
+    toast.info('正在上传图片...');
+    const data = await uploadImageAndReturn(file);
+    if (data?.url) {
+      const imageMarkdown = `\n![${file.name}](${data.url})\n`;
+      const ta = contentRef.current;
+      if (ta) {
+        const pos = ta.selectionStart ?? ta.value.length;
+        const before = ta.value.substring(0, pos);
+        const after = ta.value.substring(pos);
+        const newContent = before + imageMarkdown + after;
+        setFormData(prev => ({ ...prev, content: newContent }));
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = pos + imageMarkdown.length;
+          ta.focus();
+        });
+      } else {
+        setFormData(prev => ({ ...prev, content: prev.content + imageMarkdown }));
+      }
+      toast.success('图片已插入内容');
+    } else {
+      toast.error('图片上传失败');
     }
   };
 
@@ -388,7 +438,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
     const image = formData.images.find(img => img.id === imageId);
     if (image) {
       try {
-        await fetch(`${IMAGE_API_BASE}/${image.filename}`, { method: 'DELETE' });
+        await fetch(`${IMAGE_API_BASE()}/${image.filename}`, { method: 'DELETE' });
       } catch (err) {
         console.error('删除图片失败:', err);
       }
@@ -527,7 +577,10 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="w-full max-w-2xl max-h-[85vh] bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col"
+        className={cn(
+          "bg-white dark:bg-gray-800 rounded-xl shadow-xl overflow-hidden flex flex-col",
+          isFullscreen ? "w-screen h-screen max-w-none rounded-none" : "w-full max-w-4xl max-h-[90vh]"
+        )}
       >
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <div>
@@ -538,13 +591,23 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               </p>
             )}
           </div>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-            aria-label="关闭"
-          >
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              aria-label={isFullscreen ? '退出全屏' : '全屏'}
+              title={isFullscreen ? '退出全屏' : '全屏'}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+            <button 
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              aria-label="关闭"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
         
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -630,6 +693,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
           <div>
             <label htmlFor="content" className="block text-sm font-medium mb-2">卡片内容 *</label>
             <textarea
+              ref={contentRef}
               id="content"
               name="content"
               value={formData.content}
@@ -638,12 +702,11 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
               placeholder="输入卡片内容（支持粘贴、拖放图片）..."
-              rows={5}
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none transition-colors resize-none ${
+              className={`w-full min-h-[300px] text-lg leading-relaxed border-2 rounded-lg p-4 focus:outline-none resize-y ${
                 errors.content 
                   ? 'border-red-500 focus:ring-red-500/20 dark:border-red-400' 
-                  : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500/20 dark:border-gray-600'
-              } dark:bg-gray-700`}
+                  : 'border-blue-500 focus:ring-blue-500/20 dark:border-gray-600 bg-white/50 dark:bg-gray-700/50'
+              }`}
             />
             {errors.content && (
               <p className="text-red-500 text-xs mt-1 flex items-center">
@@ -731,7 +794,7 @@ const CreateCardModal: React.FC<CreateCardModalProps> = ({
                 {formData.images.map(image => (
                   <div key={image.id} className="relative group">
                     <img
-                      src={`${API_BASE}${image.url}`}
+                      src={`${API_BASE()}${image.url}`}
                       alt={image.original_name}
                       className="w-16 h-16 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
                     />

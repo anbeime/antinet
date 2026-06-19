@@ -3,21 +3,26 @@ import MindMap from './MindMap';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as echarts from 'echarts';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { useNavigate } from 'react-router-dom';
 import {
   Share2, Plus, Trash2, Download, Search, RefreshCw,
   ZoomIn, ZoomOut, Move, Loader, Eye, Settings,
   Database, GitBranch, Network, X, ExternalLink, Edit3, List, FileText,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Presentation, Folder, FolderOpen
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
+import AppHeader from '@/components/AppHeader';
+import FileBrowserPanel from '@/components/FileBrowserPanel';
+import { toast } from 'sonner';
 
-const API_BASE = getApiBaseUrl()
+const API_BASE = () => getApiBaseUrl()
 
 interface GraphNode {
   id: string;
   name: string;
-  category: string;
+  category: number;
   symbolSize: number;
 }
 
@@ -75,9 +80,9 @@ const KnowledgeGraphView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [graphData, setGraphData] = useState<{nodes: GraphNode[], links: GraphLink[], categories: GraphCategory[]}>(sampleData);
-  const [apiData, setApiData] = useState<{entities: any[], relations: any[]} | null>(null);
+  const [apiData, setApiData] = useState<{nodes: any[], links: any[], entities?: any[], relations?: any[], categories?: any[]} | null>(null);
   const [graphSource, setGraphSource] = useState<'sample' | 'api'>('sample');
-  const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap'>('graph');  // 图谱/列表/思维导图 切换
+  const [pageMode, setPageMode] = useState<'graph' | 'list' | 'mindmap' | 'files'>('graph');  // 图谱/列表/思维导图/文件 切换
   const [listSearch, setListSearch] = useState('');
   const [listColorFilter, setListColorFilter] = useState<string>('all');
   const [listLoading, setListLoading] = useState(false);
@@ -99,13 +104,18 @@ const KnowledgeGraphView: React.FC = () => {
   const [currentCardId, setCurrentCardId] = useState<number | null>(null);
   const [modalCard, setModalCard] = useState<any>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [cards, setCards] = useState<any[]>([]);
+  const [modalEditorSide, setModalEditorSide] = useState<'edit' | 'preview' | 'split'>('preview');
+  const [modalMarkdown, setModalMarkdown] = useState('');
   const [isModalEditing, setIsModalEditing] = useState(false);
   const [modalEditContent, setModalEditContent] = useState('');
   const [modalEditTitle, setModalEditTitle] = useState('');
+  const [selectedFileInfo, setSelectedFileInfo] = useState<{ name: string; path: string; type: string; cards: any[]; fileId?: number } | null>(null);
+  const [cards, setCards] = useState<any[]>([]);
+  const navigate = useNavigate();
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [addNodeSearch, setAddNodeSearch] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  const [graphSearch, setGraphSearch] = useState('');
 
 
 
@@ -115,42 +125,56 @@ const KnowledgeGraphView: React.FC = () => {
     // 如果是 suggestions 格式（搜索结果），转换为节点
     if (data.suggestions && !data.nodes) {
       const suggestions = data.suggestions;
-      const nodes = suggestions.map((s: any, i: number) => {
-        const typeList = ['blue', 'green', 'yellow', 'red'];
-        const typeIdx = typeList.indexOf(s.card_type || 'blue');
-        const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
-        return {
-          id: String(s.card_id),
-          name: s.title || `卡片${s.card_id}`,
-          category: typeIdx >= 0 ? typeIdx : 0,
-          symbolSize: 35,
-          x: 500 + 280 * Math.cos(angle),
-          y: 300 + 280 * Math.sin(angle),
-          score: s.score,
-          content: s.content
-        };
-      });
+      const seenIds = new Set<string>();
+      const nodes = suggestions
+        .filter((s: any) => {
+          const sid = String(s.card_id);
+          if (seenIds.has(sid)) return false;
+          seenIds.add(sid);
+          return true;
+        })
+        .map((s: any, i: number) => {
+          const typeList = ['blue', 'green', 'yellow', 'red'];
+          const typeIdx = typeList.indexOf(s.card_type || 'blue');
+          const angle = (i / Math.max(suggestions.length, 1)) * 2 * Math.PI;
+          return {
+            id: String(s.card_id),
+            name: s.title || `卡片${s.card_id}`,
+            category: typeIdx >= 0 ? typeIdx : 0,
+            symbolSize: 35,
+            x: 500 + 280 * Math.cos(angle),
+            y: 300 + 280 * Math.sin(angle),
+            score: s.score,
+            content: s.content
+          };
+        });
       return { nodes, links: [], categories: [{ name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }] };
     }
     // 处理普通图数据（nodes + links）
     const rawNodes = data.nodes || data.entities || [];
     const rawLinks = data.links || data.relations || [];
     const nodeMap = new Map();
+    const nameSet = new Set<string>();  // 防止重复名称
     let nodeIndex = 0;
     rawNodes.forEach((e: any) => {
       const id = String(e.id);
+      const name = e.title || e.name || `节点${e.id}`;
+      // 跳过已存在的 ID 或重名节点
+      if (nodeMap.has(id) || nameSet.has(name)) return;
+      
       if (!nodeMap.has(id)) {
         const typeList = ['blue', 'green', 'yellow', 'red'];
         const typeIdx = e.type ? typeList.indexOf(e.type) : -1;
         const angle = (nodeIndex / Math.max(rawNodes.length, 1)) * 2 * Math.PI;
         nodeMap.set(id, {
           id,
-          name: e.title || e.name || `节点${e.id}`,
+          name,
           category: typeIdx >= 0 ? typeIdx : 0,
           symbolSize: e.is_current ? 50 : 35,
           x: 500 + 280 * Math.cos(angle),
           y: 300 + 280 * Math.sin(angle)
         });
+        nameSet.add(name);
         nodeIndex++;
       }
     });
@@ -162,14 +186,38 @@ const KnowledgeGraphView: React.FC = () => {
 
   // 列表数据源：有 currentCardId 时与图谱/导图保持一致
   const listDataSource = useMemo(() => {
+    if (!apiData) return cards;
+    
+    // 处理 suggestions 格式（搜索结果）
+    if (apiData.suggestions && !apiData.nodes) {
+      const suggestions = apiData.suggestions;
+      const seenIds = new Set<string>();
+      const nodes = suggestions
+        .filter((s: any) => {
+          const sid = String(s.card_id);
+          if (seenIds.has(sid)) return false;
+          seenIds.add(sid);
+          return true;
+        })
+        .map((s: any) => ({
+          id: String(s.card_id),
+          title: s.title || `卡片${s.card_id}`,
+          content: s.content || '',
+          card_type: s.card_type || 'blue',
+          type: s.card_type || 'blue',
+        }));
+      
+      if (nodes.length > 0) return nodes;
+      return cards;
+    }
+    
+    // 处理普通图数据（nodes + links 或 entities + relations）
     if (currentCardId && apiData) {
       const graphNodes = apiData.nodes || apiData.entities || [];
       if (graphNodes.length === 0) return cards;
       const graphIds = new Set(graphNodes.map((n: any) => String(n.id)));
-      // 优先从 cards 中匹配（保持完整卡片数据）
       const matched = cards.filter((c: any) => graphIds.has(String(c.id)));
       if (matched.length > 0) return matched;
-      // 如果 ID 不匹配，从图谱节点直接派生卡片对象
       return graphNodes.map((n: any) => ({
         id: n.id,
         title: n.title || n.name || `节点${n.id}`,
@@ -190,7 +238,6 @@ const KnowledgeGraphView: React.FC = () => {
     const links = displayData.links || [];
     if (!nodes.length) return null;
 
-    const categoryColors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444'];
     const hasIncoming = new Set(links.map((l: any) => String(l.target)));
     let roots = nodes.filter((n: any) => !hasIncoming.has(String(n.id)));
     if (!roots.length && nodes.length > 0) roots = [nodes[0]];
@@ -235,7 +282,11 @@ const KnowledgeGraphView: React.FC = () => {
       if (window.innerWidth >= 768) {
         setSidebarOpen(true);
       }
-      chartInstance.current?.resize();
+      try {
+        chartInstance.current?.resize();
+      } catch (_) {
+        // 图表未就绪时 resize 会抛错，静默忽略
+      }
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -247,14 +298,18 @@ const KnowledgeGraphView: React.FC = () => {
     if (cardId) {
       loadCardBacklinks(parseInt(cardId));
     }
-    // 加载已保存的图谱状态（持久化节点/连线）
+    const tabParam = params.get('tab');
+    if (tabParam === 'files') {
+      setPageMode('files');
+      setSidebarOpen(false);
+    }
     loadPersistedGraph();
   }, []);
 
   // 加载持久化的图谱状态
   const loadPersistedGraph = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/graph/state`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/graph/state`);
       if (res.ok) {
         const state = await res.json();
         if (state && state.nodes && state.nodes.length > 0) {
@@ -270,7 +325,7 @@ const KnowledgeGraphView: React.FC = () => {
   // 保存图谱状态到数据库
   const saveGraphState = async (data: {nodes: any[], links: any[], categories: any[]}) => {
     try {
-      await fetch(`${API_BASE}/api/knowledge/graph/state`, {
+      await fetch(`${API_BASE()}/api/knowledge/graph/state`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'default', ...data })
@@ -296,7 +351,7 @@ const KnowledgeGraphView: React.FC = () => {
     setLoadingAPI(true);
     try {
       // 从后端获取卡片的 backlinks 图谱
-      const response = await fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/backlinks/card/${cardId}/graph`);
       if (response.ok) {
         const data = await response.json();
  setApiData(data);
@@ -317,7 +372,7 @@ const KnowledgeGraphView: React.FC = () => {
     if (!topic.trim()) return;
     setLoadingAPI(true);
     try {
-      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/knowledge/network/suggest?topic=${encodeURIComponent(topic)}&limit=20`);
       if (!response.ok) throw new Error('API error: ' + response.status);
       const data = await response.json();
       console.log('[Search] API返回:', data);
@@ -326,9 +381,9 @@ const KnowledgeGraphView: React.FC = () => {
  setGraphSource('api');
  // 不覆盖 cards 列表 —— 保持全部卡片供搜索用
  // 图谱搜索结果通过 apiData + graphSource='api' 单独管理
-    } catch (e) {
+    } catch (e: any) {
       console.error('Load KG failed:', e);
-      alert('搜索失败: ' + e.message);
+      alert('搜索失败: ' + (e?.message || '未知错误'));
     } finally {
       setLoadingAPI(false);
     }
@@ -338,7 +393,7 @@ const KnowledgeGraphView: React.FC = () => {
   const loadCards = async () => {
     setListLoading(true);
     try {
-      const response = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards?limit=1000`);
+      const response = await fetchWithTimeout(`${API_BASE()}/api/knowledge/cards?limit=1000`);
       if (response.ok) {
         const data = await response.json();
         setCards(data.cards || []);
@@ -353,7 +408,7 @@ const KnowledgeGraphView: React.FC = () => {
   // ========== 列表模式 - 加载卡片详情 ==========
   const loadCardForList = async (cardId: number) => {
     try {
-      const cardRes = await fetchWithTimeout(`${API_BASE}/api/knowledge/cards/${cardId}`);
+      const cardRes = await fetchWithTimeout(`${API_BASE()}/api/knowledge/cards/${cardId}`);
       if (!cardRes.ok) throw new Error('加载卡片失败');
       const card = await cardRes.json();
       setListSelectedCard(card);
@@ -361,7 +416,7 @@ const KnowledgeGraphView: React.FC = () => {
       setListEditorSide('preview');
 
       // 并行加载知识网络
-      fetchWithTimeout(`${API_BASE}/api/backlinks/card/${cardId}/graph?max_depth=1`)
+      fetchWithTimeout(`${API_BASE()}/api/backlinks/card/${cardId}/graph?max_depth=1`)
         .then(async (netRes) => {
           if (netRes.ok) {
             const netData = await netRes.json();
@@ -381,7 +436,7 @@ const KnowledgeGraphView: React.FC = () => {
     const title = lines[0]?.startsWith('# ') ? lines[0].slice(2).trim() : (listSelectedCard.title || '无标题');
     const content = lines[0]?.startsWith('# ') ? lines.slice(2).join('\n') : listMarkdown;
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${listSelectedCard.id}`, {
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${listSelectedCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, content, type: listSelectedCard.card_type || listSelectedCard.type || 'blue' }),
@@ -409,7 +464,7 @@ const KnowledgeGraphView: React.FC = () => {
         formData.append('title', listSelectedCard?.title || '知识卡片');
         formData.append('author', 'Antinet');
         formData.append('theme', exportTheme);
-        const res = await fetch(`${API_BASE}/api/md2pdf/convert`, {
+        const res = await fetch(`${API_BASE()}/api/md2pdf/convert`, {
           method: 'POST', body: formData,
         });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -425,7 +480,7 @@ const KnowledgeGraphView: React.FC = () => {
       const formData = new FormData();
       const blob = new Blob([listMarkdown], { type: 'text/markdown' });
       formData.append('file', blob, 'card.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
+      const res = await fetch(`${API_BASE()}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
         method: 'POST', body: formData,
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -461,7 +516,7 @@ const KnowledgeGraphView: React.FC = () => {
       const formData = new FormData();
       const blob = new Blob([listMarkdown], { type: 'text/markdown' });
       formData.append('file', blob, 'card.md');
-      const res = await fetch(`${API_BASE}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
+      const res = await fetch(`${API_BASE()}/api/markdown-converter/convert/file?output_format=${format}&theme=${exportTheme}`, {
         method: 'POST', body: formData,
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.detail || '导出失败'); }
@@ -480,27 +535,24 @@ const KnowledgeGraphView: React.FC = () => {
   // 打开卡片详情（弹窗）
   const openCardDetail = async (cardId: string | number) => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${cardId}`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${cardId}`);
       if (res.ok) {
         const card = await res.json();
         setModalCard(card);
-        setModalEditTitle(card.title || '');
-        setModalEditContent(card.content || '');
-        setIsModalEditing(false);
+        setModalMarkdown(`# ${card.title || ''}\n\n${card.content || ''}`);
+        setModalEditorSide('preview');
         setModalOpen(true);
       } else {
         setModalCard({ title: `卡片 ${cardId}`, content: '卡片不存在或已删除', color: 'blue' });
-        setModalEditTitle('');
-        setModalEditContent('');
-        setIsModalEditing(false);
+        setModalMarkdown('');
+        setModalEditorSide('preview');
         setModalOpen(true);
       }
     } catch (e) {
       console.error('加载卡片失败:', e);
       setModalCard({ title: `卡片 ${cardId}`, content: '加载失败: ' + String(e), color: 'red' });
-      setModalEditTitle('');
-      setModalEditContent('');
-      setIsModalEditing(false);
+      setModalMarkdown('');
+      setModalEditorSide('preview');
       setModalOpen(true);
     }
   };
@@ -508,21 +560,24 @@ const KnowledgeGraphView: React.FC = () => {
   // 保存卡片编辑
   const handleModalSave = async () => {
     if (!modalCard?.id) return;
+    const lines = modalMarkdown.split('\n');
+    const title = lines[0]?.startsWith('# ') ? lines[0].slice(2).trim() : modalCard.title;
+    const content = lines[0]?.startsWith('# ') ? lines.slice(2).join('\n').trim() : modalMarkdown.trim();
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards/${modalCard.id}`, {
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards/${modalCard.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: modalEditTitle,
-          content: modalEditContent,
+          title,
+          content,
           type: modalCard.card_type || modalCard.type || 'blue',
         }),
       });
       if (res.ok) {
         const updated = await res.json();
         setModalCard(updated);
-        setIsModalEditing(false);
-        // 刷新卡片列表
+        setModalMarkdown(`# ${updated.title || ''}\n\n${updated.content || ''}`);
+        setModalEditorSide('preview');
         loadCards();
       }
     } catch (e) {
@@ -571,10 +626,27 @@ useEffect(() => {
         displayData = graphData;
       }
 
-      // 确保 displayData 结构完整
+      // 确保 displayData 结构完整，并对节点/连线去重
       if (!displayData || !displayData.nodes || !displayData.nodes.length) {
         displayData = sampleData;
       }
+
+      // 最终去重防线：ECharts graph 要求 name 和 id 必须唯一
+      const idSet = new Set<string>();
+      const nameSet = new Set<string>();
+      const dedupedNodes = displayData.nodes.filter((n: any) => {
+        const nid = String(n.id);
+        const nname = String(n.name || '');
+        if (idSet.has(nid) || nameSet.has(nname)) return false;
+        idSet.add(nid);
+        nameSet.add(nname);
+        return true;
+      });
+      
+      const validNodeIds = new Set(dedupedNodes.map((n: any) => String(n.id)));
+      const dedupedLinks = displayData.links.filter((l: any) => {
+        return validNodeIds.has(String(l.source)) && validNodeIds.has(String(l.target));
+      });
 
       const option: echarts.EChartsOption = {
         tooltip: {
@@ -588,19 +660,32 @@ useEffect(() => {
         series: [{
           type: 'graph',
           layout: 'force',
-          data: displayData.nodes.map((node: any) => ({
-            id: node.id,
-            name: node.name,
-            category: node.category ?? 0,
-            symbolSize: node.symbolSize || 30,
-            label: { show: true, fontSize: 11, position: 'bottom' },
-          })),
-          links: displayData.links.map((link: any) => ({
-            source: link.source,
-            target: link.target,
-            lineStyle: { width: 2, curveness: 0.2 },
-            label: { show: true, fontSize: 10, formatter: link.label || '' }
-          })),
+          data: dedupedNodes.map((node: any) => {
+            const searchLower = graphSearch.toLowerCase();
+            const isMatch = !searchLower || (node.name || '').toLowerCase().includes(searchLower);
+            return {
+              id: node.id,
+              name: node.name,
+              category: node.category ?? 0,
+              symbolSize: node.symbolSize || 30,
+              label: { show: true, fontSize: 11, position: 'bottom' },
+              itemStyle: searchLower ? { opacity: isMatch ? 1 : 0.2 } : undefined,
+            };
+          }),
+          links: dedupedLinks.map((link: any) => {
+            const searchLower = graphSearch.toLowerCase();
+            const sourceNode = dedupedNodes.find(n => String(n.id) === String(link.source));
+            const targetNode = dedupedNodes.find(n => String(n.id) === String(link.target));
+            const isMatch = !searchLower || 
+              (sourceNode && (sourceNode.name || '').toLowerCase().includes(searchLower)) ||
+              (targetNode && (targetNode.name || '').toLowerCase().includes(searchLower));
+            return {
+              source: link.source,
+              target: link.target,
+              lineStyle: { width: 2, curveness: 0.2, opacity: searchLower ? (isMatch ? 0.8 : 0.1) : 0.8 },
+              label: { show: true, fontSize: 10, formatter: link.label || '' }
+            };
+          }),
           categories: displayData.categories?.map((c: any, i: number) => ({ name: c.name || ['事实', '解释', '风险', '行动'][i] })) || [
             { name: '事实' }, { name: '解释' }, { name: '风险' }, { name: '行动' }
           ],
@@ -610,21 +695,31 @@ useEffect(() => {
           scaleLimit: { min: 0.3, max: 3 },
           lineStyle: { color: 'source', curveness: 0.3 },
           emphasis: { focus: 'adjacency', lineStyle: { width: 4 } },
-          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 }
+          force: { repulsion: 5000, gravity: 0.03, edgeLength: [150, 400], alphaDecay: 0.02, alphaMin: 0.001 } as any
         }]
       };
 
       chartInstance.current.setOption(option, true);
 
-      setTimeout(() => {
+      // 等待力导向布局渲染完成后再 resize（避免 "resize should not be called during main process"）
+      const onRendered = () => {
         if (mountedRef.current && chartInstance.current) {
           chartInstance.current.resize();
         }
-      }, 500);
+        chartInstance.current?.off('rendered', onRendered);
+      };
+      chartInstance.current.on('rendered', onRendered);
+      
+      // 兜底：5秒后无论如何 resize 一次（rendered 事件可能被跳过）
+      setTimeout(() => {
+        if (mountedRef.current && chartInstance.current) {
+          try { chartInstance.current.resize(); } catch (_) {}
+        }
+      }, 5000);
 
 
       // 节点点击/双击的通用处理逻辑（提取为函数避免重复）
-      const handleNodeClick = async (params: any) => {
+      const handleNodeClick = (params: any) => {
         const isNodeClick =
           params.dataType === 'node' ||
           (params.seriesType === 'graph' && params.data != null);
@@ -634,10 +729,8 @@ useEffect(() => {
         const nodeId = params.data?.id || params.value?.id;
         const nodeName = params.data?.name || params.name || '';
 
-        // 选中节点，左侧面板同步高亮
         setSelectedNode(nodeName);
 
-        // api模式从服务端获取卡片详情，sample模式显示提示
         if (nodeId && graphSource === 'api') {
           openCardDetail(nodeId);
         } else if (graphSource === 'sample') {
@@ -646,9 +739,8 @@ useEffect(() => {
             content: '这是示例数据中的节点。\n\n请使用"API数据"模式搜索主题，系统将根据搜索结果构建知识网络，点击节点可查看真实卡片详情。',
             color: 'blue'
           });
-          setIsModalEditing(false);
-          setModalEditTitle('');
-          setModalEditContent('');
+          setModalMarkdown('');
+          setModalEditorSide('preview');
           setModalOpen(true);
         }
       };
@@ -766,7 +858,9 @@ useEffect(() => {
   };
 
 return (
-    <div className="flex h-screen relative">
+    <div className="flex flex-col h-screen">
+    <AppHeader />
+    <div className="flex flex-1 min-h-0 relative">
       {/* Mobile toggle */}
       <button onClick={() => setSidebarOpen(!sidebarOpen)}
         className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
@@ -774,17 +868,25 @@ return (
       </button>
 
       {/* Overlay on mobile */}
+      <AnimatePresence>
       {sidebarOpen && (
-        <div className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)} />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="md:hidden fixed inset-0 bg-black/30 z-30" onClick={() => setSidebarOpen(false)}
+        />
       )}
+      </AnimatePresence>
 
       <aside className={`${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:static z-40 md:z-auto w-64 p-4 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto transition-transform duration-200 h-full`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold flex items-center space-x-2">
-            <Network className="w-5 h-5" />
-            <span>知识图谱工作台</span>
-          </h2>
-        </div>
+<div className="flex items-center gap-2 mb-3">
+            <Database size={18} className="text-gray-500" />
+            <h2 className="text-lg font-bold flex items-center space-x-2">
+              <Network className="w-5 h-5" />
+              <span>知识图谱</span>
+            </h2>
+          </div>
 
 
 {/* 图谱 / 列表 / 思维导图 切换 */}
@@ -810,6 +912,13 @@ return (
             <GitBranch className="w-4 h-4" />
             <span>导图</span>
           </button>
+          <button
+            onClick={() => setPageMode('files')}
+            className={`flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${pageMode === 'files' ? 'bg-amber-500 text-white' : 'bg-gray-200 dark:bg-gray-700 hover:bg-amber-100 dark:hover:bg-amber-900/30'}`}
+          >
+            <Folder className="w-4 h-4" />
+            <span>文件</span>
+          </button>
         </div>
         
         {currentCardId && (
@@ -823,8 +932,13 @@ return (
         )}
 
         <div className="space-y-3 mb-4">
-
-          
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="输入主题搜索知识图谱..."
+            className="w-full px-3 py-1.5 text-sm border rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 outline-none focus:ring-2 focus:ring-blue-400"
+          />
           <div className="flex space-x-1">
           <button
             onClick={() => { setGraphSource('sample'); setApiData(null); setCards([]); loadCards(); initChart(); }}
@@ -834,10 +948,10 @@ return (
           </button>
             <button
               onClick={() => { if(topic.trim()) loadKnowledgeGraph(); }}
-              disabled={!topic.trim()}
-              className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+              disabled={!topic.trim() || loadingAPI}
+              className={`flex-1 px-2 py-1 text-xs rounded ${graphSource === 'api' ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700'} ${loadingAPI ? 'opacity-50 cursor-wait' : ''}`}
             >
-              API数据
+              {loadingAPI ? '加载中...' : 'API数据'}
             </button>
           </div>
         </div>
@@ -885,6 +999,13 @@ return (
             <RefreshCw className="w-4 h-4" />
             <span>刷新布局</span>
           </button>
+          <button
+            onClick={() => { navigator.clipboard?.writeText(window.location.href).then(() => { const el = document.createElement('div'); el.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50'; el.textContent = '链接已复制'; document.body.appendChild(el); setTimeout(() => el.remove(), 2000); }).catch(() => {}); }}
+            className="w-full flex items-center justify-center space-x-2 bg-gray-200 dark:bg-gray-700 py-2 rounded-lg"
+          >
+            <Share2 className="w-4 h-4" />
+            <span>分享</span>
+          </button>
         </div>
 
         <div className="mt-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
@@ -895,7 +1016,10 @@ return (
         </div>
 
         <div className="mt-4">
-          <h3 className="text-sm font-medium mb-2 text-gray-500">操作说明</h3>
+          <h3 className="text-sm font-medium mb-2 text-gray-500 flex items-center gap-1">
+            <Move size={14} />
+            操作说明
+          </h3>
           <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
             <li>• 鼠标拖拽移动节点</li>
             <li>• 滚轮缩放视图</li>
@@ -916,10 +1040,49 @@ return (
                 <h2 className="text-base font-semibold dark:text-white flex items-center gap-1.5">
                   <List className="w-4 h-4" /> 卡片列表
                 </h2>
-                <button onClick={loadCards} disabled={listLoading}
-                  className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50">
-                  <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={async () => {
+                    const ids = (() => {
+                      const filtered = cards.filter((card: any) => {
+                        const t = card.card_type || card.type || 'blue';
+                        if (listColorFilter !== 'all' && t !== listColorFilter) return false;
+                        if (listSearch) {
+                          const getText = (c: any): string => {
+                            if (!c) return '';
+                            if (typeof c === 'string') return c;
+                            if (typeof c === 'object') return c.description || c.text || JSON.stringify(c);
+                            return String(c);
+                          };
+                          const q = listSearch.toLowerCase();
+                          if (!(card.title||'').toLowerCase().includes(q) && !getText(card.content).toLowerCase().includes(q)) return false;
+                        }
+                        return true;
+                      });
+                      return filtered.map((c: any) => c.id);
+                    })();
+                    if (ids.length === 0) { toast.warning('没有匹配的卡片'); return; }
+                    try {
+                      const r = await fetch(`${API_BASE()}/api/knowledge/cards/export/ppt`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ card_ids: ids }),
+                      });
+                      if (!r.ok) { const e = await r.json(); throw new Error(e.detail || '导出失败'); }
+                      const blob = await r.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = `cards_${ids.length}slides.pptx`; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      toast.success(`已导出 ${ids.length} 张卡片为 PPT`);
+                    } catch (e: any) { toast.error('PPT 导出失败: ' + e.message); }
+                  }}
+                    className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                    title="将当前筛选出的卡片导出为 PPT（每页一张卡片）">
+                    <Presentation className="w-4 h-4" />
+                  </button>
+                  <button onClick={loadCards} disabled={listLoading}
+                    className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50">
+                    <RefreshCw className={`w-4 h-4 ${listLoading ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
               </div>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -998,8 +1161,8 @@ return (
                     className="md:hidden p-1 mr-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                     ←
                   </button>
-                  <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
-                    {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type||'blue']}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded text-white ${(()=>{const t:string=listSelectedCard.card_type||'blue'; return {blue:'bg-blue-500',green:'bg-green-500',yellow:'bg-yellow-500',red:'bg-red-500'}[t];})()}`}>
+                    {{blue:'事实',green:'解释',yellow:'风险',red:'行动'}[listSelectedCard.card_type as string||'blue'] as string}</span>
                   <h2 className="font-semibold text-base truncate dark:text-white">{listSelectedCard.title||'无标题'}</h2>
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto shrink-0">
@@ -1061,8 +1224,8 @@ return (
                 {(listEditorSide==='preview'||listEditorSide==='split') && (
                   <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${listEditorSide==='split'?'w-1/2':''}`}>
                     {listMarkdown ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none">
-                        <ReactMarkdown>{listMarkdown}</ReactMarkdown>
+                    <div className="prose prose-sm dark:prose-invert max-w-none" id="modal-preview-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{listMarkdown}</ReactMarkdown>
                       </div>
                     ) : <p className="text-gray-400 text-sm">无内容</p>}
                   </div>
@@ -1080,12 +1243,12 @@ return (
                         {n.title || n.name || n.id}
                       </span>
                     ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
+</div>
+</div>
+)}
+</div>
+) : (
+<div className="hidden md:flex flex-1 items-center justify-center bg-white dark:bg-gray-900 text-gray-400 pt-12 md:pt-0">
               <div className="text-center">
                 <FileText className="w-12 h-12 mb-3 mx-auto opacity-40" />
                 <p className="text-sm">从左侧选择一张卡片查看详情</p>
@@ -1097,6 +1260,142 @@ return (
         /* ========== 思维导图视图（原版 MindMap 组件） ========== */
         <div className="flex-1 overflow-hidden pt-12 md:pt-0">
           <MindMap initialRoot={mindmapTree} initialCards={cards} embedded={true} />
+        </div>
+      ) : pageMode === 'files' ? (
+        /* ========== 文件浏览器 + 卡片索引联动层 ========== */
+        <div className="flex-1 flex overflow-hidden pt-12 md:pt-0">
+          <div className="w-80 flex-shrink-0 border-r border-gray-200 dark:border-gray-700">
+            <FileBrowserPanel
+              onNavigateToCard={(cardId) => {
+                loadCardBacklinks(cardId);
+                setPageMode('graph');
+                setSidebarOpen(false);
+              }}
+              onNavigateToGraph={(cardId) => {
+                loadCardBacklinks(cardId);
+                setPageMode('graph');
+                setSidebarOpen(false);
+              }}
+              onFileSelect={(info) => setSelectedFileInfo(info)}
+            />
+          </div>
+          {/* 右侧卡片详情 */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {selectedFileInfo ? (
+              <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-lg">
+                    {selectedFileInfo.type === 'pdf' ? '📄' :
+                     selectedFileInfo.type === 'docx' ? '📝' :
+                     selectedFileInfo.type === 'xlsx' ? '📊' :
+                     selectedFileInfo.type === 'pptx' ? '📽️' :
+                     selectedFileInfo.type === 'md' ? '📝' :
+                     selectedFileInfo.type === 'txt' ? '📃' : '📄'}
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold">{selectedFileInfo.name}</h2>
+                    <p className="text-xs text-gray-400">{selectedFileInfo.path}</p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    {selectedFileInfo.fileId && (
+                      <button
+                        onClick={() => {
+                          const downloadUrl = `${API_BASE()}/api/files/${selectedFileInfo.fileId}/download`;
+                          if (selectedFileInfo.type === 'pdf') {
+                            navigate(`/pdf-viewer?url=${encodeURIComponent(downloadUrl)}`);
+                          } else {
+                            window.location.href = downloadUrl;
+                          }
+                        }}
+                        className="text-xs px-2 py-1.5 bg-amber-500 text-white rounded hover:bg-amber-600"
+                        title="预览文件"
+                      >
+                        {selectedFileInfo.type === 'pdf' ? '📄 预览PDF' : '📂 打开文件'}
+                      </button>
+                    )}
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      selectedFileInfo.cards.length > 0
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                    }`}>
+                      {selectedFileInfo.cards.length} 张关联卡片
+                    </span>
+                    {selectedFileInfo.cards.length > 0 && (
+                      <button
+                        onClick={() => {
+                          const firstCard = selectedFileInfo.cards[0];
+                          loadCardBacklinks(firstCard.id);
+                          setPageMode('graph');
+                        }}
+                        className="text-xs px-2 py-1.5 bg-blue-500 text-white rounded hover:bg-blue-600"
+                        title="在图谱中查看"
+                      >
+                        查看图谱
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {selectedFileInfo.cards.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {selectedFileInfo.cards.map((card: any) => (
+                      <div
+                        key={card.id}
+                        onClick={() => {
+                          setModalCard(card);
+                          setModalMarkdown(`# ${card.title || '无标题'}\n\n${card.content || ''}`);
+                          setModalEditorSide('preview');
+                          setModalOpen(true);
+                        }}
+                        className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 cursor-pointer hover:shadow-md transition-shadow"
+                      >
+                        <div className={`w-2 h-2 rounded-full mb-2 ${
+                          card.color === 'blue' ? 'bg-blue-500' :
+                          card.color === 'red' ? 'bg-red-500' :
+                          card.color === 'green' ? 'bg-green-500' :
+                          card.color === 'purple' ? 'bg-purple-500' :
+                          card.color === 'orange' ? 'bg-orange-500' :
+                          card.color === 'pink' ? 'bg-pink-500' :
+                          card.color === 'teal' ? 'bg-teal-500' :
+                          card.color === 'indigo' ? 'bg-indigo-500' :
+                          'bg-gray-400'
+                        }`} />
+                        <h3 className="text-sm font-medium mb-1">{card.title}</h3>
+                        <p className="text-xs text-gray-500 line-clamp-3">{card.content?.replace(/!\[([^\]]*)\]\([^)]+\)/g, '[$1]')}</p>
+                        {card.tags && card.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {card.tags.map((tag: string) => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {card.source && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                            <span className="text-[10px] text-gray-400">
+                              来源: {card.source}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-16 text-gray-400">
+                    <p className="text-sm">该文件暂无关联卡片</p>
+                    <p className="text-xs mt-1">可先运行扫描索引建立关联</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-400">
+                  <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">选择一个文件查看详情</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         /* ========== 图谱视图 ========== */
@@ -1112,91 +1411,107 @@ return (
 
       {/* 卡片详情弹窗 */}
       {modalOpen && modalCard && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setModalOpen(false); setIsModalEditing(false); }}>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* 弹窗头部 */}
             <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-              {isModalEditing ? (
-                <input
-                  id="modal-card-title"
-                  name="modalCardTitle"
-                  type="text"
-                  value={modalEditTitle}
-                  onChange={(e) => setModalEditTitle(e.target.value)}
-                  className="text-lg font-semibold bg-transparent border-b border-blue-400 outline-none dark:text-white flex-1 mr-4"
-                  placeholder="卡片标题"
-                />
-              ) : (
-                <h3 className="text-lg font-semibold dark:text-white">{modalCard.title || '无标题'}</h3>
-              )}
-              <div className="flex items-center gap-2">
-                {/* 编辑/预览模式切换 */}
-                {isModalEditing ? (
-                  <button
-                    onClick={() => setIsModalEditing(false)}
-                    className="px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 flex items-center gap-1"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> 预览
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setIsModalEditing(true)}
-                    className="px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-1"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" /> 编辑
-                  </button>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <h3 className="text-lg font-semibold dark:text-white truncate">{modalCard.title || '无标题'}</h3>
+                <span className={`text-xs px-2 py-0.5 rounded text-white shrink-0 ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[(modalCard.card_type || modalCard.type || 'blue') as string] || 'bg-blue-500')}`}>
+                  {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[(modalCard.card_type || modalCard.type || 'blue') as string] || '事实'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                {/* 编辑/预览/分屏 toggle */}
+                <div className="hidden sm:flex bg-gray-100 dark:bg-gray-700 rounded-lg p-0.5">
+                  {(['edit', 'preview', 'split'] as const).map(s => (
+                    <button key={s}
+                      onClick={() => {
+                        setModalEditorSide(s);
+                        if (s === 'edit' && !modalMarkdown) {
+                          setModalMarkdown(`# ${modalCard.title || '无标题'}\n\n${modalCard.content || ''}`);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs rounded-md ${
+                        modalEditorSide === s ? 'bg-white dark:bg-gray-600 shadow-sm font-medium' : 'text-gray-500'
+                      }`}
+                    >
+                      {s === 'edit' ? '编辑' : s === 'preview' ? '预览' : '分屏'}
+                    </button>
+                  ))}
+                </div>
+                {/* 导出/预览按钮（仅在预览/分屏时显示） */}
+                {modalEditorSide !== 'edit' && (
+                  <div className="hidden sm:flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        const html = document.getElementById('modal-preview-content')?.innerHTML;
+                        if (html) {
+                          const w = window.open('', '_blank');
+                          if (w) {
+                            w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${modalCard.title || '预览'}</title><style>body{max-width:800px;margin:40px auto;padding:0 20px;font-family:system-ui,sans-serif;line-height:1.6;color:#333;}img{max-width:100%}pre{background:#f5f5f5;padding:16px;border-radius:8px;overflow-x:auto;}code{background:#f0f0f0;padding:2px 6px;border-radius:3px;}</style></head><body>${html}</body></html>`);
+                            w.document.close();
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >HTML预览</button>
+                    <button
+                      onClick={() => {
+                        const html = document.getElementById('modal-preview-content')?.innerHTML;
+                        if (html) {
+                          const styled = `<div style="font-family:system-ui,sans-serif;line-height:1.6;color:#333;max-width:800px">${html}</div>`;
+                          navigator.clipboard.write([
+                            new ClipboardItem({
+                              'text/html': new Blob([styled], { type: 'text/html' }),
+                              'text/plain': new Blob([html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim()], { type: 'text/plain' }),
+                            })
+                          ]).then(() => toast.success('排版内容已复制'))
+                            .catch(() => toast.error('复制失败'));
+                        }
+                      }}
+                      className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    >复制</button>
+                  </div>
                 )}
-                <button onClick={() => { setModalOpen(false); setIsModalEditing(false); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                <button onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             {/* 弹窗内容区 */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {/* 类型标签 */}
-              <div className="mb-3 flex items-center gap-2">
-                {isModalEditing ? (
-                  <select
-                    id="modal-card-type"
-                    name="modalCardType"
-                    value={modalCard.card_type || modalCard.type || 'blue'}
-                    onChange={(e) => setModalCard({ ...modalCard, card_type: e.target.value })}
-                    className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600"
-                  >
-                    <option value="blue">事实</option>
-                    <option value="green">解释</option>
-                    <option value="yellow">风险</option>
-                    <option value="red">行动</option>
-                  </select>
-                ) : (
-                  <span className={`text-xs px-2 py-1 rounded text-white ${({ blue: 'bg-blue-500', green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500' }[modalCard.card_type || modalCard.type || 'blue'] || 'bg-blue-500')}`}>
-                    {{ blue: '事实', green: '解释', yellow: '风险', red: '行动' }[modalCard.card_type || modalCard.type || 'blue'] || '事实'}
-                  </span>
-                )}
-                <span className="text-xs text-gray-400">#{modalCard.id}</span>
-              </div>
-
-              {/* 内容区 */}
-              {isModalEditing ? (
-                <textarea
-                  id="modal-card-content"
-                  name="modalCardContent"
-                  value={modalEditContent}
-                  onChange={(e) => setModalEditContent(e.target.value)}
-                  className="w-full h-64 p-3 border rounded-lg text-sm font-mono resize-none bg-white dark:bg-gray-900 dark:border-gray-600 outline-none focus:ring-2 focus:ring-blue-400"
-                  placeholder="输入卡片内容..."
-                />
-              ) : (
-                <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-                  {modalCard.content || <span className="text-gray-400 italic">暂无内容</span>}
+            <div className="flex-1 flex overflow-hidden min-h-0">
+              {/* 编辑面板 */}
+              {(modalEditorSide === 'edit' || modalEditorSide === 'split') && (
+                <div className={`flex flex-col ${modalEditorSide === 'split' ? 'w-1/2 border-r dark:border-gray-700' : 'flex-1'}`}>
+                  <textarea
+                    value={modalMarkdown}
+                    onChange={e => setModalMarkdown(e.target.value)}
+                    className="flex-1 p-4 resize-none bg-white dark:bg-gray-900 text-sm font-mono outline-none"
+                    placeholder="# 标题\n\n内容，支持 Markdown..."
+                  />
                 </div>
               )}
-
-              {/* 地址信息 */}
-              {modalCard.address && !isModalEditing && (
-                <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm">
-                  地址: {modalCard.address}
+              {/* 预览面板 */}
+              {(modalEditorSide === 'preview' || modalEditorSide === 'split') && (
+                <div className={`flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900 ${modalEditorSide === 'split' ? 'w-1/2' : ''}`}>
+                  {modalMarkdown ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> }}>{modalMarkdown}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
+                      {modalCard.content || <span className="text-gray-400 italic">暂无内容</span>}
+                    </div>
+                  )}
+                  {/* 地址信息 */}
+                  {modalCard.address && (
+                    <div className="mt-4 p-2 bg-gray-100 dark:bg-gray-700 rounded text-sm flex items-center gap-2">
+                      <ExternalLink size={14} className="text-gray-400 flex-shrink-0" />
+                      <span className="truncate">{modalCard.address}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1209,12 +1524,12 @@ return (
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setModalOpen(false); setIsModalEditing(false); }}
+                  onClick={() => { setModalOpen(false); setModalEditorSide('preview'); setModalMarkdown(''); }}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
                 >
                   关闭
                 </button>
-                {isModalEditing && (
+                {modalEditorSide === 'edit' && modalMarkdown && (
                   <button
                     onClick={handleModalSave}
                     className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
@@ -1295,12 +1610,12 @@ return (
                         {card.content && (
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1">
                             {card.content.substring(0, 60)}{card.content.length > 60 ? '...' : ''}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })
-              )}
+        </p>
+        )}
+        </div>
+        );
+      })
+      )}
             </div>
           </div>
         </div>
@@ -1329,8 +1644,9 @@ return (
           <div className={`bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col ${pdfMaximized ? 'fixed inset-4 md:inset-6' : 'w-full max-w-5xl max-h-[95vh] h-[85vh]'}`} onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 shrink-0 gap-3">
               <div className="flex items-center gap-3 min-w-0">
+                <Settings size={18} className="text-gray-500" />
                 <h3 className="font-semibold truncate">{pdfPreviewTitle}</h3>
-                <select value={exportTheme} onChange={async e => { setExportTheme(e.target.value); if (listMarkdown) { try { const fd = new FormData(); fd.append('file', new Blob([listMarkdown], { type: 'text/markdown' }), 'card.md'); fd.append('title', listSelectedCard?.title || '知识卡片'); fd.append('author', 'Antinet'); fd.append('theme', e.target.value); const r = await fetch(`${API_BASE}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (r.ok) { const b = await r.blob(); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(URL.createObjectURL(b)); } } catch (ex) { console.error('切换主题失败:', ex); } } }}
+                <select value={exportTheme} onChange={async e => { setExportTheme(e.target.value); if (listMarkdown) { try { const fd = new FormData(); fd.append('file', new Blob([listMarkdown], { type: 'text/markdown' }), 'card.md'); fd.append('title', listSelectedCard?.title || '知识卡片'); fd.append('author', 'Antinet'); fd.append('theme', e.target.value); const r = await fetch(`${API_BASE()}/api/md2pdf/convert`, { method: 'POST', body: fd }); if (r.ok) { const b = await r.blob(); if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(URL.createObjectURL(b)); } } catch (ex) { console.error('切换主题失败:', ex); } } }}
                   className="text-xs border rounded px-2 py-1 bg-white dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
                   <option value="warm-academic">暖学术</option>
                   <option value="classic-thesis">经典论文</option>
@@ -1376,10 +1692,13 @@ return (
               )}
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+</div>
+)}
+</div>
+</div>
+);
+
+
 };
 
 export default KnowledgeGraphView;

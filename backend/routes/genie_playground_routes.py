@@ -23,16 +23,33 @@ router = APIRouter(prefix="/api/genie-playground", tags=["Genie模型测试场"]
 # GenieAPIService 地址
 GENIE_SERVICE_URL = "http://127.0.0.1:8910"
 
-# 429 不再重试（Genie 单请求槽，重试只会叠加压力导致后端崩溃）
-# 遇到 429 立即失败，由各端点走 fallback 降级
+# Genie 全局锁：同一时间只能处理一个请求（单请求槽）
+_GENIE_LOCK = asyncio.Lock()
 
 
-async def _genie_post_no_retry(url: str, json_data: dict, timeout: float = 120.0) -> dict:
-    """Genie POST 请求（429 立即返回，不重试以免恶性循环）"""
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json=json_data)
-        resp.raise_for_status()
-        return resp.json()
+async def _genie_post(url: str, json_data: dict, timeout: float = 120.0, max_retries: int = 5) -> dict:
+    """Genie POST 请求（带锁 + 重试，避免单请求槽并发冲突）"""
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with _GENIE_LOCK:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(url, json=json_data)
+                    if resp.status_code in (429, 502, 503):
+                        raise httpx.HTTPStatusError(
+                            f"Genie busy ({resp.status_code})", request=resp.request, response=resp
+                        )
+                    resp.raise_for_status()
+                    return resp.json()
+        except httpx.HTTPStatusError as e:
+            if attempt < max_retries:
+                wait = attempt * 3.0
+                logger.info(f"[Genie] 请求失败 ({e.response.status_code}), {wait}s 后重试 ({attempt}/{max_retries})")
+                await asyncio.sleep(wait)
+                continue
+            raise
+    raise httpx.HTTPStatusError(
+        f"Genie 请求失败 ({max_retries}次重试)", request=None, response=None
+    )
 
 # ==================== model_loader 直接调用 ====================
 _model_loader = None
@@ -363,23 +380,34 @@ async def genie_classify(request: ClassifyRequest):
     if not content or not content.strip():
         raise HTTPException(status_code=400, detail="内容不能为空")
 
-    # 构建8智能体用户提示
+    # 英文指令 + 中文内容（Genie 对英文指令遵循更好，避免锦衣卫上下文干扰）
     user_prompt = (
-        "请按锦衣卫四司分工，将以下文本按段落分类为四色知识卡片。\n\n"
-        f"待分类文本：\n{content}"
+        "You are a knowledge card classifier. Classify each paragraph into one of 4 types. "
+        "Return ONLY a valid JSON array, no other text.\n\n"
+        "Types:\n"
+        "- blue: core concepts, definitions, facts\n"
+        "- green: relationships, comparisons, explanations\n"
+        "- yellow: references, sources, URLs\n"
+        "- red: keywords, actions, todo items\n\n"
+        "Rules:\n"
+        "1. Split text by blank lines into paragraphs\n"
+        "2. Assign one color to each paragraph\n"
+        "3. Extract a short title (first line or first 30 chars)\n"
+        "4. confidence 0-1 indicates certainty\n\n"
+        "Format: [{\"title\":\"...\",\"content\":\"...\",\"color\":\"blue\",\"confidence\":0.9}]\n\n"
+        f"Text:\n{content}"
     )
 
-    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
 
     for model in models_to_try:
         try:
-            result = await _genie_post_no_retry(
+            result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",
                 json_data={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": _JINYIWEI_CLASSIFY_SYSTEM},
                         {"role": "user", "content": user_prompt}
                     ],
                     "max_tokens": 2048,
@@ -416,13 +444,9 @@ async def genie_classify(request: ClassifyRequest):
                                 "total": len(normalized)
                             }
                     except json.JSONDecodeError:
-                        logger.warning(f"Genie 返回非标准JSON，回退到原文本: {response_text[:200]}")
-                        return {
-                            "success": True,
-                            "source": "genie",
-                            "model": model,
-                            "response": response_text
-                        }
+                        logger.warning(f"Genie 返回非标准JSON: {response_text[:200]}")
+                        last_error = f"{model}: 返回非标准JSON"
+                        continue
         except httpx.HTTPStatusError as e:
             last_error = f"{model} HTTP {e.response.status_code}"
             try: last_error += ": " + e.response.text[:100]
@@ -455,27 +479,27 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze")
 async def genie_analyze(request: AnalyzeRequest):
     """AI 知识洞察：分析卡片并生成洞察"""
-    related_part = f"\n关联卡片：{request.related_titles}" if request.related_titles else ""
+    related_part = f"\nRelated cards: {request.related_titles}" if request.related_titles else ""
     user_prompt = (
-        f"你是一个知识管理专家。分析以下知识卡片，给出3个方面的洞察：\n\n"
-        f"卡片标题：{request.card_title}\n"
-        f"卡片内容：{request.card_content}{related_part}\n\n"
-        f"请严格按照JSON格式返回，不要其他文字：\n"
+        f"You are a knowledge management expert. Analyze this knowledge card and provide 3 insights.\n\n"
+        f"Card title: {request.card_title}\n"
+        f"Card content: {request.card_content}{related_part}\n\n"
+        f"Return ONLY valid JSON, no other text:\n"
         f"{{\n"
-        f'  "summary": "一句话总结这张卡片在知识体系中的角色（30字内）",\n'
-        f'  "importance": "重要性评分 0-100 的数字",\n'
-        f'  "gap": "一个知识空白点（20字内）",\n'
+        f'  "summary": "One-sentence summary of this card (max 30 chars)",\n'
+        f'  "importance": "importance score 0-100 as number",\n'
+        f'  "gap": "one knowledge gap (max 20 chars)",\n'
         f'  "recommendations": [\n'
-        f'    {{"title": "推荐主题", "reason": "推荐原因（10字内）"}}\n'
+        f'    {{"title": "recommended topic", "reason": "reason (max 10 chars)"}}\n'
         f'  ]\n'
         f"}}"
     )
 
-    models_to_try = ["Qwen2.0-7B-SSD-8380-2.34", "qwen2.5vl3b-8380-2.42"]
+    models_to_try = ["qwen2.5vl3b-8380-2.42", "Qwen2.0-7B-SSD-8380-2.34"]
     last_error = ""
     for model in models_to_try:
         try:
-            result = await _genie_post_no_retry(
+            result = await _genie_post(
                 f"{GENIE_SERVICE_URL}/v1/chat/completions",
                 json_data={
                     "model": model,
@@ -486,7 +510,32 @@ async def genie_analyze(request: AnalyzeRequest):
             )
             content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
             if content:
-                return {"success": True, "response": content}
+                cleaned = content
+                if "[Response]:" in cleaned:
+                    idx = cleaned.index("[Response]:") + len("[Response]:")
+                    cleaned = cleaned[idx:].strip()
+                json_match = None
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', cleaned)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                        if all(k in parsed for k in ("summary", "importance")):
+                            return {"success": True, "response": parsed}
+                    except json.JSONDecodeError:
+                        pass
+                insights = re.findall(r'\d+\.\s*\*\*(.+?)\*\*[:：]\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
+                if not insights:
+                    insights = re.findall(r'\d+\.\s*(.+?)(?=\n\d+\.|\Z)', cleaned, re.DOTALL)
+                summary = "、".join([i[0] if isinstance(i, tuple) else i for i in insights])[:30] if insights else cleaned[:30]
+                fallback = {
+                    "summary": summary,
+                    "importance": 50,
+                    "gap": "需要深入分析",
+                    "recommendations": [{"title": "深入探索此主题", "reason": "关联分析"}],
+                    "raw_text": cleaned
+                }
+                return {"success": True, "response": fallback}
         except Exception as e:
             last_error = f"{model}: {str(e)[:100]}"
     raise HTTPException(status_code=502, detail=f"Genie 分析失败: {last_error}")
@@ -545,14 +594,21 @@ async def genie_chat(request: GenieChatRequest):
         "top_p": request.top_p,
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{GENIE_SERVICE_URL}/v1/chat/completions",
-                json=request_data,
-            )
-            response.raise_for_status()
-            result = response.json()
+    # 使用带锁 + 重试的 Genie 调用
+    for attempt in range(1, 4):
+        try:
+            async with _GENIE_LOCK:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"{GENIE_SERVICE_URL}/v1/chat/completions",
+                        json=request_data,
+                    )
+                    if response.status_code in (429, 502, 503):
+                        raise httpx.HTTPStatusError(
+                            f"Genie busy ({response.status_code})", request=response.request, response=response
+                        )
+                    response.raise_for_status()
+                    result = response.json()
 
             if "choices" in result and len(result["choices"]) > 0:
                 content = result["choices"][0].get("message", {}).get("content", "")
@@ -562,13 +618,17 @@ async def genie_chat(request: GenieChatRequest):
                     "response": content,
                 }
             return {"success": True, "model": request.model, "response": str(result), "raw": result}
-
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="GenieAPIService 超时")
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="GenieAPIService 超时")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503) and attempt < 3:
+                wait = attempt * 2.0
+                logger.info(f"[Genie] chat 请求繁忙 ({e.response.status_code}), {wait}s 后重试 ({attempt}/3)")
+                await asyncio.sleep(wait)
+                continue
+            raise HTTPException(status_code=502, detail=f"GenieAPIService 错误: {e}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"调用失败: {str(e)}")
 
 
 @router.post("/chat/stream")

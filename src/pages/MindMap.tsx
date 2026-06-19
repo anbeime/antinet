@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '@/hooks/useTheme';
 
-const API_BASE = getApiBaseUrl()
+const API_BASE = () => getApiBaseUrl()
 
 interface KnowledgeCard {
   id: number;
@@ -201,9 +201,22 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // 非被动 wheel 监听器，避免 preventDefault 被静默忽略
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const wheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(prev => Math.min(Math.max(prev * delta, 0.1), 5));
+    };
+    container.addEventListener('wheel', wheelHandler, { passive: false });
+    return () => container.removeEventListener('wheel', wheelHandler);
+  }, []);
+
   const loadMindmaps = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/mindmap/`);
+      const res = await fetch(`${API_BASE()}/api/mindmap/`);
       const data = await res.json();
       setMindmaps(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -229,17 +242,11 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
     setIsDragging(false);
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setZoom(prev => Math.min(Math.max(prev * delta, 0.1), 5));
-  };
-
   const generateFromKnowledgeNetwork = async () => {
     if (!networkTopic.trim()) return;
     setGenerating(true);
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/network/generate`, {
+      const res = await fetch(`${API_BASE()}/api/knowledge/network/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -251,7 +258,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
       });
       const data = await res.json();
       if (data.mindmap_id) {
-        const res2 = await fetch(`${API_BASE}/api/mindmap/${data.mindmap_id}`);
+        const res2 = await fetch(`${API_BASE()}/api/mindmap/${data.mindmap_id}`);
         const mindmapData = await res2.json();
         if (mindmapData?.root_node) {
           setRoot(mindmapData.root_node);
@@ -270,7 +277,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
 
   const loadCards = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/knowledge/cards?limit=100`);
+      const res = await fetch(`${API_BASE()}/api/knowledge/cards?limit=100`);
       const data = await res.json();
       if (data.cards && Array.isArray(data.cards)) {
         setCards(data.cards);
@@ -329,7 +336,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
 
   const loadNodeCards = async (mindmapId: number, nodeId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/mindmap/${mindmapId}/cards?node_id=${nodeId}`);
+      const res = await fetch(`${API_BASE()}/api/mindmap/${mindmapId}/cards?node_id=${nodeId}`);
       const data = await res.json();
       setNodeCards(prev => ({ ...prev, [nodeId]: data }));
     } catch (e) {
@@ -340,7 +347,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const saveMindmap = async () => {
     try {
       if (currentMindmapId) {
-        await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}`, {
+        await fetch(`${API_BASE()}/api/mindmap/${currentMindmapId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: mindmapName, root_node: root })
@@ -380,7 +387,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
     e.stopPropagation();
     if (!confirm('确定删除?')) return;
     try {
-      await fetch(`${API_BASE}/api/mindmap/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE()}/api/mindmap/${id}`, { method: 'DELETE' });
       if (currentMindmapId === id) {
         setCurrentMindmapId(null);
         setRoot(defaultMindMap);
@@ -403,7 +410,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const linkCard = async (cardId: number) => {
     if (!currentMindmapId || !selectedNode) return;
     try {
-      await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}/link`, {
+      await fetch(`${API_BASE()}/api/mindmap/${currentMindmapId}/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, node_id: selectedNode })
@@ -417,7 +424,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
   const unlinkCard = async (cardId: number) => {
     if (!currentMindmapId || !selectedNode) return;
     try {
-      await fetch(`${API_BASE}/api/mindmap/${currentMindmapId}/link`, {
+      await fetch(`${API_BASE()}/api/mindmap/${currentMindmapId}/link`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, node_id: selectedNode })
@@ -617,14 +624,47 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
     }
   };
 
-  const renderNode = (node: MindMapNode, level: number = 0, index: number = 0): React.ReactNode => {
+  const renderNode = (node: MindMapNode, level: number = 0): React.ReactNode => {
     const isSelected = selectedNode === node.id;
     const isEditing = editingNode === node.id;
+    const isDraggingNode = dragNodeId === node.id;
     const childCount = node.children.length;
     const cardCount = getNodeCardCount(node.id);
-    const childNodes = node.collapsed ? null : node.children.map((child, idx) =>
-      renderNode(child, level + 1, idx)
-    );
+    const childNodes = node.collapsed ? null : node.children.map((child) => (
+      <div
+        key={child.id}
+        className={`relative ${dragNodeId === child.id ? 'opacity-50' : ''}`}
+        draggable
+        onDragStart={(e) => {
+          setDragNodeId(child.id);
+          setDragNodeStart({ x: e.clientX, y: e.clientY });
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={() => {
+          if (dragNodeId && dragNodeId !== child.id) {
+            const moveNodeInTree = (n: MindMapNode): MindMapNode => {
+              let dragged: MindMapNode | null = null;
+              const removeNode = (node: MindMapNode): MindMapNode => {
+                if (node.id === dragNodeId) { dragged = node; return node; }
+                return { ...node, children: node.children.filter(c => c.id !== dragNodeId).map(removeNode) };
+              };
+              const insertNode = (node: MindMapNode): MindMapNode => {
+                if (node.id === child.id && dragged) {
+                  return { ...node, children: [...node.children, dragged] };
+                }
+                return { ...node, children: node.children.map(insertNode) };
+              };
+              const cleaned = removeNode(n);
+              return dragged ? insertNode(cleaned) : cleaned;
+            };
+            setRoot(moveNodeInTree(root));
+            setDragNodeId(null);
+          }
+        }}
+      >
+        {renderNode(child, level + 1)}
+      </div>
+    ));
     const priorityColor = getPriorityColor(node.priority);
     const hasDetails = node.description || node.progress !== undefined || node.priority;
 
@@ -632,7 +672,7 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
       <motion.div
         key={node.id}
         initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
+        animate={{ opacity: isDraggingNode ? 0.4 : 1, scale: 1 }}
         className="flex flex-col items-center"
       >
         <div
@@ -846,7 +886,18 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
         </div>
 
         <div className="mt-4">
-          <h3 className="text-sm font-medium mb-2 text-gray-500">缩放</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-gray-500">缩放</h3>
+            <button
+              onClick={() => setShowMinimap(!showMinimap)}
+              className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${
+                showMinimap ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500'
+              }`}
+            >
+              <ChevronRight className={`w-3 h-3 transition-transform ${showMinimap ? 'rotate-90' : ''}`} />
+              {showMinimap ? '展开' : '折叠'}
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setZoom(Math.max(0.3, zoom - 0.1))}
@@ -889,6 +940,65 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
                 >
                   低
                 </button>
+              </div>
+              <div className="mb-2">
+                <button
+                  onClick={() => {
+                    const desc = getNodeById(root, selectedNode)?.description || '';
+                    setEditDescription(desc);
+                    setEditingDescription(selectedNode);
+                  }}
+                  className="text-xs text-gray-500 hover:text-blue-500 flex items-center gap-1"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                  编辑备注
+                </button>
+                {editingDescription === selectedNode && (
+                  <div className="mt-1">
+                    <textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      className="w-full text-xs p-1.5 border rounded dark:bg-gray-700 dark:border-gray-600 resize-none"
+                      rows={2}
+                      placeholder="添加节点备注..."
+                    />
+                    <div className="flex gap-1 mt-1">
+                      <button
+                        onClick={() => {
+                          updateNodeDescription(selectedNode, editDescription);
+                          setEditingDescription(null);
+                        }}
+                        className="text-xs px-2 py-0.5 bg-blue-500 text-white rounded"
+                      >
+                        保存
+                      </button>
+                      <button
+                        onClick={() => setEditingDescription(null)}
+                        className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">图标:</span>
+                  <span
+                    onClick={() => {
+                      const icons = ['📌', '🎯', '📋', '👥', '🚀', '⚠️', '💡', '📊', '🔧', '✅', '❌', '🔥', '⭐', '🎨', '📱', '🌐'];
+                      const cur = getNodeById(root, selectedNode)?.icon || '📌';
+                      const idx = icons.indexOf(cur);
+                      const next = icons[(idx + 1) % icons.length];
+                      updateNodeIcon(selectedNode, next);
+                    }}
+                    className="text-lg cursor-pointer hover:bg-white/30 rounded px-1"
+                    title="点击切换图标"
+                  >
+                    {getNodeById(root, selectedNode)?.icon || '📌'}
+                  </span>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">进度:</span>
@@ -948,12 +1058,12 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
       </aside>
 
       <main 
+        ref={containerRef as React.RefObject<HTMLDivElement>}
         className="flex-1 overflow-hidden p-4 md:p-8 pt-12 md:pt-8 cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onWheel={handleWheel}
       >
         <div 
           className="mindmap-container min-h-full flex items-center justify-center"
@@ -965,6 +1075,18 @@ const MindMap: React.FC<MindMapProps> = ({ initialRoot, initialCards, embedded }
         >
           {renderNode(root)}
         </div>
+        {showMinimap && (
+          <div className="absolute bottom-4 right-4 w-48 h-36 bg-white/80 dark:bg-gray-800/80 border rounded-lg shadow-lg overflow-hidden backdrop-blur-sm">
+            <div className="text-xs text-gray-400 px-2 py-1 border-b flex items-center gap-1">
+              <ChevronRight className="w-3 h-3" />
+              小地图
+            </div>
+            <div className="text-xs text-gray-400 flex items-center justify-center h-24">
+              {zoom.toFixed(1)}x · {panOffset.x.toFixed(0)},{panOffset.y.toFixed(0)}
+              {dragNodeId && dragNodeStart.x !== 0 && <> · drag@{dragNodeStart.x},{dragNodeStart.y}</>}
+            </div>
+          </div>
+        )}
       </main>
 
       {showSaveModal && (

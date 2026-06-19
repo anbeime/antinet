@@ -13,7 +13,12 @@ const getApiBaseUrl = () => {
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 };
 
+// 注意：此值为模块加载时一次性计算，在移动设备网络切换后可能失效。
+// 需要实时获取时，请使用 getApiBaseUrl() 函数或从 '@/lib/apiConfig' 导入。
 export const API_BASE_URL = getApiBaseUrl();
+
+// 实时获取 API Base URL（推荐在移动端使用）
+export const getApiBaseUrlDynamic = getApiBaseUrl;
 
 export const API_ENDPOINTS = {
 
@@ -278,17 +283,17 @@ export const apiRequest = async (
 
 // 语音服务 API
 export const speechService = {
-  getStatus: () => apiRequest<any>(SPEECH_ENDPOINTS.STATUS),
+  getStatus: () => apiRequest(SPEECH_ENDPOINTS.STATUS),
   
-  getVoices: () => apiRequest<any>(SPEECH_ENDPOINTS.TTS_VOICES),
+  getVoices: () => apiRequest(SPEECH_ENDPOINTS.TTS_VOICES),
   
-  getModels: () => apiRequest<any>(SPEECH_ENDPOINTS.STT_MODELS),
+  getModels: () => apiRequest(SPEECH_ENDPOINTS.STT_MODELS),
   
   textToSpeech: (text: string, voice: string = 'zh-CN-XiaoxiaoNeural') =>
-    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK, 'POST', { text, voice }),
+    apiRequest(SPEECH_ENDPOINTS.TTS_SPEAK, 'POST', { text, voice }),
   
   speakCard: (title: string, content: string, voice?: string) =>
-    apiRequest<any>(SPEECH_ENDPOINTS.TTS_SPEAK_CARD, 'POST', {
+    apiRequest(SPEECH_ENDPOINTS.TTS_SPEAK_CARD, 'POST', {
       title,
       content,
       voice: voice || 'zh-CN-XiaoxiaoNeural'

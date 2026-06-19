@@ -32,12 +32,12 @@ class GenerateNativePPTRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_native_ppt(req: GenerateNativePPTRequest):
-    """从四色卡片生成原生可编辑 PPTX（SVG→DrawingML 模式）"""
+    """从四色卡片生成 PPTX（python-pptx 直出，不经过 SVG→DrawingML）"""
     try:
-        from ppt_engine.card_renderer import generate_pptx
+        from ppt_engine.card_renderer import generate_pptx_direct
 
         cards_dict = [c.model_dump() for c in req.cards]
-        output_path = generate_pptx(
+        output_path = generate_pptx_direct(
             topic=req.topic,
             cards=cards_dict,
             theme_name=req.theme,
@@ -63,67 +63,34 @@ async def generate_from_text(
     content: str = Body(...),
     theme: str = Body(default="professional"),
 ):
-    """从文本内容直接生成原生 PPTX"""
+    """从 Markdown/文本内容直接生成 PPTX（Markdown 结构化分页 + 一页一张卡片）"""
     try:
-        from ppt_engine.card_renderer import render_cover_svg, render_content_svg, render_summary_svg
-        from ppt_engine.pptx_builder import create_pptx_with_native_svg
+        from ppt_engine.card_renderer import generate_pptx_direct
+        from ppt_engine.markdown_converter import MarkdownToPPTConverter
 
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-        sections = []
-        current_section = {"title": "", "lines": []}
-        for line in lines:
-            if line.startswith("#") or line.startswith("##"):
-                if current_section["lines"]:
-                    sections.append(current_section)
-                current_section = {"title": line.lstrip("#").strip(), "lines": []}
-            else:
-                current_section["lines"].append(line)
-        if current_section["lines"]:
-            sections.append(current_section)
+        # ── 1. Markdown → 结构化 slides ──────────────────────
+        converter = MarkdownToPPTConverter()
+        slides = converter.convert(content)
+        logger.info(f"Markdown 解析完成：{len(slides)} 个 slide")
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            svg_files = []
+        # ── 2. slides → 四色卡片 ─────────────────────────────
+        all_cards = converter.slides_to_cards(slides)
 
-            cover = render_cover_svg(topic, theme_name=theme)
-            fp = Path(tmpdir) / "slide_01.svg"
-            fp.write_text(cover, encoding="utf-8")
-            svg_files.append(fp)
+        # ── 3. 生成 PPTX ─────────────────────────────────────
+        from datetime import datetime
+        output_dir = Path("C:/D/zhiyi/generated")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(output_dir / f"{topic}_{ts}.pptx")
 
-            for i, sec in enumerate(sections[:6]):
-                cards_data = [{"type": "blue", "title": sec["title"], "content": "\n".join(sec["lines"][:3])}]
-                from ppt_engine.card_renderer import render_content_svg as rcs
-                svg = rcs(cards_data, theme)
-                fp = Path(tmpdir) / f"slide_{i+2:02d}.svg"
-                fp.write_text(svg, encoding="utf-8")
-                svg_files.append(fp)
-
-            summary = render_summary_svg("要点总结", [s["title"] for s in sections[:6]], theme)
-            fp = Path(tmpdir) / f"slide_{len(sections)+2:02d}.svg"
-            fp.write_text(summary, encoding="utf-8")
-            svg_files.append(fp)
-
-            output_dir = Path("C:/D/zhiyi/generated")
-            output_dir.mkdir(parents=True, exist_ok=True)
-            from datetime import datetime
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = output_dir / f"{topic}_{ts}.pptx"
-
-            success = create_pptx_with_native_svg(
-                svg_files=svg_files,
-                output_path=output_path,
-                use_native_shapes=True,
-                canvas_format="ppt169",
-                verbose=False,
-            )
-            if not success:
-                raise RuntimeError("PPTX generation failed")
+        generate_pptx_direct(topic=topic, cards=all_cards, theme_name=theme, output_path=output_path)
 
         return {
             "status": "success",
-            "file_path": str(output_path),
-            "filename": output_path.name,
-            "slide_count": len(svg_files),
-            "message": "文本→PPTX 已生成（原生形状）",
+            "file_path": output_path,
+            "filename": Path(output_path).name,
+            "slide_count": len(all_cards) + 2,
+            "message": f"Markdown → PPT 已生成（{len(all_cards)} 页内容）",
         }
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"ppt_engine 不可用: {e}")

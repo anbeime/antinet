@@ -25,8 +25,8 @@ class ConcurrencyControlMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        max_concurrent_per_ip: int = 10,
-        max_total_concurrent: int = 100,
+        max_concurrent_per_ip: int = 30,
+        max_total_concurrent: int = 200,
         queue_timeout: float = 30.0
     ):
         super().__init__(app)

@@ -35,6 +35,11 @@ class Settings(BaseConfig):
     # 安全配置
     DATA_STAYS_LOCAL: bool = True
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10MB
+
+    # JWT 认证配置
+    SECRET_KEY: str = "zhiyi-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 1440  # 24小时
     
     # 路径配置
     BACKEND_DIR: Path = Field(default_factory=lambda: Path(__file__).parent.absolute())

@@ -4,7 +4,6 @@
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import Dict, Any
-import pandas as pd
 import io
 import json
 import logging
@@ -19,6 +18,7 @@ router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 # ============ Excel 分析 ============
 async def analyze_excel(contents: bytes, filename: str) -> Dict[str, Any]:
     """分析 Excel 文件"""
+    import pandas as pd
     try:
         df = pd.read_excel(io.BytesIO(contents))
     except Exception as e:

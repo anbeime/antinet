@@ -3,19 +3,18 @@
  * 用于搜索、安装、管理技能
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, Download, Trash2, RefreshCw, 
-  CheckCircle, XCircle, Package, Terminal,
-  ChevronRight, ExternalLink, BookOpen
+  CheckCircle, Package, Terminal,
+  ExternalLink, BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 
 interface SkillInfo {
@@ -58,7 +57,7 @@ const RECOMMENDED_SKILLS = [
   }
 ];
 
-export const SkillManager: React.FC = () => {
+export function SkillManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [installedSkills, setInstalledSkills] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -205,12 +204,13 @@ export const SkillManager: React.FC = () => {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px]">
-                <div className="space-y-4">
+                <AnimatePresence mode="popLayout">
                   {filteredSkills.map((skill, index) => (
                     <motion.div
                       key={skill.name}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ delay: index * 0.05 }}
                     >
                       <Card 
@@ -247,7 +247,7 @@ export const SkillManager: React.FC = () => {
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={(e) => {
+                                  onClick={(e: React.MouseEvent) => {
                                     e.stopPropagation();
                                     handleUninstall(skill.name);
                                   }}
@@ -258,7 +258,7 @@ export const SkillManager: React.FC = () => {
                               ) : (
                                 <Button
                                   size="sm"
-                                  onClick={(e) => {
+                                  onClick={(e: React.MouseEvent) => {
                                     e.stopPropagation();
                                     handleInstall(skill.name);
                                   }}
@@ -272,8 +272,9 @@ export const SkillManager: React.FC = () => {
                           </div>
                         </CardContent>
                       </Card>
-                    </motion.div>
+</motion.div>
                   ))}
+                  </AnimatePresence>
 
                   {filteredSkills.length === 0 && (
                     <div className="text-center py-12 text-muted-foreground">
@@ -282,7 +283,6 @@ export const SkillManager: React.FC = () => {
                       <p className="text-sm">尝试其他关键词或浏览完整仓库</p>
                     </div>
                   )}
-                </div>
               </ScrollArea>
             </CardContent>
           </Card>

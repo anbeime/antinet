@@ -116,21 +116,23 @@ class NPUService(BaseAI):
                 )
         
         try:
-            # TODO: 调用实际的 NPU 推理
-            # response = self._model.generate(
-            #     message,
-            #     context=context or self._context_messages,
-            #     max_tokens=self.config.get('max_tokens', 2048),
-            #     temperature=self.config.get('temperature', 0.7),
-            # )
-            
-            # 临时返回模拟响应
-            response = f"[NPU {self.model_name}] 处理: {message[:50]}..."
-            
-            # 更新上下文
-            self.add_context(message, response)
-            
-            return AIResponse(content=response, stop=True)
+            # 尝试真实 NPU 推理（如不可用则返回错误让上游降级）
+            if self._model is not None and hasattr(self._model, 'generate'):
+                response_text = self._model.generate(
+                    message,
+                    context=context or self._context_messages,
+                    max_tokens=self.config.get('max_tokens', 2048),
+                    temperature=self.config.get('temperature', 0.7),
+                )
+                self.add_context(message, response_text)
+                return AIResponse(content=response_text, stop=True)
+            else:
+                # NPU 模型推理未实现，返回错误让上游感知并降级
+                return AIResponse(
+                    content='',
+                    stop=True,
+                    error='NPU 模型推理引擎未实现，请使用云端 AI 或检查模型配置'
+                )
             
         except Exception as e:
             logger.error(f"[NPU] 推理失败: {e}")
@@ -167,7 +169,13 @@ class NPUService(BaseAI):
     
     @property
     def is_available(self) -> bool:
-        return self._initialized or self._find_model_path() is not None
+        """NPU 仅在模型已加载且推理引擎可用时才视为可用"""
+        if not (self._initialized or self._find_model_path() is not None):
+            return False
+        # 模型路径存在但推理未实现，不算可用
+        if self._model is None:
+            return False
+        return True
     
     def __repr__(self) -> str:
         return f"<NPUService(model={self.model_name}, initialized={self._initialized})>"

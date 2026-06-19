@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Users, History, Shield, MessageSquare, Eye, Database, Crown, Target, Activity, Zap, TrendingUp, Clock, Cpu } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 
@@ -34,6 +34,7 @@ const AgentSystem: React.FC = () => {
     idleAgents: 8
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [agentStatuses, setAgentStatuses] = useState<Record<string, string>>({});
 
   const agents: Agent[] = [
     {
@@ -118,13 +119,16 @@ const AgentSystem: React.FC = () => {
     }
   ];
 
-  // 获取系统统计数据
+  // 获取系统统计数据 + Agent 状态
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch(getApiBaseUrl() + '/api/skill/stats');
-        if (response.ok) {
-          const data = await response.json();
+        const [statsRes, agentRes] = await Promise.all([
+          fetch(getApiBaseUrl() + '/api/skill/stats'),
+          fetch(getApiBaseUrl() + '/api/agent/status')
+        ]);
+        if (statsRes.ok) {
+          const data = await statsRes.json();
           const taskStats = data.task_stats || {};
           setSystemStats({
             taskCompletionRate: taskStats.task_completion_rate || 0,
@@ -135,9 +139,16 @@ const AgentSystem: React.FC = () => {
             idleAgents: 8 - Math.min(8, taskStats.active_tasks || 0)
           });
         }
+        if (agentRes.ok) {
+          const agentData = await agentRes.json();
+          const statusMap: Record<string, string> = {};
+          (agentData.agents || []).forEach((a: any) => {
+            statusMap[a.id] = a.status;
+          });
+          setAgentStatuses(statusMap);
+        }
       } catch (error) {
         console.error('获取系统统计失败:', error);
-        // 使用模拟数据
         setSystemStats({
           taskCompletionRate: 98.5,
           avgResponseTime: '1.2s',
@@ -152,11 +163,15 @@ const AgentSystem: React.FC = () => {
     };
     
     fetchStats();
-    const interval = setInterval(fetchStats, 5000); // 每5秒刷新（更频繁获取真实数据）
+    const interval = setInterval(fetchStats, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const selectedAgentData = agents.find(a => a.id === selectedAgent)!;
+  const agentsWithStatus = agents.map(a => ({
+    ...a,
+    status: (agentStatuses[a.id] || a.status) as 'running' | 'idle' | 'busy'
+  }));
+  const selectedAgentData = agentsWithStatus.find(a => a.id === selectedAgent)!;
   const Icon = selectedAgentData.icon;
 
   return (
@@ -230,11 +245,14 @@ const AgentSystem: React.FC = () => {
           {/* 左侧：Agent列表 */}
           <div className="lg:col-span-1 space-y-4">
             <h2 className="text-lg font-semibold mb-4">智能体列表</h2>
-            {agents.map((agent) => {
+            {agentsWithStatus.map((agent, index) => {
               const AgentIcon = agent.icon;
               return (
-                <div
+                <motion.div
                   key={agent.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.05 }}
                   onClick={() => setSelectedAgent(agent.id)}
                   className={`p-4 rounded-xl border cursor-pointer transition-all ${
                     selectedAgent === agent.id
@@ -262,14 +280,22 @@ const AgentSystem: React.FC = () => {
                       {agent.status === 'running' ? '运行中' : agent.status === 'busy' ? '工作中' : '空闲'}
                     </span>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>
 
           {/* 右侧：Agent详情 */}
           <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={selectedAgent}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3 }}
+                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+              >
               {/* 头部 */}
               <div className={`bg-gradient-to-r ${selectedAgentData.color} p-6 text-white relative`}>
                 <div className="flex items-center space-x-4 flex-wrap">
@@ -344,7 +370,8 @@ const AgentSystem: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
+          </AnimatePresence>
           </div>
         </div>
       </div>

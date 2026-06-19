@@ -6,7 +6,7 @@ import {
   Play, RotateCcw, Loader, AlertTriangle,
   BarChart3, Upload, FileText, FileSpreadsheet,
   Presentation, Image, X, FolderOpen, Database, FileDown,
-  FileAudio, FileArchive
+  FileAudio, FileArchive, Brain, Network, Search, Save, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -21,6 +21,7 @@ interface BatchFile {
   result?: any;
   extractedCards?: ExtractedCard[];
   error?: string;
+  sourceFileId?: string;
 }
 
 interface ExtractedCard {
@@ -43,6 +44,8 @@ const BatchProcess: React.FC = () => {
   const [files, setFiles] = useState<BatchFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [savedCardsCount, setSavedCardsCount] = useState(0);
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [savingFileId, setSavingFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   
@@ -261,16 +264,21 @@ const getFileType = (filename: string): BatchFile['type'] => {
         const batchResult = await response.json();
         const results = batchResult.results || [];
 
-        // 更新每个文件的状态
+        // 更新每个文件的状态（按索引匹配，确保与 formData 顺序一致）
         let totalAgentCards = 0;
         for (const result of results) {
-          const matchedFile = waitingFiles.find(wf => wf.name === result.filename);
+          const matchedFile = waitingFiles[result.index];
           if (matchedFile) {
             const extractedCards: ExtractedCard[] = [];
-            // 尝试从返回结果读取卡片（不同格式兼容）
-            if (result.success && result.cards_count > 0) {
-              // 如果结果中有详细卡片数据会更好，但API返回只有计数
-              // 卡片详细信息在单个文件导入时会返回，批量模式下我们只统计
+            if (result.success && result.cards && Array.isArray(result.cards)) {
+              for (const card of result.cards) {
+                extractedCards.push({
+                  title: card.title || '未命名卡片',
+                  content: card.content || '',
+                  card_type: card.card_type || card.type || 'blue',
+                  confidence: card.confidence || 0.9,
+                });
+              }
             }
             setFiles(prev => prev.map(f =>
               f.id === matchedFile.id
@@ -280,11 +288,12 @@ const getFileType = (filename: string): BatchFile['type'] => {
                     progress: result.success ? 100 : 0,
                     result,
                     extractedCards,
+                    sourceFileId: result.source_file_id || undefined,
                     error: result.error
                   }
                 : f
             ));
-            if (result.success) totalAgentCards += result.cards_count || 0;
+            if (result.success) totalAgentCards += result.cards_count || extractedCards.length || 0;
           }
         }
 
@@ -442,6 +451,68 @@ const getFileType = (filename: string): BatchFile['type'] => {
       case 'completed': return '已完成';
       case 'failed': return '失败';
     }
+  };
+
+  // 保存卡片到知识库
+  const saveCardsToKnowledgeBase = async (fileId: string) => {
+    const batchFile = files.find(f => f.id === fileId);
+    if (!batchFile || !batchFile.extractedCards || batchFile.extractedCards.length === 0) {
+      toast.error('没有可保存的卡片');
+      return;
+    }
+
+    setSavingFileId(fileId);
+    let saved = 0;
+    let failed = 0;
+
+    for (const card of batchFile.extractedCards) {
+      try {
+        const resp = await fetch(`${getApiBaseUrl()}/api/knowledge/cards`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: card.card_type || 'blue',
+            title: card.title || '未命名',
+            content: card.content || '',
+            address: `Batch/${batchFile.name}/${card.title}`,
+            related_cards: [],
+            tags: [batchFile.name],
+          })
+        });
+        if (resp.ok) {
+          saved++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    setSavingFileId(null);
+    if (saved > 0) {
+      setSavedCardsCount(prev => prev + saved);
+      toast.success(`已保存 ${saved} 张卡片到知识库${failed > 0 ? `，${failed} 张失败` : ''}`);
+    } else {
+      toast.error('保存失败，请检查后端服务');
+    }
+  };
+
+  // 卡片颜色配置（复用 Home.tsx 样式）
+  const cardStyleMap: Record<string, { name: string; label: string; icon: React.ReactNode; borderColor: string; bgColor: string; color: string; textColor: string }> = {
+    blue: { name: '核心概念', label: '事', icon: <Brain size={14} />, borderColor: 'border-blue-200 dark:border-blue-800', bgColor: 'bg-blue-50 dark:bg-blue-950/40', color: 'bg-blue-500', textColor: 'text-blue-700 dark:text-blue-300' },
+    green: { name: '关联链接', label: '联', icon: <Network size={14} />, borderColor: 'border-green-200 dark:border-green-800', bgColor: 'bg-green-50 dark:bg-green-950/40', color: 'bg-green-500', textColor: 'text-green-700 dark:text-green-300' },
+    yellow: { name: '参考来源', label: '源', icon: <Database size={14} />, borderColor: 'border-yellow-200 dark:border-yellow-800', bgColor: 'bg-yellow-50 dark:bg-yellow-950/40', color: 'bg-yellow-500', textColor: 'text-yellow-700 dark:text-yellow-300' },
+    red: { name: '索引关键词', label: '行', icon: <Search size={14} />, borderColor: 'border-red-200 dark:border-red-800', bgColor: 'bg-red-50 dark:bg-red-950/40', color: 'bg-red-500', textColor: 'text-red-700 dark:text-red-300' },
+  };
+  const getCardStyle = (type: string) => cardStyleMap[type] || cardStyleMap.blue;
+
+  const toggleExpand = (fileId: string) => {
+    setExpandedFiles(prev => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId); else next.add(fileId);
+      return next;
+    });
   };
 
   const completedCount = files.filter(f => f.status === 'completed').length;
@@ -740,6 +811,119 @@ const getFileType = (filename: string): BatchFile['type'] => {
                                 animate={{ width: `${file.progress}%` }}
                                 transition={{ duration: 0.3 }}
                               />
+                            </div>
+                          )}
+
+                          {/* 完成的文件显示提取的内容和卡片 */}
+                          {file.status === 'completed' && (
+                            <div className="mt-2 space-y-1.5">
+                              {/* 提取字数统计 */}
+                              {file.result?.extracted_length > 0 && (
+                                <div className="text-xs text-gray-500 flex items-center gap-1">
+                                  <FileText className="w-3 h-3" />
+                                  提取 {file.result.extracted_length} 字
+                                  {file.result?.extracted_text && (
+                                    <span 
+                                      className="text-teal-500 underline cursor-pointer hover:text-teal-600"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toast.message('提取内容预览', {
+                                          description: file.result?.extracted_text?.slice(0, 500) + (file.result?.extracted_text?.length > 500 ? '...' : ''),
+                                          duration: 8000,
+                                        });
+                                      }}
+                                    >
+                                      查看内容
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              {/* 四色卡片列表 */}
+                              {file.extractedCards && file.extractedCards.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <div className="text-xs text-gray-500 flex items-center gap-1">
+                                      <Database className="w-3 h-3" />
+                                      已生成 {file.extractedCards.length} 张卡片
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleExpand(file.id); }}
+                                        className="text-teal-500 hover:text-teal-600 inline-flex items-center gap-0.5"
+                                      >
+                                        {expandedFiles.has(file.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                        {expandedFiles.has(file.id) ? '收起' : '展开'}
+                                      </button>
+                                    </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); saveCardsToKnowledgeBase(file.id); }}
+                                      disabled={savingFileId === file.id}
+                                      className="flex items-center gap-1 text-xs bg-purple-500 hover:bg-purple-600 disabled:bg-purple-300 text-white px-2 py-1 rounded transition-colors"
+                                    >
+                                      {savingFileId === file.id ? <Loader size={12} className="animate-spin" /> : <Save size={12} />}
+                                      保存到知识库
+                                    </button>
+                                  </div>
+                                  <div className="grid grid-cols-1 gap-1.5 mt-1">
+                                    {(expandedFiles.has(file.id) ? file.extractedCards : file.extractedCards.slice(0, 4)).map((card, ci) => {
+                                      const s = getCardStyle(card.card_type);
+                                      return (
+                                        <div
+                                          key={ci}
+                                          className={`border rounded-lg overflow-hidden cursor-pointer hover:shadow-md transition-shadow ${s.borderColor} bg-white dark:bg-gray-800`}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toast.message(card.title, {
+                                              description: (
+                                                <div className="text-xs space-y-1">
+                                                  <p className="text-gray-500">来源: {file.name}</p>
+                                                  <p className="text-gray-700 dark:text-gray-300">{card.content}</p>
+                                                </div>
+                                              ) as any,
+                                              duration: 10000,
+                                            });
+                                          }}
+                                        >
+                                          <div className={`${s.bgColor} px-2 py-1.5 flex items-center gap-1.5`}>
+                                            <div className={`${s.color} p-1 rounded`}>
+                                              {s.icon}
+                                            </div>
+                                            <span className={`text-xs font-medium truncate ${s.textColor}`}>
+                                              {card.title}
+                                            </span>
+                                            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded-full ${s.color} text-white shrink-0`}>
+                                              {s.name}
+                                            </span>
+                                          </div>
+                                          <div className="px-2 py-1">
+                                            <p className="text-[11px] text-gray-600 dark:text-gray-400 line-clamp-2">
+                                              {card.content}
+                                            </p>
+                                          </div>
+                                          <div className="px-2 pb-1">
+                                            <span className="text-[10px] text-gray-400 truncate block">
+                                              来源: {file.name}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    {!expandedFiles.has(file.id) && file.extractedCards.length > 4 && (
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); toggleExpand(file.id); }}
+                                        className="text-xs text-teal-500 hover:text-teal-600 text-center py-1"
+                                      >
+                                        还有 {file.extractedCards.length - 4} 张卡片，点击展开全部
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                              {/* 显示卡片计数（无详情的回退） */}
+                              {(!file.extractedCards || file.extractedCards.length === 0) && (file.result?.cards_count > 0) && (
+                                <div className="text-xs text-gray-500 flex items-center gap-1">
+                                  <Database className="w-3 h-3" />
+                                  已保存 {file.result.cards_count} 张卡片到知识库
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>

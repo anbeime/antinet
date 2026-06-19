@@ -3,14 +3,13 @@
 // 提供统一的 HTTP 请求处理、错误处理和响应处理
 
 import { toast } from 'sonner';
-import { processResponse, ResponseCode } from './responseProcessor';
+import { processResponse } from './responseProcessor';
 
 // 动态获取API地址，支持局域网访问
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  // 开发环境走 Vite /api 代理（无 CORS），生产环境直连后端
   if (import.meta.env.DEV) {
     return '';
   }
@@ -18,6 +17,14 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+const getToken = (): string => {
+  try {
+    return localStorage.getItem('zhiyi_token') || '';
+  } catch {
+    return '';
+  }
+};
 
 // 请求ID缓存，用于请求去重
 const requestIds: Record<string, number> = {};
@@ -54,7 +61,7 @@ interface ResponseError {
 /**
  * 生成请求ID
  */
-function generateRequestId(url: string): number {
+function generateRequestId(_url: string): number {
   return new Date().getTime();
 }
 
@@ -94,10 +101,12 @@ export async function fetchPost<T = any>(
     data.reqId = generateRequestId(url);
   }
 
+  const token = getToken();
   const init: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...fetchOptions.headers,
     },
   };
@@ -105,7 +114,10 @@ export async function fetchPost<T = any>(
   if (data) {
     if (data instanceof FormData) {
       init.body = data;
-      delete init.headers['Content-Type']; // 让浏览器自动设置 Content-Type
+      // 让浏览器自动设置 Content-Type，移除手动设置的
+      if (init.headers && typeof init.headers === 'object' && !Array.isArray(init.headers)) {
+        delete (init.headers as Record<string, string>)['Content-Type'];
+      }
     } else {
       init.body = JSON.stringify(data);
     }
@@ -169,10 +181,12 @@ export async function fetchPost<T = any>(
     }
 
     // 处理网络错误
-    if (error.message === 'Failed to fetch' || error.message === 'Unexpected end of JSON input') {
-      if (url === '/api/transactions') {
-        toast.error('内核连接失败，请检查服务是否正常运行');
-      }
+    if (error.message === 'Failed to fetch' || error.message === 'Unexpected end of JSON input' || error.message === 'NetworkError') {
+      const isLocalNetwork = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const hint = isLocalNetwork
+        ? '请确认后端服务已启动（端口 8000）'
+        : '请确认：1) 后端服务已启动 2) 手机和电脑在同一网络 3) 使用电脑 IP 访问而非 localhost';
+      toast.error(`连接后端失败，${hint}`);
     }
 
     const errorResult = {
@@ -202,10 +216,12 @@ export async function fetchGet<T = any>(
 ): Promise<T> {
   const { showLoading = false, onError, onSuccess, ...fetchOptions } = options;
 
+  const token = getToken();
   const init: RequestInit = {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       ...fetchOptions.headers,
     },
   };

@@ -2,6 +2,14 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import * as pdfjsLib from 'pdfjs-dist';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).toString();
 import {
   X,
   Upload,
@@ -79,6 +87,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [syncToGTD, setSyncToGTD] = useState(false);
   const [isAIClassifying, setIsAIClassifying] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);  // 跟踪当前批次是否已保存
 
   // 智能分析内容 - 使用本地智能分类算法（快速且功能完整）
   const autoClassifyContent = async (content: string): Promise<Array<{
@@ -262,17 +271,23 @@ const ImportModal: React.FC<ImportModalProps> = ({
     return parseTextFile(file);
   };
 
-  // PDF文件解析 - 调用后端API
+  // PDF文件解析 - 使用pdf.js在前端提取（解决后端正则乱码问题）
   const parsePDFFile = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
-      method: 'POST',
-      body: formData
-    });
-    if (!response.ok) throw new Error('PDF解析失败');
-    const result = await response.json();
-    return result.cards.map((c: any) => c.content).join('\n\n');
+    const arrayBuffer = await file.arrayBuffer();
+    const data = new Uint8Array(arrayBuffer);
+    const doc = await pdfjsLib.getDocument({ data }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const textContent = await page.getTextContent();
+      const text = textContent.items.map((item: any) => item.str).join(' ');
+      pages.push(text);
+    }
+    const result = pages.join('\n\n');
+    if (!result.trim()) {
+      throw new Error('PDF 未提取到文字（可能为扫描件或加密文档）');
+    }
+    return result;
   };
 
   // Excel文件解析 - 调用后端API
@@ -350,7 +365,25 @@ const ImportModal: React.FC<ImportModalProps> = ({
           className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
         });
       } else if (fileExtension === 'pdf') {
-        content = await parsePDFFile(file);
+        try {
+          content = await parsePDFFile(file);
+        } catch {
+          // pdf.js 提取失败（移动端 worker 加载问题等），回退到后端提取
+          const fallbackController = new AbortController();
+          const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 30000);
+          const formData = new FormData();
+          formData.append('file', file);
+          const fallbackRes = await fetch(getApiBaseUrl() + '/api/pdf/extract/text', {
+            method: 'POST',
+            body: formData,
+            signal: fallbackController.signal
+          });
+          clearTimeout(fallbackTimeoutId);
+          if (!fallbackRes.ok) throw new Error('后端 PDF 提取失败');
+          const fallbackData = await fallbackRes.json();
+          content = fallbackData.full_text || '';
+          if (!content.trim()) throw new Error('PDF 未能提取到文字');
+        }
         toast('PDF文件解析成功', {
           icon: <Check size={16} />,
           className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
@@ -445,13 +478,17 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setShowResults(true);
     } catch (error) {
       console.error('导入失败:', error);
-      setErrors([error instanceof Error ? error.message : '导入失败，请稍后重试']);
+      const message = error instanceof Error ? error.message : '导入失败，请稍后重试';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '无法连接后端服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : message]);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // 处理文件上传导入
+  // 处理文件上传导入（调用后端锦衣卫全线：文件解析 + 密卷房提取 + 四司分类）
   const handleFileImport = async () => {
     if (!selectedFile) {
       setErrors(['请选择要导入的文件']);
@@ -461,48 +498,158 @@ const ImportModal: React.FC<ImportModalProps> = ({
     try {
       setIsProcessing(true);
       setErrors([]);
-      
-      // 读取文件内容
-      const content = await selectedFile.text();
-      const results = await autoClassifyContent(content);
+
+      // 检查后端连接
+      try {
+        const checkController = new AbortController();
+        const checkTimeoutId = setTimeout(() => checkController.abort(), 5000);
+        const healthCheck = await fetch(getApiBaseUrl() + '/api/pdf/extract/text', {
+          method: 'HEAD',
+          signal: checkController.signal
+        });
+        clearTimeout(checkTimeoutId);
+        if (!healthCheck.ok) throw new Error('后端服务异常');
+      } catch {
+        throw new Error('无法连接后端服务，请确认后端已启动（端口 8000）。手机访问请使用电脑 IP 地址，如 http://192.168.x.x:5173');
+      }
+
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      let cards: any[];
+
+      if (fileExtension === 'pdf' && importContent.trim()) {
+        // PDF文件：使用前端 pdf.js 已提取的文本调用文本分类接口，避免后端 pypdf 乱码
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/text?preview_only=true', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: importContent, preview_only: true })
+        });
+
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`PDF解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        const data = await res.json();
+        cards = data.cards || [];
+      } else {
+        // 其他文件类型：上传到后端解析
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file?preview_only=true', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`文件解析失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        const data = await res.json();
+        cards = data.cards || [];
+      }
+
+      if (cards.length === 0) {
+        setErrors(['未从文件中识别到有效知识记录']);
+        return;
+      }
+
+      // 映射后端结果到前端格式
+      const colorCounts: Record<string, number> = { blue: 0, green: 0, yellow: 0, red: 0 };
+      const prefixes: Record<string, string> = { blue: 'A', green: 'B', yellow: 'C', red: 'D' };
+
+      const results = cards.map((item: any) => {
+        const color = (item.card_type || 'blue').toLowerCase() as CardColor;
+        colorCounts[color] = (colorCounts[color] || 0) + 1;
+        const address = item.address || `${prefixes[color]}${colorCounts[color]}`;
+        return {
+          title: item.title || item.content.slice(0, 30),
+          content: item.content,
+          color,
+          confidence: item.confidence || 0.85,
+          address
+        };
+      });
+
       setImportResults(results);
       setShowResults(true);
+      toast.success(`解析完成，识别到 ${cards.length} 条知识记录`);
     } catch (error) {
       console.error('文件导入失败:', error);
-      setErrors(['文件导入失败，请检查文件格式']);
+      const message = error instanceof Error ? error.message : '文件导入失败，请检查文件格式';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('网络');
+      setErrors([isNetworkError
+        ? '无法连接后端服务（Failed to fetch）。请确认：\n1. 后端服务已启动在端口 8000\n2. 手机和电脑在同一局域网\n3. 访问地址使用电脑 IP（如 http://192.168.x.x:5173）而非 localhost'
+        : message]);
     } finally {
       setIsProcessing(false);
     }
   };
 
   // 确认导入
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (importResults.length === 0) {
       setErrors(['没有可导入的内容']);
       return;
     }
 
-    // 调用父组件的导入回调（粘贴文本模式下传递原始文本，用于后端溯源保存）
-    const rawText = importType === 'paste' ? importContent : undefined;
-    onImport(
-      importResults.map(result => ({
-        title: result.title,
-        content: result.content,
-        color: result.color,
-        address: result.address
-      })),
-      syncToGTD,
-      rawText
-    );
-    
-    // 重置表单并关闭模态框
-    resetForm();
-    onClose();
-    
-    toast(`${importResults.length} 条知识记录已成功导入并分类${syncToGTD ? '，并同步到任务管理' : ''}`, {
-      icon: <Check size={16} />,
-      className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
-    });
+    try {
+      setIsProcessing(true);
+
+      if (importType === 'upload' && selectedFile) {
+        // 文件导入：调用后端一次性保存（含源文件追溯 + 关键词分类 + 自动建链）
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        const res = await fetch(getApiBaseUrl() + '/api/knowledge/import/file', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          let detail = '';
+          try { const err = await res.json(); detail = err.detail || ''; } catch {}
+          throw new Error(`文件保存失败 (${res.status})${detail ? ': ' + detail : ''}`);
+        }
+
+        // 通知父组件：后端已保存，仅需刷新卡片列表
+        onImport([], syncToGTD, '__FILE_SAVED__');
+      } else {
+        // 粘贴文本导入：走原有流程（传递原始文本用于后端溯源保存）
+        const rawText = importType === 'paste' ? importContent : undefined;
+        onImport(
+          importResults.map(result => ({
+            title: result.title,
+            content: result.content,
+            color: result.color,
+            address: result.address
+          })),
+          syncToGTD,
+          rawText
+        );
+      }
+
+      // 重置表单并关闭模态框
+      setIsSaved(true);
+      resetForm();
+      setShowConfirmDialog(false);
+      onClose();
+
+      toast(`${importResults.length} 条知识记录已成功导入并分类${syncToGTD ? '，并同步到任务管理' : ''}`, {
+        icon: <Check size={16} />,
+        className: 'bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100'
+      });
+    } catch (error) {
+      console.error('保存失败:', error);
+      const message = error instanceof Error ? error.message : '未知错误';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '保存失败：无法连接后端服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : '保存失败: ' + message]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // 取消导入
@@ -574,7 +721,11 @@ const ImportModal: React.FC<ImportModalProps> = ({
       setShowResults(true);
     } catch (e: any) {
       console.error('AI 分类失败:', e);
-      setErrors([e.message || 'AI 分类失败，请稍后重试']);
+      const message = e.message || 'AI 分类失败';
+      const isNetworkError = message.includes('Failed to fetch') || message.includes('NetworkError');
+      setErrors([isNetworkError
+        ? '无法连接 Genie AI 服务。请确认后端已启动（端口 8000），手机访问需使用电脑 IP 地址'
+        : message]);
     } finally {
       setIsAIClassifying(false);
     }
@@ -590,6 +741,7 @@ const ImportModal: React.FC<ImportModalProps> = ({
     setSyncToGTD(false);
     setIsAIClassifying(false);
     setIsProcessing(false);
+    setIsSaved(false);
   };
 
   // 放弃更改并关闭
@@ -600,21 +752,6 @@ const ImportModal: React.FC<ImportModalProps> = ({
   };
 
   // 保存并关闭
-  const handleSaveAndClose = async () => {
-    if (importResults.length > 0) {
-      const rawText = importType === 'paste' ? importContent : undefined;
-      await onImport(importResults.map(result => ({
-        title: result.title,
-        content: result.content,
-        color: result.color,
-        address: result.address
-      })), syncToGTD, rawText);
-    }
-    resetForm();
-    setShowConfirmDialog(false);
-    onClose();
-  };
-
   // 当模态框关闭时重置表单
   React.useEffect(() => {
     if (!isOpen) {
@@ -635,7 +772,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
+      onClick={() => {
+        // 有未保存的结果 → 弹确认框；否则直接关闭
+        if (importResults.length > 0 && !isSaved) {
+          setShowConfirmDialog(true);
+        } else {
+          onClose();
+        }
+      }}
     >
       <motion.div 
         initial={{ scale: 0.9, y: 20 }}
@@ -648,7 +792,14 @@ const ImportModal: React.FC<ImportModalProps> = ({
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-bold">导入知识记录</h2>
           <button 
-            onClick={onClose}
+            onClick={() => {
+              // X 按钮同样检查未保存状态
+              if (importResults.length > 0 && !isSaved) {
+                setShowConfirmDialog(true);
+              } else {
+                onClose();
+              }
+            }}
             className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
             aria-label="关闭"
           >
@@ -660,7 +811,10 @@ const ImportModal: React.FC<ImportModalProps> = ({
           <div className="p-6 flex-1 overflow-y-auto">
             {/* 导入方式选择 */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">选择导入方式</label>
+              <label className="block text-sm font-medium mb-2 flex items-center gap-1.5">
+                <Inbox size={16} />
+                选择导入方式
+              </label>
               <div className="flex space-x-4">
                 <button 
                   type="button"
@@ -816,7 +970,7 @@ https://example.com/knowledge-management
             {/* 提示信息 */}
             <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
               <div className="flex items-start">
-                <Brain size={18} className="text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
+                <Book size={18} className="text-blue-600 dark:text-blue-400 mr-2 mt-0.5 flex-shrink-0" />
                 <div className="text-sm text-blue-800 dark:text-blue-300">
                   <p className="font-medium mb-1">智能分类说明：</p>
                   <ul className="list-disc list-inside space-y-1 text-xs">
@@ -888,7 +1042,10 @@ https://example.com/knowledge-management
         ) : (
           <div className="p-6 flex-1 overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold">分类结果预览</h3>
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Calendar size={20} className="text-gray-500" />
+                分类结果预览
+              </h3>
               <button 
                 onClick={() => setShowResults(false)}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
@@ -927,12 +1084,22 @@ https://example.com/knowledge-management
                       {Math.round(result.confidence * 100)}%
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3">{result.content}</p>
+                  <div className="text-sm text-gray-700 dark:text-gray-300 line-clamp-3 prose prose-gray dark:prose-invert max-w-none [&_p]:mb-1 [&_ul]:mb-1 [&_ol]:mb-1">
+                    <ReactMarkdown remarkPlugins={[remarkBreaks]}>{result.content}</ReactMarkdown>
+                  </div>
                 </motion.div>
               ))}
             </div>
             
             {/* 统计信息 */}
+            <div className="flex items-center gap-2 mb-3">
+              <Archive size={18} className="text-gray-500" />
+              <h4 className="font-medium text-sm text-gray-700 dark:text-gray-300">分类统计</h4>
+              <span className="text-xs text-gray-400 flex items-center gap-1 ml-auto">
+                <Clock size={12} />
+                {new Date().toLocaleTimeString()}
+              </span>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               <div className="bg-gray-50 dark:bg-gray-750 rounded-lg p-3">
                 <p className="text-xs text-gray-500 dark:text-gray-400">总记录数</p>
@@ -980,10 +1147,10 @@ https://example.com/knowledge-management
                 <button 
                   type="button"
                   onClick={() => setShowConfirmDialog(true)}
-                  className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center"
+                  className={`px-6 py-2 rounded-lg transition-colors flex items-center text-white ${isSaved ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
                   <Check size={16} className="mr-2" />
-                  确认导入 {importResults.length} 条记录
+                  {isSaved ? '已保存' : `确认导入 ${importResults.length} 条记录`}
                 </button>
               </div>
             </div>
@@ -991,7 +1158,7 @@ https://example.com/knowledge-management
         )}
       </motion.div>
 
-      {/* 未保存更改确认对话框 */}
+      {/* 确认对话框：已保存则直接关闭，未保存则提示 */}
       {showConfirmDialog && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1008,39 +1175,47 @@ https://example.com/knowledge-management
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center mb-4">
-              <div className="w-12 h-12 rounded-full bg-yellow-100 dark:bg-yellow-900/50 flex items-center justify-center text-yellow-600 dark:text-yellow-400 mr-4">
-                <AlertCircle size={24} />
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mr-4 ${isSaved ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' : 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-600 dark:text-yellow-400'}`}>
+                {isSaved ? <Check size={24} /> : <AlertCircle size={24} />}
               </div>
               <div>
-                <h3 className="text-lg font-bold">未保存的更改</h3>
+                <h3 className="text-lg font-bold">{isSaved ? '已保存' : '未保存的更改'}</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  您有 {importResults.length} 条知识记录尚未保存
+                  {isSaved
+                    ? `${importResults.length} 条记录已保存到知识库`
+                    : `您有 ${importResults.length} 条知识记录尚未保存`}
                 </p>
               </div>
             </div>
 
             <p className="text-gray-600 dark:text-gray-300 mb-6">
-              您可以选择保存这些记录到知识库，或者放弃更改。如果直接关闭，系统将尝试自动保存。
+              {isSaved
+                ? '记录已成功保存，您可以安全关闭。'
+                : '您可以选择保存这些记录到知识库，或者放弃更改。'}
             </p>
 
             <div className="flex justify-end space-x-3">
+              {!isSaved && (
+                <button
+                  onClick={handleDiscardAndClose}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  不保存
+                </button>
+              )}
               <button
-                onClick={handleDiscardAndClose}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-              >
-                不保存
-              </button>
-              <button
-                onClick={() => setShowConfirmDialog(false)}
+                type="button"
+                onClick={handleCancelImport}
                 className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
-                继续编辑
+                {isSaved ? '关闭' : '继续编辑'}
               </button>
               <button
-                onClick={handleSaveAndClose}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                type="button"
+                onClick={isSaved ? handleCancelImport : handleConfirmImport}
+                className={`px-4 py-2 text-white rounded-lg transition-colors ${isSaved ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
               >
-                保存并关闭
+                {isSaved ? '关闭' : '保存并关闭'}
               </button>
             </div>
           </motion.div>

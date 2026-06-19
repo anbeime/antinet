@@ -5,6 +5,8 @@
  * 获取 API 基础地址
  * 开发环境：自动使用当前主机 IP
  * 生产环境：使用相对路径
+ * 
+ * 每次调用都实时计算，确保在移动设备网络切换时地址正确
  */
 export const getApiBaseUrl = (): string => {
   // 优先使用环境变量
@@ -16,6 +18,12 @@ export const getApiBaseUrl = (): string => {
   // 生产环境：serve --single 无代理能力，需直连后端
   if (import.meta.env.DEV) {
     return '';
+  }
+
+  // 检查是否已设置 localStorage 中的自定义后端地址
+  const customBackend = typeof window !== 'undefined' ? window.localStorage?.getItem('custom_api_base_url') : null;
+  if (customBackend) {
+    return customBackend;
   }
 
   const protocol = window.location.protocol;

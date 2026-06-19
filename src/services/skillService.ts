@@ -222,21 +222,30 @@ class SkillService {
 
   /**
    * 从文本提取书籍方法论（自动同步到四色黄色卡片）
+   * @param bookContent 书籍内容
+   * @param bookName 书籍名称
+   * @param bookAuthor 作者
+   * @param llmModel 可选，指定 LLM 模型（如 "gpt-4", "claude-3", "local-model"），为空则使用技能内置默认
    */
   async extractBookSkill(
     bookContent: string,
     bookName?: string,
-    bookAuthor?: string
+    bookAuthor?: string,
+    llmModel?: string
   ): Promise<any> {
     try {
+      const body: any = {
+        book_content: bookContent,
+        book_name: bookName || '',
+        book_author: bookAuthor || '',
+      };
+      if (llmModel) {
+        body.llm_model = llmModel;
+      }
       const response = await fetch(`${API_BASE}/skill/book-skill/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          book_content: bookContent,
-          book_name: bookName || '',
-          book_author: bookAuthor || '',
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error('提取书籍方法论失败');
       return await response.json();
@@ -255,15 +264,15 @@ class SkillService {
     bookAuthor?: string
   ): Promise<any> {
     try {
-      const params = new URLSearchParams();
-      if (bookName) params.append('book_name', bookName);
-      if (bookAuthor) params.append('book_author', bookAuthor);
+      const body: any = { notes };
+      if (bookName) body.book_name = bookName;
+      if (bookAuthor) body.book_author = bookAuthor;
       const response = await fetch(
-        `${API_BASE}/skill/book-skill/extract-from-notes?${params}`,
+        `${API_BASE}/skill/book-skill/extract-from-notes`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(notes),
+          body: JSON.stringify(body),
         }
       );
       if (!response.ok) throw new Error('从笔记提取方法论失败');
@@ -364,11 +373,10 @@ class SkillService {
   async getBookSkillStats(): Promise<any> {
     try {
       const response = await fetch(`${API_BASE}/skill/book-skill/stats`);
-      if (!response.ok) throw new Error('获取BookSkill统计失败');
+      if (!response.ok) return null;
       return await response.json();
-    } catch (error) {
-      console.error('获取BookSkill统计失败:', error);
-      throw error;
+    } catch {
+      return null;
     }
   }
 }

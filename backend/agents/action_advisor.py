@@ -6,10 +6,12 @@ import logging
 import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
-import httpx
 import json
 
 logger = logging.getLogger(__name__)
+
+# 使用共享的 Genie API 客户端
+from agents.shared_genie_client import genie_client
 
 
 class ActionAdvisorAgent:
@@ -61,9 +63,15 @@ class ActionAdvisorAgent:
             grouped_actions = self._group_actions(verified_actions)
             self.log.append(f"[参谋司] 建议分组完成: {len(grouped_actions)}个分组")
             
+            # 展平分组后的行动建议为列表
+            flat_actions = []
+            for group in grouped_actions.values():
+                flat_actions.extend(group)
+
             # 构建输出
             result = {
-                "actions": grouped_actions,
+                "actions": flat_actions,
+                "grouped_actions": grouped_actions,
                 "statistics": {
                     "total": len(verified_actions),
                     "by_priority": self._count_by_priority(verified_actions),
@@ -258,18 +266,18 @@ class ActionAdvisorAgent:
             if item["type"] == "risk":
                 risk = item["item"]
                 return f"""
-                风险名称：{risk['name']}
-                风险描述：{risk['description']}
-                严重程度：{risk['severity']}
-                检测来源：{risk['source']}
+                风险名称：{risk.get('name', risk.get('title', '未知风险'))}
+                风险描述：{risk.get('description', '')}
+                严重程度：{risk.get('severity', 'medium')}
+                检测来源：{risk.get('source', 'AI检测')}
                 """
             elif item["type"] == "fact":
                 fact = item["item"]
                 return f"""
-                事实标题：{fact['title']}
-                事实描述：{fact['description']}
-                证据：{fact['evidence']}
-                置信度：{fact['confidence']}
+                事实标题：{fact.get('title', fact.get('name', '未知事实'))}
+                事实描述：{fact.get('description', '')}
+                证据：{fact.get('evidence', '')}
+                置信度：{fact.get('confidence', '0.5')}
                 """
             else:
                 return ""
@@ -391,46 +399,20 @@ class ActionAdvisorAgent:
     
     async def _call_genie_api(self, prompt: str) -> str:
         """
-        调用LLM推理（直接使用 genie 8910 HTTP API）
-        带重试逻辑：遇到429限流时等待后重试
+        调用LLM推理（使用共享 Genie API 客户端，自动串行化）
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "qwen2.5vl3b-8380-2.42",
-                            "messages": [
-                                {"role": "system", "content": "你是参谋司，负责生成可执行的行动建议。输出JSON格式，只输出JSON不要其他内容。"},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "size": 1024,
-                            "seed": 42,
-                            "temp": 0.7,
-                            "top_k": 1,
-                            "top_p": 1.0
-                        }
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        return content
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    wait_time = (attempt + 1) * 2  # 2, 4, 6 秒
-                    logger.warning(f"[参谋司] 8910限流(429)，{wait_time}秒后重试 ({attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                    continue
-                logger.error(f"[参谋司] 8910 Genie API HTTP错误: {e}")
-                break
-            except Exception as e:
-                logger.error(f"[参谋司] 8910 Genie API不可用: {e}")
-                break
-        
-        return ""
+        try:
+            return await genie_client.call(
+                prompt,
+                system_prompt="你是参谋司，负责生成可执行的行动建议。输出JSON格式，只输出JSON不要其他内容。",
+                max_tokens=1024,
+                top_k=1,
+                top_p=1.0,
+                temperature=0.7
+            )
+        except Exception as e:
+            logger.error(f"[参谋司] Genie API 调用失败: {e}")
+            return ""
     
     def _parse_json_response(self, response: str) -> Dict:
         """

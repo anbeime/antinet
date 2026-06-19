@@ -159,8 +159,11 @@ export default function MonthCalendar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="text-base font-semibold text-gray-600">
+        <span className="text-base font-semibold text-gray-600 flex items-center gap-2">
           {displayMonth.format('YYYY年MM月')}
+          {isCurrentMonth && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium">本月</span>
+          )}
         </span>
         <button
           onClick={handleNextMonth}

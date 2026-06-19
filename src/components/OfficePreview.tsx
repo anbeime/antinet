@@ -53,6 +53,15 @@ const OfficePreview: React.FC<OfficePreviewProps> = ({
   const [isLoading] = useState(false);
   const onlineToolUrl = getOnlineToolUrl(fileType);
   const onlineToolName = getOnlineToolName(fileType);
+  const fileSize = file.size ? (file.size / 1024).toFixed(1) + ' KB' : '';
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleOpenOnline = () => {
     // 直接打开在线工具
@@ -63,7 +72,7 @@ const OfficePreview: React.FC<OfficePreviewProps> = ({
 
   // 获取文件图标和颜色
   const getFileIcon = () => {
-    if (fileType === 'xlsx' || fileType === 'xls') {
+    if (fileType === 'xlsx') {
       return <FileSpreadsheet size={64} className="mb-4 text-green-500" />;
     } else if (fileType === 'pptx' || fileType === 'ppt') {
       return <FileText size={64} className="mb-4 text-orange-500" />;
@@ -106,6 +115,13 @@ const OfficePreview: React.FC<OfficePreviewProps> = ({
           </button>
           
           <button
+            onClick={handleOpenOnline}
+            className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white transition-colors"
+            title="打开在线编辑器"
+          >
+            <Edit3 size={20} />
+          </button>
+          <button
             onClick={onClose}
             className="p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white transition-colors"
           >
@@ -125,6 +141,7 @@ const OfficePreview: React.FC<OfficePreviewProps> = ({
           <div className="flex flex-col items-center justify-center h-full text-white">
             {getFileIcon()}
             <h3 className="text-xl font-semibold mb-2">{fileName}</h3>
+            <p className="text-gray-500 text-sm mb-1">{fileSize}</p>
             <p className="text-gray-400 mb-8">点击下方按钮在线查看或下载到本地</p>
             
             <div className="flex flex-col gap-3">

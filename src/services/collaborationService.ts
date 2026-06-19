@@ -55,19 +55,27 @@ type MessageHandler = (msg: CollabMessage) => void;
 class CollaborationService {
   private ws: WebSocket | null = null;
   private userId: string = '';
+  private nickname: string = '';
+  private userAvatar: string = '👤';
   private messageHandlers: Set<MessageHandler> = new Set();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 2000;
   private maxReconnectDelay = 30000;
   private destroyed = false;
+  private _hasLoggedConnError = false;
 
   /**
    * 连接 WebSocket 协作频道
    * @param userId 当前用户ID（本地生成或后端用户ID）
+   * @param nickname 用户昵称（登录时输入）
+   * @param avatar 用户头像 emoji
    */
-  connect(userId: string): void {
+  connect(userId: string, nickname?: string, avatar?: string): void {
     this.userId = userId;
+    this.nickname = nickname || '';
+    this.userAvatar = avatar || '👤';
     this.destroyed = false;
+    this._hasLoggedConnError = false;
     this._connect();
   }
 
@@ -77,7 +85,11 @@ class CollaborationService {
     // 直连后端 WebSocket（后端在 8000，局域网可访问）
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.hostname + ':8000'; // 强制 8000 端口
-    const url = `${protocol}//${host}/api/ws/collaboration/${this.userId}`;
+    const params = new URLSearchParams();
+    if (this.nickname) params.set('nickname', this.nickname);
+    if (this.userAvatar) params.set('avatar', this.userAvatar);
+    const query = params.toString();
+    const url = `${protocol}//${host}/api/ws/collaboration/${this.userId}${query ? '?' + query : ''}`;
 
     console.log(`[Collab] 连接 WebSocket: ${url} (host=${window.location.host})`);
 
@@ -117,8 +129,11 @@ class CollaborationService {
     }
   }
 
-  private _onError(event: Event): void {
-    console.error('[Collab] WebSocket 错误:', event);
+  private _onError(_event: Event): void {
+    if (!this._hasLoggedConnError) {
+      console.warn('[Collab] WebSocket 连接失败，后台会自动重连。如需协作功能请确保后端已启动 (localhost:8000)');
+      this._hasLoggedConnError = true;
+    }
   }
 
   private _scheduleReconnect(): void {

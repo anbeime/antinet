@@ -19,13 +19,15 @@ import SkillCenter from "@/pages/SkillCenter";
 import MultiModel from "@/pages/MultiModel";
 import FormatConverter from "@/pages/FormatConverter";
 import VirtualOfficeMeeting from "@/pages/VirtualOfficeMeeting";
+import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import GTDTaskManager from "@/pages/GTDTaskManager";
 import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
+import InvoicePage from "@/pages/InvoicePage";
+import TeamCollaboration from "@/pages/TeamCollaboration";
 
-import MarkdownConverter from "@/pages/MarkdownConverter";
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
 import { ReminderNotification } from "@/components/ReminderNotification";
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/multi-model" element={<MultiModel />} />
           <Route path="/format-converter" element={<FormatConverter />} />
           <Route path="/virtual-office-meeting" element={<VirtualOfficeMeeting />} />
+          <Route path="/meeting/:meetingId" element={<MeetingDetailPage />} />
           <Route path="/gtd-tasks" element={<GTDTaskManager />} />
           <Route path="/genie-playground" element={<GeniePlayground />} />
           <Route path="/genie-npu-test" element={<GenieNPUTest />} />
@@ -65,6 +68,8 @@ export default function App() {
           <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
+          <Route path="/invoice" element={<InvoicePage />} />
+          <Route path="/team-collaboration" element={<TeamCollaboration />} />
           <Route path="/remotion" element={
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
               <Home initialTab="remotion" />

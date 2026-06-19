@@ -2,87 +2,69 @@
 """
 压缩中间件 - 参考 SiYuan kernel/server/serve.go 的 gzip 配置
 对响应进行 GZIP 压缩，减少传输大小
+
+注意：GZipMiddleware 会缓冲 StreamingResponse（包括 SSE），导致前端收不到流式数据。
+改用自定义中间件，跳过 text/event-stream 类型的响应。
 """
 
-from fastapi import FastAPI, Request
-from starlette.middleware.gzip import GZipMiddleware
+import gzip
+import logging
+from typing import Callable, List
 
+from fastapi import FastAPI, Request, Response
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
-# 不压缩的文件类型
-EXCLUDED_EXTENSIONS = [
-    ".pdf",
-    ".mp3",
-    ".wav",
-    ".ogg",
-    ".mov",
-    ".weba",
-    ".mkv",
-    ".mp4",
-    ".webm",
-    ".flac",
-    ".zip",
-    ".tar",
-    ".gz",
-    ".rar",
-    ".7z",
-    ".doc",
-    ".docx",
-    ".xls",
-    ".xlsx",
-    ".ppt",
-    ".pptx",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".bmp",
-    ".ico",
-    ".svg",
-    ".webp",
+logger = logging.getLogger(__name__)
+
+# 不压缩的响应 Content-Type
+STREAMING_CONTENT_TYPES = [
+    "text/event-stream",
+    "application/octet-stream",
 ]
+
+
+class SmartCompressionMiddleware(BaseHTTPMiddleware):
+    """
+    智能压缩中间件：
+    - text/event-stream (SSE) → 不压缩，保持流式传输
+    - 其他响应 → 内容大于 minimum_size 时 GZIP 压缩
+    """
+
+    def __init__(self, app: ASGIApp, minimum_size: int = 1000):
+        super().__init__(app)
+        self.minimum_size = minimum_size
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+
+        # 跳过流式内容类型的压缩（SSE等）
+        content_type = response.headers.get("content-type", "")
+        for ct in STREAMING_CONTENT_TYPES:
+            if ct in content_type:
+                return response
+
+        # 对其他响应进行压缩
+        if (
+            hasattr(response, "body")
+            and response.body
+            and len(response.body) >= self.minimum_size
+        ):
+            compressed = gzip.compress(response.body)
+            response.body = compressed
+            response.headers["Content-Encoding"] = "gzip"
+            response.headers["Content-Length"] = str(len(compressed))
+
+        return response
 
 
 def setup_compression(
     app: FastAPI,
     minimum_size: int = 1000,
-    excluded_extensions: list = None
 ):
-    """
-    设置 GZIP 压缩中间件
-    参考 SiYuan 的 gzip.Gzip 配置
-    
-    Args:
-        app: FastAPI 应用实例
-        minimum_size: 最小压缩字节数
-        excluded_extensions: 不压缩的文件扩展名列表
-    """
-    if excluded_extensions is None:
-        excluded_extensions = EXCLUDED_EXTENSIONS
-    
     app.add_middleware(
-        GZipMiddleware,
+        SmartCompressionMiddleware,
         minimum_size=minimum_size,
     )
-    
+
     return app
-
-
-def should_compress(path: str, excluded_extensions: list = None) -> bool:
-    """
-    判断路径是否应该压缩
-    
-    Args:
-        path: 请求路径
-        excluded_extensions: 不压缩的扩展名列表
-        
-    Returns:
-        bool: 是否应该压缩
-    """
-    if excluded_extensions is None:
-        excluded_extensions = EXCLUDED_EXTENSIONS
-    
-    for ext in excluded_extensions:
-        if path.lower().endswith(ext):
-            return False
-    
-    return True

@@ -181,6 +181,14 @@ class SkillRegistry:
         except Exception as e:
             logger.warning(f"[SkillRegistry] 无法注册 Book Skill Generator 技能: {e}")
         
+        # PPT结构草稿技能 - MECE原则
+        try:
+            from skills.ppt_structure_draft_skill import PPTStructureDraftSkill
+            self.register(PPTStructureDraftSkill())
+            logger.info("[SkillRegistry] PPT结构草稿技能已注册")
+        except Exception as e:
+            logger.warning(f"[SkillRegistry] 无法注册PPT结构草稿技能: {e}")
+
         # 驿传司技能
         self.register(TaskDispatchSkill())
         self.register(MessageRoutingSkill())
@@ -314,20 +322,23 @@ class DataCleaningSkill(Skill):
             agent_name="密卷房"
         )
     
-    async def execute(self, data: List[Dict]) -> Dict:
+    async def execute(self, data: List) -> Dict:
         """执行数据清洗"""
         cleaned_data = []
         
         for item in data:
-            cleaned_item = item.copy()
-            
-            # 去除空值
-            cleaned_item = {k: v for k, v in cleaned_item.items() if v is not None}
-            
-            # 标准化字符串
-            for k, v in cleaned_item.items():
-                if isinstance(v, str):
-                    cleaned_item[k] = v.strip()
+            if isinstance(item, dict):
+                cleaned_item = item.copy()
+                # 去除空值
+                cleaned_item = {k: v for k, v in cleaned_item.items() if v is not None}
+                # 标准化字符串
+                for k, v in cleaned_item.items():
+                    if isinstance(v, str):
+                        cleaned_item[k] = v.strip()
+            elif isinstance(item, str):
+                cleaned_item = item.strip()
+            else:
+                cleaned_item = item
             
             cleaned_data.append(cleaned_item)
         

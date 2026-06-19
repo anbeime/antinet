@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, FileSpreadsheet, Network, Brain, Layers, ChevronRight, Search, Film, Video, History } from 'lucide-react';
+import { Presentation, Download, FileText, Loader, CheckCircle, Sparkles, Type, Eye, Brain, Layers, Search, Film, History, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { getApiBaseUrl } from '@/lib/apiConfig';
+import { safeErrorDetail } from '@/lib/utils';
 import ThemeSelector from '@/components/ThemeSelector';
-import KnowledgeGraph from '@/components/KnowledgeGraph';
 
 interface KnowledgeCard {
   id: string;
@@ -17,7 +17,7 @@ interface KnowledgeCard {
   tags?: string;
 }
 
-const API_BASE = getApiBaseUrl() + ''
+const API_BASE = () => getApiBaseUrl()
 
 type TabType = 'text' | 'cards' | 'project';
 type ThemeType = 'professional' | 'creative' | 'minimal' | 'tech' | 'business';
@@ -68,8 +68,9 @@ const PPTAnalysis: React.FC = () => {
   const [narrativeTemplate, setNarrativeTemplate] = useState<string>('problem-analysis-solution');
   const [projectCards, setProjectCards] = useState<any[]>([]);
   const [projectCardsLoading, setProjectCardsLoading] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
   const [cardSearchQuery, setCardSearchQuery] = useState('');
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<number>>(new Set());
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
   
   // 检查PPT服务状态
   useEffect(() => {
@@ -80,7 +81,7 @@ const PPTAnalysis: React.FC = () => {
 
   const checkPPTStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/ppt/status`);
+      const response = await fetch(`${API_BASE()}/api/ppt/status`);
       if (response.ok) {
         const data = await response.json();
         setPptAvailable(data.available);
@@ -98,7 +99,7 @@ const PPTAnalysis: React.FC = () => {
   // 加载知识卡片
   const loadKnowledgeCards = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/knowledge/cards`);
+      const response = await fetch(`${API_BASE()}/api/knowledge/cards`);
       if (response.ok) {
         const data = await response.json();
         // 兼容: 可能返回 {cards: [...]} 或 [...]
@@ -114,7 +115,7 @@ const PPTAnalysis: React.FC = () => {
   // 加载专题列表
   const loadProjects = async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/research/projects`);
+      const response = await fetch(`${API_BASE()}/api/research/projects`);
       if (response.ok) {
         const data = await response.json();
         setProjects(data || []);
@@ -128,10 +129,12 @@ const PPTAnalysis: React.FC = () => {
   const loadProjectCards = async (projectId: number) => {
     setProjectCardsLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/research/projects/${projectId}/cards`);
+      const response = await fetch(`${API_BASE()}/api/research/projects/${projectId}/cards`);
       if (response.ok) {
         const data = await response.json();
-        setProjectCards(Array.isArray(data) ? data : []);
+        const cards = Array.isArray(data) ? data : [];
+        setProjectCards(cards);
+        setSelectedCardIds(new Set(cards.map((_: any, i: number) => i)));
       } else {
         setProjectCards([]);
       }
@@ -147,7 +150,6 @@ const PPTAnalysis: React.FC = () => {
   useEffect(() => {
     if (selectedProject) {
       loadProjectCards(selectedProject);
-      setShowGraph(false);
     } else {
       setProjectCards([]);
     }
@@ -163,10 +165,45 @@ const PPTAnalysis: React.FC = () => {
       )
     : cards;
 
+  // 卡片选择
+  const allSelected = projectCards.length > 0 && selectedCardIds.size === projectCards.length;
+  const toggleCard = (idx: number) => {
+    setSelectedCardIds(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelectedCardIds(new Set());
+    } else {
+      setSelectedCardIds(new Set(projectCards.map((_: any, i: number) => i)));
+    }
+  };
+  const toggleExpand = (idx: number) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+  const cardColorClass = (c: any) => {
+    const t = c.type || c.card_type || 'blue';
+    if (t === 'blue') return 'border-l-blue-400 bg-blue-50 dark:bg-blue-900/20';
+    if (t === 'green') return 'border-l-green-400 bg-green-50 dark:bg-green-900/20';
+    if (t === 'red') return 'border-l-red-400 bg-red-50 dark:bg-red-900/20';
+    return 'border-l-yellow-400 bg-yellow-50 dark:bg-yellow-900/20';
+  };
+
   // 从专题生成PPT
   const generatePPTFromProject = async () => {
     if (!selectedProject) {
       toast.error('请选择专题');
+      return;
+    }
+    if (selectedCardIds.size === 0) {
+      toast.error('请至少选择一张卡片');
       return;
     }
     
@@ -175,15 +212,16 @@ const PPTAnalysis: React.FC = () => {
       let filename: string | null = null;
 
       if (useNativePPT) {
-        // SVG→DrawingML 原生形状模式
         const topic = projects.find(p => p.id === selectedProject)?.name || '专题报告';
         const typeMap: Record<string, string> = { '事实': 'blue', '解释': 'green', '风险': 'yellow', '行动': 'red' };
-        const cardList = projectCards.map((c: any) => ({
-          type: typeMap[c.category] || c.type || 'blue',
-          title: c.title,
-          content: c.content,
-        }));
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+        const cardList = projectCards
+          .filter((_: any, i: number) => selectedCardIds.has(i))
+          .map((c: any) => ({
+            type: typeMap[c.category] || c.type || 'blue',
+            title: c.title,
+            content: c.content,
+          }));
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic, cards: cardList, theme: selectedTheme }),
@@ -197,7 +235,7 @@ const PPTAnalysis: React.FC = () => {
           return;
         }
       } else {
-        const resp = await fetch(`${API_BASE}/api/ppt/export/collection`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/export/collection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -250,7 +288,7 @@ const PPTAnalysis: React.FC = () => {
 
       if (useNativePPT) {
         // SVG→DrawingML 原生形状模式
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate-from-text`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate-from-text`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: pptTitle, content: textContent, theme: selectedTheme }),
@@ -265,7 +303,7 @@ const PPTAnalysis: React.FC = () => {
         }
       } else {
         // 传统 python-pptx 模式
-        const resp = await fetch(`${API_BASE}/api/ppt/generate/from-text`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/generate/from-text`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: textContent, title: pptTitle, theme: selectedTheme }),
@@ -275,7 +313,7 @@ const PPTAnalysis: React.FC = () => {
           filename = data.filename;
         } else {
           const err = await resp.json().catch(() => ({}));
-          toast.error(`生成失败: ${err.detail || '未知错误'}`);
+          toast.error(`生成失败: ${safeErrorDetail(err.detail, '未知错误')}`);
           return;
         }
       }
@@ -317,7 +355,7 @@ const PPTAnalysis: React.FC = () => {
           title: c.title,
           content: c.content,
         }));
-        const resp = await fetch(`${API_BASE}/api/ppt-native/generate`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt-native/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ topic: '四色卡片分析报告', cards: cardList, theme: selectedTheme }),
@@ -343,7 +381,7 @@ const PPTAnalysis: React.FC = () => {
           title: 'Antinet 四色卡片分析报告',
           include_summary: true,
         };
-        const resp = await fetch(`${API_BASE}/api/ppt/export/cards`, {
+        const resp = await fetch(`${API_BASE()}/api/ppt/export/cards`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(exportData),
         });
         if (resp.ok) {
@@ -351,7 +389,7 @@ const PPTAnalysis: React.FC = () => {
           if (data.success && data.filename) {
             filename = data.filename;
             toast.success('PPT导出成功！', {
-              action: { label: '下载', onClick: () => window.open(`${API_BASE}/api/ppt/file?filename=${data.filename}`, '_blank') },
+              action: { label: '下载', onClick: () => window.open(`${API_BASE()}/api/ppt/file?filename=${data.filename}`, '_blank') },
             });
           } else { toast.error(`导出失败: ${data.detail || '未知错误'}`); return; }
         }
@@ -389,7 +427,7 @@ const PPTAnalysis: React.FC = () => {
     }
   };
 
-  const [themes, setThemes] = useState([
+  const [_themes, setThemes] = useState([
     { id: 'professional', name: 'Professional', icon: '💼', desc: '专业商务', colors: ['#1C2833', '#3498DB', '#F1C40F'] },
     { id: 'creative', name: 'Creative', icon: '🎨', desc: '创意活泼', colors: ['#9B59B6', '#3498DB', '#E67E22'] },
     { id: 'minimal', name: 'Minimal', icon: '✨', desc: '简约现代', colors: ['#2C3E50', '#95A5A6', '#3498DB'] },
@@ -415,8 +453,8 @@ const PPTAnalysis: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+      <div className="p-4 md:p-6 max-w-7xl mx-auto">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -431,9 +469,18 @@ const PPTAnalysis: React.FC = () => {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                 PPT生成
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                智能生成专业演示文稿 - 支持文本转换和卡片导出
-              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <p className="text-gray-600 dark:text-gray-400">
+                  智能生成专业演示文稿 - 支持文本转换和卡片导出
+                </p>
+                <button
+                  onClick={() => navigate('/book-skill')}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-800/60 transition-colors"
+                >
+                  <BookOpen size={12} />
+                  书籍方法论
+                </button>
+              </div>
             </div>
           </div>
 
@@ -576,6 +623,10 @@ const PPTAnalysis: React.FC = () => {
                       <span>二级标题 → 创建新页面</span>
                     </div>
                     <div className="flex items-start space-x-2">
+                      <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">---</code>
+                      <span>分隔线（独占一行）→ 强制分页</span>
+                    </div>
+                    <div className="flex items-start space-x-2">
                       <code className="bg-white dark:bg-gray-700 px-2 py-1 rounded text-xs">###</code>
                       <span>三级标题 → 页面小标题</span>
                     </div>
@@ -647,7 +698,60 @@ const PPTAnalysis: React.FC = () => {
               </button>
             </motion.div>
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+              {selectedProject && (
+                <>
+                  {projectCardsLoading ? (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 flex items-center justify-center h-48">
+                      <Loader className="w-8 h-8 animate-spin text-purple-500" />
+                      <span className="ml-3 text-gray-500">加载卡片中...</span>
+                    </div>
+                  ) : projectCards.length > 0 ? (
+<div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold flex items-center">
+                            <Layers className="w-5 h-5 mr-2 text-purple-500" />
+                            专题卡片 ({selectedCardIds.size}/{projectCards.length})
+                          </h3>
+                          <button onClick={toggleAll} className="text-xs px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                            {allSelected ? '取消全选' : '全选'}
+                          </button>
+                        </div>
+                        <div className="space-y-2 max-h-[480px] overflow-y-auto">
+                          {projectCards.map((card: any, i: number) => {
+                            const sel = selectedCardIds.has(i);
+                            const expanded = expandedCards.has(i);
+                            return (
+                              <div key={i}
+                                className={`flex items-start gap-2 p-3 rounded-lg border border-l-4 transition-all ${
+                                  cardColorClass(card)
+                                } ${sel ? 'ring-2 ring-purple-400 ring-offset-1' : 'border-gray-200 dark:border-gray-700'}`}
+                              >
+                                <input type="checkbox" checked={sel} onChange={() => toggleCard(i)}
+                                  className="mt-0.5 w-4 h-4 rounded text-purple-600 cursor-pointer shrink-0" />
+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => toggleExpand(i)}>
+                                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                                    {card.title || card.content?.slice(0, 50) || '无标题'}
+                                  </p>
+                                  {card.content && (
+                                    <p className={`text-xs text-gray-500 dark:text-gray-400 mt-1 ${expanded ? '' : 'line-clamp-2'}`}>
+                                      {card.content}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 text-center text-gray-500">
+                      <Brain className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      <p>该专题暂无卡片</p>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700 mt-6">
                 <h3 className="text-lg font-semibold mb-4 flex items-center"><Eye className="w-5 h-5 mr-2 text-purple-500" />功能说明</h3>
                 <div className="space-y-4">
                   <div className="bg-blue-50 rounded-lg p-4"><h4 className="font-semibold text-blue-700 mb-2">📚 专题导出</h4><p className="text-sm">从专题一键生成完整PPT</p></div>

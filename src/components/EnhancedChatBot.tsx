@@ -11,10 +11,12 @@ import {
   X, Send, Bot, User,
   FileText, Table, Presentation, Search,
   Sparkles, ChevronRight, Loader2,
-  Trash2, FileType, FileSpreadsheet,
+  Trash2,
   Upload, Mic, MicOff, Volume2, VolumeX,
+  Music,
   Eye, Maximize2, Minimize2,
-  Brain
+  Brain, GitBranch, FileSearch, CheckSquare,
+  Network, AlertTriangle, Cpu, Zap
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -26,18 +28,21 @@ import type {
   SkillResult,
   SceneType
 } from '@/services/enhancedChatService';
-import { fileToBase64 } from '@/services/visionService';
 import { CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import CardDetailModal from '@/components/CardDetailModal';
 
 interface EnhancedChatBotProps {
   isOpen: boolean;
   onClose: () => void;
   onCardClick?: (card: CardReference) => void;
+  onSwitchToHermes?: () => void;
 }
 
 // Markdown 渲染组件 - 中国风配色（参考日历组件）
 const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+  // 预处理：移除单独成行的数字（1, 2, 3 等单独占一行的情况）
+  const cleaned = content.replace(/^\d+\.?\s*$/gm, '').replace(/\n{3,}/g, '\n\n');
   return (
     <ReactMarkdown
       components={{
@@ -77,7 +82,7 @@ const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
         a: ({ href, children }) => <a href={href} className="underline hover:opacity-80" style={{ color: '#b87333' }} target="_blank" rel="noopener noreferrer">{children}</a>,
       }}
     >
-      {content}
+      {cleaned}
     </ReactMarkdown>
   );
 };
@@ -145,6 +150,7 @@ const MessageBubble: React.FC<{
 }> = ({ message, cards, skillResult, sceneType, onClose, onCardClick, onSpeak, isSpeaking }) => {
   const isUser = message.role === 'user';
   const isSkill = message.role === 'skill';
+  const [cardsCollapsed, setCardsCollapsed] = useState(false);
 
   return (
     <motion.div
@@ -219,41 +225,66 @@ const MessageBubble: React.FC<{
           />
         )}
 
-        {/* 卡片展示 - 保持原有漂亮样式，仅微调边框色 */}
+        {/* 卡片展示 - 可折叠，先推送显示 */}
         {cards && cards.length > 0 && (
-          <div className="space-y-2 mt-2">
-            {cards.slice(0, 3).map((card, idx) => (
-              <div
-                key={card.id || idx}
-                className={`rounded-lg shadow transition-all ${onCardClick ? 'cursor-pointer hover:shadow-md' : ''}`}
-                style={{
-                  backgroundColor: '#fff9f3',
-                  borderLeft: '4px solid #d4a574',
-                  border: '1px solid #e8ddd0',
-                  borderLeftWidth: '4px',
-                  borderLeftColor: '#d4a574'
-                }}
-                onClick={() => onCardClick?.(card)}
-              >
-                <CardContent className="p-3">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}>
-                      {enhancedChatService.formatCardType(card.card_type)}
-                    </span>
-                    <span className="text-xs" style={{ color: '#8b7355' }}>
-                      {enhancedChatService.formatSimilarity(card.match_score)}
-                    </span>
+          <div className="mt-2">
+            <button
+              onClick={() => setCardsCollapsed(!cardsCollapsed)}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors mb-2"
+              style={{ backgroundColor: '#f5e6d3', color: '#8b4513' }}
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>相关卡片 {cards.length} 张</span>
+              <ChevronRight className={cn("w-3 h-3 transition-transform", cardsCollapsed && "-rotate-90")} />
+              <span className="ml-1 opacity-60">{cardsCollapsed ? '展开' : '收起'}</span>
+            </button>
+            {!cardsCollapsed && (
+              <div className="space-y-2">
+                {cards.slice(0, 10).map((card, idx) => {
+                  const cardColors: Record<string, { bg: string; border: string; tag: string; title: string }> = {
+                    blue: { bg: '#f0f5ff', border: '#4a90d9', tag: '#e6f0ff', title: '#1a4d8f' },
+                    green: { bg: '#f0fff4', border: '#52c41a', tag: '#e6ffed', title: '#237804' },
+                    yellow: { bg: '#fffbe6', border: '#faad14', tag: '#fff7e6', title: '#ad6b00' },
+                    red: { bg: '#fff1f0', border: '#ff4d4f', tag: '#ffe6e6', title: '#a8071a' },
+                  };
+                  const colors = cardColors[card.card_type] || { bg: '#fff9f3', border: '#d4a574', tag: '#fef3e2', title: '#8b4513' };
+                  return (
+                    <div
+                      key={card.id || idx}
+                      className="rounded-lg shadow transition-all cursor-pointer hover:shadow-md"
+                      style={{
+                        backgroundColor: colors.bg,
+                        border: `1px solid ${colors.border}`,
+                        borderLeft: `4px solid ${colors.border}`,
+                      }}
+                      onClick={() => onCardClick?.(card)}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: colors.tag, color: colors.title, border: `1px solid ${colors.border}40` }}>
+                            {enhancedChatService.formatCardType(card.card_type)}
+                          </span>
+                          <span className="text-xs" style={{ color: '#8b7355' }}>
+                            {enhancedChatService.formatSimilarity(card.match_score)}
+                          </span>
+                        </div>
+                        <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: colors.title }}>{card.title || card.name || card.content}</h4>
+                        <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
+                          {card.content}
+                        </p>
+                        <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                          <Eye className="w-3 h-3" />
+                          <span>点击查看卡片详情</span>
+                        </div>
+                      </CardContent>
+                    </div>
+                  );
+                })}
+                {cards.length > 10 && (
+                  <div className="text-xs text-center" style={{ color: '#8b7355' }}>
+                    还有 {cards.length - 10} 张相关卡片
                   </div>
-                  <h4 className="font-medium text-sm mb-1 transition-colors" style={{ color: '#8b4513' }}>{card.title}</h4>
-                  <p className="text-xs line-clamp-2" style={{ color: '#6b5a4e' }}>
-                    {card.content}
-                  </p>
-                </CardContent>
-              </div>
-            ))}
-            {cards.length > 3 && (
-              <div className="text-xs text-center" style={{ color: '#8b7355' }}>
-                还有 {cards.length - 3} 张相关卡片
+                )}
               </div>
             )}
           </div>
@@ -326,9 +357,9 @@ const loadSavedMessages = (): ChatMessage[] => {
   try {
     const saved = localStorage.getItem(CHAT_STORAGE_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      const decompressed = decompressMessages(saved);
+      if (decompressed.length > 0) {
+        return decompressed;
       }
     }
   } catch (e) {
@@ -337,10 +368,37 @@ const loadSavedMessages = (): ChatMessage[] => {
   return [];
 };
 
+// 压缩聊天记录（只保留必要字段，截断长内容）
+const compressMessages = (messages: ChatMessage[]): string => {
+  const compressed = messages.map(m => ({
+    r: m.role,
+    c: m.content.length > 2000 ? m.content.slice(0, 2000) + '...[已截断]' : m.content,
+    t: m.timestamp,
+    m: m.metadata
+  }));
+  return JSON.stringify(compressed);
+};
+
+// 解压聊天记录
+const decompressMessages = (data: string): ChatMessage[] => {
+  try {
+    const parsed = JSON.parse(data);
+    return parsed.map((m: { r: string; c: string; t?: string; m?: Record<string, any> }) => ({
+      role: m.r as MessageRole,
+      content: m.c,
+      timestamp: m.t,
+      metadata: m.m
+    }));
+  } catch {
+    return [];
+  }
+};
+
 // 保存聊天记录到本地存储
 const saveMessages = (messages: ChatMessage[]) => {
   try {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+    const compressed = compressMessages(messages);
+    localStorage.setItem(CHAT_STORAGE_KEY, compressed);
   } catch (e) {
     console.warn('保存聊天记录失败:', e);
   }
@@ -460,7 +518,7 @@ const generateLocalSuggestions = (query: string, hasImage: boolean, recentMessag
   return unique;
 };
 
-export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick }) => {
+export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClose, onCardClick, onSwitchToHermes }) => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>(loadSavedMessages);
   const [input, setInput] = useState('');
@@ -470,11 +528,37 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const [evolutionMode, setEvolutionMode] = useState(() => {
     return localStorage.getItem('evolutionMode') === 'true';
   });
+  const [workflowMode, setWorkflowMode] = useState(() => {
+    return localStorage.getItem('workflowMode') === 'true';
+  });
+  const [llmProvider, setLlmProvider] = useState(() => {
+    return localStorage.getItem('llmProvider') || 'nim';
+  });
+  const [activeWorkflowId, setActiveWorkflowId] = useState<string | null>(null);
+  const [detectedIntent, setDetectedIntent] = useState<{
+    primary: string;
+    name: string;
+    emoji: string;
+    confidence: number;
+  } | null>(null);
+  
+  // 卡片详情弹窗状态
+  const [selectedCard, setSelectedCard] = useState<CardReference | null>(null);
+  const [showCardDetail, setShowCardDetail] = useState(false);
+  
+  // 快捷操作展开状态
+  const [showQuickActions, setShowQuickActions] = useState(false);
   
   // 图片相关状态
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imageData, setImageData] = useState<string | null>(null);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  
+  // 音频文件相关状态
+  const [selectedAudio, setSelectedAudio] = useState<File | null>(null);
+  const [audioPreviewUrl, setAudioPreviewUrl] = useState<string | null>(null);
+  const [audioTranscribing, setAudioTranscribing] = useState(false);
   
   // 语音相关状态
   const [isListening, setIsListening] = useState(false);
@@ -490,6 +574,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
 // 初始化欢迎消息
   useEffect(() => {
@@ -499,10 +584,15 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         content: `你好！我是小易。
 
 我可以帮您：
-查询知识库卡片 - 搜索事实、解释、风险、行动卡片
-生成PPT演示 - 快速创建专业演示文稿
-分析Excel数据 - 数据分析和可视化
-生成Word文档 - 创建专业文档
+📝 创建四色知识卡片 - 从对话、文档中提取
+🔍 搜索知识库 - 语义搜索，精准查询
+📊 生成PPT演示 - 快速创建专业演示文稿
+📄 分析文档/PDF - 多格式文档智能分析
+✅ 管理GTD任务 - 个人工作流管理
+🔗 构建知识图谱 - 发现隐藏知识关联
+🔄 智能工作流 - 文献综述/项目复盘/竞品分析/风险评估
+
+💡 开启工作流模式可体验自动化工作流编排！
 
 有什么可以帮您的吗？`,
         timestamp: new Date().toISOString()
@@ -510,7 +600,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       setSuggestedQuestions([
         "帮我搜索关于项目管理的知识卡片",
         "分析一下这张图片",
-        "生成一个工作总结的PPT"
+        "生成一个工作总结的PPT",
+        "启动文献综述工作流"
       ]);
     }
   }, [isOpen]);
@@ -524,7 +615,21 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
 
   // 自动滚动到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages, isLoading]);
+
+  // 监听消息内容变化时也滚动
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && lastMessage.role === 'assistant' && lastMessage.content) {
+      // 有新内容时延迟滚动，确保 DOM 已更新
+      const timer = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
   }, [messages]);
 
   // 聚焦输入框
@@ -545,20 +650,27 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       setSelectedImage(file);
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
-      
-      // 转换为Base64
-      fileToBase64(file).then(base64 => {
+
+      // 读取完整 DataURL（供显示）+ 裸 Base64（供 API）
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fullDataUrl = reader.result as string;
+        const base64 = fullDataUrl.split(',')[1];
         setImageData(base64);
-      }).catch(error => {
-        console.error('图片转换失败:', error);
+        setImageDataUrl(fullDataUrl);
+      };
+      reader.onerror = () => {
+        console.error('图片转换失败');
         toast.error('图片处理失败');
-      });
+      };
+      reader.readAsDataURL(file);
     }
   };
 
   const handleRemoveImage = () => {
     setSelectedImage(null);
     setImageData(null);
+    setImageDataUrl(null);
     if (previewUrl) {
       const oldUrl = previewUrl;
       setPreviewUrl(null);          // 先置空，React 不会再挂载旧 img
@@ -566,6 +678,68 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('audio/')) {
+        toast.error('请选择音频文件');
+        return;
+      }
+      setSelectedAudio(file);
+      const url = URL.createObjectURL(file);
+      setAudioPreviewUrl(url);
+      setAudioTranscribing(true);
+
+      try {
+        const formData = new FormData();
+        const ext = file.name.split('.').pop() || 'mp3';
+        formData.append('file', file, `audio.${ext}`);
+        formData.append('language', 'zh');
+        formData.append('model_size', 'base');
+
+        const response = await fetch(getApiBaseUrl() + '/api/speech/stt/transcribe', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          const transcript = result.text?.trim();
+
+          if (transcript) {
+            setInput(transcript);
+            toast.success(`识别: ${transcript}`, { duration: 2000 });
+          } else {
+            toast.error('未识别到语音内容，请重试');
+          }
+        } else {
+          const error = await response.json().catch(() => ({ detail: '识别失败' }));
+          toast.error(error.detail || '语音识别失败，请重试');
+        }
+      } catch (err) {
+        console.error('STT 请求失败:', err);
+        toast.error('语音识别服务不可用，请确保后端服务已启动');
+      } finally {
+        setAudioTranscribing(false);
+        if (audioInputRef.current) {
+          audioInputRef.current.value = '';
+        }
+      }
+    }
+  };
+
+  const handleRemoveAudio = () => {
+    setSelectedAudio(null);
+    if (audioPreviewUrl) {
+      const oldUrl = audioPreviewUrl;
+      setAudioPreviewUrl(null);
+      URL.revokeObjectURL(oldUrl);
+    }
+    if (audioInputRef.current) {
+      audioInputRef.current.value = '';
     }
   };
 
@@ -640,7 +814,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             if (transcript) {
               setInput(transcript);
               toast.success(`识别: ${transcript}`, { duration: 2000 });
-              setTimeout(() => handleSendWithText(transcript, imageData || undefined), 300);
+              setTimeout(() => handleSendWithText(transcript, imageData || undefined, imageDataUrl || undefined), 300);
             } else {
               toast.error('未识别到语音内容，请重试');
             }
@@ -692,6 +866,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       .replace(/^\d+\.\s+/gm, '')
       .replace(/\|/g, '')
       .replace(/\n{3,}/g, '\n\n')
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
       .trim();
   };
 
@@ -777,10 +952,10 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
   // 发送消息
   const handleSend = async () => {
     if (!input.trim() && !selectedImage) return;
-    await handleSendWithText(input.trim(), imageData || undefined);
+    await handleSendWithText(input.trim(), imageData || undefined, imageDataUrl || undefined);
   };
 
-  const handleSendWithText = async (text: string, imgData?: string) => {
+  const handleSendWithText = async (text: string, imgData?: string, imgDisplayUrl?: string) => {
     if (!text.trim() && !imgData) return;
 
     const query = text.trim();
@@ -793,10 +968,38 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         content: query,
         timestamp: new Date().toISOString(),
         metadata: {
-          image_url: imgData || undefined
+          image_url: imgDisplayUrl || undefined
         }
       };
       setMessages(prev => [...prev, userMessage]);
+
+      // 工作流模式：先检测意图
+      if (workflowMode && query.length > 3) {
+        try {
+          const intentResult = await enhancedChatService.detectIntent(query, false);  // 正则匹配，不走LLM
+          if (intentResult.success && intentResult.intent) {
+            setDetectedIntent({
+              primary: intentResult.intent.primary,
+              name: intentResult.intent.primary_name,
+              emoji: intentResult.intent.primary_emoji,
+              confidence: intentResult.intent.confidence,
+            });
+            
+            // 如果是复杂工作流意图，自动启动工作流
+            if (intentResult.intent.primary === 'complex_workflow' || 
+                intentResult.intent.primary === 'analyze_document' ||
+                intentResult.intent.primary === 'generate_ppt') {
+              const wfResult = await enhancedChatService.startWorkflow(query);
+              if (wfResult.success && wfResult.execution_id) {
+                setActiveWorkflowId(wfResult.execution_id);
+                toast.success(`🚀 工作流已启动: ${wfResult.intent?.name} (${wfResult.total_steps}步)`);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('意图检测失败:', e);
+        }
+      }
 
       let response;
       
@@ -812,7 +1015,8 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               enable_evolution: true,
               enable_memory: true,
               enable_skill: true,
-              user_id: 'default_user'
+              user_id: 'default_user',
+              llm_provider: llmProvider
             })
           });
           
@@ -903,13 +1107,31 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 try {
                   const d = JSON.parse(dataStr);
                   if (d.cards) {
-                    setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, metadata: { ...m.metadata, cards: d.cards } }; return u; });
+                    // 转换卡片数据，确保有 match_score 和其他必要字段
+                    const transformedCards = d.cards.map((c: any) => ({
+                      id: c.id || c.card_id || '',
+                      card_type: c.card_type || 'blue',
+                      title: c.title || '',
+                      content: c.content || '',
+                      match_score: c.match_score ?? c.similarity ?? 0,
+                      color: c.color || 'blue'
+                    }));
+                    setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, metadata: { ...m.metadata, cards: transformedCards } }; return u; });
                   }
                 } catch {}
               } else if (eventType === 'done') {
                 try {
                   const d = JSON.parse(dataStr);
-                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: d.full_text || fullContent, metadata: { scene_type: d.scene_type, cards: d.cards || [], skill_result: d.skill_result } }; return u; });
+                  // 转换卡片数据
+                  const transformedCards = (d.cards || []).map((c: any) => ({
+                    id: c.id || c.card_id || '',
+                    card_type: c.card_type || 'blue',
+                    title: c.title || '',
+                    content: c.content || '',
+                    match_score: c.match_score ?? c.similarity ?? 0,
+                    color: c.color || 'blue'
+                  }));
+                  setMessages(prev => { const u = [...prev]; const m = u[u.length - 1]; if (m?.role === 'assistant') u[u.length - 1] = { ...m, content: d.full_text || fullContent, metadata: { scene_type: d.scene_type, cards: transformedCards, skill_result: d.skill_result } }; return u; });
                   setSuggestedQuestions(generateLocalSuggestions(query, !!imgData, messages).slice(0, 3));
                   if (autoSpeak && fullContent) {
                     synthRef.current?.cancel();
@@ -968,21 +1190,20 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
     textareaRef.current?.focus();
   };
 
+  // 关闭卡片详情弹窗
+  const handleCloseCardDetail = () => {
+    setShowCardDetail(false);
+    setSelectedCard(null);
+  };
+
   // 快捷操作 - 直接跳转到对应页面
   const quickActions = [
     {
       icon: <Search className="w-3 h-3" />,
       label: "查卡片",
       onClick: () => {
-        onClose();
-        navigate('/');
-        setTimeout(() => {
-          const searchInput = document.querySelector('[data-search-input]') as HTMLInputElement;
-          if (searchInput) {
-            searchInput.focus();
-            searchInput.value = '';
-          }
-        }, 100);
+        setInput("帮我搜索关于");
+        textareaRef.current?.focus();
       },
       color: "#8b4513"
     },
@@ -990,23 +1211,23 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       icon: <Presentation className="w-3 h-3" />,
       label: "生成PPT",
       onClick: () => {
-        onClose();
-        navigate('/ppt-analysis');
+        setInput("生成一个PPT报告：");
+        textareaRef.current?.focus();
       },
       color: "#a0522d"
     },
     {
-      icon: <Table className="w-3 h-3" />,
-      label: "分析Excel",
+      icon: <Sparkles className="w-3 h-3" />,
+      label: "创建卡片",
       onClick: () => {
-        onClose();
-        navigate('/excel-analysis');
+        setInput("帮我创建知识卡片：");
+        textareaRef.current?.focus();
       },
       color: "#b87333"
     },
     {
-      icon: <FileType className="w-3 h-3" />,
-      label: "PDF分析",
+      icon: <FileText className="w-3 h-3" />,
+      label: "分析文档",
       onClick: () => {
         onClose();
         navigate('/pdf-analysis');
@@ -1014,32 +1235,115 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
       color: "#cd853f"
     },
     {
-      icon: <FileSpreadsheet className="w-3 h-3" />,
-      label: "格式转换",
-      onClick: () => {
-        onClose();
-        navigate('/pdf-analysis');
+      icon: <GitBranch className="w-3 h-3" />,
+      label: "文献综述",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动文献综述工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '文献综述'} (${result.total_steps}步)`);
+              setInput(`文献综述：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个文献综述，主题是：");
+          textareaRef.current?.focus();
+        }
       },
-      color: "#d4a574"
+      color: "#6b8e23"
     },
     {
-      icon: <Sparkles className="w-3 h-3" />,
-      label: "NPU分析",
+      icon: <CheckSquare className="w-3 h-3" />,
+      label: "GTD任务",
       onClick: () => {
-        onClose();
-        navigate('/npu-analysis');
-      },
-      color: "#8b7355"
-    },
-    {
-      icon: <Sparkles className="w-3 h-3" />,
-      label: "深度思考",
-      onClick: () => {
-        setInput("请帮我深度分析：");
+        setInput("管理我的任务：");
         textareaRef.current?.focus();
       },
-      color: "#6b4423"
-    }
+      color: "#4169e1"
+    },
+    {
+      icon: <Network className="w-3 h-3" />,
+      label: "知识图谱",
+      onClick: () => {
+        onClose();
+        navigate('/knowledge-graph');
+      },
+      color: "#9370db"
+    },
+    {
+      icon: <FileSearch className="w-3 h-3" />,
+      label: "项目复盘",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动项目复盘工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '项目复盘'} (${result.total_steps}步)`);
+              setInput(`项目复盘：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个项目复盘：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#dc143c"
+    },
+    {
+      icon: <Table className="w-3 h-3" />,
+      label: "竞品分析",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动竞品分析工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '竞品分析'} (${result.total_steps}步)`);
+              setInput(`竞品分析：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一个竞品分析，用表格对比：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#2e8b57"
+    },
+    {
+      icon: <AlertTriangle className="w-3 h-3" />,
+      label: "风险评估",
+      onClick: async () => {
+        if (workflowMode) {
+          try {
+            const result = await enhancedChatService.startWorkflow('启动风险评估工作流');
+            if (result.success && result.execution_id) {
+              setActiveWorkflowId(result.execution_id);
+              toast.success(`工作流已启动: ${result.intent?.name || '风险评估'} (${result.total_steps}步)`);
+              setInput(`风险评估：`);
+              textareaRef.current?.focus();
+            }
+          } catch (e) {
+            toast.error('启动工作流失败');
+          }
+        } else {
+          setInput("帮我做一次风险评估：");
+          textareaRef.current?.focus();
+        }
+      },
+      color: "#ff8c00"
+    },
   ];
 
   if (!isOpen) return null;
@@ -1067,18 +1371,18 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
         >
           {/* 头部 - 中国风 */}
           <div className="flex items-center justify-between px-4 py-3" style={{ background: 'linear-gradient(135deg, #8b4513, #d4a574)', borderBottom: '2px solid #d4a574' }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
                 <Bot className="w-5 h-5 text-white" />
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>小易</h3>
-                <p className="text-xs text-white/80">
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-white truncate" style={{ fontFamily: 'KaiTi, STKaiti, serif' }}>小易</h3>
+                <p className="text-xs text-white/80 hidden sm:block">
                   知识库查询 · 技能调用 · 深度思考
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 flex-shrink-0">
               <button
                 className="p-2 rounded-lg text-white/60 hover:bg-white/20 transition-colors"
                 onClick={() => setIsFullscreen(!isFullscreen)}
@@ -1086,38 +1390,76 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               >
                 {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
               </button>
-<button
-                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${evolutionMode ? 'bg-purple-500/50' : 'text-white/60 hover:bg-white/20'}`}
-                onClick={() => {
-                  const newVal = !evolutionMode;
-                  setEvolutionMode(newVal);
-                  localStorage.setItem('evolutionMode', String(newVal));
-                  toast.success(newVal ? '已开启自进化模式 (8-Agent+四色卡片)' : '已关闭自进化模式', { duration: 2000 });
-                }}
-                title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
-              >
-                <Brain className="w-5 h-5" />
-              </button>
-              <button
-                className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
-                onClick={() => {
-                  const newVal = !autoSpeak;
-                  setAutoSpeak(newVal);
-                  localStorage.setItem('autoSpeak', String(newVal));
-                  if (!newVal) {
-                    synthRef.current?.cancel();
-                    if (currentAudioRef.current) {
-                      currentAudioRef.current.pause();
-                      currentAudioRef.current = null;
+              <span className="hidden sm:inline-flex items-center gap-1">
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${evolutionMode ? 'bg-purple-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !evolutionMode;
+                    setEvolutionMode(newVal);
+                    localStorage.setItem('evolutionMode', String(newVal));
+                    toast.success(newVal ? '已开启自进化模式 (8-Agent+四色卡片)' : '已关闭自进化模式', { duration: 2000 });
+                  }}
+                  title={evolutionMode ? '关闭自进化模式' : '开启自进化模式 - 启用8-Agent和四色卡片提取'}
+                >
+                  <Brain className="w-5 h-5" />
+                </button>
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${workflowMode ? 'bg-green-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !workflowMode;
+                    setWorkflowMode(newVal);
+                    localStorage.setItem('workflowMode', String(newVal));
+                    toast.success(newVal ? '已开启工作流模式 (智能编排)' : '已关闭工作流模式', { duration: 2000 });
+                  }}
+                  title={workflowMode ? '关闭工作流模式' : '开启工作流模式 - 自动识别意图并编排工作流'}
+                >
+                  <GitBranch className="w-5 h-5" />
+                </button>
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${llmProvider === 'nim' ? 'bg-cyan-500/50' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const options = ['sensenova', 'nim', 'npu'];
+                    const idx = options.indexOf(llmProvider);
+                    const next = options[(idx + 1) % options.length];
+                    setLlmProvider(next);
+                    localStorage.setItem('llmProvider', next);
+                    const labels: Record<string, string> = { sensenova: '商汤SenseNova', nim: 'NVIDIA NIM', npu: '本地NPU' };
+                    toast.success(`LLM提供者已切换: ${labels[next] || next}`, { duration: 1500 });
+                  }}
+                  title={`当前LLM: ${llmProvider} - 点击切换`}
+                >
+                  <Cpu className="w-5 h-5" />
+                </button>
+                <button
+                  className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${autoSpeak ? 'bg-white/30' : 'text-white/60 hover:bg-white/20'}`}
+                  onClick={() => {
+                    const newVal = !autoSpeak;
+                    setAutoSpeak(newVal);
+                    localStorage.setItem('autoSpeak', String(newVal));
+                    if (!newVal) {
+                      synthRef.current?.cancel();
+                      if (currentAudioRef.current) {
+                        currentAudioRef.current.pause();
+                        currentAudioRef.current = null;
+                      }
+                      setIsSpeaking(false);
                     }
-                    setIsSpeaking(false);
-                  }
-                  toast.success(newVal ? '已开启自动朗读' : '已关闭自动朗读', { duration: 1500 });
-                }}
-                title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
-              >
-                {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-              </button>
+                    toast.success(newVal ? '已开启自动朗读' : '已关闭自动朗读', { duration: 1500 });
+                  }}
+                  title={autoSpeak ? '关闭自动朗读' : '开启自动朗读'}
+                >
+                  {autoSpeak ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                </button>
+              </span>
+              {onSwitchToHermes && (
+                <button
+                  className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
+                  onClick={onSwitchToHermes}
+                  title="切换到 Hermes 模式 (WebSocket)"
+                >
+                  <Zap className="w-5 h-5" />
+                </button>
+              )}
               <button
                 className="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                 onClick={handleClear}
@@ -1135,7 +1477,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
           </div>
 
           {/* 消息区域 */}
-          <div className="flex-1 p-4 overflow-y-auto" style={{ backgroundColor: '#faf8f5' }}>
+          <div className="flex-1 p-4 overflow-y-auto pb-36" style={{ backgroundColor: '#faf8f5' }}>
             <div className="space-y-4">
               {messages.map((message, index) => (
                 <MessageBubble
@@ -1166,6 +1508,26 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               <div ref={messagesEndRef} />
             </div>
           </div>
+
+          {/* 意图识别结果 */}
+          {detectedIntent && workflowMode && (
+            <div className="px-4 py-2" style={{ backgroundColor: '#f0faf0', borderTop: '1px solid #c8e6c9' }}>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-base">{detectedIntent.emoji}</span>
+                <span style={{ color: '#2e7d32' }}>
+                  意图识别: <strong>{detectedIntent.name}</strong>
+                </span>
+                <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#c8e6c9', color: '#1b5e20' }}>
+                  {(detectedIntent.confidence * 100).toFixed(0)}%
+                </span>
+                {activeWorkflowId && (
+                  <span className="px-1.5 py-0.5 rounded" style={{ backgroundColor: '#d4e157', color: '#827717' }}>
+                    🔄 工作流运行中
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 建议问题 */}
           {suggestedQuestions.length > 0 && (
@@ -1215,19 +1577,62 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             </div>
           )}
 
-          {/* 快捷操作 */}
-          <div className="hidden md:block px-4 py-2" style={{ borderTop: '1px solid #e8ddd0' }}>
-            <div className="flex flex-wrap gap-2">
-              {quickActions.map((action, index) => (
-                <QuickAction
-                  key={index}
-                  icon={action.icon}
-                  label={action.label}
-                  onClick={action.onClick}
-                  color={action.color}
-                />
-              ))}
+          {/* 音频预览 */}
+          {audioPreviewUrl && (
+            <div className="px-4 py-2" style={{ backgroundColor: '#fef3e2', borderTop: '1px solid #e8ddd0' }}>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-16 h-16 flex items-center justify-center rounded-lg"
+                  style={{ border: '2px solid #d4a574', backgroundColor: '#fff9f3' }}
+                >
+                  <Music className="w-8 h-8" style={{ color: '#8b4513' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: '#8b4513' }}>{selectedAudio?.name}</p>
+                  <p className="text-xs" style={{ color: '#8b7355' }}>
+                    {selectedAudio ? (selectedAudio.size / 1024).toFixed(1) : 0} KB
+                    {audioTranscribing && ' - 识别中...'}
+                  </p>
+                  <audio src={audioPreviewUrl} controls className="h-8 w-full mt-1" />
+                </div>
+                <button
+                  onClick={handleRemoveAudio}
+                  className="p-1 rounded-lg transition-colors"
+                  style={{ color: '#8b7355' }}
+                  disabled={isLoading || audioTranscribing}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+          )}
+
+          {/* 快捷操作 - 可折叠 */}
+          <div className="hidden md:block border-t" style={{ borderColor: '#e8ddd0' }}>
+            <button
+              onClick={() => setShowQuickActions(!showQuickActions)}
+              className="w-full px-4 py-2 flex items-center justify-between text-xs transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+              style={{ color: '#8b4513', backgroundColor: '#fef3e2' }}
+            >
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                快捷操作
+              </span>
+              <ChevronRight className={cn("w-4 h-4 transition-transform", showQuickActions && "rotate-90")} />
+            </button>
+            {showQuickActions && (
+              <div className="px-4 py-3 flex flex-wrap gap-2" style={{ backgroundColor: '#faf8f5' }}>
+                {quickActions.map((action, index) => (
+                  <QuickAction
+                    key={index}
+                    icon={action.icon}
+                    label={action.label}
+                    onClick={action.onClick}
+                    color={action.color}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 输入区域 */}
@@ -1240,14 +1645,32 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
                 accept="image/*"
                 onChange={handleImageSelect}
               />
+              <input
+                type="file"
+                ref={audioInputRef}
+                className="hidden"
+                accept="audio/*"
+                onChange={handleAudioSelect}
+              />
               
               <button
                 className="p-2 rounded-lg transition-colors flex-shrink-0"
                 style={{ backgroundColor: '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isLoading}
+                title="上传图片"
               >
                 <Upload className="w-4 h-4" />
+              </button>
+              
+              <button
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{ backgroundColor: audioTranscribing ? '#d4a574' : '#fef3e2', color: '#8b4513', border: '1px solid #e8ddd0' }}
+                onClick={() => audioInputRef.current?.click()}
+                disabled={isLoading || audioTranscribing}
+                title="上传音频转文字"
+              >
+                {audioTranscribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Music className="w-4 h-4" />}
               </button>
               
               {/* 语音输入按钮 */}
@@ -1290,7 +1713,7 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
               
               <button
                 onClick={handleSend}
-                disabled={isLoading || (!input.trim() && !selectedImage)}
+                disabled={isLoading || (!input.trim() && !selectedImage && !selectedAudio)}
                 className="p-2 text-white rounded-md transition-colors flex-shrink-0 disabled:opacity-50"
                 style={{ backgroundColor: '#8b4513' }}
               >
@@ -1309,6 +1732,30 @@ export const EnhancedChatBot: React.FC<EnhancedChatBotProps> = ({ isOpen, onClos
             )}
           </div>
         </motion.div>
+
+        {/* 卡片详情弹窗 */}
+        {showCardDetail && selectedCard && (
+          <CardDetailModal
+            isOpen={showCardDetail}
+            onClose={handleCloseCardDetail}
+            card={{
+              id: selectedCard.id,
+              color: selectedCard.color as 'blue' | 'green' | 'yellow' | 'red',
+              title: selectedCard.title,
+              content: selectedCard.content,
+              address: '',
+              createdAt: new Date().toISOString(),
+              relatedCards: [],
+              projectId: undefined,
+            }}
+            allCards={[]}
+            onDelete={() => {}}
+            onRelatedCardClick={() => {}}
+            onUpdateCard={() => {}}
+            onCreateRecommendedCard={() => {}}
+            refreshTrigger={0}
+          />
+        )}
       </motion.div>
     </AnimatePresence>
   );

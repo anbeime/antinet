@@ -105,7 +105,12 @@ export async function hermesChatStream(
   return new Promise((resolve, reject) => {
     // 启动请求
     hermesChat(message, sessionId, { userId, enable8Agent })
-      .then(resolve)
+      .then((res) => {
+        if (res.response) {
+          onChunk(res.response);
+        }
+        resolve(res);
+      })
       .catch(reject);
   });
 }

@@ -4,7 +4,6 @@ import {
   Download, Settings, Loader, Film,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { CardColors } from '@/types/designSystem';
 
 interface SlideData {
   id: string;

@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { npuService, AnalyzeResponse } from '@/services/npuService';
 import FourColorCards from '@/components/FourColorCards';
 import { Brain, Clock, Gauge, CheckCircle2, AlertTriangle, Search, BookOpen } from 'lucide-react';
-import { API_BASE_URL, API_ENDPOINTS } from '@/config/api';
+import { API_ENDPOINTS } from '@/config/api';
+import { getApiBaseUrl } from '@/lib/apiConfig';
 
 export default function NPUAnalysis() {
   const [query, setQuery] = useState('');
@@ -13,11 +14,16 @@ export default function NPUAnalysis() {
   const [knowledgeResults, setKnowledgeResults] = useState<any[]>([]);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
 
+  useEffect(() => {
+    const lastQuery = localStorage.getItem('npu_last_query');
+    if (lastQuery) setQuery(lastQuery);
+  }, []);
+
   // 知识搜索函数
   const searchKnowledge = async (searchQuery: string) => {
     try {
       setKnowledgeLoading(true);
-      const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.KNOWLEDGE_SEARCH}`, {
+      const response = await fetch(`${getApiBaseUrl()}${API_ENDPOINTS.KNOWLEDGE_SEARCH}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -252,10 +258,13 @@ export default function NPUAnalysis() {
             8-Agent 协作分析结果
           </h2>
 
-          {/* 四色卡片展示 */}
-          {result.cards && Object.keys(result.cards).length > 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="font-bold text-gray-900 dark:text-white mb-4">四色卡片分析结果</h3>
+        {/* 四色卡片展示 */}
+        {result.cards && Object.keys(result.cards).length > 0 ? (
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+            <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <BookOpen size={18} />四色卡片分析结果
+            </h3>
+            <FourColorCards />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {Object.entries(result.cards).map(([color, cardData]) => {
                   // cardData 是单个卡片对象，不是数组

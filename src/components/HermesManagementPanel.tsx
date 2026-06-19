@@ -1,11 +1,10 @@
 // src/components/HermesManagementPanel.tsx - Hermes Agent 管理面板
 // 集成Hermes的技能管理、模型选择、配置管理
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Bot, Settings, Play, Square, RefreshCw, 
-  Cpu, MessageSquare, Key, Terminal, 
-  ChevronDown, ChevronRight, Plus, Trash2,
+import {
+  Bot, Settings, Play, Square, RefreshCw,
+  Cpu, MessageSquare, Terminal,
   Check, AlertCircle, Loader
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -72,8 +71,8 @@ const HermesManagementPanel: React.FC = () => {
         description: '',
         category: 'general',
         enabled: true
-      })));
-      setConfig(configData);
+      })) as HermesSkill[]);
+      setConfig(configData as HermesConfig);
       if (configData?.model) setCurrentModel(configData.model);
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -89,7 +88,7 @@ const HermesManagementPanel: React.FC = () => {
     setLoading(true);
     
     try {
-      const history = messages.map(m => ({ role: m.role, content: m.content }));
+      const history = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
       const response = await hermesService.chat({
         message: userMessage,
         history

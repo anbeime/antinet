@@ -6,10 +6,12 @@ import logging
 import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
-import httpx
 import json
 
 logger = logging.getLogger(__name__)
+
+# 使用共享的 Genie API 客户端
+from agents.shared_genie_client import genie_client
 
 
 class FactGeneratorAgent:
@@ -84,43 +86,43 @@ class FactGeneratorAgent:
     async def _analyze_data(self, preprocessed_data: Dict, user_query: str, current_date: str) -> List[Dict]:
         """
         分析数据
-        
+       
         参数：
             preprocessed_data: 预处理数据
             user_query: 用户查询
             current_date: 当前日期
-        
+       
         返回：
             原始事实列表
         """
         try:
             # 准备数据摘要
             data_summary = self._prepare_data_summary(preprocessed_data, current_date)
-            
+           
             # 构建提示词
             prompt = f"""
-            你是Antinet系统的通政司，负责从数据中挖掘关键事实。
+            你是Antinet系统的通政司，负责从对话内容和知识库中挖掘关键事实。
             
             用户查询：{user_query}
             当前日期：{current_date}
             
-            数据摘要：
+            分析内容：
             {data_summary}
             
-            请从数据中挖掘关键事实，包括：
-            1. 趋势事实（上升、下降、稳定）
-            2. 异常事实（显著偏离正常值）
-            3. 对比事实（同比、环比、行业对比）
-            4. 结构事实（占比、分布）
+            请从以上内容中提取关键事实，关注：
+            1. 明确陈述的事实（客观信息、定义、属性）
+            2. 数据或统计（数值、比例、时间）
+            3. 关系或关联（A与B的关系、因果）
+            4. 分类或归属（属于、包含、组成）
             
             输出格式（JSON）：
             {{
                 "facts": [
                     {{
-                        "title": "事实标题",
+                        "title": "事实标题（简洁概括）",
                         "description": "详细描述",
-                        "evidence": "数据证据（具体数值或对比）",
-                        "source": "数据来源字段",
+                        "evidence": "事实依据（原文引用或具体数据）",
+                        "source": "事实来源",
                         "confidence": 0.95
                     }}
                 ]
@@ -140,23 +142,30 @@ class FactGeneratorAgent:
     def _prepare_data_summary(self, preprocessed_data: Dict, current_date: str) -> str:
         """
         准备数据摘要
-        
+       
         参数：
             preprocessed_data: 预处理数据
             current_date: 当前日期
-        
+       
         返回：
             数据摘要文本
         """
         try:
             data = preprocessed_data.get("preprocessed_data", {})
-            features = data.get("features", {})
+            raw_data = data.get("data", [])
             
-            summary = f"""
-            数据规模：{len(data.get('data', []))}条记录
-            字段：{', '.join(data.get('schema', {}).keys())}
-            时间范围：{current_date}
-            """
+            # 提取正文内容
+            text_content = ""
+            for item in raw_data:
+                text = item.get("text", "") if isinstance(item, dict) else str(item)
+                if len(text) > len(text_content):
+                    text_content = text
+            
+            # 截断过长文本
+            if len(text_content) > 3000:
+                text_content = text_content[:3000] + "\n...（内容过长已截断）"
+            
+            summary = text_content if text_content else "(无内容)"
             
             return summary
         
@@ -231,75 +240,45 @@ class FactGeneratorAgent:
     def _verify_facts(self, categorized_facts: Dict, preprocessed_data: Dict) -> Dict:
         """
         验证事实
-        
+       
         参数：
             categorized_facts: 分类后事实
             preprocessed_data: 预处理数据
-        
+       
         返回：
             验证后事实字典
         """
         try:
             verified = {k: [] for k in categorized_facts.keys()}
-            
+           
             for color, facts in categorized_facts.items():
                 for fact in facts:
-                    # 验证证据是否存在
-                    evidence = fact.get("evidence", "")
-                    if evidence:
-                        # 验证数据来源
-                        source = fact.get("source", "")
-                        if source in preprocessed_data.get("preprocessed_data", {}).get("schema", {}):
-                            verified[color].append(fact)
-            
+                    # 验证必要字段存在
+                    if fact.get("title") and fact.get("description") and fact.get("confidence", 0) >= 0.5:
+                        verified[color].append(fact)
+           
             return verified
-        
+       
         except Exception as e:
             logger.error(f"验证事实失败: {e}", exc_info=True)
             raise
     
     async def _call_genie_api(self, prompt: str) -> str:
         """
-        调用LLM推理（直接使用 genie 8910 HTTP API）
-        带重试逻辑：遇到429限流时等待后重试
+        调用LLM推理（使用共享 Genie API 客户端，自动串行化）
         """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        "http://127.0.0.1:8910/v1/chat/completions",
-                        json={
-                            "model": "qwen2.5vl3b-8380-2.42",
-                            "messages": [
-                                {"role": "system", "content": "你是通政司，负责从数据中挖掘关键事实。输出JSON格式，只输出JSON不要其他内容。"},
-                                {"role": "user", "content": prompt}
-                            ],
-                            "size": 1024,
-                            "seed": 42,
-                            "temp": 0.7,
-                            "top_k": 1,
-                            "top_p": 1.0
-                        }
-                    )
-                    response.raise_for_status()
-                    result = response.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    if content:
-                        return content
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    wait_time = (attempt + 1) * 2  # 2, 4, 6 秒
-                    logger.warning(f"[通政司] 8910限流(429)，{wait_time}秒后重试 ({attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                    continue
-                logger.error(f"[通政司] 8910 Genie API HTTP错误: {e}")
-                break
-            except Exception as e:
-                logger.error(f"[通政司] 8910 Genie API不可用: {e}")
-                break
-        
-        return ""
+        try:
+            return await genie_client.call(
+                prompt,
+                system_prompt="你是通政司，负责从数据中挖掘关键事实。输出JSON格式，只输出JSON不要其他内容。",
+                max_tokens=1024,
+                top_k=1,
+                top_p=1.0,
+                temperature=0.7
+            )
+        except Exception as e:
+            logger.error(f"[通政司] Genie API 调用失败: {e}")
+            return ""
     
     def _parse_json_response(self, response: str) -> Dict:
         """

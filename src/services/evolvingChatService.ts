@@ -11,8 +11,9 @@ export interface EvolvingChatRequest {
   enable_evolution?: boolean;
   enable_memory?: boolean;
   enable_skill?: boolean;
-  enable_8agent?: boolean;  // 新增：启用完整8-Agent流程
+  enable_8agent?: boolean;
   user_id?: string;
+  llm_provider?: string;  // sensenova / nim / npu
 }
 
 export interface CardSource {
@@ -89,7 +90,8 @@ class EvolvingChatService {
           enable_memory: request.enable_memory ?? true,
           enable_skill: request.enable_skill ?? true,
           enable_8agent: request.enable_8agent ?? false,
-          user_id: request.user_id || 'default_user'
+          user_id: request.user_id || 'default_user',
+          llm_provider: request.llm_provider || 'nim'
         }),
       });
 

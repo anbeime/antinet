@@ -644,6 +644,116 @@ async def get_upcoming_tasks(days: int = 7):
         raise HTTPException(status_code=500, detail=f"获取即将到期任务失败: {str(e)}")
 
 
+@router.get("/tasks/project/{project_id}")
+async def get_tasks_by_project(project_id: int):
+    """按项目获取任务（看板数据源）"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, description, category, priority, due_date,
+                   created_at, updated_at, is_completed, completed_at,
+                   project_id, assigned_to, assigned_to_name,
+                   source_card_id, source_type, source_id, kanban_status
+            FROM gtd_tasks
+            WHERE project_id = ?
+            ORDER BY kanban_status, 
+                     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                     due_date ASC
+        """, (project_id,))
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "category": row["category"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "completed_at": row["completed_at"],
+                "project_id": row["project_id"],
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"],
+                "source_card_id": row["source_card_id"],
+                "source_type": row["source_type"],
+                "source_id": row["source_id"],
+                "kanban_status": row["kanban_status"] or "backlog"
+            })
+        conn.close()
+        return {"project_id": project_id, "tasks": tasks, "total": len(tasks)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取项目任务失败: {str(e)}")
+
+
+class KanbanStatusUpdate(BaseModel):
+    kanban_status: str
+
+    @property
+    def status(self) -> str:
+        return self.kanban_status
+
+@router.put("/tasks/{task_id}/kanban-status")
+async def update_kanban_status(task_id: int, update: KanbanStatusUpdate):
+    """更新任务看板状态"""
+    kanban_status = update.kanban_status
+    valid_statuses = {"backlog", "todo", "in_progress", "review", "done"}
+    if kanban_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"无效状态: {kanban_status}")
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        if kanban_status == "done":
+            cursor.execute("UPDATE gtd_tasks SET kanban_status = ?, is_completed = 1, completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?", (kanban_status, task_id))
+        else:
+            cursor.execute("UPDATE gtd_tasks SET kanban_status = ?, is_completed = 0, updated_at = datetime('now') WHERE id = ?", (kanban_status, task_id))
+        conn.commit()
+        conn.close()
+        return {"success": True, "task_id": task_id, "kanban_status": kanban_status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"更新看板状态失败: {str(e)}")
+
+
+@router.get("/tasks/card/{card_id}")
+async def get_tasks_by_card(card_id: int):
+    """获取卡片关联的任务"""
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT t.id, t.title, t.description, t.priority, t.due_date,
+                   t.is_completed, t.completed_at, t.kanban_status,
+                   t.created_at, t.updated_at, t.project_id,
+                   t.assigned_to, t.assigned_to_name
+            FROM gtd_tasks t
+            JOIN card_task_relations ctr ON t.id = ctr.task_id
+            WHERE ctr.card_id = ?
+            ORDER BY t.is_completed, t.created_at DESC
+        """, (card_id,))
+        tasks = []
+        for row in cursor.fetchall():
+            tasks.append({
+                "id": row["id"],
+                "title": row["title"],
+                "description": row["description"],
+                "priority": row["priority"],
+                "due_date": row["due_date"],
+                "is_completed": bool(row["is_completed"]) if row["is_completed"] else False,
+                "completed_at": row["completed_at"],
+                "kanban_status": row["kanban_status"] or "backlog",
+                "created_at": row["created_at"],
+                "project_id": row["project_id"],
+                "assigned_to": row["assigned_to"],
+                "assigned_to_name": row["assigned_to_name"]
+            })
+        conn.close()
+        return {"card_id": card_id, "tasks": tasks, "total": len(tasks)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取卡片任务失败: {str(e)}")
+
+
 @router.get("/tasks/overdue")
 async def get_overdue_tasks():
     """获取已逾期任务"""

@@ -58,6 +58,7 @@ export interface SlideShape {
 
 export interface SlideData {
   index: number;
+  title?: string;
   shapes: SlideShape[];
   background?: string;
   notes?: string;

@@ -74,21 +74,55 @@ def clean_markdown_for_ppt(text: str) -> str:
 def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
     """
     解析 Markdown 内容为幻灯片结构
-    
+
+    幻灯片分页规则：
+      - `---`（独占一行）→ 强制分页
+      - `# `  → 标题页（新一页）
+      - `## ` → 内容页（新一页）
+      - 若无任何分页标记 → 每 ~20 行自动切分一页
+
     Args:
         content: Markdown 格式的文本内容
-        
+
     Returns:
         幻灯片数据列表
     """
     slides = []
     current_slide = None
-    
+
+    # 预处理：将 --- 替换为分隔标记
+    import re as _re
+
+    has_explicit_breaks = bool(_re.search(r'(?:^|\n)[ \t]*---[ \t]*\n', content)) or \
+                          bool(_re.search(r'^# ', content, _re.MULTILINE)) or \
+                          bool(_re.search(r'^## ', content, _re.MULTILINE))
+
+    if not has_explicit_breaks:
+        lines = content.strip().split('\n')
+        nonzero = [l for l in lines if l.strip()]
+        if len(nonzero) > 20:
+            chunk_size = max(1, len(nonzero) // ((len(nonzero) + 19) // 20))
+            for i in range(0, len(nonzero), chunk_size):
+                chunk = nonzero[i:i + chunk_size]
+                slides.append({
+                    'title': f'第 {len(slides) + 1} 页',
+                    'content': [{'type': 'paragraph', 'text': l} for l in chunk],
+                    'type': 'content'
+                })
+            return slides
+
     lines = content.split('\n')
-    
+
     for line in lines:
         line_stripped = line.strip()
-        
+
+        # --- 分隔符 → 强制分页
+        if line_stripped == '---':
+            if current_slide:
+                slides.append(current_slide)
+            current_slide = None
+            continue
+
         # 一级标题 - 新幻灯片标题
         if line_stripped.startswith('# '):
             if current_slide:
@@ -98,7 +132,7 @@ def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
                 'content': [],
                 'type': 'title'
             }
-        
+
         # 二级标题 - 新幻灯片或章节
         elif line_stripped.startswith('## '):
             if current_slide:
@@ -108,7 +142,7 @@ def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
                 'content': [],
                 'type': 'content'
             }
-        
+
         # 三级标题 - 内容标题
         elif line_stripped.startswith('### '):
             if current_slide is None:
@@ -122,7 +156,7 @@ def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
                     'type': 'heading',
                     'text': line_stripped[4:].strip()
                 })
-        
+
         # 列表项
         elif line_stripped.startswith('- ') or line_stripped.startswith('* '):
             if current_slide is None:
@@ -135,21 +169,21 @@ def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
                 'type': 'bullet',
                 'text': line_stripped[2:].strip()
             })
-        
+
         # 编号列表
-        elif re.match(r'^\d+\.\s', line_stripped):
+        elif _re.match(r'^\d+\.\s', line_stripped):
             if current_slide is None:
                 current_slide = {
                     'title': '内容',
                     'content': [],
                     'type': 'content'
                 }
-            text = re.sub(r'^\d+\.\s', '', line_stripped)
+            text = _re.sub(r'^\d+\.\s', '', line_stripped)
             current_slide['content'].append({
                 'type': 'numbered',
                 'text': text.strip()
             })
-        
+
         # 普通段落
         elif line_stripped and not line_stripped.startswith('#'):
             if current_slide is None:
@@ -162,11 +196,11 @@ def parse_markdown_content(content: str) -> List[Dict[str, Any]]:
                 'type': 'paragraph',
                 'text': line_stripped
             })
-    
+
     # 添加最后一个幻灯片
     if current_slide:
         slides.append(current_slide)
-    
+
     return slides
 
 

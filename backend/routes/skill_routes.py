@@ -3,7 +3,7 @@
 提供技能管理和调用的 API
 """
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -531,6 +531,7 @@ class BookExtractRequest(BaseModel):
     book_content: str = Field(..., description="书籍文本内容")
     book_name: str = Field(default="", description="书籍名称")
     book_author: str = Field(default="", description="书籍作者")
+    llm_model: Optional[str] = Field(default=None, description="指定 LLM 模型")
 
 
 class BookQueryRequest(BaseModel):
@@ -558,7 +559,8 @@ async def book_skill_extract(request: BookExtractRequest):
         result = generator.extract_from_text(
             book_content=request.book_content,
             book_name=request.book_name,
-            book_author=request.book_author
+            book_author=request.book_author,
+            llm_model=request.llm_model
         )
         return result
     except Exception as e:
@@ -566,12 +568,14 @@ async def book_skill_extract(request: BookExtractRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BookNotesExtractRequest(BaseModel):
+    notes: str = Field(..., description="笔记文本内容")
+    book_name: str = Field(default="", description="书籍名称")
+    book_author: str = Field(default="", description="书籍作者")
+
+
 @router.post("/book-skill/extract-from-notes")
-async def book_skill_extract_from_notes(
-    notes: str,
-    book_name: str = "",
-    book_author: str = ""
-):
+async def book_skill_extract_from_notes(request: BookNotesExtractRequest):
     """
     从用户笔记/总结中提取方法论
     适用于用户已经有四色笔记的情况
@@ -580,9 +584,9 @@ async def book_skill_extract_from_notes(
         from skills.book_skill import get_book_skill_generator
         generator = get_book_skill_generator()
         result = generator.extract_from_notes(
-            notes=notes,
-            book_name=book_name,
-            book_author=book_author
+            notes=request.notes,
+            book_name=request.book_name,
+            book_author=request.book_author
         )
         return result
     except Exception as e:
@@ -642,6 +646,18 @@ async def book_skill_list():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/book-skill/stats")
+async def book_skill_stats():
+    """获取 Book Skill 统计信息"""
+    try:
+        from skills.book_skill import get_book_skill_generator
+        generator = get_book_skill_generator()
+        return generator.get_statistics()
+    except Exception as e:
+        logger.error(f"[BookSkill] 获取统计失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/book-skill/{book_name}")
 async def book_skill_get(book_name: str):
     """获取指定书籍的技能详情"""
@@ -656,18 +672,6 @@ async def book_skill_get(book_name: str):
         raise
     except Exception as e:
         logger.error(f"[BookSkill] 获取失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/book-skill/stats")
-async def book_skill_stats():
-    """获取 Book Skill 统计信息"""
-    try:
-        from skills.book_skill import get_book_skill_generator
-        generator = get_book_skill_generator()
-        return generator.get_statistics()
-    except Exception as e:
-        logger.error(f"[BookSkill] 获取统计失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

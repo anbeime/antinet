@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Users,
   MessageSquare,
   Play,
   RotateCcw,
@@ -16,25 +16,31 @@ import {
   Calendar,
   Clock,
   FileText,
-  X
+  X,
+  Library,
+  Loader,
+  Book,
+  ChevronRight,
+  Search
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { gtdTaskService } from '@/services/dataService';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import MeetingCardPanel from '@/components/MeetingCardPanel';
 import MeetingCardSaveModal from '@/components/MeetingCardSaveModal';
 import type { MeetingCard } from '@/types/card';
+import { researchProjectService } from '@/services/dataService';
 
 // ==================== 像素办公室 AGENT 配置 ====================
 const PIXEL_AGENTS: Record<string, { name: string; cnName: string; color: string; x: number; y: number }> = {
-  orchestrator: { name: '锦衣卫', cnName: '陆绎', color: '#e74c3c', x: 400, y: 100 },
-  mijuanfang: { name: '密卷房', cnName: '档案官', color: '#3498db', x: 120, y: 160 },
-  tongzhengsi: { name: '通政司', cnName: '通讯官', color: '#2ecc71', x: 680, y: 160 },
-  jianchayuan: { name: '监察院', cnName: '监察官', color: '#f39c12', x: 120, y: 290 },
-  xingyusi: { name: '刑狱司', cnName: '风险官', color: '#9b59b6', x: 680, y: 290 },
-  canmousi: { name: '参谋司', cnName: '参谋官', color: '#1abc9c', x: 250, y: 410 },
-  taishige: { name: '太史阁', cnName: '记忆官', color: '#e67e22', x: 550, y: 410 },
-  yichuansi: { name: '驿传司', cnName: '传令官', color: '#34495e', x: 400, y: 250 }
+  // 与后端 AGENT_MAPPING 保持一致
+  taishige: { name: '太史阁', cnName: '历史记录与反思官', color: '#3b82f6', x: 120, y: 160 },
+  jinjiyu: { name: '锦衣卫', cnName: '安全与情报收集官', color: '#ef4444', x: 680, y: 160 },
+  tongzhengsi: { name: '通政司', cnName: '信息与通讯中枢', color: '#22c55e', x: 120, y: 290 },
+  jianchayuan: { name: '监察院', cnName: '监督与审计官', color: '#a855f7', x: 680, y: 290 },
+  mijuanfang: { name: '密卷房', cnName: '知识库与档案管理员', color: '#6366f1', x: 250, y: 410 },
+  chengxiangfu: { name: '丞相府', cnName: '战略规划与决策官', color: '#eab308', x: 550, y: 410 },
+  junjichu: { name: '军机处', cnName: '执行与协调官', color: '#f97316', x: 400, y: 250 },
+  zhihuishi: { name: '指挥使', cnName: '总指挥与裁决官', color: '#14b8a6', x: 400, y: 100 }
 };
 
 // Backend Agent Mapping
@@ -61,21 +67,26 @@ const PIXEL_STATE_NAMES: Record<string, string> = {
 
 // 像素办公室 AGENT key 到会议 AGENT id 的映射
 const PIXEL_TO_MEETING: Record<string, string> = {
-  orchestrator: 'jinjiyu', mijuanfang: 'mijuanfang', tongzhengsi: 'tongzhengsi',
-  jianchayuan: 'jianchayuan', xingyusi: 'chengxiangfu', canmousi: 'junjichu',
-  taishige: 'taishige', yichuansi: 'zhihuishi'
+  taishige: 'taishige',
+  jinjiyu: 'jinjiyu',
+  tongzhengsi: 'tongzhengsi',
+  jianchayuan: 'jianchayuan',
+  mijuanfang: 'mijuanfang',
+  chengxiangfu: 'chengxiangfu',
+  junjichu: 'junjichu',
+  zhihuishi: 'zhihuishi'
 };
 
-// 会议流程步骤
+// 会议流程步骤 - 与后端 AGENT_MAPPING 一致
 const MEETING_STEPS = [
-  { agent: 'orchestrator', state: 'executing', detail: '总指挥使正在分解任务...' },
   { agent: 'mijuanfang', state: 'researching', detail: '档案官正在解析用户素材...' },
   { agent: 'tongzhengsi', state: 'writing', detail: '通讯官正在提取核心事实...' },
   { agent: 'jianchayuan', state: 'researching', detail: '监察官正在分析原因逻辑...' },
-  { agent: 'xingyusi', state: 'researching', detail: '风险官正在检测潜在风险...' },
-  { agent: 'canmousi', state: 'writing', detail: '参谋官正在生成行动建议...' },
+  { agent: 'jinjiyu', state: 'researching', detail: '风险官正在检测潜在风险...' },
+  { agent: 'chengxiangfu', state: 'writing', detail: '参谋官正在生成行动建议...' },
+  { agent: 'junjichu', state: 'executing', detail: '执行官正在分解任务...' },
   { agent: 'taishige', state: 'syncing', detail: '记忆官正在存储知识成果...' },
-  { agent: 'yichuansi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
+  { agent: 'zhihuishi', state: 'idle', detail: '八府巡按会议完成，等待新指令' }
 ];
 
  // 8-Agent 角色定义
@@ -100,7 +111,7 @@ const CARD_TYPE_MAP = {
 
 // 降级模拟讨论轮次数据（SSE 不可用时使用）
 // 注意：模拟不伪造 Agent 发言和卡片。真实数据由 SSE agent_speech / agent_cards 推送。
-const generateMockDiscussion = (topic: string, rounds: number) => {
+const generateMockDiscussion = (_topic: string, rounds: number) => {
   return Array.from({ length: rounds }, (_, i) => ({
     round: i + 1,
     title: `第${i + 1}轮讨论`,
@@ -114,7 +125,8 @@ const generateMockDiscussion = (topic: string, rounds: number) => {
 };
 
 // ==================== 后端 API 配置 ====================
-const BACKEND_URL = getApiBaseUrl() + '/api/meeting';
+// 开发环境走 Vite 代理，生产环境直连后端
+const BACKEND_URL = import.meta.env.DEV ? '/api/meeting' : `${getApiBaseUrl()}/api/meeting`;
 
 // ==================== 像素办公室 Canvas 组件 ====================
 const PixelOfficeCanvas: React.FC<{
@@ -316,10 +328,12 @@ const PixelOfficeCanvas: React.FC<{
 
 // ==================== 主页面组件 ====================
 const VirtualOfficeMeeting: React.FC = () => {
+  const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [context, setContext] = useState('');
   const [deliverable, setDeliverable] = useState('');
   const [rounds, setRounds] = useState(3);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);  // 当前会议的 meeting_id (TEXT)
   const [meetingMode, setMeetingMode] = useState('free');
   const [meetingModes, setMeetingModes] = useState<{id: string; name: string; description: string}[]>([]);
   const [meetingImage, setMeetingImage] = useState<string | null>(null);  // Base64 图片数据
@@ -327,48 +341,128 @@ const VirtualOfficeMeeting: React.FC = () => {
   const [meetingResult, setMeetingResult] = useState<any>(null);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [showResults, setShowResults] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history' | 'tasks'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   const [meetingHistory, setMeetingHistory] = useState<any[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<any>(null);
-  const [agentList, setAgentList] = useState<any[]>([]);
-  const [taskList, setTaskList] = useState<any[]>([]);
+  const [agentList, setAgentList] = useState<any[]>(() =>
+    Object.entries(PIXEL_AGENTS).map(([id, a]) => ({ id, ...a, state: 'idle' }))
+  );
   const [hybridMode, setHybridMode] = useState(true);
   const [meetingCards, setMeetingCards] = useState<MeetingCard[]>([]);  // 会议中积累的知识卡片
   const [saveModalOpen, setSaveModalOpen] = useState(false);              // 卡片保存弹窗
   const [saveTargetCard, setSaveTargetCard] = useState<MeetingCard | null>(null);  // 待保存的卡片
   const [messageForm, setMessageForm] = useState({ from_agent: '', to_agent: '', message: '' });
   const [showMessageModal, setShowMessageModal] = useState(false);
-  const [collabMessages, setCollabMessages] = useState<Array<{user: string; content: string; self?: boolean}>>([]);
-  const [collabStatus, setCollabStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [collabUserName, setCollabUserName] = useState(() => localStorage.getItem('collabUserName') || '参与者');
-  const collabWsRef = useRef<WebSocket | null>(null);
-  const collabUserId = useRef('meeting_' + Date.now());
+
+  // 会议请求锁，防止重复启动
+  const meetingStartLockRef = useRef(false);
 
   // 简化视图模式
   const [simplifiedView, setSimplifiedView] = useState(false);
 
-  // 发送人类消息（混合模式）
+  // ===== 背景资料专题选择 =====
+  const [topics, setTopics] = useState<any[]>([]);
+  const [selectedTopicObj, setSelectedTopicObj] = useState<any>(null);
+  const [booksInTopic, setBooksInTopic] = useState<any[]>([]);
+  const [loadingTopics, setLoadingTopics] = useState(false);
+  const [topicSearchText, setTopicSearchText] = useState('');
+
+  // 计算选中专题的名称（用于显示）
+  const selectedTopic = selectedTopicObj?.name || '';
+
+  // 加载专题列表
+  useEffect(() => {
+    const loadTopics = async () => {
+      setLoadingTopics(true);
+      try {
+        const data = await researchProjectService.getAll();
+        setTopics(data || []);
+      } catch { /* ignore */ }
+      setLoadingTopics(false);
+    };
+    loadTopics();
+  }, []);
+
+  // 当选择专题时，加载该专题下的卡片
+  useEffect(() => {
+    const loadTopicBooks = async () => {
+      if (!selectedTopicObj?.id) {
+        setBooksInTopic([]);
+        return;
+      }
+      console.log('[VirtualOffice] 加载专题卡片:', selectedTopicObj.name, 'id:', selectedTopicObj.id);
+      try {
+        // 直接使用 fetch 调用 API，参考 BookSkillCenter 的实现
+        const res = await fetch(`/api/research/projects/${selectedTopicObj.id}/cards`);
+        console.log('[VirtualOffice] API响应状态:', res.status);
+        if (res.ok) {
+          const cards = await res.json();
+          console.log('[VirtualOffice] 获取到卡片数量:', cards?.length || 0);
+          
+          // 按书籍/来源分组
+          const bookMap = new Map<string, any[]>();
+          (cards || []).forEach((c: any) => {
+            const bookKey = c.book_name || c.source || c.category || '默认';
+            if (!bookMap.has(bookKey)) {
+              bookMap.set(bookKey, []);
+            }
+            bookMap.get(bookKey)!.push(c);
+          });
+          
+          const books = Array.from(bookMap.entries()).map(([name, cardList]) => ({
+            name,
+            count: cardList.length,
+            cards: cardList
+          }));
+          console.log('[VirtualOffice] 分组后的书籍数量:', books.length);
+          setBooksInTopic(books);
+        } else {
+          console.error('[VirtualOffice] 获取卡片失败:', res.status);
+          toast.error(`获取卡片失败: ${res.status}`);
+          setBooksInTopic([]);
+        }
+      } catch (err) {
+        console.error('[VirtualOffice] 加载专题卡片失败:', err);
+        toast.error('加载专题卡片失败');
+        setBooksInTopic([]);
+      }
+    };
+    loadTopicBooks();
+  }, [selectedTopicObj]);
+
+  // 将卡片内容添加到背景资料
+  const appendCardToContext = (card: any) => {
+    const cardText = `\n\n【${card.title || '无标题'}】\n${card.content || ''}`;
+    setContext(prev => prev + cardText);
+    toast.success('已添加卡片到背景资料');
+  };
+
+  // 将整本书的卡片添加到背景资料
+  const appendBookToContext = (book: any) => {
+    const combinedContent = book.cards.map((c: any) => 
+      `【${c.title || '无标题'}】\n${c.content || ''}`
+    ).join('\n\n---\n\n');
+    setContext(prev => prev + '\n\n' + combinedContent);
+    toast.success(`已添加 ${book.count} 张卡片到背景资料`);
+  };
+
+  // 发送人类消息（混合模式）- 带请求锁避免重复
+  const humanMsgLockRef = useRef(false);
+  
   const sendHumanMessage = async (msg: string) => {
+    if (humanMsgLockRef.current) {
+      console.log('[Hybrid] 请求锁定中，忽略重复请求');
+      return;
+    }
+    humanMsgLockRef.current = true;
+    
     // 本地显示人类消息
     setLiveDiscussions(prev => [...prev, {
       type: 'speech',
-      agent: { name: collabUserName, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
+      agent: { name: '参与者', title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
       message: msg,
       timestamp: new Date().toISOString()
     }]);
-    
-    // 发送 WebSocket 广播给其他用户
-    if (collabWsRef.current?.readyState === WebSocket.OPEN) {
-      collabWsRef.current.send(JSON.stringify({
-        type: 'send_activity',
-        user: collabUserName,
-        userId: collabUserId.current,
-        avatar: '👤',
-        action: '发言',
-        content: msg,
-        meetingContext: { topic, currentRound: liveDiscussions.filter(d => d.round).length }
-      }));
-    }
     
     // 如果开启混合模式，调用后端混合查询（知识卡片 + LLM）
     if (hybridMode && isLoading) {
@@ -413,7 +507,11 @@ const VirtualOfficeMeeting: React.FC = () => {
         }
       } catch (err) {
         console.error('[Hybrid] 获取响应失败:', err);
+      } finally {
+        humanMsgLockRef.current = false;
       }
+    } else {
+      humanMsgLockRef.current = false;
     }
   };
   
@@ -436,7 +534,7 @@ const VirtualOfficeMeeting: React.FC = () => {
 
   // 像素办公室状态
   const [pixelState, setPixelState] = useState({
-    activeAgent: 'orchestrator',
+    activeAgent: 'zhihuishi',
     agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {} as Record<string, string>),
     detail: '八府巡按，各司其职',
     progress: 0
@@ -547,22 +645,6 @@ useEffect(() => {
       fetchMeetingHistory();
       // 获取讨论模式
       fetch(`${BACKEND_URL}/modes`).then(r => r.json()).then(d => setMeetingModes(d.modes || [])).catch(console.error);
-    } else if (activeTab === 'tasks') {
-      fetch(`${BACKEND_URL}/tasks`).then(r => r.json()).then(d => setTaskList(d.tasks || [])).catch(console.error);
-      // 同时加载协作历史消息（REST 回退）
-      const collabHost = import.meta.env.DEV ? 'localhost:8000' : window.location.host;
-      fetch(`http://${collabHost}/api/activities?limit=30`)
-        .then(r => r.json())
-        .then(activities => {
-          if (Array.isArray(activities) && activities.length > 0) {
-            setCollabMessages(activities.map((a: any) => ({
-              user: a.user || '未知',
-              content: a.content || '',
-              self: a.userId === collabUserId.current,
-            })));
-          }
-        })
-        .catch(() => {}); // WS 连接后会通过 history 消息补全，静默失败
     }
   }, [activeTab]);
 
@@ -573,6 +655,10 @@ useEffect(() => {
 
   // 启动会议 —— 使用 SSE 流式接口，实时驱动像素小人
   const startMeeting = async () => {
+    if (meetingStartLockRef.current) {
+      toast.error('会议正在启动中，请勿重复点击');
+      return;
+    }
     if (!topic.trim()) {
       toast.error('请输入会议主题');
       return;
@@ -580,12 +666,13 @@ useEffect(() => {
 
     setIsLoading(true);
     setShowResults(false);
+    meetingStartLockRef.current = true;
     setMeetingResult(null);
     setLiveDiscussions([]);
 
     // 初始化像素状态
     setPixelState({
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
       detail: '正在连接八府巡按...',
       progress: 0
@@ -595,8 +682,12 @@ useEffect(() => {
     // 尝试 SSE 流式接口
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    let allRounds: any[] = [];
+    let currentRound: any = null;
 
     try {
+      console.log('[Meeting] 开始会议，背景资料长度:', context.length);
+      console.log('[Meeting] 背景资料内容预览:', context.slice(0, 200));
       const res = await fetch(`${BACKEND_URL}/discuss/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -611,8 +702,6 @@ useEffect(() => {
 
       const decoder = new TextDecoder();
       let buffer = '';
-      const allRounds: any[] = [];
-      let currentRound: any = null;
       let totalAgents = Object.keys(PIXEL_AGENTS).length;
       let speechCount = 0;
       let totalExpected = rounds * totalAgents;
@@ -634,6 +723,74 @@ useEffect(() => {
               setMessengerInfo({ agentName: '锦衣卫', agentTitle: '陆绎', message: '八府巡按会议正式开始！', progress: 5 });
               break;
 
+            case 'task_planning':
+              // 任务型会议：正在制定计划
+              setPixelState(prev => ({ ...prev, detail: '锦衣卫正在分解任务...', progress: 10 }));
+              setMessengerInfo(prev => ({ ...prev, message: '正在分析需求，制定会议执行计划...', progress: 10 }));
+              break;
+
+            case 'task_plan':
+              // 任务型会议：计划已就绪，展示子任务列表
+              {
+                const sub = evt.data.subtasks || [];
+                setPixelState(prev => ({ ...prev, detail: `计划就绪: ${sub.length}个子任务`, progress: 15 }));
+                setMessengerInfo(prev => ({ ...prev, message: `意图识别: ${evt.data.intent} | 工作流: ${evt.data.workflow} | 共${sub.length}步`, progress: 15 }));
+                // 展示子任务列表
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'round_header',
+                  round: 1,
+                  theme: `🔧 任务分解: ${evt.data.workflow || '动态'} (${sub.length}步)`,
+                  timestamp: evt.data.timestamp || new Date().toISOString()
+                }]);
+                const totalExpected = sub.length * 2;
+                speechCount = 0;
+              }
+              break;
+
+            case 'subtask_start':
+              {
+                const idx = evt.data.index || 1;
+                const total = evt.data.total || 1;
+                const progress = 15 + Math.round((idx / total) * 70);
+                setPixelState(prev => ({ ...prev, detail: `[${idx}/${total}] ${evt.data.executor}: ${(evt.data.description || '').slice(0, 30)}...`, progress }));
+                setMessengerInfo(prev => ({ ...prev, message: `[${idx}/${total}] ${evt.data.executor} 正在执行: ${(evt.data.description || '').slice(0, 30)}...`, progress }));
+                // 在讨论流中显示子任务开始
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'speech',
+                  agent: { name: evt.data.executor || '锦衣卫', title: '任务执行', avatar: '⚡', color: 'from-yellow-500 to-yellow-600' },
+                  message: `▶️ 开始执行: ${evt.data.description}`,
+                  timestamp: new Date().toISOString()
+                }]);
+              }
+              break;
+
+            case 'subtask_done':
+              {
+                const status = evt.data.status || 'completed';
+                const statusIcon = status === 'completed' ? '✅' : '❌';
+                setLiveDiscussions(prev => [...prev, {
+                  type: 'speech',
+                  agent: { name: evt.data.id || '密卷房', title: '任务结果', avatar: statusIcon, color: status === 'completed' ? 'from-green-500 to-green-600' : 'from-red-500 to-red-600' },
+                  message: `${statusIcon} ${status === 'completed' ? '完成' : '失败'}: ${(evt.data.summary || evt.data.error || '').slice(0, 200)}`,
+                  timestamp: new Date().toISOString()
+                }]);
+                // 处理子任务产生的卡片
+                if (evt.data.cards && evt.data.cards.length > 0) {
+                  const newCards: MeetingCard[] = evt.data.cards.map((c: any) => ({
+                    card_type: c.card_type || 'blue',
+                    title: c.title || '',
+                    content: c.content || '',
+                    source: 'agent_extracted' as const,
+                    agent_name: evt.data.id || '密卷房',
+                    round: 1,
+                    saved: false,
+                    timestamp: new Date().toISOString()
+                  }));
+                  setMeetingCards(prev => [...prev, ...newCards]);
+                }
+              }
+              break;
+
             case 'round_start':
               currentRound = { round: evt.data.round, title: evt.data.theme, discussions: [], cards: [] };
               setPixelState(prev => ({ ...prev, detail: `第${evt.data.round}轮: ${evt.data.theme}` }));
@@ -648,7 +805,7 @@ useEffect(() => {
               break;
 
             case 'agent_speaking': {
-              const pixelKey = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'orchestrator';
+              const pixelKey = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'zhihuishi';
               setPixelState(prev => ({
                 ...prev,
                 activeAgent: pixelKey,
@@ -667,7 +824,7 @@ useEffect(() => {
             case 'agent_speech': {
               speechCount++;
               const progress = Math.round((speechCount / totalExpected) * 90) + 5;
-              const pixelKey2 = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'orchestrator';
+              const pixelKey2 = evt.data.pixel_id || MEETING_TO_PIXEL[evt.data.agent_id] || 'zhihuishi';
 
               // 该 Agent 发言完毕，切换为 syncing
               setPixelState(prev => ({
@@ -750,6 +907,21 @@ useEffect(() => {
               }));
               break;
 
+            case 'knowledge_supplement':
+              // 密卷房/太史阁补充检索到的知识卡片，展示在讨论流中
+              setLiveDiscussions(prev => [...prev, {
+                type: 'speech',
+                agent: {
+                  name: '密卷房',
+                  title: '知识检索官',
+                  avatar: '🔍',
+                  color: 'from-purple-500 to-purple-600'
+                },
+                message: `已从知识库检索到 ${evt.data.total} 张补充卡片（关键词: ${evt.data.keywords?.join(', ')}），已分发给各府参考。`,
+                timestamp: new Date().toISOString()
+              }]);
+              break;
+
             case 'meeting_decision':
               // 保存决策结果
               allRounds.push({
@@ -772,17 +944,22 @@ useEffect(() => {
             case 'meeting_end':
               // 会议结束 - 所有 Agent 归位
               setPixelState({
-                activeAgent: 'orchestrator',
+                activeAgent: 'zhihuishi',
                 agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
                 detail: '八府巡按会议圆满完成！',
                 progress: 100
               });
-              setMessengerInfo({ agentName: '驿传司', agentTitle: '传令官', message: '八府巡按会议已圆满完成！', progress: 100 });
+              setMessengerInfo({ agentName: '指挥使', agentTitle: '总指挥与裁决官', message: '八府巡按会议已圆满完成！', progress: 100 });
 
               // 如果最后一轮还没 push
               if (currentRound) {
                 allRounds.push(currentRound);
                 currentRound = null;
+              }
+
+              // 保存会议ID用于后续跳转到详情页
+              if (evt.data.meeting_id) {
+                setCurrentMeetingId(evt.data.meeting_id);
               }
 
               setMeetingResult(allRounds);
@@ -805,11 +982,13 @@ useEffect(() => {
         setPixelState(prev => ({ ...prev, detail: '会议完成', progress: 100 }));
       }
 
+      meetingStartLockRef.current = false;
       abortControllerRef.current = null;
       return;
     } catch (error: any) {
       if (error.name === 'AbortError') {
         console.log('Meeting SSE aborted by user');
+        meetingStartLockRef.current = false;
         return;
       }
       console.error('SSE stream error:', error);
@@ -848,6 +1027,7 @@ useEffect(() => {
       }
     }
 
+    meetingStartLockRef.current = false;
     abortControllerRef.current = null;
 
     // SSE 不可用 → 降级到本地模拟动画
@@ -900,7 +1080,7 @@ useEffect(() => {
     setIsLoading(false);
     setPixelState(prev => ({
       ...prev,
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       detail: '会议已停止',
       progress: 0,
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {})
@@ -951,7 +1131,7 @@ useEffect(() => {
     setIsLoading(false);
     setLiveDiscussions([]);
     setPixelState({
-      activeAgent: 'orchestrator',
+      activeAgent: 'zhihuishi',
       agentStates: Object.keys(PIXEL_AGENTS).reduce((acc, k) => ({ ...acc, [k]: 'idle' }), {}),
       detail: '八府巡按，各司其职',
       progress: 0
@@ -965,46 +1145,20 @@ useEffect(() => {
     toast.info('会议已重置');
   };
 
-  // 保存到任务归档
-  const saveToArchive = async () => {
-    if (!meetingResult || meetingResult.length === 0) return;
+  // 结束会议并保存到历史记录（不再自动创建任务，用户在详情页手动提取）
+  const saveMeetingRecord = async () => {
+    if (!currentMeetingId) {
+      toast.error('会议尚未保存，请稍后再试');
+      return;
+    }
     
-    const summary = meetingResult[meetingResult.length - 1]?.summary || '';
-    const decision = meetingResult[meetingResult.length - 1]?.decision || '';
-    const actionItems = meetingResult[meetingResult.length - 1]?.actionItems || [];
-    
-    const taskContent = `【会议主题】${topic}
-【背景】${context || '无'}
-【讨论轮数】${meetingResult.length}轮
-
-【总结】
-${summary}
-
-【决策】
-${decision}
-
-【行动项】
-${actionItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}
-
-【详细讨论】
-${(meetingResult || []).slice(0, -1).map((round: any, i: number) => 
-  `--- 第${i + 1}轮 (${round.theme}) ---\n${round.speeches?.map((s: any) => `【${s.agent_name}】${s.speech}`).join('\n')}`
-).join('\n\n')}`;
-
     try {
-      await gtdTaskService.add({
-        title: `会议纪要: ${topic}`,
-        description: taskContent,
-        category: 'archive',
-        priority: 'medium'
-      });
-      // 保存归档成功后，清除聊天区的会议卡片和缓存
-      setMeetingCards([]);
-      sessionStorage.removeItem(MEETING_STORAGE_KEY);
-      toast.success('会议记录已保存到任务归档');
+      // 跳转到会议详情页（使用 TEXT meeting_id）
+      navigate(`/meeting/${encodeURIComponent(currentMeetingId)}`);
+      toast.success('会议记录已保存，进入详情页查看');
     } catch (error) {
-      console.error('保存归档失败:', error);
-      toast.error('保存归档失败，请重试');
+      console.error('跳转失败:', error);
+      toast.error('保存失败，请重试');
     }
   };
 
@@ -1016,8 +1170,13 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
     });
   };
 
-  // 计算活跃数量
-  const workingCount = Object.values(pixelState.agentStates).filter(s => s !== 'idle' && s !== 'error').length;
+  // 同步 agentList 状态与 pixelState
+  useEffect(() => {
+    setAgentList(prev => prev.map(a => ({
+      ...a,
+      state: pixelState.agentStates[a.id] || 'idle'
+    })));
+  }, [pixelState.agentStates]);
 
   // 实时讨论自动滚动到底部
   useEffect(() => {
@@ -1034,76 +1193,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
       stopPolling();
     };
 }, []);
-
-  // 协作聊天 WebSocket 连接
-  useEffect(() => {
-    // 始终连接（不只是 tasks tab）
-    const userId = collabUserId.current;
-    // Vite proxy 不支持 WebSocket 升级，直接连接后端（dev 走 8000，prod 走代理）
-    const wsUrl = import.meta.env.DEV
-      ? `ws://localhost:8000/api/ws/collaboration/${userId}`
-      : `ws://${window.location.host}/api/ws/collaboration/${userId}`;
-    
-    console.log('[Collab] 连接 WebSocket:', wsUrl);
-    setCollabStatus('connecting');
-    
-    const ws = new WebSocket(wsUrl);
-    collabWsRef.current = ws;
-    
-    ws.onopen = () => {
-      console.log('[Collab] WebSocket 已连接');
-      setCollabStatus('connected');
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'new_activity' && msg.activity) {
-          const isSelf = msg.activity.userId === userId;
-          setCollabMessages(prev => [...prev, {
-            user: msg.activity.user || '未知',
-            content: msg.activity.content || '',
-            self: isSelf
-          }]);
-          // 如果有会议进行中，也显示到实时讨论区
-          if (isLoading && msg.activity.action === '发言') {
-            setLiveDiscussions(prev => [...prev, {
-              type: 'speech',
-              agent: { name: msg.activity.user, title: '人类参与者', avatar: '👤', color: 'from-green-500 to-green-600' },
-              message: msg.activity.content,
-              timestamp: new Date().toISOString()
-            }]);
-          }
-        } else if (msg.type === 'history' && msg.activities) {
-          // 连接后推送的历史数据（刷新后恢复记录）
-          console.log(`[Collab] 收到历史数据: ${msg.activities.length} 条活动`);
-          if (msg.activities.length > 0) {
-            setCollabMessages(msg.activities.map((a: any) => ({
-              user: a.user || '未知',
-              content: a.content || '',
-              self: a.userId === userId,
-            })));
-          }
-        }
-      } catch (e) {
-        console.error('[Collab] 解析消息失败:', e);
-      }
-    };
-    
-    ws.onclose = () => {
-      console.log('[Collab] WebSocket 断开');
-      setCollabStatus('disconnected');
-    };
-    
-    ws.onerror = (e) => {
-      console.error('[Collab] WebSocket 错误:', e);
-    };
-    
-    return () => {
-      ws.close();
-      collabWsRef.current = null;
-    };
-  }, []);
 
   return (
     <div className="min-h-screen overflow-x-auto" style={{ background: '#121826' }}>
@@ -1157,13 +1246,139 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                 />
               </div>
 
-              {/* 背景资料 */}
+              {/* 背景资料 - 专题/卡片选择 */}
               <div>
-                <label className="block text-sm text-gray-300 mb-1.5">背景资料</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm text-gray-300">背景资料</label>
+                  <div className="flex items-center gap-2">
+                    {loadingTopics && <Loader size={12} className="animate-spin text-purple-400" />}
+                    <span className="text-xs text-purple-400">{selectedTopic ? `已选专题: ${selectedTopic}` : '选择专题添加卡片'}</span>
+                  </div>
+                </div>
+                
+                {/* 专题选择下拉框 */}
+                <div className="mb-2">
+                  <div className="relative">
+                    <Library size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" />
+                    <select
+                      value={selectedTopic}
+                      onChange={(e) => {
+                        const topicName = e.target.value;
+                        const topic = topics.find((t: any) => t.name === topicName);
+                        setSelectedTopicObj(topic || null);
+                      }}
+                      className="w-full pl-8 pr-3 py-2 rounded-lg text-sm text-white border border-gray-600/50 focus:border-purple-500 focus:outline-none transition-colors appearance-none"
+                      style={{ background: '#0f1729' }}
+                    >
+                      <option value="" className="text-gray-500">-- 选择专题 --</option>
+                      {topics.map((t: any) => (
+                        <option key={t.id} value={t.name} className="text-white">{t.name}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* 专题卡片预览 */}
+                {selectedTopic && (
+                  <div className="mb-2 p-3 rounded-lg border border-purple-700/30" style={{ background: '#0f1729', maxHeight: '200px', overflowY: 'auto' }}>
+                    {/* 搜索过滤 - 放在卡片预览内部顶部 */}
+                    {booksInTopic.length > 0 && (
+                      <div className="mb-2 relative">
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          value={topicSearchText}
+                          onChange={(e) => setTopicSearchText(e.target.value)}
+                          placeholder="搜索卡片..."
+                          className="w-full pl-7 pr-3 py-1.5 rounded text-xs text-white placeholder-gray-500 border border-gray-600/30 focus:border-purple-500 focus:outline-none"
+                          style={{ background: '#0f1729' }}
+                        />
+                      </div>
+                    )}
+                    {booksInTopic.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500 text-xs">
+                        该专题暂无卡片
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {/* 根据搜索文本过滤卡片 */}
+                        {(() => {
+                          const filteredBooks = topicSearchText.trim()
+                            ? booksInTopic.map(book => ({
+                                ...book,
+                                cards: book.cards.filter((c: any) =>
+                                  c.title?.toLowerCase().includes(topicSearchText.toLowerCase()) ||
+                                  c.content?.toLowerCase().includes(topicSearchText.toLowerCase())
+                                )
+                              })).filter(book => book.cards.length > 0)
+                            : booksInTopic;
+                          
+                          if (filteredBooks.length === 0 && topicSearchText.trim()) {
+                            return (
+                              <div className="text-center py-4 text-gray-500 text-xs">
+                                未找到匹配的卡片
+                              </div>
+                            );
+                          }
+                          
+                          return filteredBooks.map((book: any, bi: number) => (
+                            <div key={bi} className="space-y-1.5">
+                              {/* 书籍标题 - 可点击添加 */}
+                              <button
+                                onClick={() => appendBookToContext(book)}
+                                className="w-full text-left p-2 bg-gradient-to-r from-yellow-900/30 to-orange-900/30 rounded-lg border border-yellow-700/30 hover:from-yellow-900/50 hover:to-orange-900/50 transition-colors"
+                                title="点击添加所有卡片到背景资料"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Book size={12} className="text-yellow-500" />
+                                    <span className="text-yellow-300 text-xs font-medium">{book.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-yellow-500 text-[10px]">{book.cards.length} 张</span>
+                                    <ChevronRight size={10} className="text-yellow-500" />
+                                  </div>
+                                </div>
+                              </button>
+                              
+                              {/* 卡片列表 */}
+                              <div className="pl-3 space-y-1">
+                                {book.cards.map((c: any, ci: number) => {
+                                  const colorClass = c.card_type === 'blue' ? 'border-l-blue-400 bg-blue-900/20' :
+                                                     c.card_type === 'green' ? 'border-l-green-400 bg-green-900/20' :
+                                                     c.card_type === 'red' ? 'border-l-red-400 bg-red-900/20' :
+                                                     'border-l-yellow-400 bg-yellow-900/20';
+                                  return (
+                                    <button
+                                      key={ci}
+                                      onClick={() => appendCardToContext(c)}
+                                      className={`w-full text-left p-2 rounded border border-l-4 cursor-pointer hover:opacity-80 ${colorClass}`}
+                                      title="点击添加此卡片到背景资料"
+                                    >
+                                      <p className="text-white text-xs font-medium truncate">{c.title}</p>
+                                      <p className="text-gray-400 text-[10px] line-clamp-1 mt-0.5">{c.content}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 背景资料文本框 */}
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500">背景资料</span>
+                  <span className="text-xs text-purple-400">{context.length} 字符</span>
+                </div>
                 <textarea
                   value={context}
                   onChange={e => setContext(e.target.value)}
-                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题..."
+                  placeholder="提供相关背景信息、数据或参考资料，帮助 Agent 更好地理解议题...\n从上方专题选择卡片自动填充，或手动输入"
                   rows={4}
                   className="w-full px-3 py-2.5 rounded-lg text-sm text-white placeholder-gray-500 border border-gray-600/50 focus:border-blue-500 focus:outline-none transition-colors resize-none"
                   style={{ background: '#0f1729' }}
@@ -1313,49 +1528,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             </div>
           </div>
 
-          {/* 模块2: 八府成员 */}
-          <div className="rounded-xl border border-gray-700/50" style={{ background: '#1a2235' }}>
-            <div className="flex items-center gap-2 px-5 py-3 border-b border-gray-700/50">
-              <Users className="w-4 h-4 text-gray-400" />
-              <span className="text-white font-medium text-sm">八府成员</span>
-              <span className="text-xs text-gray-500 ml-auto">({workingCount}/8 活跃)</span>
-            </div>
-            <div className="p-4 grid grid-cols-2 gap-2.5">
-              {Object.entries(PIXEL_AGENTS).map(([key, agent]) => {
-                const state = pixelState.agentStates[key] || 'idle';
-                const isActive = key === pixelState.activeAgent && state !== 'idle';
-                const stateColor = PIXEL_STATE_COLORS[state];
-                return (
-                  <div
-                    key={key}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-lg border transition-all ${
-                      isActive
-                        ? 'border-green-500/40'
-                        : 'border-transparent'
-                    }`}
-                    style={{ background: isActive ? '#0f1729' : 'transparent' }}
-                  >
-                    <div
-                      className="w-8 h-8 rounded-md flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                      style={{ background: agent.color }}
-                    >
-                      {agent.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-white text-xs font-medium truncate">{agent.name}</div>
-                      <div className="text-gray-500 text-[10px] truncate">{agent.cnName}</div>
-                    </div>
-                    <span
-                      className="text-[10px] px-1.5 py-0.5 rounded flex-shrink-0"
-                      style={{ color: stateColor, background: `${stateColor}18` }}
-                    >
-                      {PIXEL_STATE_NAMES[state]}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         {/* ========== 右侧栏 65% ========== */}
@@ -1378,15 +1550,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             >
               <History className="w-4 h-4" />
               历史会议
-            </button>
-            <button
-              onClick={() => setActiveTab('tasks')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              团队协作
             </button>
           </div>
 
@@ -1469,130 +1632,6 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
             </div>
           )}
 
-          {activeTab === 'tasks' && (
-            <div className="rounded-xl border border-gray-700/50 flex flex-col" style={{ background: '#1a2235', minHeight: '0', flex: '1 1 0' }}>
-              {/* 任务列表区 */}
-              <div className="px-5 py-3 border-b border-gray-700/50 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-gray-400" />
-                  <span className="text-white font-medium text-sm">团队协作</span>
-                  <span className="text-gray-500 text-xs ml-auto">{taskList.length} 个任务</span>
-                </div>
-              </div>
-              <div className="p-4 space-y-3 overflow-y-auto flex-shrink-0" style={{ maxHeight: '220px', scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
-                {taskList.length === 0 ? (
-                  <div className="text-gray-500 text-sm text-center py-4">暂无协作任务</div>
-                ) : (
-                  taskList.map((task: any) => (
-                    <div key={task.id} className="p-4 rounded-lg border border-gray-700/50" style={{ background: '#0f1729' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="text-white font-medium">{task.title}</div>
-                        <span className={`px-2 py-0.5 rounded text-xs ${
-                          task.status === 'completed' ? 'bg-green-500/20 text-green-400' :
-                          task.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-gray-500/20 text-gray-400'
-                        }`}>
-                          {task.status === 'completed' ? '已完成' : task.status === 'in_progress' ? '进行中' : '待处理'}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-gray-400 text-sm">{task.description}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {/* 实时讨论区 —— 沉底，占满剩余空间 */}
-              <div className="border-t border-gray-700/50 flex flex-col flex-1 min-h-0" style={{ marginTop: 'auto' }}>
-                {/* 讨论头部 */}
-                <div className="px-4 py-2.5 flex items-center gap-2 flex-shrink-0">
-                  <Users className="w-4 h-4 text-blue-400" />
-                  <span className="text-gray-300 text-sm font-medium">实时讨论</span>
-                  <input
-                    id="collab-username"
-                    type="text"
-                    placeholder="你的名字"
-                    value={collabUserName}
-                    onChange={(e) => {
-                      setCollabUserName(e.target.value);
-                      localStorage.setItem('collabUserName', e.target.value);
-                    }}
-                    className="ml-2 w-24 bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
-                  />
-                  <span className={`ml-auto text-xs ${
-                    collabStatus === 'connected' ? 'text-green-400' :
-                    collabStatus === 'connecting' ? 'text-yellow-400' : 'text-red-400'
-                  }`}>
-                    {collabStatus === 'connected' ? '✓ 已连接' :
-                     collabStatus === 'connecting' ? '连接中...' : '✗ 断开'}
-                  </span>
-                </div>
-                {/* 消息列表 —— 自动填充剩余高度 */}
-                <div className="flex-1 overflow-y-auto px-4 space-y-2 text-sm min-h-0" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
-                  {collabMessages.length === 0 ? (
-                    <div className="text-gray-400 text-xs text-center py-6">
-                      {collabStatus === 'connected' ? '开始聊天吧' : '连接中...'}
-                    </div>
-                  ) : (
-                    collabMessages.map((msg, idx) => (
-                      <div key={idx} className={`p-2 rounded ${msg.self ? 'bg-blue-900/30' : 'bg-gray-800/50'}`}>
-                        <span className={msg.self ? 'text-blue-300 font-bold' : 'text-blue-400'}>
-                          {msg.user}:
-                        </span>
-                        <span className="text-white ml-1">{msg.content}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {/* 输入框 —— 始终在底部 */}
-                <div className="px-4 py-3 flex gap-2 flex-shrink-0 border-t border-gray-700/30">
-                  <input
-                    id="collab-input"
-                    type="text"
-                    placeholder="输入消息... (回车发送)"
-                    className="flex-1 bg-gray-800 text-white text-sm px-3 py-2 rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && collabWsRef.current) {
-                        const msg = (e.target as HTMLInputElement).value.trim();
-                        if (msg) {
-                          collabWsRef.current.send(JSON.stringify({
-                            type: 'send_activity',
-                            user: collabUserName,
-                            userId: collabUserId.current,
-                            avatar: '👤',
-                            action: '发言',
-                            content: msg
-                          }));
-                          setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
-                          (e.target as HTMLInputElement).value = '';
-                        }
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      const input = document.getElementById('collab-input') as HTMLInputElement;
-                      const msg = input?.value.trim();
-                      if (msg && collabWsRef.current) {
-                        collabWsRef.current.send(JSON.stringify({
-                          type: 'send_activity',
-                          user: collabUserName,
-                          userId: collabUserId.current,
-                          avatar: '👤',
-                          action: '发言',
-                          content: msg
-                        }));
-                        setCollabMessages(prev => [...prev, { user: collabUserName, content: msg, self: true }]);
-                        input.value = '';
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex-shrink-0"
-                  >
-                    发送
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'new' && (
             <>
               <div className="rounded-xl border border-gray-700/50 flex-shrink-0" style={{ background: '#1a2235' }}>
@@ -1600,6 +1639,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   <div className="flex items-center gap-2">
                     <Monitor className="w-4 h-4 text-gray-400" />
                     <span className="text-white font-medium text-sm">像素办公室</span>
+                    <span className="text-xs text-gray-500 ml-2">{agentList.length} 司</span>
                   </div>
               <div className="flex items-center gap-3">
                 <span className="text-white text-xs">进度: {pixelState.progress}%</span>
@@ -1631,7 +1671,16 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   <div className="text-gray-400 text-xs mt-0.5">{messengerInfo.message}</div>
                 </div>
               </div>
-              <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
+              <div className="flex items-center gap-2">
+                <span className="text-white text-lg font-bold">{messengerInfo.progress}%</span>
+                <button
+                  onClick={() => setShowMessageModal(true)}
+                  className="text-xs px-2 py-1 rounded bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 transition-colors"
+                  title="发送密信给 Agent"
+                >
+                  密信
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1729,7 +1778,7 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
 {/* 人类发言入口 */}
               <div className="border-t border-gray-700/50 px-4 py-3 flex gap-2 items-center flex-shrink-0">
                 <span className="text-green-400 text-xs font-medium whitespace-nowrap">
-                  {collabUserName}:
+                  参与者:
                 </span>
                 <input
                   id="meeting-human-input"
@@ -1782,12 +1831,12 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={saveToArchive}
+                      onClick={saveMeetingRecord}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-300 border border-gray-600/50 hover:border-gray-500 hover:text-white transition-colors"
                       style={{ background: '#0f1729' }}
                     >
                       <Download className="w-3.5 h-3.5" />
-                      保存归档
+                      结束并查看记录
                     </button>
                     <button
                       onClick={() => setSimplifiedView(!simplifiedView)}
@@ -2052,12 +2101,12 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           )}
         </div>
       </div>
-      {/* 卡片保存弹窗 */}
+      {/* 卡片保存弹窗 — 使用 currentMeetingId 建立溯源 */}
       <MeetingCardSaveModal
         isOpen={saveModalOpen}
         onClose={() => { setSaveModalOpen(false); setSaveTargetCard(null); }}
         card={saveTargetCard}
-        meetingId={meetingResult?.meeting_id || ''}
+        meetingId={currentMeetingId || meetingResult?.meeting_id || ''}
         topic={topic}
         onSaved={(_card, cardId) => {
           // 标记已保存的卡片
@@ -2068,6 +2117,78 @@ ${(meetingResult || []).slice(0, -1).map((round: any, i: number) =>
           );
         }}
       />
+
+      {/* 密信模态框（代码保留，等待后续使用） */}
+      {showMessageModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setShowMessageModal(false)}>
+          <div className="rounded-xl border border-gray-700/50 w-full max-w-md p-5" style={{ background: '#1a2235' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-medium flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-green-400" />
+                发送密信
+              </h3>
+              <button onClick={() => setShowMessageModal(false)} className="text-gray-500 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">发送方</label>
+                <select
+                  value={messageForm.from_agent}
+                  onChange={e => setMessageForm(prev => ({ ...prev, from_agent: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50"
+                  style={{ background: '#0f1729' }}
+                >
+                  <option value="">选择发送 Agent</option>
+                  {agentList.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">接收方</label>
+                <select
+                  value={messageForm.to_agent}
+                  onChange={e => setMessageForm(prev => ({ ...prev, to_agent: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50"
+                  style={{ background: '#0f1729' }}
+                >
+                  <option value="">选择接收 Agent</option>
+                  {agentList.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">消息内容</label>
+                <textarea
+                  value={messageForm.message}
+                  onChange={e => setMessageForm(prev => ({ ...prev, message: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white border border-gray-600/50 resize-none"
+                  style={{ background: '#0f1729' }}
+                  rows={3}
+                  placeholder="输入要发送的消息..."
+                />
+              </div>
+              <button
+                onClick={() => {
+                  if (messageForm.from_agent && messageForm.to_agent && messageForm.message) {
+                    toast.success(`密信已从 ${messageForm.from_agent} 发送至 ${messageForm.to_agent}`);
+                    setMessageForm({ from_agent: '', to_agent: '', message: '' });
+                    setShowMessageModal(false);
+                  } else {
+                    toast.error('请完整填写发件方、收件方和消息内容');
+                  }
+                }}
+                className="w-full py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm transition-colors"
+              >
+                发送密信
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,7 @@
 import asyncio
 import base64
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -14,6 +15,27 @@ from typing import Optional, BinaryIO
 import logging
 
 logger = logging.getLogger(__name__)
+
+# 全量 emoji 正则（覆盖所有 Unicode emoji 区块）
+EMOJI_PATTERN = re.compile(
+    r'[\U0001F600-\U0001F64F'      # 表情符号
+    r'\U0001F300-\U0001F5FF'        # 符号和象形文字
+    r'\U0001F680-\U0001F6FF'        # 交通和地图符号
+    r'\U0001F1E0-\U0001F1FF'        # 国旗（地区指示符号）
+    r'\U00002702-\U000027B0'        # 杂项符号
+    r'\U0001F900-\U0001F9FF'        # 补充符号和象形文字
+    r'\U0001FA00-\U0001FA6F'        # 象棋符号
+    r'\U0001FA70-\U0001FAFF'        # 符号和象形文字扩展-A
+    r'\U00002600-\U000026FF'        # 杂项符号
+    r'\U0000FE00-\U0000FE0F'        # 变体选择符
+    r'\U0000200D'                    # 零宽连字符
+    r']'
+)
+
+def strip_emoji(text: str) -> str:
+    """移除文本中的 emoji 字符"""
+    return EMOJI_PATTERN.sub('', text)
+
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
@@ -86,7 +108,7 @@ async def tts_speak(text: str, voice: str = "zh-CN-XiaoxiaoNeural", output_path:
     if not text or not text.strip():
         raise ValueError("文本不能为空")
     
-    text = text[:4000]
+    text = strip_emoji(text)[:4000]
     
     if output_path is None:
         filename = f"tts_{uuid.uuid4().hex[:8]}.mp3"
@@ -106,7 +128,7 @@ async def tts_speak_bytes(text: str, voice: str = "zh-CN-XiaoxiaoNeural", timeou
     if not text or not text.strip():
         raise ValueError("文本不能为空")
     
-    text = text[:4000]
+    text = strip_emoji(text)[:4000]
     
     try:
         communicate = Communicate(text, voice)
