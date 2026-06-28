@@ -25,8 +25,9 @@ import GeniePlayground from "@/pages/GeniePlayground";
 import GenieNPUTest from "@/pages/GenieNPUTest";
 import HermesManager from "@/pages/HermesManager";
 import FourColorCardPanel from "@/components/FourColorCardPanel";
-import InvoicePage from "@/pages/InvoicePage";
-import TeamCollaboration from "@/pages/TeamCollaboration";
+// 注释掉：对应页面文件缺失，导致 App 编译失败、所有路由白屏。待补充页面文件后恢复。
+// import InvoicePage from "@/pages/InvoicePage";
+// import TeamCollaboration from "@/pages/TeamCollaboration";
 
 import PPTStructureDraft from "@/pages/PPTStructureDraft";
 import BookSkillCenter from "@/pages/BookSkillCenter";
@@ -69,8 +70,9 @@ export default function App() {
           <Route path="/book-skill" element={<BookSkillCenter />} />
           <Route path="/four-color-cards" element={<FourColorCardPanel />} />
           <Route path="/ppt-structure" element={<PPTStructureDraft />} />
-          <Route path="/invoice" element={<InvoicePage />} />
-          <Route path="/team-collaboration" element={<TeamCollaboration />} />
+          {/* 注释掉：页面文件缺失，待补充后恢复 */}
+          {/* <Route path="/invoice" element={<InvoicePage />} /> */}
+          {/* <Route path="/team-collaboration" element={<TeamCollaboration />} /> */}
           <Route path="/investment-research" element={<InvestmentResearchPage />} />
           <Route path="/remotion" element={
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
