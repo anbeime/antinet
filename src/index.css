@@ -1,6 +1,4 @@
-/* 导入仿古暖棕宣纸风格配色 */
-@import './styles/theme-ancient.css';
-
+/* 仿古暖棕宣纸风格配色由 tailwind.config.js 的 theme.extend.colors 提供 */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
