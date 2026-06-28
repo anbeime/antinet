@@ -1,18 +1,18 @@
 name: Sync from Gitee
 
 on:
+  # 定时触发：每天凌晨 2 点自动同步
   schedule:
     - cron: '0 2 * * *'
+  
+  # 手动触发
   workflow_dispatch:
     inputs:
       sync_branch:
-        description: 'Branch to sync (default: main)'
+        description: '要同步的分支 (默认: main)'
         required: false
         default: 'main'
         type: string
-
-permissions:
-  contents: write
 
 env:
   GITEE_REPO: https://gitee.com/anbeime/zhiyi.git
@@ -28,22 +28,24 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
 
-      - name: Configure Git
+      - name: Configure Git with PAT
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 使用 PAT_TOKEN 设置远程 URL
+          git remote set-url origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git
 
-      - name: Add Gitee Remote and Fetch
+      - name: Add Gitee Remote
         run: |
           git remote add gitee ${{ env.GITEE_REPO }}
           git fetch gitee ${{ env.GITEE_BRANCH }}
-          git fetch origin ${{ env.GITHUB_BRANCH }}
 
       - name: Check for Updates
         id: check_updates
         run: |
+          # 获取最新提交的 hash
           GITEE_COMMIT=$(git rev-parse gitee/${{ env.GITEE_BRANCH }})
           GITHUB_COMMIT=$(git rev-parse origin/${{ env.GITHUB_BRANCH }})
           
@@ -52,52 +54,53 @@ jobs:
           
           if [ "$GITEE_COMMIT" = "$GITHUB_COMMIT" ]; then
             echo "No updates found. Repositories are in sync."
-            echo "has_updates=false" >> "$GITHUB_OUTPUT"
+            echo "has_updates=false" >> $GITHUB_OUTPUT
           else
             echo "Updates found!"
-            echo "has_updates=true" >> "$GITHUB_OUTPUT"
-            echo "gitee_commit=$GITEE_COMMIT" >> "$GITHUB_OUTPUT"
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "gitee_commit=$GITEE_COMMIT" >> $GITHUB_OUTPUT
           fi
 
-      - name: Merge Gitee Changes
+      - name: Sync Changes
         if: steps.check_updates.outputs.has_updates == 'true'
         run: |
-          # Configure git to handle merges
-          git config pull.rebase false
+          # 创建临时分支进行合并
+          git checkout -b temp-sync-branch gitee/${{ env.GITEE_BRANCH }}
           
-          # Merge Gitee changes into local branch
-          git merge gitee/${{ env.GITEE_BRANCH }} -m "sync: merge updates from Gitee
+          # 切换回主分支并合并
+          git checkout ${{ env.GITHUB_BRANCH }}
+          git merge temp-sync-branch --no-edit --allow-unrelated-histories || {
+            echo "Merge conflict detected. Creating a merge commit with strategy."
+            git merge temp-sync-branch --strategy-option=theirs --no-edit --allow-unrelated-histories
+          }
           
-          Source: ${{ env.GITEE_REPO }}
-          Commit: ${{ steps.check_updates.outputs.gitee_commit }}"
+          # 删除临时分支
+          git branch -d temp-sync-branch
 
       - name: Push to GitHub
         if: steps.check_updates.outputs.has_updates == 'true'
         run: |
-          # Push with error handling
-          if ! git push origin ${{ env.GITHUB_BRANCH }}; then
-            echo "Push failed, attempting to pull and re-merge..."
-            git pull origin ${{ env.GITHUB_BRANCH }} --no-rebase || git pull origin ${{ env.GITHUB_BRANCH }} --rebase
-            git push origin ${{ env.GITHUB_BRANCH }}
-          fi
+          git push origin ${{ env.GITHUB_BRANCH }}
           echo "Successfully synced from Gitee to GitHub!"
 
       - name: Create Sync Summary
         if: steps.check_updates.outputs.has_updates == 'true'
         run: |
-          echo "## Sync Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "✅ Successfully synced from Gitee to GitHub" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Source:** Gitee (${{ env.GITEE_REPO }})" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Target:** GitHub (${{ github.server_url }}/${{ github.repository }})" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Branch:** ${{ env.GITEE_BRANCH }} → ${{ env.GITHUB_BRANCH }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Latest Commit:** ${{ steps.check_updates.outputs.gitee_commit }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Sync Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully synced from Gitee to GitHub" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** Gitee (${{ env.GITEE_REPO }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** GitHub (${{ github.server_url }}/${{ github.repository }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ env.GITEE_BRANCH }} → ${{ env.GITHUB_BRANCH }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Latest Commit:** ${{ steps.check_updates.outputs.gitee_commit }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Sync Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
 
       - name: No Updates Summary
         if: steps.check_updates.outputs.has_updates == 'false'
         run: |
-          echo "## Sync Summary" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "ℹ️ No updates found. Repositories are already in sync." >> "$GITHUB_STEP_SUMMARY"
+          echo "## Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ℹ️ No updates found. Repositories are already in sync." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Checked at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
