@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   TrendingUp, TrendingDown, AlertTriangle, Sparkles, BarChart3,
   FileText, Building2, Zap, Shield, ChevronRight, Search, Plus,
-  X, Clock, Tag, ArrowRight, RefreshCw, Filter
+  X, Clock, Tag, ArrowRight, RefreshCw, Filter, Star, Download,
+  PieChart, Activity, Trash2, Eye, Wallet, Gauge
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { safeErrorDetail } from '@/lib/utils';
@@ -86,7 +87,90 @@ type ResearchNote = {
   created_at: string;
 };
 
-type TabKey = 'overview' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes';
+type TabKey = 'overview' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
+
+type FinancialMetric = {
+  period: string;
+  revenue: number;
+  revenue_yoy: number;
+  net_profit: number;
+  net_profit_yoy: number;
+  gross_margin: number;
+  net_margin: number;
+  roe: number;
+  debt_ratio: number;
+};
+
+type CompanyFinancials = {
+  code: string;
+  name: string;
+  metrics: FinancialMetric[];
+  valuation: Record<string, any>;
+  dividend: Record<string, any>;
+};
+
+type WatchlistItem = {
+  code: string;
+  name: string;
+  added_at: string;
+  note?: string | null;
+  alert_price?: number | null;
+  current_price?: number | null;
+  change_pct?: number | null;
+  alert_triggered?: boolean;
+};
+
+type SectorComparison = {
+  sector: string;
+  company_count: number;
+  avg_pe?: number | null;
+  avg_pb?: number | null;
+  avg_roe?: number | null;
+  avg_change_pct: number;
+  top_companies: { code: string; name: string; rating: string; market_cap: string }[];
+  market_cap_total: string;
+};
+
+type PortfolioHolding = {
+  code: string;
+  name: string;
+  shares: number;
+  cost_price: number;
+  current_price: number;
+  market_value: number;
+  profit_loss: number;
+  profit_pct: number;
+  weight: number;
+};
+
+type PortfolioSummary = {
+  total_cost: number;
+  total_market_value: number;
+  total_profit_loss: number;
+  total_profit_pct: number;
+  holdings: PortfolioHolding[];
+  allocation_by_sector: { sector: string; market_value: number; weight: number }[];
+};
+
+type MarketSentiment = {
+  sentiment_score: number;
+  level: string;
+  market_breadth: { up: number; down: number; flat: number; up_ratio: number };
+  avg_change_pct: number;
+  hot_sectors: string[];
+  risk_warnings_count: number;
+  opportunities_count: number;
+  updated_at: string;
+};
+
+type SearchResult = {
+  type: string;
+  id: string | number;
+  title: string;
+  subtitle: string;
+  url: string;
+  relevance: number;
+};
 
 // ============================================================
 // 样式工具
@@ -146,6 +230,19 @@ const InvestmentResearchPage: React.FC = () => {
   const [sectors, setSectors] = useState<string[]>([]);
   const [ratings, setRatings] = useState<string[]>([]);
 
+  // 新增数据
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
+  const [sectorComparison, setSectorComparison] = useState<SectorComparison[]>([]);
+  const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
+  const [companyFinancials, setCompanyFinancials] = useState<CompanyFinancials | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [showAddWatch, setShowAddWatch] = useState(false);
+  const [newWatch, setNewWatch] = useState({ code: '', note: '', alert_price: '' });
+
   // 筛选
   const [companyKeyword, setCompanyKeyword] = useState('');
   const [companySector, setCompanySector] = useState('');
@@ -158,8 +255,9 @@ const InvestmentResearchPage: React.FC = () => {
   const [newNote, setNewNote] = useState({ title: '', content: '', card_type: 'blue', tags: '', related_company: '' });
   const [creating, setCreating] = useState(false);
 
-  // 选中报告详情
+  // 选中报告详情 / 公司财务详情
   const [selectedReport, setSelectedReport] = useState<ResearchReport | null>(null);
+  const [selectedCompanyCode, setSelectedCompanyCode] = useState<string | null>(null);
 
   // ============================================================
   // 数据加载
@@ -167,7 +265,8 @@ const InvestmentResearchPage: React.FC = () => {
   async function loadAll() {
     setLoading(true);
     try {
-      const [dashResp, compResp, repResp, oppResp, riskResp, noteResp, secResp, rateResp] =
+      const [dashResp, compResp, repResp, oppResp, riskResp, noteResp, secResp, rateResp,
+             watchResp, portResp, sectorResp, sentimentResp] =
         await Promise.all([
           fetch(getApiBaseUrl() + '/api/investment-research/dashboard'),
           fetch(getApiBaseUrl() + '/api/investment-research/companies'),
@@ -177,6 +276,10 @@ const InvestmentResearchPage: React.FC = () => {
           fetch(getApiBaseUrl() + '/api/investment-research/notes'),
           fetch(getApiBaseUrl() + '/api/investment-research/sectors'),
           fetch(getApiBaseUrl() + '/api/investment-research/ratings'),
+          fetch(getApiBaseUrl() + '/api/investment-research/watchlist'),
+          fetch(getApiBaseUrl() + '/api/investment-research/portfolio'),
+          fetch(getApiBaseUrl() + '/api/investment-research/sector-comparison'),
+          fetch(getApiBaseUrl() + '/api/investment-research/market-sentiment'),
         ]);
 
       if (dashResp.ok && compResp.ok && repResp.ok) {
@@ -189,6 +292,10 @@ const InvestmentResearchPage: React.FC = () => {
         if (noteResp.ok) setNotes(await noteResp.json());
         if (secResp.ok) setSectors(await secResp.json());
         if (rateResp.ok) setRatings(await rateResp.json());
+        if (watchResp.ok) setWatchlist(await watchResp.json());
+        if (portResp.ok) setPortfolio(await portResp.json());
+        if (sectorResp.ok) setSectorComparison(await sectorResp.json());
+        if (sentimentResp.ok) setSentiment(await sentimentResp.json());
       } else {
         setApiAvailable(false);
       }
@@ -269,6 +376,96 @@ const InvestmentResearchPage: React.FC = () => {
   }
 
   // ============================================================
+  // 自选股管理
+  // ============================================================
+  async function handleAddWatch() {
+    if (!newWatch.code.trim()) {
+      toast.error('请选择公司');
+      return;
+    }
+    try {
+      const resp = await fetch(getApiBaseUrl() + '/api/investment-research/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: newWatch.code.trim(),
+          note: newWatch.note || null,
+          alert_price: newWatch.alert_price ? parseFloat(newWatch.alert_price) : null,
+        }),
+      });
+      if (resp.ok) {
+        const saved: WatchlistItem = await resp.json();
+        setWatchlist((prev) => [...prev, { ...saved }]);
+        toast.success('已添加到自选股');
+        setNewWatch({ code: '', note: '', alert_price: '' });
+        setShowAddWatch(false);
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        toast.error(safeErrorDetail(err.detail, '添加失败'));
+      }
+    } catch {
+      toast.error('添加失败');
+    }
+  }
+
+  async function handleRemoveWatch(code: string) {
+    try {
+      const resp = await fetch(getApiBaseUrl() + `/api/investment-research/watchlist/${code}`, { method: 'DELETE' });
+      if (resp.ok) {
+        setWatchlist((prev) => prev.filter((w) => w.code !== code));
+        toast.success('已移除');
+      }
+    } catch {
+      toast.error('移除失败');
+    }
+  }
+
+  // ============================================================
+  // 公司财务详情
+  // ============================================================
+  async function loadCompanyFinancials(code: string) {
+    setSelectedCompanyCode(code);
+    setCompanyFinancials(null);
+    try {
+      const resp = await fetch(getApiBaseUrl() + `/api/investment-research/companies/${code}/financials`);
+      if (resp.ok) {
+        setCompanyFinancials(await resp.json());
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // ============================================================
+  // 研报导出
+  // ============================================================
+  function handleExportReport(reportId: number) {
+    window.open(getApiBaseUrl() + `/api/investment-research/reports/${reportId}/export?format=markdown`, '_blank');
+  }
+
+  // ============================================================
+  // 全局搜索
+  // ============================================================
+  async function handleSearch() {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const resp = await fetch(getApiBaseUrl() + `/api/investment-research/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        setSearchResults(data.results || []);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  // ============================================================
   // 渲染
   // ============================================================
   return (
@@ -298,6 +495,13 @@ const InvestmentResearchPage: React.FC = () => {
               {apiAvailable === true ? '后端已连接' : apiAvailable === false ? '后端不可用（请启动）' : '连接中...'}
             </span>
             <button
+              onClick={() => setShowGlobalSearch(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50"
+            >
+              <Search className="w-4 h-4" />
+              搜索
+            </button>
+            <button
               onClick={loadAll}
               disabled={loading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-50 disabled:opacity-60"
@@ -317,6 +521,10 @@ const InvestmentResearchPage: React.FC = () => {
             { key: 'opportunities' as TabKey, label: '市场机会', icon: <Zap size={16} /> },
             { key: 'risks' as TabKey, label: '风险预警', icon: <Shield size={16} /> },
             { key: 'notes' as TabKey, label: '研究卡片', icon: <Tag size={16} /> },
+            { key: 'watchlist' as TabKey, label: '自选股', icon: <Star size={16} /> },
+            { key: 'portfolio' as TabKey, label: '投资组合', icon: <Wallet size={16} /> },
+            { key: 'sectors' as TabKey, label: '行业对比', icon: <PieChart size={16} /> },
+            { key: 'sentiment' as TabKey, label: '市场情绪', icon: <Gauge size={16} /> },
           ].map((t) => (
             <button
               key={t.key}
@@ -347,6 +555,7 @@ const InvestmentResearchPage: React.FC = () => {
               onKeywordChange={setCompanyKeyword}
               onSectorChange={setCompanySector}
               onRatingChange={setCompanyRating}
+              onViewFinancials={loadCompanyFinancials}
             />
           )}
           {activeTab === 'reports' && (
@@ -357,6 +566,7 @@ const InvestmentResearchPage: React.FC = () => {
               onKeywordChange={setReportKeyword}
               onCategoryChange={setReportCategory}
               onSelect={setSelectedReport}
+              onExport={handleExportReport}
             />
           )}
           {activeTab === 'opportunities' && <OpportunitiesTab opportunities={opportunities} companies={companies} />}
@@ -373,11 +583,44 @@ const InvestmentResearchPage: React.FC = () => {
               companies={companies}
             />
           )}
+          {activeTab === 'watchlist' && (
+            <WatchlistTab
+              watchlist={watchlist}
+              companies={companies}
+              showAdd={showAddWatch}
+              onToggleAdd={() => setShowAddWatch((v) => !v)}
+              newWatch={newWatch}
+              setNewWatch={setNewWatch}
+              onAdd={handleAddWatch}
+              onRemove={handleRemoveWatch}
+              onViewFinancials={loadCompanyFinancials}
+            />
+          )}
+          {activeTab === 'portfolio' && <PortfolioTab portfolio={portfolio} onViewFinancials={loadCompanyFinancials} />}
+          {activeTab === 'sectors' && <SectorsTab comparisons={sectorComparison} />}
+          {activeTab === 'sentiment' && <SentimentTab sentiment={sentiment} />}
         </div>
 
         {/* 报告详情 Modal */}
         {selectedReport && (
-          <ReportDetailModal report={selectedReport} onClose={() => setSelectedReport(null)} notes={notes} companies={companies} />
+          <ReportDetailModal report={selectedReport} onClose={() => setSelectedReport(null)} notes={notes} companies={companies} onExport={handleExportReport} />
+        )}
+
+        {/* 公司财务详情 Modal */}
+        {selectedCompanyCode && (
+          <CompanyFinancialsModal code={selectedCompanyCode} financials={companyFinancials} companies={companies} onClose={() => setSelectedCompanyCode(null)} />
+        )}
+
+        {/* 全局搜索 Modal */}
+        {showGlobalSearch && (
+          <GlobalSearchModal
+            query={searchQuery}
+            setQuery={setSearchQuery}
+            results={searchResults}
+            searching={searching}
+            onSearch={handleSearch}
+            onClose={() => { setShowGlobalSearch(false); setSearchResults([]); setSearchQuery(''); }}
+          />
         )}
       </div>
     </div>
@@ -577,6 +820,7 @@ function CompaniesTab({
   companies, sectors, ratings,
   keyword, sector, rating,
   onKeywordChange, onSectorChange, onRatingChange,
+  onViewFinancials,
 }: {
   companies: CompanyProfile[];
   sectors: string[];
@@ -585,6 +829,7 @@ function CompaniesTab({
   onKeywordChange: (v: string) => void;
   onSectorChange: (v: string) => void;
   onRatingChange: (v: string) => void;
+  onViewFinancials: (code: string) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -665,6 +910,12 @@ function CompaniesTab({
                   PE: {c.pe_ratio ? c.pe_ratio.toFixed(1) : '-'} / PB: {c.pb_ratio ? c.pb_ratio.toFixed(2) : '-'}
                 </span>
               </div>
+              <button
+                onClick={() => onViewFinancials(c.code)}
+                className="w-full mt-3 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 font-medium"
+              >
+                <Eye className="w-3.5 h-3.5" /> 查看财务详情
+              </button>
             </div>
           ))}
         </div>
@@ -682,13 +933,14 @@ function CompaniesTab({
 // ============================================================
 function ReportsTab({
   reports, keyword, category,
-  onKeywordChange, onCategoryChange, onSelect,
+  onKeywordChange, onCategoryChange, onSelect, onExport,
 }: {
   reports: ResearchReport[];
   keyword: string; category: string;
   onKeywordChange: (v: string) => void;
   onCategoryChange: (v: string) => void;
   onSelect: (r: ResearchReport) => void;
+  onExport: (id: number) => void;
 }) {
   const categories = useMemo(() => Array.from(new Set(reports.map((r) => r.category))), [reports]);
 
@@ -749,8 +1001,16 @@ function ReportsTab({
                     ))}
                   </div>
                 </div>
-                <div className="flex items-center text-gray-400 text-sm gap-1 flex-shrink-0">
-                  查看 <ChevronRight className="w-4 h-4" />
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onExport(r.id); }}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <Download className="w-3.5 h-3.5" /> 导出
+                  </button>
+                  <div className="flex items-center text-gray-400 text-sm gap-1">
+                    查看 <ChevronRight className="w-4 h-4" />
+                  </div>
                 </div>
               </div>
             </button>
@@ -769,12 +1029,13 @@ function ReportsTab({
 // 报告详情 Modal
 // ============================================================
 function ReportDetailModal({
-  report, notes, companies, onClose,
+  report, notes, companies, onClose, onExport,
 }: {
   report: ResearchReport;
   notes: ResearchNote[];
   companies: CompanyProfile[];
   onClose: () => void;
+  onExport: (id: number) => void;
 }) {
   const relatedNotes = notes.filter((n) => n.related_report_id === report.id);
   const relatedCompanies = companies.filter((c) => report.company_codes.includes(c.code));
@@ -794,9 +1055,17 @@ function ReportDetailModal({
             </div>
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{report.title}</h2>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onExport(report.id)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              <Download className="w-3.5 h-3.5" /> 导出 Markdown
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-5">
@@ -1183,6 +1452,560 @@ function EmptyHint({ text, small }: { text: string; small?: boolean }) {
         <FileText className={small ? 'w-5 h-5' : 'w-8 h-8'} />
       </div>
       <div className={`${small ? 'text-xs' : 'text-sm'} text-gray-500 dark:text-gray-400`}>{text}</div>
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：自选股
+// ============================================================
+function WatchlistTab({
+  watchlist, companies, showAdd, onToggleAdd, newWatch, setNewWatch, onAdd, onRemove, onViewFinancials,
+}: {
+  watchlist: WatchlistItem[];
+  companies: CompanyProfile[];
+  showAdd: boolean;
+  onToggleAdd: () => void;
+  newWatch: { code: string; note: string; alert_price: string };
+  setNewWatch: React.Dispatch<React.SetStateAction<{ code: string; note: string; alert_price: string }>>;
+  onAdd: () => void;
+  onRemove: (code: string) => void;
+  onViewFinancials: (code: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-gray-500 dark:text-gray-400">共 {watchlist.length} 只自选股</div>
+        <button onClick={onToggleAdd} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-sm">
+          <Plus className="w-4 h-4" /> 添加自选
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">添加自选股</h3>
+            <button onClick={onToggleAdd} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="space-y-3">
+            <select
+              value={newWatch.code}
+              onChange={(e) => setNewWatch((n) => ({ ...n, code: e.target.value }))}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            >
+              <option value="">选择公司（必填）</option>
+              {companies.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+            </select>
+            <input type="text" placeholder="备注（可选）" value={newWatch.note}
+              onChange={(e) => setNewWatch((n) => ({ ...n, note: e.target.value }))}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <input type="number" step="0.01" placeholder="预警价（可选，低于此价提醒）" value={newWatch.alert_price}
+              onChange={(e) => setNewWatch((n) => ({ ...n, alert_price: e.target.value }))}
+              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            <div className="flex justify-end">
+              <button onClick={onAdd} className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium shadow-sm">添加</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {watchlist.length ? (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+                <th className="text-left px-5 py-3 font-medium">公司</th>
+                <th className="text-right px-3 py-3 font-medium">现价</th>
+                <th className="text-right px-3 py-3 font-medium">涨跌</th>
+                <th className="text-right px-3 py-3 font-medium">预警价</th>
+                <th className="text-left px-3 py-3 font-medium">备注</th>
+                <th className="text-right px-5 py-3 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {watchlist.map((w) => (
+                <tr key={w.code} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                  <td className="px-5 py-3">
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">{w.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{w.code}</div>
+                  </td>
+                  <td className="text-right px-3 py-3 font-semibold text-gray-900 dark:text-gray-100">{w.current_price?.toFixed(2) ?? '-'}</td>
+                  <td className={`text-right px-3 py-3 font-semibold ${(w.change_pct ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {(w.change_pct ?? 0) >= 0 ? '+' : ''}{(w.change_pct ?? 0).toFixed(2)}%
+                  </td>
+                  <td className="text-right px-3 py-3">
+                    {w.alert_price ? (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${w.alert_triggered ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
+                        {w.alert_price.toFixed(2)} {w.alert_triggered ? '已触发' : ''}
+                      </span>
+                    ) : <span className="text-gray-400">-</span>}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400">{w.note || '-'}</td>
+                  <td className="text-right px-5 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => onViewFinancials(w.code)} className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30" title="财务">
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => onRemove(w.code)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30" title="移除">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 shadow-sm">
+          <EmptyHint text="暂无自选股" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：投资组合
+// ============================================================
+function PortfolioTab({ portfolio, onViewFinancials }: { portfolio: PortfolioSummary | null; onViewFinancials: (code: string) => void }) {
+  if (!portfolio) return <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 shadow-sm"><EmptyHint text="暂无投资组合数据" /></div>;
+  const plPositive = portfolio.total_profit_loss >= 0;
+
+  return (
+    <div className="space-y-6">
+      {/* 总览 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+          <div className="text-xs text-gray-500 dark:text-gray-400">总成本</div>
+          <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">{portfolio.total_cost.toLocaleString()}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+          <div className="text-xs text-gray-500 dark:text-gray-400">总市值</div>
+          <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">{portfolio.total_market_value.toLocaleString()}</div>
+        </div>
+        <div className={`border rounded-2xl p-5 shadow-sm ${plPositive ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900/40' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900/40'}`}>
+          <div className="text-xs text-gray-500 dark:text-gray-400">总盈亏</div>
+          <div className={`text-xl font-bold mt-1 ${plPositive ? 'text-green-600' : 'text-red-600'}`}>
+            {plPositive ? '+' : ''}{portfolio.total_profit_loss.toLocaleString()}
+          </div>
+        </div>
+        <div className={`border rounded-2xl p-5 shadow-sm ${plPositive ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900/40' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-900/40'}`}>
+          <div className="text-xs text-gray-500 dark:text-gray-400">收益率</div>
+          <div className={`text-xl font-bold mt-1 ${plPositive ? 'text-green-600' : 'text-red-600'}`}>
+            {plPositive ? '+' : ''}{portfolio.total_profit_pct.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+
+      {/* 持仓列表 */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">持仓明细</h3>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+              <th className="text-left px-5 py-3 font-medium">股票</th>
+              <th className="text-right px-3 py-3 font-medium">持仓</th>
+              <th className="text-right px-3 py-3 font-medium">成本价</th>
+              <th className="text-right px-3 py-3 font-medium">现价</th>
+              <th className="text-right px-3 py-3 font-medium">市值</th>
+              <th className="text-right px-3 py-3 font-medium">盈亏</th>
+              <th className="text-right px-3 py-3 font-medium">权重</th>
+              <th className="text-right px-5 py-3 font-medium">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+            {portfolio.holdings.map((h) => {
+              const plPos = h.profit_loss >= 0;
+              return (
+                <tr key={h.code} className="hover:bg-gray-50 dark:hover:bg-gray-700/40">
+                  <td className="px-5 py-3">
+                    <div className="font-semibold text-gray-900 dark:text-gray-100">{h.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{h.code}</div>
+                  </td>
+                  <td className="text-right px-3 py-3 text-gray-700 dark:text-gray-300">{h.shares}</td>
+                  <td className="text-right px-3 py-3 text-gray-700 dark:text-gray-300">{h.cost_price.toFixed(2)}</td>
+                  <td className="text-right px-3 py-3 text-gray-700 dark:text-gray-300">{h.current_price.toFixed(2)}</td>
+                  <td className="text-right px-3 py-3 font-semibold text-gray-900 dark:text-gray-100">{h.market_value.toLocaleString()}</td>
+                  <td className={`text-right px-3 py-3 font-semibold ${plPos ? 'text-green-600' : 'text-red-600'}`}>
+                    {plPos ? '+' : ''}{h.profit_loss.toLocaleString()} ({plPos ? '+' : ''}{h.profit_pct.toFixed(2)}%)
+                  </td>
+                  <td className="text-right px-3 py-3">
+                    <div className="inline-flex items-center gap-2">
+                      <div className="w-16 h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                        <div className="h-full rounded-full bg-indigo-500" style={{ width: `${Math.min(100, h.weight)}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 w-10">{h.weight.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className="text-right px-5 py-3">
+                    <button onClick={() => onViewFinancials(h.code)} className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30" title="财务">
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 行业配置 */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">行业配置</h3>
+        <div className="space-y-3">
+          {portfolio.allocation_by_sector.map((a) => (
+            <div key={a.sector} className="flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1">
+                <span className="text-sm text-gray-800 dark:text-gray-200 min-w-[7rem]">{a.sector}</span>
+                <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-blue-500" style={{ width: `${Math.min(100, a.weight)}%` }} />
+                </div>
+              </div>
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-3 w-20 text-right">
+                {a.weight.toFixed(1)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：行业对比
+// ============================================================
+function SectorsTab({ comparisons }: { comparisons: SectorComparison[] }) {
+  if (!comparisons.length) return <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 shadow-sm"><EmptyHint text="暂无行业对比数据" /></div>;
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {comparisons.map((s) => (
+        <div key={s.sector} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">{s.sector}</h3>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${s.avg_change_pct >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              {s.avg_change_pct >= 0 ? '+' : ''}{s.avg_change_pct.toFixed(2)}%
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="text-center p-2 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+              <div className="text-xs text-gray-500 dark:text-gray-400">平均 PE</div>
+              <div className="text-sm font-bold text-gray-900 dark:text-gray-100">{s.avg_pe?.toFixed(1) ?? '-'}</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+              <div className="text-xs text-gray-500 dark:text-gray-400">平均 PB</div>
+              <div className="text-sm font-bold text-gray-900 dark:text-gray-100">{s.avg_pb?.toFixed(2) ?? '-'}</div>
+            </div>
+            <div className="text-center p-2 rounded-lg bg-gray-50 dark:bg-gray-700/40">
+              <div className="text-xs text-gray-500 dark:text-gray-400">平均 ROE</div>
+              <div className="text-sm font-bold text-gray-900 dark:text-gray-100">{s.avg_roe?.toFixed(1) ?? '-'}%</div>
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">龙头公司（{s.company_count} 家）</div>
+          <div className="space-y-1">
+            {s.top_companies.map((c) => (
+              <div key={c.code} className="flex items-center justify-between text-sm">
+                <span className="text-gray-800 dark:text-gray-200">{c.name}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded ${ratingColor(c.rating)}`}>{c.rating}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：市场情绪
+// ============================================================
+function SentimentTab({ sentiment }: { sentiment: MarketSentiment | null }) {
+  if (!sentiment) return <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 shadow-sm"><EmptyHint text="暂无市场情绪数据" /></div>;
+  const score = sentiment.sentiment_score;
+  const gaugeColor = score >= 70 ? 'from-green-400 to-emerald-600' : score >= 55 ? 'from-blue-400 to-indigo-600' : score >= 45 ? 'from-yellow-400 to-amber-500' : score >= 30 ? 'from-orange-400 to-red-500' : 'from-red-500 to-rose-700';
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 情绪指数仪表盘 */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm text-center">
+          <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">市场情绪指数</h3>
+          <div className="relative inline-flex items-center justify-center w-40 h-40">
+            <svg className="w-40 h-40 -rotate-90" viewBox="0 0 160 160">
+              <circle cx="80" cy="80" r="68" fill="none" stroke="currentColor" strokeWidth="10" className="text-gray-100 dark:text-gray-700" />
+              <circle cx="80" cy="80" r="68" fill="none" stroke="url(#gaugeGrad)" strokeWidth="10" strokeLinecap="round"
+                strokeDasharray={`${(score / 100) * 427} 427`} />
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor={score >= 70 ? '#10b981' : score >= 55 ? '#3b82f6' : score >= 45 ? '#f59e0b' : '#ef4444'} />
+                  <stop offset="100%" stopColor={score >= 70 ? '#059669' : score >= 55 ? '#6366f1' : score >= 45 ? '#d97706' : '#dc2626'} />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div className="text-4xl font-bold text-gray-900 dark:text-gray-100">{score.toFixed(1)}</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{sentiment.level}</div>
+            </div>
+          </div>
+          <div className="mt-4 flex justify-between text-xs text-gray-400">
+            <span>恐惧</span><span>中性</span><span>贪婪</span>
+          </div>
+        </div>
+
+        {/* 市场广度 */}
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">市场广度</h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">上涨</span>
+              <span className="text-lg font-bold text-green-600">{sentiment.market_breadth.up}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">下跌</span>
+              <span className="text-lg font-bold text-red-600">{sentiment.market_breadth.down}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600 dark:text-gray-400">平盘</span>
+              <span className="text-lg font-bold text-gray-500">{sentiment.market_breadth.flat}</span>
+            </div>
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">上涨比例</span>
+                <span className="text-lg font-bold text-gray-900 dark:text-gray-100">{sentiment.market_breadth.up_ratio.toFixed(1)}%</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                <div className="h-full rounded-full bg-green-500" style={{ width: `${sentiment.market_breadth.up_ratio}%` }} />
+              </div>
+            </div>
+            <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">平均涨跌</span>
+                <span className={`text-lg font-bold ${sentiment.avg_change_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {sentiment.avg_change_pct >= 0 ? '+' : ''}{sentiment.avg_change_pct.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 热门行业 & 信号 */}
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+              <Activity className="w-4 h-4 text-amber-500" /> 热门行业
+            </h3>
+            <div className="space-y-2">
+              {sentiment.hot_sectors.map((s, i) => (
+                <div key={s} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>{i + 1}</span>
+                    <span className="text-sm text-gray-800 dark:text-gray-200">{s}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-500" /> 信号概览
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/40">
+                <div className="text-xs text-amber-700 dark:text-amber-300">市场机会</div>
+                <div className="text-2xl font-bold text-amber-600">{sentiment.opportunities_count}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40">
+                <div className="text-xs text-red-700 dark:text-red-300">风险预警</div>
+                <div className="text-2xl font-bold text-red-600">{sentiment.risk_warnings_count}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：公司财务详情 Modal
+// ============================================================
+function CompanyFinancialsModal({ code, financials, companies, onClose }: {
+  code: string;
+  financials: CompanyFinancials | null;
+  companies: CompanyProfile[];
+  onClose: () => void;
+}) {
+  const company = companies.find((c) => c.code === code);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6 overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-4xl w-full my-6 shadow-2xl border border-gray-200 dark:border-gray-700">
+        <div className="flex items-start justify-between p-5 border-b border-gray-100 dark:border-gray-700">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{company?.name || code} 财务详情</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{code} · {company?.sector}</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          {!financials ? (
+            <div className="py-12 text-center"><div className="inline-block w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" /><div className="text-sm text-gray-500">加载财务数据...</div></div>
+          ) : (
+            <div className="space-y-6">
+              {/* 估值指标 */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">估值指标</h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {Object.entries(financials.valuation).map(([k, v]) => (
+                    <div key={k} className="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">{k.replace(/_/g, ' ')}</div>
+                      <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{typeof v === 'number' ? v.toFixed(2) : String(v)}</div>
+                    </div>
+                  ))}
+                  <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">股息率</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{financials.dividend?.yield_pct?.toFixed(2) ?? '-'}%</div>
+                  </div>
+                  <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">分红比率</div>
+                    <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{financials.dividend?.payout_ratio?.toFixed(1) ?? '-'}%</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 财务趋势表格 */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">季度财务趋势</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-gray-700 text-gray-500 dark:text-gray-400">
+                        <th className="text-left py-2 px-2 font-medium">季度</th>
+                        <th className="text-right py-2 px-2 font-medium">营收(亿)</th>
+                        <th className="text-right py-2 px-2 font-medium">同比</th>
+                        <th className="text-right py-2 px-2 font-medium">净利(亿)</th>
+                        <th className="text-right py-2 px-2 font-medium">同比</th>
+                        <th className="text-right py-2 px-2 font-medium">毛利率</th>
+                        <th className="text-right py-2 px-2 font-medium">净利率</th>
+                        <th className="text-right py-2 px-2 font-medium">ROE</th>
+                        <th className="text-right py-2 px-2 font-medium">负债率</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
+                      {financials.metrics.map((m) => (
+                        <tr key={m.period} className="hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                          <td className="py-2 px-2 font-semibold text-gray-900 dark:text-gray-100">{m.period}</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.revenue.toFixed(1)}</td>
+                          <td className={`text-right py-2 px-2 ${m.revenue_yoy >= 0 ? 'text-green-600' : 'text-red-600'}`}>{m.revenue_yoy >= 0 ? '+' : ''}{m.revenue_yoy.toFixed(1)}%</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.net_profit.toFixed(1)}</td>
+                          <td className={`text-right py-2 px-2 ${m.net_profit_yoy >= 0 ? 'text-green-600' : 'text-red-600'}`}>{m.net_profit_yoy >= 0 ? '+' : ''}{m.net_profit_yoy.toFixed(1)}%</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.gross_margin.toFixed(1)}%</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.net_margin.toFixed(1)}%</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.roe.toFixed(1)}%</td>
+                          <td className="text-right py-2 px-2 text-gray-700 dark:text-gray-300">{m.debt_ratio.toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：全局搜索 Modal
+// ============================================================
+function GlobalSearchModal({ query, setQuery, results, searching, onSearch, onClose }: {
+  query: string;
+  setQuery: (v: string) => void;
+  results: SearchResult[];
+  searching: boolean;
+  onSearch: () => void;
+  onClose: () => void;
+}) {
+  const typeStyles: Record<string, { bg: string; text: string; label: string }> = {
+    company:     { bg: 'bg-blue-100 dark:bg-blue-900/40',       text: 'text-blue-700 dark:text-blue-300',       label: '公司' },
+    report:      { bg: 'bg-emerald-100 dark:bg-emerald-900/40',  text: 'text-emerald-700 dark:text-emerald-300', label: '研报' },
+    opportunity: { bg: 'bg-amber-100 dark:bg-amber-900/40',      text: 'text-amber-700 dark:text-amber-300',     label: '机会' },
+    risk:        { bg: 'bg-red-100 dark:bg-red-900/40',          text: 'text-red-700 dark:text-red-300',         label: '风险' },
+    note:        { bg: 'bg-violet-100 dark:bg-violet-900/40',   text: 'text-violet-700 dark:text-violet-300',   label: '卡片' },
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm p-4 sm:p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full mt-20 shadow-2xl border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center gap-3 p-4 border-b border-gray-100 dark:border-gray-700">
+          <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+          <input
+            type="text"
+            autoFocus
+            placeholder="搜索公司、研报、机会、风险、研究卡片..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') onSearch(); }}
+            className="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none"
+          />
+          <button onClick={onSearch} disabled={searching} className="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white font-medium disabled:opacity-60">
+            {searching ? '搜索中...' : '搜索'}
+          </button>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="max-h-96 overflow-y-auto">
+          {results.length > 0 ? (
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {results.map((r, i) => {
+                const s = typeStyles[r.type] || typeStyles.company;
+                return (
+                  <div key={`${r.type}-${r.id}-${i}`} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${s.bg} ${s.text}`}>{s.label}</span>
+                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{r.title}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{r.subtitle}</div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-1" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : query.trim() && !searching ? (
+            <div className="p-12 text-center">
+              <Search className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+              <div className="text-sm text-gray-500 dark:text-gray-400">未找到与 "{query}" 相关的结果</div>
+            </div>
+          ) : !query.trim() ? (
+            <div className="p-12 text-center">
+              <div className="text-sm text-gray-400">输入关键词搜索投研内容</div>
+              <div className="flex flex-wrap gap-2 mt-4 justify-center">
+                {['AI', '新能源', '茅台', '半导体', '白酒'].map((tag) => (
+                  <button key={tag} onClick={() => { setQuery(tag); }} className="text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600">
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

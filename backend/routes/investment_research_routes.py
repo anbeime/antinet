@@ -735,3 +735,488 @@ async def get_hot_topics():
             "heat_score": round(random.uniform(55, 99), 1),
         })
     return {"hot_topics": topics}
+
+
+# ============================================================
+# 扩展功能：公司财务指标
+# ============================================================
+
+class FinancialMetric(BaseModel):
+    """单季度财务指标"""
+    period: str  # 2025Q3
+    revenue: float  # 营收（亿元）
+    revenue_yoy: float  # 营收同比 %
+    net_profit: float  # 净利润（亿元）
+    net_profit_yoy: float  # 净利润同比 %
+    gross_margin: float  # 毛利率 %
+    net_margin: float  # 净利率 %
+    roe: float  # ROE %
+    debt_ratio: float  # 资产负债率 %
+
+
+class CompanyFinancials(BaseModel):
+    """公司财务概况"""
+    code: str
+    name: str
+    metrics: List[FinancialMetric]
+    valuation: Dict[str, Any]  # pe / pb / ps / ev_ebitda
+    dividend: Dict[str, Any]  # 股息率 / 分红比率
+
+
+_FINANCIALS: Dict[str, CompanyFinancials] = {}
+
+
+def _init_financials():
+    """为每家公司生成演示财务数据"""
+    for c in _COMPANIES:
+        code = c["code"]
+        metrics = []
+        base_rev = random.uniform(50, 800)
+        for i in range(8):
+            q = 8 - i
+            rev = round(base_rev * (1 + random.uniform(-0.15, 0.25)) * (1 + i * 0.03), 2)
+            np = round(rev * random.uniform(0.08, 0.25), 2)
+            metrics.append(FinancialMetric(
+                period=f"2024Q{q}" if i < 4 else f"2025Q{i - 3}",
+                revenue=rev,
+                revenue_yoy=round(random.uniform(-5, 35), 1),
+                net_profit=np,
+                net_profit_yoy=round(random.uniform(-10, 40), 1),
+                gross_margin=round(random.uniform(25, 85), 1),
+                net_margin=round(random.uniform(8, 30), 1),
+                roe=round(random.uniform(8, 35), 1),
+                debt_ratio=round(random.uniform(20, 70), 1),
+            ))
+        _FINANCIALS[code] = CompanyFinancials(
+            code=code,
+            name=c["name"],
+            metrics=metrics,
+            valuation={
+                "pe_ttm": c.get("pe_ratio") or round(random.uniform(15, 60), 1),
+                "pb": c.get("pb_ratio") or round(random.uniform(1, 10), 2),
+                "ps_ttm": round(random.uniform(1, 15), 1),
+                "ev_ebitda": round(random.uniform(8, 30), 1),
+            },
+            dividend={
+                "yield_pct": round(random.uniform(0, 5), 2),
+                "payout_ratio": round(random.uniform(0, 80), 1),
+            },
+        )
+
+
+_init_financials()
+
+
+@router.get("/companies/{code}/financials", response_model=CompanyFinancials)
+async def get_company_financials(code: str):
+    """公司财务指标（8 个季度趋势）"""
+    if code not in _FINANCIALS:
+        raise HTTPException(status_code=404, detail="公司财务数据不存在")
+    return _FINANCIALS[code]
+
+
+# ============================================================
+# 扩展功能：自选股管理
+# ============================================================
+
+class WatchlistItem(BaseModel):
+    code: str
+    name: str
+    added_at: str
+    note: Optional[str] = None
+    alert_price: Optional[float] = None
+
+
+class WatchlistAdd(BaseModel):
+    code: str
+    note: Optional[str] = None
+    alert_price: Optional[float] = None
+
+
+_WATCHLIST: List[Dict[str, Any]] = [
+    {"code": "600519.SH", "name": "贵州茅台", "added_at": (datetime.now() - timedelta(days=5)).isoformat(timespec="seconds"), "note": "长期持有", "alert_price": 1600.0},
+    {"code": "688256.SH", "name": "寒武纪", "added_at": (datetime.now() - timedelta(days=3)).isoformat(timespec="seconds"), "note": "AI 芯片观察", "alert_price": 220.0},
+    {"code": "002594.SZ", "name": "比亚迪", "added_at": (datetime.now() - timedelta(days=1)).isoformat(timespec="seconds"), "note": None, "alert_price": 230.0},
+]
+
+
+@router.get("/watchlist", response_model=List[WatchlistItem])
+async def get_watchlist():
+    """自选股列表（含实时价格与预警检查）"""
+    result = []
+    for item in _WATCHLIST:
+        company = next((c for c in _COMPANIES if c["code"] == item["code"]), None)
+        entry = {
+            **item,
+            "current_price": company["current_price"] if company else None,
+            "change_pct": company["change_pct"] if company else None,
+            "alert_triggered": (
+                company and item.get("alert_price") is not None
+                and company["current_price"] <= item["alert_price"]
+            ),
+        }
+        result.append(entry)
+    return result
+
+
+@router.post("/watchlist", response_model=WatchlistItem)
+async def add_to_watchlist(payload: WatchlistAdd):
+    """添加自选股"""
+    if any(w["code"] == payload.code for w in _WATCHLIST):
+        raise HTTPException(status_code=409, detail="该股票已在自选列表中")
+    company = next((c for c in _COMPANIES if c["code"] == payload.code), None)
+    if not company:
+        raise HTTPException(status_code=404, detail="公司不存在")
+    item = {
+        "code": payload.code,
+        "name": company["name"],
+        "added_at": datetime.now().isoformat(timespec="seconds"),
+        "note": payload.note,
+        "alert_price": payload.alert_price,
+    }
+    _WATCHLIST.append(item)
+    return item
+
+
+@router.delete("/watchlist/{code}")
+async def remove_from_watchlist(code: str):
+    """移除自选股"""
+    before = len(_WATCHLIST)
+    _WATCHLIST[:] = [w for w in _WATCHLIST if w["code"] != code]
+    if len(_WATCHLIST) == before:
+        raise HTTPException(status_code=404, detail="自选股中不存在该股票")
+    return {"message": f"已移除 {code}"}
+
+
+# ============================================================
+# 扩展功能：行业对比分析
+# ============================================================
+
+class SectorComparison(BaseModel):
+    sector: str
+    company_count: int
+    avg_pe: Optional[float]
+    avg_pb: Optional[float]
+    avg_roe: Optional[float]
+    avg_change_pct: float
+    top_companies: List[Dict[str, Any]]
+    market_cap_total: str
+
+
+@router.get("/sector-comparison", response_model=List[SectorComparison])
+async def get_sector_comparison():
+    """行业对比分析：各行业平均 PE/PB/ROE/涨跌幅"""
+    sector_data: Dict[str, List[Dict[str, Any]]] = {}
+    for c in _COMPANIES:
+        sector_data.setdefault(c["sector"], []).append(c)
+
+    results = []
+    for sector, comps in sector_data.items():
+        pe_vals = [c["pe_ratio"] for c in comps if c["pe_ratio"] is not None]
+        pb_vals = [c["pb_ratio"] for c in comps if c["pb_ratio"] is not None]
+        roe_vals = [
+            _FINANCIALS[c["code"]].metrics[-1].roe
+            for c in comps if c["code"] in _FINANCIALS and _FINANCIALS[c["code"]].metrics
+        ]
+        change_vals = [c["change_pct"] for c in comps]
+        results.append(SectorComparison(
+            sector=sector,
+            company_count=len(comps),
+            avg_pe=round(sum(pe_vals) / len(pe_vals), 1) if pe_vals else None,
+            avg_pb=round(sum(pb_vals) / len(pb_vals), 2) if pb_vals else None,
+            avg_roe=round(sum(roe_vals) / len(roe_vals), 1) if roe_vals else None,
+            avg_change_pct=round(sum(change_vals) / len(change_vals), 2),
+            top_companies=[
+                {"code": c["code"], "name": c["name"], "rating": c["rating"], "market_cap": c["market_cap"]}
+                for c in sorted(comps, key=lambda x: x["change_pct"], reverse=True)[:3]
+            ],
+            market_cap_total=f"{len(comps)} 家公司",
+        ))
+    results.sort(key=lambda r: r.avg_change_pct, reverse=True)
+    return results
+
+
+# ============================================================
+# 扩展功能：投资组合追踪
+# ============================================================
+
+class PortfolioHolding(BaseModel):
+    code: str
+    name: str
+    shares: int
+    cost_price: float
+    current_price: float
+    market_value: float
+    profit_loss: float
+    profit_pct: float
+    weight: float
+
+
+class PortfolioSummary(BaseModel):
+    total_cost: float
+    total_market_value: float
+    total_profit_loss: float
+    total_profit_pct: float
+    holdings: List[PortfolioHolding]
+    allocation_by_sector: List[Dict[str, Any]]
+
+
+_PORTFOLIO: List[Dict[str, Any]] = [
+    {"code": "600519.SH", "shares": 100, "cost_price": 1550.0},
+    {"code": "300750.SZ", "shares": 500, "cost_price": 195.0},
+    {"code": "688256.SH", "shares": 200, "cost_price": 180.0},
+    {"code": "002594.SZ", "shares": 300, "cost_price": 210.0},
+]
+
+
+@router.get("/portfolio", response_model=PortfolioSummary)
+async def get_portfolio():
+    """投资组合追踪：持仓、盈亏、行业配置"""
+    holdings = []
+    total_cost = 0.0
+    total_mv = 0.0
+    for h in _PORTFOLIO:
+        company = next((c for c in _COMPANIES if c["code"] == h["code"]), None)
+        if not company:
+            continue
+        cur_price = company["current_price"]
+        mv = round(cur_price * h["shares"], 2)
+        cost = round(h["cost_price"] * h["shares"], 2)
+        pl = round(mv - cost, 2)
+        total_cost += cost
+        total_mv += mv
+        holdings.append(PortfolioHolding(
+            code=h["code"],
+            name=company["name"],
+            shares=h["shares"],
+            cost_price=h["cost_price"],
+            current_price=cur_price,
+            market_value=mv,
+            profit_loss=pl,
+            profit_pct=round(pl / cost * 100, 2),
+            weight=0,  # filled later
+        ))
+    for h in holdings:
+        h.weight = round(h.market_value / total_mv * 100, 2) if total_mv else 0
+
+    # allocation by sector
+    sector_map: Dict[str, float] = {}
+    for h in holdings:
+        company = next((c for c in _COMPANIES if c["code"] == h.code), None)
+        if company:
+            sector_map[company["sector"]] = sector_map.get(company["sector"], 0) + h.market_value
+    allocation = [
+        {"sector": s, "market_value": round(v, 2), "weight": round(v / total_mv * 100, 2)}
+        for s, v in sorted(sector_map.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    return PortfolioSummary(
+        total_cost=round(total_cost, 2),
+        total_market_value=round(total_mv, 2),
+        total_profit_loss=round(total_mv - total_cost, 2),
+        total_profit_pct=round((total_mv - total_cost) / total_cost * 100, 2) if total_cost else 0,
+        holdings=holdings,
+        allocation_by_sector=allocation,
+    )
+
+
+# ============================================================
+# 扩展功能：研报导出
+# ============================================================
+
+@router.get("/reports/{report_id}/export")
+async def export_report(report_id: int, format: str = "markdown"):
+    """导出研究报告为 Markdown / JSON 格式"""
+    report = next((r for r in _REPORTS if r["id"] == report_id), None)
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+
+    if format == "json":
+        return report
+
+    # Markdown
+    md_lines = [
+        f"# {report['title']}",
+        "",
+        f"> **作者**：{report['author']}  ",
+        f"> **发布日期**：{report['published_at']}  ",
+        f"> **类别**：{report['category']}  ",
+        f"> **状态**：{report['status']}",
+        "",
+        "## 摘要",
+        "",
+        report["summary"],
+        "",
+    ]
+    if report["tags"]:
+        md_lines.append("**标签**：" + " / ".join(report["tags"]))
+        md_lines.append("")
+    if report["company_codes"]:
+        md_lines.append("**涉及公司**：" + " / ".join(report["company_codes"]))
+        md_lines.append("")
+    if report["key_points"]:
+        md_lines.append("## 关键观点")
+        md_lines.append("")
+        for p in report["key_points"]:
+            md_lines.append(f"- {p}")
+        md_lines.append("")
+    if report["risk_points"]:
+        md_lines.append("## 风险提示")
+        md_lines.append("")
+        for p in report["risk_points"]:
+            md_lines.append(f"- {p}")
+        md_lines.append("")
+    if report["investment_suggestion"]:
+        md_lines.append("## 投资建议")
+        md_lines.append("")
+        md_lines.append(report["investment_suggestion"])
+        md_lines.append("")
+
+    related_notes = [n for n in _NOTES if n.get("related_report_id") == report_id]
+    if related_notes:
+        md_lines.append("## 关联研究卡片")
+        md_lines.append("")
+        type_labels = {"blue": "事实", "green": "解释", "yellow": "风险", "red": "行动"}
+        for n in related_notes:
+            label = type_labels.get(n["card_type"], n["card_type"])
+            md_lines.append(f"### [{label}] {n['title']}")
+            md_lines.append("")
+            md_lines.append(n["content"])
+            md_lines.append("")
+
+    from fastapi.responses import PlainTextResponse
+    filename = f"report_{report_id}.md"
+    content = "\n".join(md_lines)
+    return PlainTextResponse(
+        content=content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ============================================================
+# 扩展功能：市场情绪指数
+# ============================================================
+
+@router.get("/market-sentiment")
+async def get_market_sentiment():
+    """市场情绪指数：综合估值、资金、情绪指标"""
+    # 基于 companies 数据模拟
+    up_count = sum(1 for c in _COMPANIES if c["change_pct"] > 0)
+    down_count = sum(1 for c in _COMPANIES if c["change_pct"] < 0)
+    flat_count = len(_COMPANIES) - up_count - down_count
+
+    avg_change = round(sum(c["change_pct"] for c in _COMPANIES) / len(_COMPANIES), 2)
+
+    # 情绪指数 0-100
+    breadth = (up_count / len(_COMPANIES)) * 100
+    sentiment_score = round(50 + avg_change * 3 + (breadth - 50) * 0.3, 1)
+    sentiment_score = max(0, min(100, sentiment_score))
+
+    if sentiment_score >= 70:
+        level = "贪婪"
+    elif sentiment_score >= 55:
+        level = "偏乐观"
+    elif sentiment_score >= 45:
+        level = "中性"
+    elif sentiment_score >= 30:
+        level = "偏谨慎"
+    else:
+        level = "恐惧"
+
+    return {
+        "sentiment_score": sentiment_score,
+        "level": level,
+        "market_breadth": {
+            "up": up_count,
+            "down": down_count,
+            "flat": flat_count,
+            "up_ratio": round(up_count / len(_COMPANIES) * 100, 1),
+        },
+        "avg_change_pct": avg_change,
+        "hot_sectors": [s["name"] for s in sorted(
+            [{"name": c["sector"], "avg": sum(x["change_pct"] for x in _COMPANIES if x["sector"] == c["sector"]) / sum(1 for x in _COMPANIES if x["sector"] == c["sector"])}
+             for c in _COMPANIES
+        ], key=lambda s: s["avg"], reverse=True)[:3]],
+        "risk_warnings_count": len(_RISK_WARNINGS),
+        "opportunities_count": len(_OPPORTUNITIES),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+# ============================================================
+# 扩展功能：搜索（全量投研内容）
+# ============================================================
+
+@router.get("/search")
+async def search_all(q: str, limit: int = 20):
+    """全量搜索：公司、研报、机会、风险、卡片"""
+    kw = q.lower().strip()
+    if not kw:
+        return {"results": [], "total": 0}
+
+    results = []
+
+    # 搜公司
+    for c in _COMPANIES:
+        if kw in c["name"].lower() or kw in c["code"].lower() or any(kw in t.lower() for t in c["tags"]):
+            results.append({
+                "type": "company",
+                "id": c["code"],
+                "title": c["name"],
+                "subtitle": f"{c['code']} · {c['sector']} · {c['rating']}",
+                "url": f"/investment-research?tab=companies&code={c['code']}",
+                "relevance": 0.95,
+            })
+
+    # 搜研报
+    for r in _REPORTS:
+        if kw in r["title"].lower() or kw in r["summary"].lower() or any(kw in t.lower() for t in r["tags"]):
+            results.append({
+                "type": "report",
+                "id": r["id"],
+                "title": r["title"],
+                "subtitle": f"{r['category']} · {r['author']} · {r['published_at'][:10]}",
+                "url": f"/investment-research?tab=reports&id={r['id']}",
+                "relevance": 0.90,
+            })
+
+    # 搜机会
+    for o in _OPPORTUNITIES:
+        if kw in o["title"].lower() or kw in o["reason"].lower() or kw in o["sector"].lower():
+            results.append({
+                "type": "opportunity",
+                "id": o["id"],
+                "title": o["title"],
+                "subtitle": f"{o['sector']} · 信号强度 {o['score']}",
+                "url": f"/investment-research?tab=opportunities",
+                "relevance": 0.85,
+            })
+
+    # 搜风险
+    for r in _RISK_WARNINGS:
+        if kw in r["title"].lower() or kw in r["description"].lower():
+            results.append({
+                "type": "risk",
+                "id": r["id"],
+                "title": r["title"],
+                "subtitle": f"等级 {r['level']} · {' / '.join(r['affected_sectors'])}",
+                "url": f"/investment-research?tab=risks",
+                "relevance": 0.80,
+            })
+
+    # 搜研究卡片
+    for n in _NOTES:
+        if kw in n["title"].lower() or kw in n["content"].lower() or any(kw in t.lower() for t in n["tags"]):
+            results.append({
+                "type": "note",
+                "id": n["id"],
+                "title": n["title"],
+                "subtitle": f"{n['card_type']} · {n['created_at'][:10]}",
+                "url": f"/investment-research?tab=notes",
+                "relevance": 0.75,
+            })
+
+    results.sort(key=lambda x: x["relevance"], reverse=True)
+    results = results[:limit]
+    return {"results": results, "total": len(results), "query": q}
