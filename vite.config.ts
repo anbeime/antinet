@@ -14,6 +14,18 @@ function getPlugins() {
 export default defineConfig({
   plugins: getPlugins(),
   server: {
+    // 部署 DEMO：忽略大目录避免 inotify watcher 超限
+    watch: {
+      ignored: [
+        '**/.pnpm-store/**',
+        '**/node_modules/**',
+        '**/skills/**',
+        '**/data-analysis/**',
+        '**/remotion-output/**',
+        '**/generated/**',
+        '**/.git/**',
+      ],
+    },
     proxy: {
       '/cdn': {
         target: 'https://cdn.jsdelivr.net',
