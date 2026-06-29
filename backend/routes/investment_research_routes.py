@@ -1220,3 +1220,232 @@ async def search_all(q: str, limit: int = 20):
     results.sort(key=lambda x: x["relevance"], reverse=True)
     results = results[:limit]
     return {"results": results, "total": len(results), "query": q}
+
+
+# ============================================================
+# 扩展功能：AI 投研简报生成（核心创新点）
+# ============================================================
+# 设计思路：
+#   1. 输入关键词（公司名/代码/行业/主题），自动检索全量投研数据
+#   2. 智能聚合相关公司、研报、机会、风险，提取关键信息
+#   3. 按「事实-解释-风险-行动」四色卡片体系结构化生成简报
+#   4. 模拟 LLM 生成效果，无需外部 API 依赖，演示响应快速
+# ============================================================
+
+class AIBriefCard(BaseModel):
+    """AI 简报中的四色卡片"""
+    card_type: str  # blue 事实 / green 解释 / yellow 风险 / red 行动
+    title: str
+    content: str
+    sources: List[str] = []  # 数据来源（公司代码/研报ID）
+
+
+class AIBrief(BaseModel):
+    """AI 生成的投研简报"""
+    query: str
+    title: str
+    summary: str  # 1-2 句话核心摘要
+    cards: List[AIBriefCard]
+    related_companies: List[str] = []
+    related_reports: List[int] = []
+    sentiment_hint: str  # 偏多/偏空/中性
+    generated_at: str
+
+
+class AIBriefRequest(BaseModel):
+    """AI 简报生成请求"""
+    query: str
+    depth: str = "standard"  # quick / standard / deep
+
+
+def _match_companies(kw: str):
+    """根据关键词匹配相关公司"""
+    out = []
+    for c in _COMPANIES:
+        if (kw in c["name"].lower() or kw in c["code"].lower()
+                or kw in c["sector"].lower() or any(kw in t.lower() for t in c["tags"])
+                or kw in c["summary"].lower()):
+            out.append(c)
+    return out
+
+
+def _match_reports(kw: str):
+    """根据关键词匹配相关研报"""
+    out = []
+    for r in _REPORTS:
+        if (kw in r["title"].lower() or kw in r["summary"].lower()
+                or any(kw in t.lower() for t in r["tags"])
+                or kw in r["investment_suggestion"].lower()):
+            out.append(r)
+    return out
+
+
+def _match_opportunities(kw: str):
+    return [o for o in _OPPORTUNITIES
+            if kw in o["title"].lower() or kw in o["reason"].lower() or kw in o["sector"].lower()]
+
+
+def _match_risks(kw: str):
+    return [r for r in _RISK_WARNINGS
+            if kw in r["title"].lower() or kw in r["description"].lower()
+            or any(kw in s.lower() for s in r["affected_sectors"])]
+
+
+@router.post("/ai-brief", response_model=AIBrief)
+async def generate_ai_brief(req: AIBriefRequest):
+    """
+    AI 投研简报生成
+
+    根据输入关键词（公司名/代码/行业/主题），智能检索全量投研数据，
+    按「事实-解释-风险-行动」四色卡片体系生成结构化投研简报。
+    """
+    kw = req.query.lower().strip()
+    if not kw:
+        raise HTTPException(status_code=400, detail="查询关键词不能为空")
+
+    # 1. 检索相关数据
+    companies = _match_companies(kw)
+    reports = _match_reports(kw)
+    opportunities = _match_opportunities(kw)
+    risks = _match_risks(kw)
+
+    # 兜底：如果完全没匹配，用全量数据生成通用简报
+    if not companies and not reports and not opportunities and not risks:
+        companies = _COMPANIES[:3]
+        reports = _REPORTS[:2]
+        opportunities = _OPPORTUNITIES[:2]
+        risks = _RISK_WARNINGS[:2]
+
+    # 2. 生成标题与摘要
+    if companies:
+        primary = companies[0]
+        title = f"{primary['name']}（{primary['code']}）投研简报"
+        rating = primary["rating"]
+        summary = (f"{primary['name']}所属{primary['sector']}板块，"
+                   f"当前评级「{rating}」，目标价 {primary.get('target_price') or '未设定'} 元。")
+    elif reports:
+        title = f"「{req.query}」主题投研简报"
+        summary = reports[0]["summary"][:80] + "..."
+    else:
+        title = f"「{req.query}」投研简报"
+        summary = f"围绕「{req.query}」主题，整合相关机会与风险信号。"
+
+    # 3. 构造四色卡片
+    cards: List[AIBriefCard] = []
+
+    # 事实卡片（blue）
+    facts = []
+    for c in companies[:3]:
+        facts.append(
+            f"{c['name']}（{c['code']}）：现价 {c['current_price']} 元，"
+            f"涨跌 {c['change_pct']:+.2f}%，PE {c.get('pe_ratio') or '—'}，"
+            f"评级「{c['rating']}」。"
+        )
+    for r in reports[:2]:
+        if r["key_points"]:
+            facts.append(f"研报《{r['title']}》核心观点：{r['key_points'][0]}")
+    if facts:
+        cards.append(AIBriefCard(
+            card_type="blue",
+            title="核心事实",
+            content="\n".join(facts),
+            sources=[c["code"] for c in companies[:3]] + [str(r["id"]) for r in reports[:2]],
+        ))
+
+    # 解释卡片（green）
+    explanations = []
+    for c in companies[:2]:
+        explanations.append(f"{c['name']}：{c['summary']}")
+    for r in reports[:1]:
+        explanations.append(f"行业逻辑：{r['summary']}")
+    for o in opportunities[:2]:
+        explanations.append(f"机会信号：{o['reason']}")
+    if explanations:
+        cards.append(AIBriefCard(
+            card_type="green",
+            title="投资逻辑",
+            content="\n".join(explanations),
+            sources=[c["code"] for c in companies[:2]],
+        ))
+
+    # 风险卡片（yellow）
+    risk_points = []
+    for r in risks[:3]:
+        risk_points.append(f"{r['title']}（等级 {r['level']}）：{r['description']}")
+    for r in reports[:1]:
+        if r["risk_points"]:
+            risk_points.append(f"研报提示风险：{r['risk_points'][0]}")
+    if risk_points:
+        cards.append(AIBriefCard(
+            card_type="yellow",
+            title="风险提示",
+            content="\n".join(risk_points),
+            sources=[str(r["id"]) for r in risks[:3]],
+        ))
+
+    # 行动卡片（red）
+    actions = []
+    for c in companies[:1]:
+        if c["rating"] in ("买入", "增持"):
+            actions.append(f"建议关注 {c['name']}，目标价 {c.get('target_price') or '—'} 元。")
+        elif c["rating"] == "持有":
+            actions.append(f"{c['name']} 评级为持有，建议跟踪基本面变化。")
+        else:
+            actions.append(f"{c['name']} 评级为{c['rating']}，谨慎对待。")
+    for o in opportunities[:1]:
+        actions.append(f"机会信号：{o['suggested_action']}")
+    for r in reports[:1]:
+        if r["investment_suggestion"]:
+            actions.append(f"策略建议：{r['investment_suggestion']}")
+    if actions:
+        cards.append(AIBriefCard(
+            card_type="red",
+            title="行动建议",
+            content="\n".join(actions),
+            sources=[c["code"] for c in companies[:1]],
+        ))
+
+    # 4. 情绪判断
+    buy_count = sum(1 for c in companies if c["rating"] in ("买入", "增持"))
+    if buy_count >= len(companies) * 0.6 if companies else False:
+        sentiment = "偏多"
+    elif any(r["level"] in ("high", "critical") for r in risks):
+        sentiment = "偏空"
+    else:
+        sentiment = "中性"
+
+    return AIBrief(
+        query=req.query,
+        title=title,
+        summary=summary,
+        cards=cards,
+        related_companies=list({c["code"] for c in companies}),
+        related_reports=list({r["id"] for r in reports}),
+        sentiment_hint=sentiment,
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+    )
+
+
+@router.get("/ai-brief/suggestions")
+async def ai_brief_suggestions():
+    """AI 简报生成的关键词建议（快捷入口）"""
+    return {
+        "company_examples": [
+            {"keyword": "茅台", "label": "贵州茅台"},
+            {"keyword": "宁德时代", "label": "宁德时代"},
+            {"keyword": "中芯国际", "label": "中芯国际"},
+            {"keyword": "寒武纪", "label": "寒武纪"},
+        ],
+        "sector_examples": [
+            {"keyword": "新能源", "label": "新能源板块"},
+            {"keyword": "人工智能", "label": "AI 产业链"},
+            {"keyword": "半导体", "label": "半导体国产替代"},
+            {"keyword": "军工航天", "label": "军工航天"},
+        ],
+        "theme_examples": [
+            {"keyword": "固态电池", "label": "固态电池产业化"},
+            {"keyword": "国产算力", "label": "国产算力替代"},
+            {"keyword": "出海", "label": "中国企业出海"},
+            {"keyword": "大模型", "label": "大模型应用"},
+        ],
+    }

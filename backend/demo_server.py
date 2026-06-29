@@ -38,7 +38,8 @@ async def root():
         "service": "知易 · 投研场景 DEMO",
         "status": "ok",
         "docs": "/docs",
-        "endpoints": 22,
+        "endpoints": 24,
+        "highlights": ["AI 投研简报生成（四色卡片体系）", "11 个 Tab 全场景投研工作台"],
     }
 
 
@@ -48,6 +49,7 @@ async def meta():
     return {
         "tabs": [
             {"key": "overview", "name": "总览", "desc": "投研工作台首页仪表盘"},
+            {"key": "ai-brief", "name": "✨ AI 简报", "desc": "AI 投研简报生成（核心创新点）：输入公司/行业/主题，自动生成事实-解释-风险-行动四色卡片"},
             {"key": "companies", "name": "公司", "desc": "研究对象列表 + 财务详情"},
             {"key": "reports", "name": "研报", "desc": "研究报告 + Markdown 导出"},
             {"key": "opportunities", "name": "机会", "desc": "市场机会信号"},
@@ -59,6 +61,7 @@ async def meta():
             {"key": "sentiment", "name": "市场情绪", "desc": "情绪指数 + 市场广度"},
         ],
         "global_search": "顶部搜索按钮，支持公司/研报/机会/风险/笔记全量检索",
+        "ai_brief_endpoint": "POST /api/investment-research/ai-brief — AI 投研简报生成",
     }
 
 

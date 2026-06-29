@@ -87,7 +87,7 @@ type ResearchNote = {
   created_at: string;
 };
 
-type TabKey = 'overview' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
+type TabKey = 'overview' | 'ai-brief' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
 
 type FinancialMetric = {
   period: string;
@@ -172,6 +172,29 @@ type SearchResult = {
   relevance: number;
 };
 
+type AIBriefCard = {
+  card_type: string;  // blue 事实 / green 解释 / yellow 风险 / red 行动
+  title: string;
+  content: string;
+  sources: string[];
+};
+
+type AIBrief = {
+  query: string;
+  title: string;
+  summary: string;
+  cards: AIBriefCard[];
+  related_companies: string[];
+  related_reports: number[];
+  sentiment_hint: string;  // 偏多 / 偏空 / 中性
+  generated_at: string;
+};
+
+type AIBriefSuggestion = {
+  keyword: string;
+  label: string;
+};
+
 // ============================================================
 // 样式工具
 // ============================================================
@@ -243,6 +266,16 @@ const InvestmentResearchPage: React.FC = () => {
   const [showAddWatch, setShowAddWatch] = useState(false);
   const [newWatch, setNewWatch] = useState({ code: '', note: '', alert_price: '' });
 
+  // AI 投研简报
+  const [aiBrief, setAiBrief] = useState<AIBrief | null>(null);
+  const [briefQuery, setBriefQuery] = useState('');
+  const [generatingBrief, setGeneratingBrief] = useState(false);
+  const [briefSuggestions, setBriefSuggestions] = useState<{
+    company_examples: AIBriefSuggestion[];
+    sector_examples: AIBriefSuggestion[];
+    theme_examples: AIBriefSuggestion[];
+  } | null>(null);
+
   // 筛选
   const [companyKeyword, setCompanyKeyword] = useState('');
   const [companySector, setCompanySector] = useState('');
@@ -308,8 +341,42 @@ const InvestmentResearchPage: React.FC = () => {
 
   useEffect(() => {
     loadAll();
+    // 加载 AI 简报关键词建议（不阻塞主流程）
+    fetch(getApiBaseUrl() + '/api/investment-research/ai-brief/suggestions')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d) setBriefSuggestions(d); })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ============================================================
+  // AI 投研简报生成
+  // ============================================================
+  async function handleGenerateBrief() {
+    const q = briefQuery.trim();
+    if (!q) {
+      toast.error('请输入查询关键词');
+      return;
+    }
+    setGeneratingBrief(true);
+    try {
+      const resp = await fetch(getApiBaseUrl() + '/api/investment-research/ai-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: q, depth: 'standard' }),
+      });
+      if (!resp.ok) {
+        throw new Error('生成失败');
+      }
+      const data: AIBrief = await resp.json();
+      setAiBrief(data);
+      toast.success(`已生成「${q}」投研简报`);
+    } catch (err) {
+      toast.error('AI 简报生成失败：' + safeErrorDetail(err));
+    } finally {
+      setGeneratingBrief(false);
+    }
+  }
 
   // ============================================================
   // 派生筛选结果
@@ -516,6 +583,7 @@ const InvestmentResearchPage: React.FC = () => {
         <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-6 overflow-x-auto">
           {[
             { key: 'overview' as TabKey, label: '概览', icon: <Sparkles size={16} /> },
+            { key: 'ai-brief' as TabKey, label: '✨ AI 简报', icon: <Sparkles size={16} /> },
             { key: 'companies' as TabKey, label: '公司覆盖', icon: <Building2 size={16} /> },
             { key: 'reports' as TabKey, label: '研究报告', icon: <FileText size={16} /> },
             { key: 'opportunities' as TabKey, label: '市场机会', icon: <Zap size={16} /> },
@@ -544,6 +612,18 @@ const InvestmentResearchPage: React.FC = () => {
         {/* Tab content */}
         <div>
           {activeTab === 'overview' && <OverviewTab dashboard={dashboard} companies={companies} reports={reports} opportunities={opportunities} risks={risks} notes={notes} />}
+          {activeTab === 'ai-brief' && (
+            <AIBriefTab
+              brief={aiBrief}
+              query={briefQuery}
+              setQuery={setBriefQuery}
+              generating={generatingBrief}
+              onGenerate={handleGenerateBrief}
+              suggestions={briefSuggestions}
+              companies={companies}
+              onViewFinancials={loadCompanyFinancials}
+            />
+          )}
           {activeTab === 'companies' && (
             <CompaniesTab
               companies={filteredCompanies}
@@ -2006,6 +2086,188 @@ function GlobalSearchModal({ query, setQuery, results, searching, onSearch, onCl
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：AI 投研简报生成（核心创新点）
+// ============================================================
+function AIBriefTab({ brief, query, setQuery, generating, onGenerate, suggestions, companies, onViewFinancials }: {
+  brief: AIBrief | null;
+  query: string;
+  setQuery: (v: string) => void;
+  generating: boolean;
+  onGenerate: () => void;
+  suggestions: { company_examples: AIBriefSuggestion[]; sector_examples: AIBriefSuggestion[]; theme_examples: AIBriefSuggestion[] } | null;
+  companies: CompanyProfile[];
+  onViewFinancials: (code: string) => void;
+}) {
+  const sentimentStyle: Record<string, string> = {
+    '偏多': 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200',
+    '偏空': 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200',
+    '中性': 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 输入区 */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 border border-blue-200 dark:border-gray-700 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles size={20} className="text-blue-600 dark:text-blue-400" />
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">AI 投研简报生成</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200">创新功能</span>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          输入公司名、股票代码、行业或主题关键词，AI 将自动检索全量投研数据，按「事实-解释-风险-行动」四色卡片体系生成结构化投研简报。
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !generating) onGenerate(); }}
+            placeholder="例如：茅台、宁德时代、新能源、固态电池、国产算力..."
+            className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-100 outline-none focus:ring-2 focus:ring-blue-400"
+            disabled={generating}
+          />
+          <button
+            onClick={onGenerate}
+            disabled={generating || !query.trim()}
+            className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-sm font-medium flex items-center gap-2 transition-colors"
+          >
+            {generating ? (
+              <>
+                <RefreshCw size={16} className="animate-spin" />
+                生成中...
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} />
+                生成简报
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* 快捷关键词建议 */}
+        {suggestions && (
+          <div className="mt-4 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 dark:text-gray-400">公司：</span>
+              {suggestions.company_examples.map((s) => (
+                <button key={s.keyword} onClick={() => { setQuery(s.keyword); }} className="text-xs px-2.5 py-1 rounded-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-blue-50 hover:border-blue-300 dark:hover:bg-blue-900 transition-colors">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 dark:text-gray-400">行业：</span>
+              {suggestions.sector_examples.map((s) => (
+                <button key={s.keyword} onClick={() => { setQuery(s.keyword); }} className="text-xs px-2.5 py-1 rounded-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-blue-50 hover:border-blue-300 dark:hover:bg-blue-900 transition-colors">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 dark:text-gray-400">主题：</span>
+              {suggestions.theme_examples.map((s) => (
+                <button key={s.keyword} onClick={() => { setQuery(s.keyword); }} className="text-xs px-2.5 py-1 rounded-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-blue-50 hover:border-blue-300 dark:hover:bg-blue-900 transition-colors">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 生成结果 */}
+      {brief ? (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-sm overflow-hidden">
+          {/* 简报头部 */}
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{brief.title}</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{brief.summary}</p>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${sentimentStyle[brief.sentiment_hint] || sentimentStyle['中性']}`}>
+                  情绪：{brief.sentiment_hint}
+                </span>
+                <span className="text-xs text-gray-400">{brief.generated_at.replace('T', ' ')}</span>
+              </div>
+            </div>
+            {/* 关联实体 */}
+            {(brief.related_companies.length > 0 || brief.related_reports.length > 0) && (
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-gray-500 dark:text-gray-400">关联：</span>
+                {brief.related_companies.map((code) => {
+                  const c = companies.find((x) => x.code === code);
+                  return (
+                    <button
+                      key={code}
+                      onClick={() => onViewFinancials(code)}
+                      className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900 text-blue-700 dark:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-800 transition-colors"
+                    >
+                      {c ? c.name : code} ({code})
+                    </button>
+                  );
+                })}
+                {brief.related_reports.map((id) => (
+                  <span key={id} className="px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    研报 #{id}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 四色卡片 */}
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            {brief.cards.length === 0 ? (
+              <div className="col-span-2 text-center py-8 text-gray-400">暂无卡片内容</div>
+            ) : (
+              brief.cards.map((card, idx) => {
+                const style = cardTypeStyles[card.card_type] || cardTypeStyles['blue'];
+                return (
+                  <div key={idx} className={`rounded-xl border-2 ${style.border} ${style.bg} dark:bg-opacity-20 p-4`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${style.iconBg}`}>{style.label}</span>
+                      <h4 className={`text-sm font-semibold ${style.text}`}>{card.title}</h4>
+                    </div>
+                    <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line leading-relaxed">
+                      {card.content}
+                    </div>
+                    {card.sources.length > 0 && (
+                      <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700 flex items-center gap-1 flex-wrap">
+                        <span className="text-xs text-gray-400">来源：</span>
+                        {card.sources.map((s, i) => (
+                          <span key={i} className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* 简报底部说明 */}
+          <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+            <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+              <Sparkles size={12} />
+              本简报由 AI 基于投研工作台全量数据智能检索与结构化生成，事实/解释/风险/行动四色卡片体系便于快速判断。
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 text-center shadow-sm">
+          <Sparkles size={40} className="mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+          <p className="text-gray-500 dark:text-gray-400">输入关键词并点击「生成简报」，AI 将为你输出结构化投研简报</p>
+        </div>
+      )}
     </div>
   );
 }
