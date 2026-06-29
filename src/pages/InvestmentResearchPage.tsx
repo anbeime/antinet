@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, Sparkles, BarChart3,
   FileText, Building2, Zap, Shield, ChevronRight, Search, Plus,
   X, Clock, Tag, ArrowRight, RefreshCw, Filter, Star, Download,
-  PieChart, Activity, Trash2, Eye, Wallet, Gauge
+  PieChart, Activity, Trash2, Eye, Wallet, Gauge, LineChart, CandlestickChart, Target
 } from 'lucide-react';
 import { getApiBaseUrl } from '@/lib/apiConfig';
 import { safeErrorDetail } from '@/lib/utils';
@@ -87,7 +87,7 @@ type ResearchNote = {
   created_at: string;
 };
 
-type TabKey = 'overview' | 'ai-brief' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
+type TabKey = 'overview' | 'ai-brief' | 'technicals' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
 
 type FinancialMetric = {
   period: string;
@@ -196,6 +196,72 @@ type AIBriefSuggestion = {
 };
 
 // ============================================================
+// 技术分析相关类型（参考 anbeime/skill 的 stock-analysis 与 finance-mcp）
+// ============================================================
+type KlineBar = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  change_pct: number;
+};
+
+type TechnicalIndicators = {
+  ma5: number[];
+  ma10: number[];
+  ma20: number[];
+  ma60: number[];
+  macd: { dif: number; dea: number; hist: number }[];
+  rsi: number[];
+  kdj: { k: number; d: number; j: number }[];
+  boll: { upper: number; mid: number; lower: number }[];
+};
+
+type GapAnalysis = {
+  direction: string;  // up / down
+  date: string;
+  gap_size: number;
+  top: number;
+  bottom: number;
+  role: string;  // support / pressure
+};
+
+type SupportPressure = {
+  supports: number[];
+  pressures: number[];
+  nearest_support: number | null;
+  nearest_pressure: number | null;
+};
+
+type ThreeDayForecast = {
+  trend: string;  // 上涨 / 下跌 / 震荡
+  up_prob: number;
+  down_prob: number;
+  flat_prob: number;
+  suggestion: string;
+  entry_price: number | null;
+  stop_loss: number | null;
+  take_profit: number | null;
+  reasoning: string;
+};
+
+type TechnicalAnalysis = {
+  code: string;
+  name: string;
+  current_price: number;
+  change_pct: number;
+  klines: KlineBar[];
+  indicators: TechnicalIndicators;
+  gaps: GapAnalysis[];
+  support_pressure: SupportPressure;
+  forecast: ThreeDayForecast;
+  trend_signal: string;
+  indicator_summary: Record<string, string>;
+};
+
+// ============================================================
 // 样式工具
 // ============================================================
 const cardTypeStyles: Record<string, { bg: string; border: string; text: string; iconBg: string; label: string }> = {
@@ -203,6 +269,7 @@ const cardTypeStyles: Record<string, { bg: string; border: string; text: string;
   green:  { bg: 'bg-green-50',   border: 'border-green-200',   text: 'text-green-700',   iconBg: 'bg-green-100 text-green-600',  label: '解释' },
   yellow: { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   iconBg: 'bg-amber-100 text-amber-600',  label: '风险' },
   red:    { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     iconBg: 'bg-red-100 text-red-600',      label: '行动' },
+  purple: { bg: 'bg-purple-50',  border: 'border-purple-200',  text: 'text-purple-700', iconBg: 'bg-purple-100 text-purple-600', label: '预测' },
 };
 
 const riskLevelStyles: Record<string, { bg: string; border: string; text: string; label: string }> = {
@@ -275,6 +342,11 @@ const InvestmentResearchPage: React.FC = () => {
     sector_examples: AIBriefSuggestion[];
     theme_examples: AIBriefSuggestion[];
   } | null>(null);
+
+  // 技术分析
+  const [technicalAnalysis, setTechnicalAnalysis] = useState<TechnicalAnalysis | null>(null);
+  const [technicalsLoading, setTechnicalsLoading] = useState(false);
+  const [technicalsCode, setTechnicalsCode] = useState<string>('');
 
   // 筛选
   const [companyKeyword, setCompanyKeyword] = useState('');
@@ -375,6 +447,28 @@ const InvestmentResearchPage: React.FC = () => {
       toast.error('AI 简报生成失败：' + safeErrorDetail(err));
     } finally {
       setGeneratingBrief(false);
+    }
+  }
+
+  // ============================================================
+  // 技术分析加载（参考 anbeime/skill 的 stock-analysis 与 finance-mcp 能力）
+  // ============================================================
+  async function loadCompanyTechnicals(code: string, days: number = 60) {
+    if (!code) return;
+    setTechnicalsCode(code);
+    setTechnicalsLoading(true);
+    setTechnicalAnalysis(null);
+    try {
+      const resp = await fetch(getApiBaseUrl() + `/api/investment-research/companies/${code}/technicals?days=${days}`);
+      if (!resp.ok) {
+        throw new Error('加载失败');
+      }
+      const data: TechnicalAnalysis = await resp.json();
+      setTechnicalAnalysis(data);
+    } catch (err) {
+      toast.error('技术分析加载失败：' + safeErrorDetail(err));
+    } finally {
+      setTechnicalsLoading(false);
     }
   }
 
@@ -584,6 +678,7 @@ const InvestmentResearchPage: React.FC = () => {
           {[
             { key: 'overview' as TabKey, label: '概览', icon: <Sparkles size={16} /> },
             { key: 'ai-brief' as TabKey, label: '✨ AI 简报', icon: <Sparkles size={16} /> },
+            { key: 'technicals' as TabKey, label: '📈 技术分析', icon: <CandlestickChart size={16} /> },
             { key: 'companies' as TabKey, label: '公司覆盖', icon: <Building2 size={16} /> },
             { key: 'reports' as TabKey, label: '研究报告', icon: <FileText size={16} /> },
             { key: 'opportunities' as TabKey, label: '市场机会', icon: <Zap size={16} /> },
@@ -621,6 +716,16 @@ const InvestmentResearchPage: React.FC = () => {
               onGenerate={handleGenerateBrief}
               suggestions={briefSuggestions}
               companies={companies}
+              onViewFinancials={loadCompanyFinancials}
+            />
+          )}
+          {activeTab === 'technicals' && (
+            <TechnicalsTab
+              companies={companies}
+              analysis={technicalAnalysis}
+              loading={technicalsLoading}
+              currentCode={technicalsCode}
+              onLoad={loadCompanyTechnicals}
               onViewFinancials={loadCompanyFinancials}
             />
           )}
@@ -2258,7 +2363,7 @@ function AIBriefTab({ brief, query, setQuery, generating, onGenerate, suggestion
           <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
             <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
               <Sparkles size={12} />
-              本简报由 AI 基于投研工作台全量数据智能检索与结构化生成，事实/解释/风险/行动四色卡片体系便于快速判断。
+              本简报由 AI 基于投研工作台全量数据智能检索与结构化生成，事实/解释/风险/行动/预测五色卡片体系便于快速决策。
             </p>
           </div>
         </div>
@@ -2267,6 +2372,361 @@ function AIBriefTab({ brief, query, setQuery, generating, onGenerate, suggestion
           <Sparkles size={40} className="mx-auto text-gray-300 dark:text-gray-600 mb-3" />
           <p className="text-gray-500 dark:text-gray-400">输入关键词并点击「生成简报」，AI 将为你输出结构化投研简报</p>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// 子组件：技术分析（参考 anbeime/skill 的 stock-analysis 与 finance-mcp 能力）
+// K 线 + 5 大指标 + 缺口 + 支撑压力 + 3 天预测
+// ============================================================
+function TechnicalsTab({
+  companies,
+  analysis,
+  loading,
+  currentCode,
+  onLoad,
+  onViewFinancials,
+}: {
+  companies: CompanyProfile[];
+  analysis: TechnicalAnalysis | null;
+  loading: boolean;
+  currentCode: string;
+  onLoad: (code: string, days?: number) => void;
+  onViewFinancials: (code: string) => void;
+}) {
+  // K 线图 SVG 尺寸
+  const W = 760, H = 320, PAD = 32;
+  const bars = analysis?.klines || [];
+  const hasData = bars.length > 0;
+
+  // 计算 K 线图坐标范围
+  const allHighs = bars.map((b) => b.high);
+  const allLows = bars.map((b) => b.low);
+  const maxPrice = hasData ? Math.max(...allHighs) * 1.02 : 100;
+  const minPrice = hasData ? Math.min(...allLows) * 0.98 : 0;
+  const priceRange = maxPrice - minPrice || 1;
+  const chartW = W - PAD * 2;
+  const chartH = H - PAD * 2;
+  const barW = hasData ? Math.max(2, chartW / bars.length - 1) : 0;
+  const xOf = (i: number) => PAD + i * (chartW / Math.max(bars.length, 1)) + barW / 2;
+  const yOf = (p: number) => PAD + (maxPrice - p) / priceRange * chartH;
+
+  // 均线点位（用 SVG path 连线）
+  const maPath = (ma: number[]) => {
+    if (!ma.length) return '';
+    return ma
+      .map((v, i) => (v > 0 ? `${i === 0 || ma[i - 1] === 0 ? 'M' : 'L'} ${xOf(i)} ${yOf(v)}` : ''))
+      .filter(Boolean)
+      .join(' ');
+  };
+
+  const maLineStyles: Record<string, { color: string; label: string }> = {
+    ma5:  { color: '#f59e0b', label: 'MA5' },
+    ma10: { color: '#3b82f6', label: 'MA10' },
+    ma20: { color: '#a855f7', label: 'MA20' },
+    ma60: { color: '#10b981', label: 'MA60' },
+  };
+
+  const trendBadgeStyle: Record<string, string> = {
+    '多头排列': 'bg-green-100 text-green-700',
+    '空头排列': 'bg-red-100 text-red-700',
+    '均线缠绕': 'bg-gray-100 text-gray-700',
+    '震荡': 'bg-amber-100 text-amber-700',
+  };
+
+  const forecastStyle: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
+    '上涨': { bg: 'bg-green-50 border-green-200', text: 'text-green-700', icon: <TrendingUp className="w-5 h-5" /> },
+    '下跌': { bg: 'bg-red-50 border-red-200', text: 'text-red-700', icon: <TrendingDown className="w-5 h-5" /> },
+    '震荡': { bg: 'bg-gray-50 border-gray-200', text: 'text-gray-700', icon: <Activity className="w-5 h-5" /> },
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* 顶部公司选择器 */}
+      <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 border border-purple-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <CandlestickChart size={20} className="text-purple-600 dark:text-purple-400" />
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">技术分析工作台</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-200">参考 finance-mcp + stock-analysis</span>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          选择公司查看完整技术分析：K 线 + MA/MACD/RSI/KDJ/BOLL 五大指标 + 缺口识别 + 支撑压力位 + 3 天走势预测。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {companies.map((c) => (
+            <button
+              key={c.code}
+              onClick={() => onLoad(c.code, 60)}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                currentCode === c.code
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-purple-50 hover:border-purple-300'
+              }`}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!analysis && !loading && (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 text-center shadow-sm">
+          <CandlestickChart size={40} className="mx-auto text-gray-300 dark:text-gray-600 mb-3" />
+          <p className="text-gray-500 dark:text-gray-400">选择上方任意公司，查看完整技术分析报告</p>
+        </div>
+      )}
+
+      {loading && (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-12 text-center shadow-sm">
+          <RefreshCw size={32} className="mx-auto text-purple-500 animate-spin mb-3" />
+          <p className="text-gray-500 dark:text-gray-400">正在生成 K 线与技术指标...</p>
+        </div>
+      )}
+
+      {analysis && !loading && (
+        <>
+          {/* 价格头部 */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                  <CandlestickChart className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">{analysis.name}</h2>
+                    <span className="text-xs text-gray-500">{analysis.code}</span>
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                    现价 <span className="font-semibold text-gray-900 dark:text-gray-100">{analysis.current_price}</span>
+                    <span className={`ml-2 ${analysis.change_pct >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {analysis.change_pct >= 0 ? '+' : ''}{analysis.change_pct}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-3 py-1 rounded-full font-medium ${trendBadgeStyle[analysis.trend_signal] || trendBadgeStyle['震荡']}`}>
+                  {analysis.trend_signal}
+                </span>
+                <button
+                  onClick={() => onViewFinancials(analysis.code)}
+                  className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600"
+                >
+                  查看财务
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* K 线图 */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">K 线 + 均线</h3>
+              <div className="flex items-center gap-3 text-xs">
+                {Object.values(maLineStyles).map((s) => (
+                  <span key={s.label} className="inline-flex items-center gap-1">
+                    <span className="inline-block w-3 h-0.5" style={{ background: s.color }} />
+                    {s.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <svg width={W} height={H} className="block">
+                {/* 背景网格 */}
+                {[0, 0.25, 0.5, 0.75, 1].map((r) => (
+                  <line key={r} x1={PAD} y1={PAD + chartH * r} x2={W - PAD} y2={PAD + chartH * r}
+                    stroke="currentColor" className="text-gray-100 dark:text-gray-700" strokeWidth="1" />
+                ))}
+                {/* Y 轴价格刻度 */}
+                {[0, 0.25, 0.5, 0.75, 1].map((r) => {
+                  const p = maxPrice - priceRange * r;
+                  return (
+                    <text key={r} x={W - PAD + 4} y={PAD + chartH * r + 3}
+                      className="fill-gray-400" fontSize="9">{p.toFixed(1)}</text>
+                  );
+                })}
+                {/* K 线柱体 */}
+                {bars.map((b, i) => {
+                  const x = xOf(i) - barW / 2;
+                  const yOpen = yOf(b.open);
+                  const yClose = yOf(b.close);
+                  const isUp = b.close >= b.open;
+                  const color = isUp ? '#ef4444' : '#10b981';  // A股红涨绿跌
+                  const bodyTop = Math.min(yOpen, yClose);
+                  const bodyH = Math.max(1, Math.abs(yClose - yOpen));
+                  return (
+                    <g key={i}>
+                      <line x1={xOf(i)} y1={yOf(b.high)} x2={xOf(i)} y2={yOf(b.low)} stroke={color} strokeWidth="1" />
+                      <rect x={x} y={bodyTop} width={barW} height={bodyH} fill={color} opacity={isUp ? 0.9 : 0.7} />
+                    </g>
+                  );
+                })}
+                {/* 均线 */}
+                <path d={maPath(analysis.indicators.ma5)} stroke={maLineStyles.ma5.color} strokeWidth="1.2" fill="none" />
+                <path d={maPath(analysis.indicators.ma10)} stroke={maLineStyles.ma10.color} strokeWidth="1.2" fill="none" />
+                <path d={maPath(analysis.indicators.ma20)} stroke={maLineStyles.ma20.color} strokeWidth="1.2" fill="none" />
+                <path d={maPath(analysis.indicators.ma60)} stroke={maLineStyles.ma60.color} strokeWidth="1.2" fill="none" />
+                {/* X 轴日期 */}
+                {bars.length > 0 && [0, Math.floor(bars.length / 4), Math.floor(bars.length / 2), Math.floor(bars.length * 3 / 4), bars.length - 1].map((i, k) => (
+                  <text key={k} x={xOf(i)} y={H - 8} textAnchor="middle" className="fill-gray-400" fontSize="9">
+                    {bars[i].date.slice(5)}
+                  </text>
+                ))}
+              </svg>
+            </div>
+          </div>
+
+          {/* 指标摘要 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Object.entries(analysis.indicator_summary).map(([k, v]) => (
+              <div key={k} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-sm">
+                <div className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+                  <Activity size={12} />
+                  {k}
+                </div>
+                <div className="text-sm text-gray-800 dark:text-gray-200">{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 支撑压力位 */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="w-4 h-4 text-blue-500" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">支撑位 / 压力位</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">压力位（由近及远）</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {analysis.support_pressure.pressures.length ? analysis.support_pressure.pressures.map((p, i) => (
+                      <span key={i} className="px-2 py-1 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-xs">
+                        {p.toFixed(2)}
+                      </span>
+                    )) : <span className="text-xs text-gray-400">暂无</span>}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">支撑位（由近及远）</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {analysis.support_pressure.supports.length ? analysis.support_pressure.supports.map((p, i) => (
+                      <span key={i} className="px-2 py-1 rounded bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-xs">
+                        {p.toFixed(2)}
+                      </span>
+                    )) : <span className="text-xs text-gray-400">暂无</span>}
+                  </div>
+                </div>
+                <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+                  最近支撑：<span className="font-semibold text-gray-800 dark:text-gray-200">{analysis.support_pressure.nearest_support ?? '—'}</span>
+                  ｜最近压力：<span className="font-semibold text-gray-800 dark:text-gray-200">{analysis.support_pressure.nearest_pressure ?? '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 缺口分析 */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <LineChart className="w-4 h-4 text-amber-500" />
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">缺口识别</h3>
+              </div>
+              {analysis.gaps.length ? (
+                <div className="space-y-2">
+                  {analysis.gaps.map((g, i) => (
+                    <div key={i} className={`p-2.5 rounded-lg border text-xs ${g.direction === 'up' ? 'border-red-200 bg-red-50 dark:bg-red-900/20' : 'border-green-200 bg-green-50 dark:bg-green-900/20'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-800 dark:text-gray-200">
+                          {g.direction === 'up' ? '⬆️ 向上缺口' : '⬇️ 向下缺口'} {g.date}
+                        </span>
+                        <span className="text-gray-500">大小 {g.gap_size.toFixed(2)}</span>
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">
+                        区间 {g.bottom.toFixed(2)} → {g.top.toFixed(2)}，作用：<span className="font-medium">{g.role === 'support' ? '支撑' : '压力'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400 text-center py-6">近期无明显缺口</div>
+              )}
+            </div>
+          </div>
+
+          {/* 3 天走势预测 */}
+          {(() => {
+            const f = analysis.forecast;
+            const s = forecastStyle[f.trend] || forecastStyle['震荡'];
+            return (
+              <div className={`rounded-2xl border-2 p-6 shadow-sm ${s.bg} dark:bg-opacity-20`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className={`${s.text}`}>{s.icon}</span>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">3 天走势预测</h3>
+                  </div>
+                  <span className={`text-sm font-medium ${s.text}`}>建议：{f.suggestion}</span>
+                </div>
+
+                {/* 概率条 */}
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">上涨概率</div>
+                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500" style={{ width: `${f.up_prob * 100}%` }} />
+                    </div>
+                    <div className="text-sm font-semibold text-green-700 dark:text-green-300 mt-1">{(f.up_prob * 100).toFixed(0)}%</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">震荡概率</div>
+                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-gray-400" style={{ width: `${f.flat_prob * 100}%` }} />
+                    </div>
+                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mt-1">{(f.flat_prob * 100).toFixed(0)}%</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">下跌概率</div>
+                    <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-red-500" style={{ width: `${f.down_prob * 100}%` }} />
+                    </div>
+                    <div className="text-sm font-semibold text-red-700 dark:text-red-300 mt-1">{(f.down_prob * 100).toFixed(0)}%</div>
+                  </div>
+                </div>
+
+                {/* 操作建议 */}
+                <div className="grid grid-cols-3 gap-3 mb-3 text-center">
+                  <div className="p-2 rounded-lg bg-white/60 dark:bg-gray-900/40">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">建议入场</div>
+                    <div className="text-sm font-semibold text-gray-800 dark:text-gray-200">{f.entry_price ?? '—'}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/60 dark:bg-gray-900/40">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">止损位</div>
+                    <div className="text-sm font-semibold text-red-700 dark:text-red-300">{f.stop_loss ?? '—'}</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/60 dark:bg-gray-900/40">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">止盈位</div>
+                    <div className="text-sm font-semibold text-green-700 dark:text-green-300">{f.take_profit ?? '—'}</div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-500 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
+                  {f.reasoning}
+                </div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  ⚠️ 本预测基于技术指标与评级综合判断，仅供参考，不构成投资建议。
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 数据来源说明 */}
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-xl p-3 text-xs text-gray-500 dark:text-gray-400">
+            📊 数据来源：本技术分析模块参考 <a href="https://github.com/anbeime/skill" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">anbeime/skill</a> 仓库
+            中的 stock-analysis 与 finance-mcp（finance-skills）技能实现思路，使用确定性模拟数据生成 K 线与技术指标，无需外部 API Token 即可演示完整投研体验。
+          </div>
+        </>
       )}
     </div>
   );

@@ -1405,6 +1405,65 @@ async def generate_ai_brief(req: AIBriefRequest):
             sources=[c["code"] for c in companies[:1]],
         ))
 
+    # 预测卡片（purple）— 第五色卡片，参考 stock-analysis skill 的 3 天走势预测能力
+    # 综合评级 / 涨跌幅 / 风险等级给出短期概率预测与操作建议
+    forecast_lines = []
+    if companies:
+        primary = companies[0]
+        rating = primary.get("rating", "持有")
+        chg = primary.get("change_pct", 0)
+        # 多空评分
+        score = 0
+        if rating in ("买入", "增持"):
+            score += 2
+        elif rating == "持有":
+            score += 1
+        elif rating == "减持":
+            score -= 2
+        if chg > 0:
+            score += 1
+        elif chg < -1:
+            score -= 1
+        # 风险扣分
+        if any(r["level"] in ("high", "critical") for r in risks):
+            score -= 1
+
+        if score >= 3:
+            trend = "上涨"
+            up_p, down_p, flat_p = 0.62, 0.18, 0.20
+            suggestion = "持有 / 逢低加仓"
+            target = primary.get("target_price")
+            entry = round(primary["current_price"] * 0.98, 2)
+            stop = round(primary["current_price"] * 0.94, 2)
+            tp = round(target if target else primary["current_price"] * 1.10, 2)
+        elif score <= 0:
+            trend = "下跌"
+            up_p, down_p, flat_p = 0.22, 0.56, 0.22
+            suggestion = "观望 / 减仓"
+            entry = round(primary["current_price"] * 0.94, 2)
+            stop = round(primary["current_price"] * 0.90, 2)
+            tp = round(primary["current_price"] * 0.98, 2)
+        else:
+            trend = "震荡"
+            up_p, down_p, flat_p = 0.35, 0.30, 0.35
+            suggestion = "观望"
+            entry = round(primary["current_price"] * 0.97, 2)
+            stop = round(primary["current_price"] * 0.93, 2)
+            tp = round(primary["current_price"] * 1.05, 2)
+
+        forecast_lines.append(
+            f"未来 3 日走势预测：{trend}（上涨 {up_p*100:.0f}% / 震荡 {flat_p*100:.0f}% / 下跌 {down_p*100:.0f}%）"
+        )
+        forecast_lines.append(f"操作建议：{suggestion}")
+        forecast_lines.append(f"建议入场：{entry} 元｜止损：{stop} 元｜止盈：{tp} 元")
+        forecast_lines.append("注：基于评级 + 涨跌幅 + 风险信号综合判断，仅供参考，不构成投资建议。")
+        cards.append(AIBriefCard(
+            card_type="purple",
+            title="走势预测",
+            content="\n".join(forecast_lines),
+            sources=[primary["code"]],
+        ))
+
     # 4. 情绪判断
     buy_count = sum(1 for c in companies if c["rating"] in ("买入", "增持"))
     if buy_count >= len(companies) * 0.6 if companies else False:
@@ -1449,3 +1508,362 @@ async def ai_brief_suggestions():
             {"keyword": "大模型", "label": "大模型应用"},
         ],
     }
+
+
+# ============================================================
+# 扩展功能：技术分析（K 线 + 5 大技术指标 + 支撑压力 + 缺口 + 3 天预测）
+# 参考 anbeime/skill 仓库 stock-analysis 与 finance-mcp 的工具能力
+# ============================================================
+
+class KlineBar(BaseModel):
+    """单根 K 线"""
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    change_pct: float
+
+
+class TechnicalIndicators(BaseModel):
+    """技术指标集合"""
+    ma5: List[float] = []
+    ma10: List[float] = []
+    ma20: List[float] = []
+    ma60: List[float] = []
+    macd: List[Dict[str, float]] = []   # {dif, dea, hist}
+    rsi: List[float] = []
+    kdj: List[Dict[str, float]] = []   # {k, d, j}
+    boll: List[Dict[str, float]] = []  # {upper, mid, lower}
+
+
+class GapAnalysis(BaseModel):
+    """缺口分析"""
+    direction: str  # up / down
+    date: str
+    gap_size: float
+    top: float       # 缺口上沿
+    bottom: float    # 缺口下沿
+    role: str        # support / pressure
+
+
+class SupportPressure(BaseModel):
+    """支撑位与压力位"""
+    supports: List[float]
+    pressures: List[float]
+    nearest_support: Optional[float]
+    nearest_pressure: Optional[float]
+
+
+class ThreeDayForecast(BaseModel):
+    """3 天走势预测（参考 stock-analysis skill 的预测能力）"""
+    trend: str  # 上涨 / 下跌 / 震荡
+    up_prob: float
+    down_prob: float
+    flat_prob: float
+    suggestion: str  # 买入 / 持有 / 卖出 / 观望
+    entry_price: Optional[float] = None
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
+    reasoning: str
+
+
+class TechnicalAnalysis(BaseModel):
+    """公司技术分析完整结果"""
+    code: str
+    name: str
+    current_price: float
+    change_pct: float
+    klines: List[KlineBar]
+    indicators: TechnicalIndicators
+    gaps: List[GapAnalysis] = []
+    support_pressure: SupportPressure
+    forecast: ThreeDayForecast
+    trend_signal: str  # 多头排列 / 空头排列 / 缠绕 / 震荡
+    indicator_summary: Dict[str, str]  # 各指标简评
+
+
+def _gen_klines(base_price: float, days: int = 60, seed: int = 0) -> List[KlineBar]:
+    """基于基准价生成演示 K 线序列（确定性，按 seed 稳定）"""
+    rng = random.Random(seed)
+    prices: List[float] = [base_price]
+    for _ in range(days - 1):
+        # 模拟带漂移的随机游走
+        drift = rng.uniform(-0.012, 0.014)
+        shock = rng.uniform(-0.022, 0.022)
+        new_p = prices[-1] * (1 + drift + shock)
+        prices.append(round(new_p, 2))
+
+    bars: List[KlineBar] = []
+    today = datetime.now()
+    for i in range(days):
+        close = prices[i]
+        open_p = round(prices[i - 1] if i > 0 else close * 0.99, 2)
+        # 单根 K 线高低
+        amplitude = abs(close - open_p) * rng.uniform(0.8, 1.8) + close * 0.005
+        high = round(max(open_p, close) + amplitude * rng.uniform(0.2, 0.9), 2)
+        low = round(min(open_p, close) - amplitude * rng.uniform(0.2, 0.9), 2)
+        volume = round(rng.uniform(5e6, 4e7) * (1 + abs(close - open_p) / max(open_p, 1) * 10), 0)
+        change_pct = round((close - open_p) / open_p * 100, 2) if open_p else 0
+        date = (today - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+        bars.append(KlineBar(
+            date=date, open=open_p, high=high, low=low,
+            close=close, volume=volume, change_pct=change_pct,
+        ))
+    return bars
+
+
+def _calc_ma(values: List[float], n: int) -> List[float]:
+    """计算 N 日均线"""
+    out: List[float] = []
+    for i in range(len(values)):
+        if i < n - 1:
+            out.append(0)
+        else:
+            out.append(round(sum(values[i - n + 1: i + 1]) / n, 2))
+    return out
+
+
+def _calc_ema(values: List[float], n: int) -> List[float]:
+    """指数移动平均"""
+    if not values:
+        return []
+    out = [values[0]]
+    k = 2 / (n + 1)
+    for v in values[1:]:
+        out.append(round(v * k + out[-1] * (1 - k), 4))
+    return out
+
+
+def _calc_macd(values: List[float]) -> List[Dict[str, float]]:
+    """MACD（12,26,9）"""
+    ema12 = _calc_ema(values, 12)
+    ema26 = _calc_ema(values, 26)
+    dif = [round(a - b, 4) for a, b in zip(ema12, ema26)]
+    dea = _calc_ema(dif, 9)
+    return [{"dif": d, "dea": e, "hist": round(2 * (d - e), 4)} for d, e in zip(dif, dea)]
+
+
+def _calc_rsi(values: List[float], period: int = 14) -> List[float]:
+    """RSI 指标"""
+    if len(values) < period + 1:
+        return [50.0] * len(values)
+    out: List[float] = []
+    for i in range(len(values)):
+        if i < period:
+            out.append(50.0)
+            continue
+        gains, losses = [], []
+        for j in range(i - period + 1, i + 1):
+            diff = values[j] - values[j - 1]
+            if diff > 0:
+                gains.append(diff)
+            else:
+                losses.append(-diff)
+        avg_gain = sum(gains) / period if gains else 0
+        avg_loss = sum(losses) / period if losses else 0
+        if avg_loss == 0:
+            out.append(100.0)
+        else:
+            rs = avg_gain / avg_loss
+            out.append(round(100 - 100 / (1 + rs), 2))
+    return out
+
+
+def _calc_kdj(values: List[float], highs: List[float], lows: List[float], n: int = 9) -> List[Dict[str, float]]:
+    """KDJ 指标（9,3,3）"""
+    out: List[Dict[str, float]] = []
+    prev_k, prev_d = 50.0, 50.0
+    for i in range(len(values)):
+        if i < n - 1:
+            out.append({"k": 50.0, "d": 50.0, "j": 50.0})
+            continue
+        window_high = max(highs[i - n + 1: i + 1])
+        window_low = min(lows[i - n + 1: i + 1])
+        rsv = (values[i] - window_low) / (window_high - window_low) * 100 if window_high != window_low else 50
+        k = 2 / 3 * prev_k + 1 / 3 * rsv
+        d = 2 / 3 * prev_d + 1 / 3 * k
+        j = 3 * k - 2 * d
+        out.append({"k": round(k, 2), "d": round(d, 2), "j": round(j, 2)})
+        prev_k, prev_d = k, d
+    return out
+
+
+def _calc_boll(values: List[float], n: int = 20, k: float = 2.0) -> List[Dict[str, float]]:
+    """布林带（20, 2）"""
+    out: List[Dict[str, float]] = []
+    for i in range(len(values)):
+        if i < n - 1:
+            out.append({"upper": 0, "mid": 0, "lower": 0})
+            continue
+        window = values[i - n + 1: i + 1]
+        mid = sum(window) / n
+        std = (sum((v - mid) ** 2 for v in window) / n) ** 0.5
+        out.append({
+            "upper": round(mid + k * std, 2),
+            "mid": round(mid, 2),
+            "lower": round(mid - k * std, 2),
+        })
+    return out
+
+
+def _find_gaps(bars: List[KlineBar]) -> List[GapAnalysis]:
+    """识别向上 / 向下缺口"""
+    gaps: List[GapAnalysis] = []
+    for i in range(1, len(bars)):
+        prev, cur = bars[i - 1], bars[i]
+        if cur.low > prev.high:
+            size = round(cur.low - prev.high, 2)
+            gaps.append(GapAnalysis(
+                direction="up", date=cur.date, gap_size=size,
+                top=cur.low, bottom=prev.high, role="support",
+            ))
+        elif cur.high < prev.low:
+            size = round(prev.low - cur.high, 2)
+            gaps.append(GapAnalysis(
+                direction="down", date=cur.date, gap_size=size,
+                top=prev.low, bottom=cur.high, role="pressure",
+            ))
+    # 只返回最近 3 个有意义的缺口
+    return gaps[-3:] if len(gaps) > 3 else gaps
+
+
+def _find_support_pressure(bars: List[KlineBar], current: float) -> SupportPressure:
+    """基于近期低点 / 高点找支撑位与压力位"""
+    recent = bars[-30:] if len(bars) >= 30 else bars
+    lows = sorted([b.low for b in recent])[:5]
+    highs = sorted([b.high for b in recent], reverse=True)[:5]
+    supports = sorted([s for s in lows if s < current], reverse=True)[:3]
+    pressures = sorted([h for h in highs if h > current])[:3]
+    return SupportPressure(
+        supports=[round(s, 2) for s in supports],
+        pressures=[round(p, 2) for p in pressures],
+        nearest_support=round(supports[0], 2) if supports else None,
+        nearest_pressure=round(pressures[0], 2) if pressures else None,
+    )
+
+
+def _forecast_3d(bars: List[KlineBar], company: Dict[str, Any]) -> ThreeDayForecast:
+    """3 天走势预测：综合趋势 / 均线 / 风险偏好（参考 stock-analysis skill 思路）"""
+    closes = [b.close for b in bars]
+    last5 = closes[-5:]
+    avg5 = sum(last5) / len(last5)
+    cur = closes[-1]
+    ma5 = sum(closes[-5:]) / 5
+    ma20 = sum(closes[-20:]) / 20 if len(closes) >= 20 else avg5
+    rating = company.get("rating", "持有")
+    change_pct = company.get("change_pct", 0)
+
+    # 综合判断
+    bull_score = 0
+    if ma5 > ma20:
+        bull_score += 1
+    if cur > avg5:
+        bull_score += 1
+    if change_pct > 0:
+        bull_score += 1
+    if rating in ("买入", "增持"):
+        bull_score += 1
+    elif rating in ("减持",):
+        bull_score -= 2
+
+    if bull_score >= 3:
+        trend, suggestion = "上涨", "持有"
+        up_prob, down_prob, flat_prob = 0.62, 0.18, 0.20
+        entry_price = round(cur * 0.98, 2)
+        stop_loss = round(cur * 0.94, 2)
+        take_profit = round(company.get("target_price") or cur * 1.10, 2)
+    elif bull_score <= 0:
+        trend, suggestion = "下跌", "观望"
+        up_prob, down_prob, flat_prob = 0.20, 0.58, 0.22
+        entry_price = round(cur * 0.92, 2)
+        stop_loss = round(cur * 0.88, 2)
+        take_profit = round(cur * 0.97, 2)
+    else:
+        trend, suggestion = "震荡", "观望"
+        up_prob, down_prob, flat_prob = 0.35, 0.30, 0.35
+        entry_price = round(cur * 0.97, 2)
+        stop_loss = round(cur * 0.93, 2)
+        take_profit = round(cur * 1.05, 2)
+
+    return ThreeDayForecast(
+        trend=trend, up_prob=up_prob, down_prob=down_prob, flat_prob=flat_prob,
+        suggestion=suggestion, entry_price=entry_price,
+        stop_loss=stop_loss, take_profit=take_profit,
+        reasoning=f"基于 MA5/MA20 排列、近 5 日均值、评级「{rating}」综合判断。",
+    )
+
+
+@router.get("/companies/{code}/technicals", response_model=TechnicalAnalysis)
+async def get_company_technicals(code: str, days: int = 60):
+    """
+    公司技术分析
+
+    返回 K 线序列、5 大技术指标（MA/MACD/RSI/KDJ/BOLL）、缺口分析、
+    支撑压力位、3 天走势预测与操作建议。
+
+    参考 anbeime/skill 仓库的 stock-analysis 与 finance-mcp 能力，
+    使用确定性模拟数据，无需外部 API Token 即可演示完整投研体验。
+    """
+    company = next((c for c in _COMPANIES if c["code"] == code), None)
+    if not company:
+        raise HTTPException(status_code=404, detail="公司不存在")
+
+    # 用 code 哈希做种子，保证同一家公司多次请求结果稳定
+    seed = abs(hash(code)) % (2 ** 31)
+    base = company["current_price"]
+    days = max(30, min(days, 120))
+
+    bars = _gen_klines(base, days=days, seed=seed)
+    closes = [b.close for b in bars]
+    highs = [b.high for b in bars]
+    lows = [b.low for b in bars]
+
+    indicators = TechnicalIndicators(
+        ma5=_calc_ma(closes, 5),
+        ma10=_calc_ma(closes, 10),
+        ma20=_calc_ma(closes, 20),
+        ma60=_calc_ma(closes, 60),
+        macd=_calc_macd(closes),
+        rsi=_calc_rsi(closes, 14),
+        kdj=_calc_kdj(closes, highs, lows, 9),
+        boll=_calc_boll(closes, 20, 2),
+    )
+
+    gaps = _find_gaps(bars)
+    sp = _find_support_pressure(bars, base)
+    forecast = _forecast_3d(bars, company)
+
+    # 趋势信号
+    ma5_now = indicators.ma5[-1] if indicators.ma5 else 0
+    ma20_now = indicators.ma20[-1] if indicators.ma20 else 0
+    ma60_now = indicators.ma60[-1] if indicators.ma60 else 0
+    if ma5_now > ma20_now > ma60_now:
+        trend_signal = "多头排列"
+    elif ma5_now < ma20_now < ma60_now:
+        trend_signal = "空头排列"
+    elif abs(ma5_now - ma20_now) / max(ma20_now, 1) < 0.005:
+        trend_signal = "均线缠绕"
+    else:
+        trend_signal = "震荡"
+
+    macd_last = indicators.macd[-1] if indicators.macd else {"dif": 0, "dea": 0, "hist": 0}
+    rsi_last = indicators.rsi[-1] if indicators.rsi else 50
+    kdj_last = indicators.kdj[-1] if indicators.kdj else {"k": 50, "d": 50, "j": 50}
+
+    indicator_summary = {
+        "MA": f"MA5={ma5_now} MA20={ma20_now} MA60={ma60_now}，{trend_signal}",
+        "MACD": f"DIF={macd_last['dif']} DEA={macd_last['dea']}，{'金叉' if macd_last['dif'] > macd_last['dea'] else '死叉'}",
+        "RSI": f"{rsi_last}，{'超买' if rsi_last > 70 else '超卖' if rsi_last < 30 else '中性'}",
+        "KDJ": f"K={kdj_last['k']} D={kdj_last['d']} J={kdj_last['j']}",
+        "BOLL": f"上轨={indicators.boll[-1]['upper']} 中轨={indicators.boll[-1]['mid']} 下轨={indicators.boll[-1]['lower']}",
+    }
+
+    return TechnicalAnalysis(
+        code=code, name=company["name"],
+        current_price=base, change_pct=company["change_pct"],
+        klines=bars, indicators=indicators, gaps=gaps,
+        support_pressure=sp, forecast=forecast,
+        trend_signal=trend_signal, indicator_summary=indicator_summary,
+    )

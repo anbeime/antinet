@@ -38,8 +38,12 @@ async def root():
         "service": "知易 · 投研场景 DEMO",
         "status": "ok",
         "docs": "/docs",
-        "endpoints": 24,
-        "highlights": ["AI 投研简报生成（四色卡片体系）", "11 个 Tab 全场景投研工作台"],
+        "endpoints": 25,
+        "highlights": [
+            "AI 投研简报生成（五色卡片体系：事实/解释/风险/行动/预测）",
+            "12 个 Tab 全场景投研工作台（含技术分析）",
+            "技术分析参考 anbeime/skill 仓库 finance-mcp + stock-analysis",
+        ],
     }
 
 
@@ -49,7 +53,8 @@ async def meta():
     return {
         "tabs": [
             {"key": "overview", "name": "总览", "desc": "投研工作台首页仪表盘"},
-            {"key": "ai-brief", "name": "✨ AI 简报", "desc": "AI 投研简报生成（核心创新点）：输入公司/行业/主题，自动生成事实-解释-风险-行动四色卡片"},
+            {"key": "ai-brief", "name": "✨ AI 简报", "desc": "AI 投研简报生成（核心创新点）：输入公司/行业/主题，自动生成事实-解释-风险-行动-预测五色卡片"},
+            {"key": "technicals", "name": "📈 技术分析", "desc": "技术分析工作台：K线 + MA/MACD/RSI/KDJ/BOLL + 缺口 + 支撑压力 + 3天预测（参考 finance-mcp + stock-analysis）"},
             {"key": "companies", "name": "公司", "desc": "研究对象列表 + 财务详情"},
             {"key": "reports", "name": "研报", "desc": "研究报告 + Markdown 导出"},
             {"key": "opportunities", "name": "机会", "desc": "市场机会信号"},
@@ -61,7 +66,8 @@ async def meta():
             {"key": "sentiment", "name": "市场情绪", "desc": "情绪指数 + 市场广度"},
         ],
         "global_search": "顶部搜索按钮，支持公司/研报/机会/风险/笔记全量检索",
-        "ai_brief_endpoint": "POST /api/investment-research/ai-brief — AI 投研简报生成",
+        "ai_brief_endpoint": "POST /api/investment-research/ai-brief — AI 投研简报生成（五色卡片）",
+        "technicals_endpoint": "GET /api/investment-research/companies/{code}/technicals — 公司技术分析",
     }
 
 
