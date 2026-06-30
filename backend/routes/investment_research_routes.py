@@ -11,6 +11,35 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import random
 
+# 真实数据适配器（AKShare 行情 + AGNES LLM，失败自动回退模拟数据）
+try:
+    import sys as _sys
+    _sys.path.insert(0, "/workspace/backend")
+    from real_data import (
+        fetch_real_klines,
+        get_real_company_price,
+        call_agnes_llm,
+        call_agnes_llm_json,
+        USE_REAL_DATA,
+    )
+    _REAL_DATA_READY = True
+except Exception as _e:
+    print(f"[warning] real_data 加载失败，使用纯模拟数据: {_e}")
+    _REAL_DATA_READY = False
+    USE_REAL_DATA = False
+
+    def fetch_real_klines(*a, **kw):
+        return None
+
+    def get_real_company_price(*a, **kw):
+        return None
+
+    def call_agnes_llm(*a, **kw):
+        return None
+
+    def call_agnes_llm_json(*a, **kw):
+        return None
+
 router = APIRouter(prefix="/api/investment-research", tags=["投研场景"])
 
 
@@ -578,7 +607,12 @@ async def list_companies(
     rating: Optional[str] = None,
     keyword: Optional[str] = None,
 ):
-    """研究对象（公司/行业）列表"""
+    """
+    研究对象（公司/行业）列表
+
+    数据源：演示基础数据 + 真实行情覆盖（USE_REAL_DATA=true 时尝试拉取真实最新价/涨跌幅，
+    失败回退演示数据中的写死价格）。
+    """
     result = _COMPANIES
     if sector:
         result = [c for c in result if c["sector"] == sector]
@@ -590,16 +624,33 @@ async def list_companies(
             c for c in result
             if kw in c["name"].lower() or kw in c["code"].lower()
         ]
-    return result
+
+    # 真实行情覆盖（每只股票查一次最新价，带缓存）
+    enriched = []
+    for c in result:
+        enriched_c = dict(c)
+        if USE_REAL_DATA:
+            real_price = get_real_company_price(c["code"])
+            if real_price:
+                enriched_c["current_price"] = real_price["current_price"]
+                enriched_c["change_pct"] = real_price["change_pct"]
+        enriched.append(enriched_c)
+    return enriched
 
 
 @router.get("/companies/{code}", response_model=CompanyProfile)
 async def get_company(code: str):
-    """单个公司详情"""
-    for c in _COMPANIES:
-        if c["code"] == code:
-            return c
-    raise HTTPException(status_code=404, detail="公司不存在")
+    """单个公司详情（含真实最新价覆盖）"""
+    company = next((c for c in _COMPANIES if c["code"] == code), None)
+    if not company:
+        raise HTTPException(status_code=404, detail="公司不存在")
+    enriched = dict(company)
+    if USE_REAL_DATA:
+        real_price = get_real_company_price(code)
+        if real_price:
+            enriched["current_price"] = real_price["current_price"]
+            enriched["change_pct"] = real_price["change_pct"]
+    return enriched
 
 
 @router.get("/reports", response_model=List[ResearchReport])
@@ -1296,8 +1347,12 @@ async def generate_ai_brief(req: AIBriefRequest):
     """
     AI 投研简报生成
 
+    数据源策略（优先真实 → 失败回退模板）：
+    1. AGNES LLM（agnes-2.0-flash，OpenAI 兼容）—— 真实 LLM 生成五色卡片，含真实行情上下文
+    2. 失败时回退到模板拼接逻辑 —— 关键词匹配 + 模板生成
+
     根据输入关键词（公司名/代码/行业/主题），智能检索全量投研数据，
-    按「事实-解释-风险-行动」四色卡片体系生成结构化投研简报。
+    按「事实-解释-风险-行动-预测」五色卡片体系生成结构化投研简报。
     """
     kw = req.query.lower().strip()
     if not kw:
@@ -1316,6 +1371,150 @@ async def generate_ai_brief(req: AIBriefRequest):
         opportunities = _OPPORTUNITIES[:2]
         risks = _RISK_WARNINGS[:2]
 
+    # === 优先尝试真实 LLM 生成简报 ===
+    if USE_REAL_DATA:
+        llm_brief = _generate_ai_brief_via_llm(req.query, companies, reports, opportunities, risks)
+        if llm_brief is not None:
+            return llm_brief
+
+    # === 回退：模板拼接逻辑 ===
+    return _generate_ai_brief_via_template(req.query, companies, reports, opportunities, risks)
+
+
+def _generate_ai_brief_via_llm(
+    query: str,
+    companies: List[Dict[str, Any]],
+    reports: List[Dict[str, Any]],
+    opportunities: List[Dict[str, Any]],
+    risks: List[Dict[str, Any]],
+) -> Optional[AIBrief]:
+    """
+    使用真实 LLM（AGNES agnes-2.0-flash）生成五色卡片投研简报。
+
+    1. 用真实行情数据（如可用）+ 演示数据构建上下文
+    2. 调用 LLM 输出严格 JSON 格式的五色卡片
+    3. 解析为 AIBrief 模型，失败返回 None（调用方回退模板）
+    """
+    # 构建上下文：公司/研报/机会/风险 + 真实价格
+    context_lines = []
+    real_prices: Dict[str, Dict[str, Any]] = {}
+    for c in companies[:3]:
+        # 实时拉取真实价格
+        real_price = get_real_company_price(c["code"])
+        if real_price:
+            real_prices[c["code"]] = real_price
+            price_str = f"现价 {real_price['current_price']} 元（涨跌 {real_price['change_pct']:+.2f}%，截至 {real_price['last_date']}，真实行情）"
+        else:
+            price_str = f"现价 {c['current_price']} 元（涨跌 {c['change_pct']:+.2f}%，演示数据）"
+        context_lines.append(
+            f"公司：{c['name']}（{c['code']}）｜行业：{c['sector']}｜{price_str}｜"
+            f"PE {c.get('pe_ratio') or '—'}｜评级「{c['rating']}」｜目标价 {c.get('target_price') or '—'} 元｜简介：{c['summary']}"
+        )
+    for r in reports[:2]:
+        context_lines.append(
+            f"研报《{r['title']}》（{r['category']}类，作者：{r['author']}）："
+            f"摘要：{r['summary']}｜核心观点：{'; '.join(r['key_points'][:3])}｜"
+            f"风险：{'; '.join(r['risk_points'][:2])}｜投资建议：{r['investment_suggestion']}"
+        )
+    for o in opportunities[:2]:
+        context_lines.append(
+            f"机会信号「{o['title']}」（{o['sector']}板块，{o['signal_type']}类型，评分 {o['score']}）：{o['reason']}｜建议：{o['suggested_action']}"
+        )
+    for r in risks[:2]:
+        context_lines.append(
+            f"风险预警「{r['title']}」（等级 {r['level']}）：{r['description']}｜触发因素：{'; '.join(r.get('triggers', []))}"
+        )
+
+    context = "\n".join(context_lines)
+
+    system_prompt = (
+        "你是一位资深 A 股投研分析师，擅长基于公司、研报、机会、风险信号输出结构化投研简报。"
+        "请严格按 JSON 格式输出，不要添加任何解释文字、不要使用 markdown 代码块。"
+        "输出 JSON schema：{\"title\": string, \"summary\": string, \"sentiment\": \"偏多\"|\"偏空\"|\"中性\", "
+        "\"cards\": [{\"card_type\": \"blue\"|\"green\"|\"yellow\"|\"red\"|\"purple\", \"title\": string, \"content\": string}]}。"
+        "cards 必须按以下五色顺序输出 5 张卡片："
+        "blue（核心事实，客观陈述价格/财务/评级，无主观判断）；"
+        "green（投资逻辑，分析因果关系与机会信号）；"
+        "yellow（风险提示，列出关键风险与触发因素）；"
+        "red（行动建议，明确评级/目标价/操作建议）；"
+        "purple（未来 3 日走势预测，给出上涨/震荡/下跌概率百分比、操作建议、入场价/止损价/止盈价）。"
+        "每张卡片的 content 用换行符分隔多个要点。所有数据必须基于上下文，不得编造。"
+        "末尾务必追加：「注：以上内容由 AI 生成，仅供参考，不构成投资建议。」"
+    )
+
+    user_prompt = f"用户查询：「{query}」\n\n可用投研上下文：\n{context}\n\n请基于上述上下文，输出严格 JSON 格式的五色卡片投研简报。"
+
+    llm_result = call_agnes_llm_json(user_prompt, system_prompt)
+    if not llm_result:
+        return None
+
+    try:
+        cards_raw = llm_result.get("cards", [])
+        cards: List[AIBriefCard] = []
+        # 卡片顺序：blue → green → yellow → red → purple
+        type_order = {"blue": 0, "green": 1, "yellow": 2, "red": 3, "purple": 4}
+        cards_raw_sorted = sorted(cards_raw, key=lambda x: type_order.get(x.get("card_type", ""), 99))
+
+        valid_types = {"blue", "green", "yellow", "red", "purple"}
+        sources_by_type = {
+            "blue": [c["code"] for c in companies[:3]] + [str(r["id"]) for r in reports[:2]],
+            "green": [c["code"] for c in companies[:2]],
+            "yellow": [str(r["id"]) for r in risks[:3]],
+            "red": [c["code"] for c in companies[:1]],
+            "purple": [companies[0]["code"]] if companies else [],
+        }
+
+        for card in cards_raw_sorted:
+            ct = card.get("card_type", "").lower()
+            if ct not in valid_types:
+                continue
+            title = (card.get("title") or "").strip()
+            content = (card.get("content") or "").strip()
+            if not content:
+                continue
+            cards.append(AIBriefCard(
+                card_type=ct,
+                title=title,
+                content=content,
+                sources=sources_by_type.get(ct, []),
+            ))
+
+        if len(cards) < 3:
+            return None  # 卡片太少，认为 LLM 输出有问题，回退
+
+        title = (llm_result.get("title") or "").strip()
+        if not title:
+            title = f"「{query}」投研简报"
+        summary = (llm_result.get("summary") or "").strip()
+        if not summary:
+            summary = f"基于真实 LLM 生成的「{query}」主题五色卡片投研简报。"
+        sentiment = llm_result.get("sentiment", "中性")
+        if sentiment not in ("偏多", "偏空", "中性"):
+            sentiment = "中性"
+
+        return AIBrief(
+            query=query,
+            title=title,
+            summary=summary,
+            cards=cards,
+            related_companies=list({c["code"] for c in companies}),
+            related_reports=list({r["id"] for r in reports}),
+            sentiment_hint=sentiment,
+            generated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    except Exception as e:
+        print(f"[LLM 简报解析失败] {e}")
+        return None
+
+
+def _generate_ai_brief_via_template(
+    query: str,
+    companies: List[Dict[str, Any]],
+    reports: List[Dict[str, Any]],
+    opportunities: List[Dict[str, Any]],
+    risks: List[Dict[str, Any]],
+) -> AIBrief:
+    """模板拼接生成五色卡片简报（LLM 不可用时的回退方案）"""
     # 2. 生成标题与摘要
     if companies:
         primary = companies[0]
@@ -1324,11 +1523,11 @@ async def generate_ai_brief(req: AIBriefRequest):
         summary = (f"{primary['name']}所属{primary['sector']}板块，"
                    f"当前评级「{rating}」，目标价 {primary.get('target_price') or '未设定'} 元。")
     elif reports:
-        title = f"「{req.query}」主题投研简报"
+        title = f"「{query}」主题投研简报"
         summary = reports[0]["summary"][:80] + "..."
     else:
-        title = f"「{req.query}」投研简报"
-        summary = f"围绕「{req.query}」主题，整合相关机会与风险信号。"
+        title = f"「{query}」投研简报"
+        summary = f"围绕「{query}」主题，整合相关机会与风险信号。"
 
     # 3. 构造四色卡片
     cards: List[AIBriefCard] = []
@@ -1474,7 +1673,7 @@ async def generate_ai_brief(req: AIBriefRequest):
         sentiment = "中性"
 
     return AIBrief(
-        query=req.query,
+        query=query,
         title=title,
         summary=summary,
         cards=cards,
@@ -1582,6 +1781,7 @@ class TechnicalAnalysis(BaseModel):
     forecast: ThreeDayForecast
     trend_signal: str  # 多头排列 / 空头排列 / 缠绕 / 震荡
     indicator_summary: Dict[str, str]  # 各指标简评
+    data_source: str = "simulated"  # real(真实K线) / simulated(模拟)
 
 
 def _gen_klines(base_price: float, days: int = 60, seed: int = 0) -> List[KlineBar]:
@@ -1803,19 +2003,47 @@ async def get_company_technicals(code: str, days: int = 60):
     返回 K 线序列、5 大技术指标（MA/MACD/RSI/KDJ/BOLL）、缺口分析、
     支撑压力位、3 天走势预测与操作建议。
 
-    参考 anbeime/skill 仓库的 stock-analysis 与 finance-mcp 能力，
-    使用确定性模拟数据，无需外部 API Token 即可演示完整投研体验。
+    数据源策略（优先真实 → 失败回退模拟）：
+    1. AKShare 新浪日 K 线（前复权，免 Token）—— 真实历史数据
+    2. 失败时回退到 _gen_klines 确定性生成器 —— 模拟数据
+
+    参考 anbeime/skill 仓库的 stock-analysis 与 finance-mcp 能力。
     """
     company = next((c for c in _COMPANIES if c["code"] == code), None)
     if not company:
         raise HTTPException(status_code=404, detail="公司不存在")
 
-    # 用 code 哈希做种子，保证同一家公司多次请求结果稳定
-    seed = abs(hash(code)) % (2 ** 31)
-    base = company["current_price"]
     days = max(30, min(days, 120))
 
-    bars = _gen_klines(base, days=days, seed=seed)
+    # === 优先尝试真实 K 线（AKShare 新浪源）===
+    real_bars = fetch_real_klines(code, days=days)
+    data_source = "simulated"
+
+    if real_bars and len(real_bars) >= 10:
+        # 转换真实 K 线为 KlineBar 模型
+        bars = [
+            KlineBar(
+                date=b["date"],
+                open=b["open"], high=b["high"], low=b["low"], close=b["close"],
+                volume=b["volume"],
+                change_pct=round((b["close"] - b["open"]) / b["open"] * 100, 2) if b["open"] else 0,
+            )
+            for b in real_bars
+        ]
+        # 用最新真实收盘价与涨跌幅覆盖 company 字段
+        last_bar = bars[-1]
+        prev_bar = bars[-2] if len(bars) >= 2 else bars[-1]
+        base = last_bar.close
+        real_change_pct = round((last_bar.close - prev_bar.close) / prev_bar.close * 100, 2) if prev_bar.close else 0
+        # 临时覆盖 company 的价格字段（不修改全局数据）
+        company = {**company, "current_price": base, "change_pct": real_change_pct}
+        data_source = "real"
+    else:
+        # === 回退：确定性模拟 K 线 ===
+        seed = abs(hash(code)) % (2 ** 31)
+        base = company["current_price"]
+        bars = _gen_klines(base, days=days, seed=seed)
+
     closes = [b.close for b in bars]
     highs = [b.high for b in bars]
     lows = [b.low for b in bars]
@@ -1866,4 +2094,5 @@ async def get_company_technicals(code: str, days: int = 60):
         klines=bars, indicators=indicators, gaps=gaps,
         support_pressure=sp, forecast=forecast,
         trend_signal=trend_signal, indicator_summary=indicator_summary,
+        data_source=data_source,
     )

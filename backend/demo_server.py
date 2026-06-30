@@ -11,7 +11,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes.investment_research_routes import router as investment_router
+from routes.investment_research_routes import router as investment_router, _REAL_DATA_READY
 
 app = FastAPI(
     title="知易 · 投研场景 DEMO",
@@ -39,10 +39,12 @@ async def root():
         "status": "ok",
         "docs": "/docs",
         "endpoints": 25,
+        "data_source": "real" if _REAL_DATA_READY else "simulated",
         "highlights": [
             "AI 投研简报生成（五色卡片体系：事实/解释/风险/行动/预测）",
             "12 个 Tab 全场景投研工作台（含技术分析）",
             "技术分析参考 anbeime/skill 仓库 finance-mcp + stock-analysis",
+            "真实数据接入：AKShare 新浪日K线（免Token）+ AGNES LLM agnes-2.0-flash（OpenAI兼容）",
         ],
     }
 
