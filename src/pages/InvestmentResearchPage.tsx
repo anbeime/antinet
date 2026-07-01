@@ -187,6 +187,7 @@ type AIBrief = {
   related_companies: string[];
   related_reports: number[];
   sentiment_hint: string;  // 偏多 / 偏空 / 中性
+  web_sources?: Array<{ title: string; url: string; snippet: string }>;
   generated_at: string;
 };
 
@@ -2460,6 +2461,34 @@ function AIBriefTab({ brief, query, setQuery, generating, onGenerate, suggestion
                     研报 #{id}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {/* AnySearch 联网信息来源 */}
+            {brief.web_sources && brief.web_sources.length > 0 && (
+              <div className="mt-3 p-3 rounded-lg bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/40">
+                <div className="text-xs text-blue-600 dark:text-blue-400 font-medium mb-2 flex items-center gap-1">
+                  <Search size={12} /> 联网信息来源 · AnySearch（{brief.web_sources.length} 条）
+                </div>
+                <div className="space-y-1.5">
+                  {brief.web_sources.map((s, i) => (
+                    <a
+                      key={i}
+                      href={s.url || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block group"
+                    >
+                      <div className="text-xs text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        <span className="text-blue-500 font-bold mr-1">{i + 1}.</span>
+                        {s.title}
+                      </div>
+                      {s.snippet && (
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 ml-4 line-clamp-1">{s.snippet}</div>
+                      )}
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
           </div>

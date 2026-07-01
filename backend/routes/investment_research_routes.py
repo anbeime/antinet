@@ -1380,6 +1380,7 @@ class AIBrief(BaseModel):
     related_companies: List[str] = []
     related_reports: List[int] = []
     sentiment_hint: str  # 偏多/偏空/中性
+    web_sources: List[Dict[str, Any]] = []  # AnySearch 联网信息来源（标题/URL/摘要）
     generated_at: str
 
 
@@ -1461,14 +1462,24 @@ async def generate_ai_brief(req: AIBriefRequest):
         opportunities = _OPPORTUNITIES[:2]
         risks = _RISK_WARNINGS[:2]
 
-    # === 优先尝试真实 LLM 生成简报 ===
+    # === AnySearch 联网补充：在主流程统一调用，LLM/模板两条路径都能带上 web_sources ===
+    # 关键设计：不把 web_sources 绑死在 LLM 路径，避免 LLM 失败回退模板时联网信息丢失
+    web_sources: List[Dict[str, Any]] = []
+    try:
+        primary_name = companies[0]["name"] if companies else req.query
+        search_q = f"{primary_name} 2026 业绩 行业 最新"
+        web_sources = anysearch_web(search_q, max_results=5)
+    except Exception as e:
+        print(f"[AI简报] AnySearch 异常: {type(e).__name__}: {e}")
+
+    # === 优先尝试真实 LLM 生成简报（传入 web_sources）===
     if USE_REAL_DATA:
-        llm_brief = _generate_ai_brief_via_llm(req.query, companies, reports, opportunities, risks)
+        llm_brief = _generate_ai_brief_via_llm(req.query, companies, reports, opportunities, risks, web_sources)
         if llm_brief is not None:
             return llm_brief
 
-    # === 回退：模板拼接逻辑 ===
-    return _generate_ai_brief_via_template(req.query, companies, reports, opportunities, risks)
+    # === 回退：模板拼接逻辑（同样带上 web_sources）===
+    return _generate_ai_brief_via_template(req.query, companies, reports, opportunities, risks, web_sources)
 
 
 def _generate_ai_brief_via_llm(
@@ -1477,14 +1488,20 @@ def _generate_ai_brief_via_llm(
     reports: List[Dict[str, Any]],
     opportunities: List[Dict[str, Any]],
     risks: List[Dict[str, Any]],
+    web_sources: List[Dict[str, Any]] = None,
 ) -> Optional[AIBrief]:
     """
     使用真实 LLM（AGNES agnes-2.0-flash）生成五色卡片投研简报。
 
-    1. 用真实行情数据（如可用）+ 演示数据构建上下文
+    1. 用真实行情数据（如可用）+ 演示数据 + 联网信息构建上下文
     2. 调用 LLM 输出严格 JSON 格式的五色卡片
     3. 解析为 AIBrief 模型，失败返回 None（调用方回退模板）
+
+    :param web_sources: 主流程已获取的 AnySearch 联网信息，注入 LLM context 增强深度
     """
+    if web_sources is None:
+        web_sources = []
+
     # 构建上下文：公司/研报/机会/风险 + 真实价格
     context_lines = []
     real_prices: Dict[str, Dict[str, Any]] = {}
@@ -1515,6 +1532,13 @@ def _generate_ai_brief_via_llm(
             f"风险预警「{r['title']}」（等级 {r['level']}）：{r['description']}｜触发因素：{'; '.join(r.get('triggers', []))}"
         )
 
+    # 联网实时信息注入 LLM context（web_sources 由主流程统一调用 AnySearch 获取）
+    if web_sources:
+        web_lines = []
+        for i, s in enumerate(web_sources, 1):
+            web_lines.append(f"[联网{i}] {s['title']}｜{s.get('snippet', '')[:120]}")
+        context_lines.append("【联网实时信息（AnySearch）】\n" + "\n".join(web_lines))
+
     context = "\n".join(context_lines)
 
     system_prompt = (
@@ -1528,11 +1552,12 @@ def _generate_ai_brief_via_llm(
         "yellow（风险提示，列出关键风险与触发因素）；"
         "red（行动建议，明确评级/目标价/操作建议）；"
         "purple（未来 3 日走势预测，给出上涨/震荡/下跌概率百分比、操作建议、入场价/止损价/止盈价）。"
-        "每张卡片的 content 用换行符分隔多个要点。所有数据必须基于上下文，不得编造。"
+        "每张卡片的 content 用换行符分隔多个要点。所有数据必须基于上下文（含联网实时信息），不得编造。"
+        "如联网信息与本地数据有冲突，以联网最新信息为准并在 blue 卡片注明。"
         "末尾务必追加：「注：以上内容由 AI 生成，仅供参考，不构成投资建议。」"
     )
 
-    user_prompt = f"用户查询：「{query}」\n\n可用投研上下文：\n{context}\n\n请基于上述上下文，输出严格 JSON 格式的五色卡片投研简报。"
+    user_prompt = f"用户查询：「{query}」\n\n可用投研上下文（含联网实时信息）：\n{context}\n\n请基于上述上下文，输出严格 JSON 格式的五色卡片投研简报。"
 
     llm_result = call_agnes_llm_json(user_prompt, system_prompt)
     if not llm_result:
@@ -1590,10 +1615,11 @@ def _generate_ai_brief_via_llm(
             related_companies=list({c["code"] for c in companies}),
             related_reports=list({r["id"] for r in reports}),
             sentiment_hint=sentiment,
+            web_sources=web_sources,
             generated_at=datetime.now().isoformat(timespec="seconds"),
         )
     except Exception as e:
-        print(f"[LLM 简报解析失败] {e}")
+        print(f"[AI简报] LLM 解析失败: {e}")
         return None
 
 
@@ -1603,8 +1629,14 @@ def _generate_ai_brief_via_template(
     reports: List[Dict[str, Any]],
     opportunities: List[Dict[str, Any]],
     risks: List[Dict[str, Any]],
+    web_sources: List[Dict[str, Any]] = None,
 ) -> AIBrief:
-    """模板拼接生成五色卡片简报（LLM 不可用时的回退方案）"""
+    """模板拼接生成五色卡片简报（LLM 不可用时的回退方案）
+
+    :param web_sources: 主流程已获取的 AnySearch 联网信息（即使 LLM 失败也保留信息来源）
+    """
+    if web_sources is None:
+        web_sources = []
     # 2. 生成标题与摘要
     if companies:
         primary = companies[0]
@@ -1770,6 +1802,7 @@ def _generate_ai_brief_via_template(
         related_companies=list({c["code"] for c in companies}),
         related_reports=list({r["id"] for r in reports}),
         sentiment_hint=sentiment,
+        web_sources=web_sources,
         generated_at=datetime.now().isoformat(timespec="seconds"),
     )
 

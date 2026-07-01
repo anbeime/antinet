@@ -228,6 +228,7 @@ def call_agnes_llm(prompt: str, system_prompt: str = "") -> Optional[str]:
         logger.info(f"[真实LLM] 生成 {len(text)} 字")
         return text if text else None
     except Exception as e:
+        print(f"[LLM异常] {type(e).__name__}: {str(e)[:200]}")
         logger.warning(f"call_agnes_llm 失败: {type(e).__name__} {str(e)[:200]}")
         return None
 
