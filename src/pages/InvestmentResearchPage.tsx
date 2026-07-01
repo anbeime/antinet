@@ -87,7 +87,7 @@ type ResearchNote = {
   created_at: string;
 };
 
-type TabKey = 'overview' | 'ai-brief' | 'technicals' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment';
+type TabKey = 'overview' | 'ai-brief' | 'technicals' | 'companies' | 'reports' | 'opportunities' | 'risks' | 'notes' | 'watchlist' | 'portfolio' | 'sectors' | 'sentiment' | 'jinyiwei';
 
 type FinancialMetric = {
   period: string;
@@ -688,6 +688,7 @@ const InvestmentResearchPage: React.FC = () => {
             { key: 'portfolio' as TabKey, label: '投资组合', icon: <Wallet size={16} /> },
             { key: 'sectors' as TabKey, label: '行业对比', icon: <PieChart size={16} /> },
             { key: 'sentiment' as TabKey, label: '市场情绪', icon: <Gauge size={16} /> },
+            { key: 'jinyiwei' as TabKey, label: '🃏 锦衣卫卡片', icon: <Clock size={16} /> },
           ].map((t) => (
             <button
               key={t.key}
@@ -789,6 +790,7 @@ const InvestmentResearchPage: React.FC = () => {
           {activeTab === 'portfolio' && <PortfolioTab portfolio={portfolio} onViewFinancials={loadCompanyFinancials} />}
           {activeTab === 'sectors' && <SectorsTab comparisons={sectorComparison} />}
           {activeTab === 'sentiment' && <SentimentTab sentiment={sentiment} />}
+          {activeTab === 'jinyiwei' && <JinYiWeiCardTab />}
         </div>
 
         {/* 报告详情 Modal */}

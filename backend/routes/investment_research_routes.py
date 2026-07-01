@@ -2190,3 +2190,248 @@ async def get_company_technicals(code: str, days: int = 60):
         trend_signal=trend_signal, indicator_summary=indicator_summary,
         data_source=data_source,
     )
+
+
+# ============================================================
+# 锦衣卫投研卡片（参考通达信方法论：爆款四要素 + 作息表）
+# 卡片类型：晨报卡(morning) / 异动卡(intraday) / 复盘卡(review)
+# 爆款四要素：听得懂(style_tag) + 看得到(snapshot) + 可追踪(trace) + 有边界(risk)
+# ============================================================
+
+class JinYiWeiCard(BaseModel):
+    """锦衣卫投研卡片（对标爆款四要素的单卡 Schema）"""
+    card_id: str
+    card_kind: str  # morning / intraday / review
+    trigger: str  # 触发时点（如 "盘前 08:30 / 手动触发"）
+    header: Dict[str, Any]  # title, style_tag, confidence, author
+    body: Dict[str, Any]  # snapshot, main_theme, key_factors, risk
+    trace: Dict[str, Any]  # last_3_days, if_wrong
+    footer: Dict[str, Any]  # next_card, author
+    generated_at: str
+
+
+# 卡片历史缓存（用于 trace.last_3_days 连续追踪，进程级）
+_CARD_HISTORY: Dict[str, List[Dict[str, Any]]] = {"morning": [], "review": []}
+
+
+def _compute_market_snapshot() -> Optional[Dict[str, Any]]:
+    """
+    基于 AKShare 全市场实时行情计算盘面快照。
+    返回：涨/跌/平家数、涨停/跌停数、平均涨跌幅、涨幅榜、跌幅榜。
+    """
+    if not USE_REAL_DATA:
+        return None
+    try:
+        from real_data import _load_all_stocks
+    except Exception:
+        return None
+    all_stocks = _load_all_stocks()
+    if not all_stocks:
+        return None
+
+    up = [s for s in all_stocks if s["change_pct"] > 0]
+    down = [s for s in all_stocks if s["change_pct"] < 0]
+    flat = [s for s in all_stocks if s["change_pct"] == 0]
+    # 涨停判定：主板 ±10%，创业板/科创板 ±20%（用 9.8 / 19.8 容差）
+    limit_up = [s for s in all_stocks if s["change_pct"] >= 9.8]
+    limit_down = [s for s in all_stocks if s["change_pct"] <= -9.8]
+
+    avg_chg = round(sum(s["change_pct"] for s in all_stocks) / len(all_stocks), 2) if all_stocks else 0.0
+
+    top_gainers = sorted(all_stocks, key=lambda x: x["change_pct"], reverse=True)[:6]
+    top_losers = sorted(all_stocks, key=lambda x: x["change_pct"])[:6]
+
+    return {
+        "total": len(all_stocks),
+        "up_count": len(up),
+        "down_count": len(down),
+        "flat_count": len(flat),
+        "limit_up_count": len(limit_up),
+        "limit_down_count": len(limit_down),
+        "avg_change_pct": avg_chg,
+        "top_gainers": [{"name": s["name"], "code": s["code"], "change_pct": round(s["change_pct"], 2)} for s in top_gainers],
+        "top_losers": [{"name": s["name"], "code": s["code"], "change_pct": round(s["change_pct"], 2)} for s in top_losers],
+        "limit_up_samples": [{"name": s["name"], "code": s["code"], "change_pct": round(s["change_pct"], 2)} for s in limit_up[:5]],
+    }
+
+
+def _snapshot_to_text(snap: Dict[str, Any]) -> str:
+    """把盘面快照转成一行结构化文本（看得见）"""
+    return (f"全市场 {snap['total']} 只｜涨 {snap['up_count']} 跌 {snap['down_count']} 平 {snap['flat_count']}｜"
+            f"涨停 {snap['limit_up_count']} 跌停 {snap['limit_down_count']}｜"
+            f"平均涨幅 {snap['avg_change_pct']:+.2f}%")
+
+
+def _gen_card_via_llm(card_kind: str, snap: Optional[Dict[str, Any]], snapshot_text: str) -> Optional[Dict[str, Any]]:
+    """用 AGNES LLM 生成卡片主线/风险/可信度，失败返回 None"""
+    if not USE_REAL_DATA:
+        return None
+
+    gainers_str = "；".join([f"{g['name']}({g['code']}) {g['change_pct']:+.2f}%" for g in snap["top_gainers"][:5]]) if snap else "无数据"
+    losers_str = "；".join([f"{l['name']}({l['code']}) {l['change_pct']:+.2f}%" for l in snap["top_losers"][:5]]) if snap else "无数据"
+    limit_up_str = "；".join([f"{u['name']}({u['code']})" for u in snap["limit_up_samples"]]) if snap else "无数据"
+
+    if card_kind == "morning":
+        role = "盘前晨报"
+        task = "总结今日开盘前盘面主线与风险，给出今日观察方向"
+    else:
+        role = "盘后复盘"
+        task = "复盘当日主线、资金动向，并给出明日观察方向"
+
+    system_prompt = (
+        "你是一位资深 A 股投研分析师，以「锦衣卫千户·采风」身份呈报投研卡片。"
+        "请严格按 JSON 格式输出，不要任何解释文字、不要 markdown 代码块。"
+        "输出 schema：{\"main_theme\": string(一句话主线，不绕), \"risk\": string(关键风险与失效条件), "
+        "\"confidence\": number(0-1 可信度), \"style_tag\": \"卖方研报腔\"|\"白话腔\"}。"
+        f"本次任务：{task}。所有结论必须基于给定数据，不得编造。语言精炼，主线不超过 60 字。"
+    )
+    user_prompt = (
+        f"【{role}】盘面快照：{snapshot_text}\n"
+        f"涨幅榜前5：{gainers_str}\n"
+        f"跌幅榜前5：{losers_str}\n"
+        f"涨停股：{limit_up_str}\n"
+        "请输出 JSON。"
+    )
+    return call_agnes_llm_json(user_prompt, system_prompt)
+
+
+def _record_card_history(card_kind: str, theme: str, sentiment: str):
+    """记录卡片历史，用于 trace 连续追踪（保留最近3条）"""
+    today = datetime.now().strftime("%m/%d")
+    entry = {"date": today, "theme": theme[:30], "sentiment": sentiment}
+    hist = _CARD_HISTORY.setdefault(card_kind, [])
+    hist.append(entry)
+    if len(hist) > 3:
+        hist[:] = hist[-3:]
+
+
+def _build_trace(card_kind: str, if_wrong: str) -> Dict[str, Any]:
+    """构建 trace 段（可追踪：连续3日表现链 + 失效条件）"""
+    hist = _CARD_HISTORY.get(card_kind, [])
+    if hist:
+        last_3 = [f"{h['date']} {h['theme']}（{h['sentiment']}）" for h in hist[-3:]]
+    else:
+        last_3 = ["首次生成，连续运行后展示 3 日表现链"]
+    return {"last_3_days": last_3, "if_wrong": if_wrong}
+
+
+def _build_jinyiwei_card(card_kind: str, snap: Optional[Dict[str, Any]]) -> JinYiWeiCard:
+    """构建锦衣卫卡片（晨报/复盘共用）"""
+    today = datetime.now().strftime("%Y年%m月%d日")
+    snapshot_text = _snapshot_to_text(snap) if snap else "全市场数据暂不可用（回退演示模式）"
+
+    # LLM 生成主线/风险
+    llm = _gen_card_via_llm(card_kind, snap, snapshot_text) if snap else None
+
+    if llm:
+        main_theme = (llm.get("main_theme") or "").strip() or "盘面主线生成中"
+        risk = (llm.get("risk") or "").strip() or "暂无明显风险信号"
+        confidence = float(llm.get("confidence") or 0.8)
+        confidence = max(0.0, min(1.0, confidence))
+        style_tag = llm.get("style_tag") or "卖方研报腔"
+        sentiment = "偏多" if confidence > 0.6 else "偏空" if confidence < 0.4 else "中性"
+    else:
+        # 模板回退
+        if snap:
+            top1 = snap["top_gainers"][0] if snap["top_gainers"] else None
+            main_theme = (f"全市场涨跌比 {snap['up_count']}:{snap['down_count']}，"
+                          f"{'多头占优' if snap['up_count'] > snap['down_count'] else '空头占优'}，"
+                          f"{'领涨：' + top1['name'] if top1 else '无明显领涨'}")
+            risk = f"跌停 {snap['limit_down_count']} 只，警惕杀跌扩散；跌破前低则逻辑失效"
+        else:
+            main_theme = "演示模式：盘面主线待接入真实行情"
+            risk = "数据源未连通，结论仅供参考"
+        confidence = 0.6 if snap else 0.3
+        style_tag = "白话腔"
+        sentiment = "偏多" if snap and snap["up_count"] > snap["down_count"] else "中性"
+
+    # key_factors：关键因子（看得见 + 可追踪）
+    key_factors = []
+    if snap:
+        key_factors.append({"factor": "涨跌比", "value": f"{snap['up_count']} : {snap['down_count']}", "source": "AKShare全市场"})
+        key_factors.append({"factor": "涨停", "value": f"{snap['limit_up_count']} 只", "source": "AKShare全市场"})
+        if snap["top_gainers"]:
+            g = snap["top_gainers"][0]
+            key_factors.append({"factor": "领涨", "value": f"{g['name']} {g['change_pct']:+.2f}%", "source": "AKShare全市场"})
+        if snap["top_losers"]:
+            l = snap["top_losers"][0]
+            key_factors.append({"factor": "领跌", "value": f"{l['name']} {l['change_pct']:+.2f}%", "source": "AKShare全市场"})
+    else:
+        key_factors.append({"factor": "数据源", "value": "演示模式", "source": "—"})
+
+    # 失效条件（有边界）
+    if_wrong = "平均涨幅转负且跌停数 > 涨停数 ×2，则多头逻辑失效" if snap else "接入真实行情后生效"
+
+    _record_card_history(card_kind, main_theme, sentiment)
+    trace = _build_trace(card_kind, if_wrong)
+
+    if card_kind == "morning":
+        title = f"{today} 投研晨报 · 锦衣卫采风"
+        trigger = "盘前 08:30 / 手动触发"
+        next_card = "11:30 盘中异动卡"
+        author = "锦衣卫千户·采风 呈报"
+    else:
+        title = f"{today} 盘后复盘 · 锦衣卫监正"
+        trigger = "盘后 20:00 / 手动触发"
+        next_card = "次日 08:30 晨报卡"
+        author = "锦衣卫东厂提督·监正 呈报"
+
+    card_id = f"{datetime.now().strftime('%Y%m%d')}_{card_kind}_{datetime.now().strftime('%H%M')}"
+
+    return JinYiWeiCard(
+        card_id=card_id,
+        card_kind=card_kind,
+        trigger=trigger,
+        header={
+            "title": title,
+            "style_tag": style_tag,
+            "confidence": round(confidence, 2),
+            "sentiment": sentiment,
+            "author": author,
+        },
+        body={
+            "snapshot": snapshot_text,
+            "main_theme": main_theme,
+            "key_factors": key_factors,
+            "risk": risk,
+            "top_gainers": snap["top_gainers"][:5] if snap else [],
+            "top_losers": snap["top_losers"][:5] if snap else [],
+        },
+        trace=trace,
+        footer={"next_card": next_card, "author": author},
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+    )
+
+
+@router.get("/cards/morning", response_model=JinYiWeiCard)
+async def get_morning_card():
+    """
+    锦衣卫投研卡片 · 晨报卡（盘前 08:30）
+
+    爆款四要素落地：
+      - 听得懂：header.style_tag 明示语言风格 + body.main_theme 一句话主线
+      - 看得到：body.snapshot 结构化盘面数据 + 涨红跌绿可视化
+      - 可追踪：trace.last_3_days 连续 3 日表现链
+      - 有边界：body.risk 风险明示 + trace.if_wrong 失效条件
+    数据源：AKShare 全市场实时行情（stock_zh_a_spot），失败回退演示模式。
+    """
+    snap = _compute_market_snapshot()
+    return _build_jinyiwei_card("morning", snap)
+
+
+@router.get("/cards/review", response_model=JinYiWeiCard)
+async def get_review_card():
+    """
+    锦衣卫投研卡片 · 复盘卡（盘后 20:00）
+
+    盘后全市场复盘：涨停统计、主线回顾、明日观察。
+    数据源与 Schema 同晨报卡。
+    """
+    snap = _compute_market_snapshot()
+    return _build_jinyiwei_card("review", snap)
+
+
+@router.get("/cards/history", response_model=Dict[str, List[Dict[str, Any]]])
+async def get_cards_history():
+    """获取卡片历史（用于 trace 连续追踪展示）"""
+    return _CARD_HISTORY
