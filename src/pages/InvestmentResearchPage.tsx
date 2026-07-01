@@ -2950,4 +2950,265 @@ function TechnicalsTab({
   );
 }
 
+// ============================================================
+// 子组件：锦衣卫投研卡片（参考通达信爆款四要素 + Coze 复盘排版）
+// 三套方法论融合：
+//   1. 通达信爆款四要素：听得懂(style_tag) + 看得到(snapshot) + 可追踪(trace) + 有边界(risk)
+//   2. Coze 复盘排版：主题先行 + 多模块编号 + 关键数据加粗 + 可执行建议
+//   3. A股配色：涨红 #f85149 / 跌绿 #3fb950 / 深色底 #0b0e11
+// ============================================================
+
+type JinYiWeiCard = {
+  card_id: string;
+  card_kind: string;
+  trigger: string;
+  header: { title: string; style_tag: string; confidence: number; sentiment: string; author: string };
+  body: {
+    snapshot: string;
+    main_theme: string;
+    key_factors: Array<{ factor: string; value: string; source: string }>;
+    risk: string;
+    top_gainers: Array<{ name: string; code: string; change_pct: number }>;
+    top_losers: Array<{ name: string; code: string; change_pct: number }>;
+  };
+  trace: { last_3_days: string[]; if_wrong: string };
+  footer: { next_card: string; author: string };
+  generated_at: string;
+};
+
+function JinYiWeiCardTab() {
+  const [morning, setMorning] = useState<JinYiWeiCard | null>(null);
+  const [review, setReview] = useState<JinYiWeiCard | null>(null);
+  const [loadingKind, setLoadingKind] = useState('');
+  const [active, setActive] = useState<'morning' | 'review'>('morning');
+
+  async function fetchCard(kind: 'morning' | 'review') {
+    setLoadingKind(kind);
+    try {
+      const resp = await fetch(`${getApiBaseUrl()}/api/investment-research/cards/${kind}`);
+      if (resp.ok) {
+        const data: JinYiWeiCard = await resp.json();
+        if (kind === 'morning') setMorning(data); else setReview(data);
+        toast.success(`已生成${kind === 'morning' ? '晨报' : '复盘'}卡`);
+      } else {
+        toast.error('卡片生成失败');
+      }
+    } catch {
+      toast.error('卡片生成失败');
+    } finally {
+      setLoadingKind('');
+    }
+  }
+
+  // 首次进入自动加载晨报卡
+  useEffect(() => {
+    fetchCard('morning');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const card = active === 'morning' ? morning : review;
+  const isLoading = loadingKind === active;
+
+  // 情绪配色
+  const sentimentStyle: Record<string, { bg: string; text: string; label: string }> = {
+    '偏多': { bg: 'bg-red-500/20', text: 'text-red-400', label: '偏多' },
+    '偏空': { bg: 'bg-green-500/20', text: 'text-green-400', label: '偏空' },
+    '中性': { bg: 'bg-gray-500/20', text: 'text-gray-300', label: '中性' },
+  };
+  const sStyle = card ? (sentimentStyle[card.header.sentiment] || sentimentStyle['中性']) : sentimentStyle['中性'];
+
+  return (
+    <div className="space-y-5">
+      {/* 作息表头部 —— 对标通达信"盘前/盘中/盘后"自然语言作息表 */}
+      <div className="bg-gradient-to-br from-gray-900 to-gray-800 border border-amber-700/40 rounded-2xl p-5 shadow-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <Clock size={20} className="text-amber-400" />
+          <h3 className="text-lg font-semibold text-gray-100">锦衣卫作息表 · 投研卡片原型</h3>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">爆款四要素 + Coze 复盘排版</span>
+        </div>
+        <p className="text-sm text-gray-400 mb-4">
+          六部衙门按自然语言作息表自动呈报：盘前晨报、盘中异动、盘后复盘。一张卡一屏一眼判——听得懂、看得到、可追踪、有边界。
+        </p>
+        {/* 作息表三时点 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <button
+            onClick={() => { setActive('morning'); if (!morning) fetchCard('morning'); }}
+            className={`text-left p-4 rounded-xl border transition-all ${active === 'morning' ? 'border-amber-500 bg-amber-500/10' : 'border-gray-700 bg-gray-800/50 hover:border-amber-600/50'}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-bold text-amber-300">盘前 08:30</span>
+              <span className="text-[11px] text-gray-500">千户·采风</span>
+            </div>
+            <div className="text-xs text-gray-400">投研晨报卡 · 全市场盘面快照 + 主线</div>
+          </button>
+          <button
+            onClick={() => { setActive('review'); if (!review) fetchCard('review'); }}
+            className={`text-left p-4 rounded-xl border transition-all ${active === 'review' ? 'border-amber-500 bg-amber-500/10' : 'border-gray-700 bg-gray-800/50 hover:border-amber-600/50'}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-bold text-amber-300">盘后 20:00</span>
+              <span className="text-[11px] text-gray-500">东厂·监正</span>
+            </div>
+            <div className="text-xs text-gray-400">盘后复盘卡 · 涨停统计 + 明日观察</div>
+          </button>
+          <div className="p-4 rounded-xl border border-gray-700 bg-gray-800/30 opacity-60">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-bold text-gray-400">盘中 11:30</span>
+              <span className="text-[11px] text-gray-500">待接入</span>
+            </div>
+            <div className="text-xs text-gray-500">异动预警卡 · 敬请期待</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 卡片展示区 —— 深色底模拟锦衣卫夜行卷轴 */}
+      <div className="rounded-2xl border border-gray-700 shadow-xl overflow-hidden" style={{ background: '#0b0e11' }}>
+        {/* 卡片 Header —— 听得懂：标题 + 风格 + 可信度 */}
+        {card ? (
+          <div className="p-6">
+            <div className="flex items-start justify-between border-b border-gray-800 pb-4 mb-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-medium">{card.header.style_tag}</span>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${sStyle.bg} ${sStyle.text}`}>{sStyle.label}</span>
+                  <span className="text-[11px] text-gray-500">{card.trigger}</span>
+                </div>
+                <h4 className="text-lg font-bold text-gray-100">{card.header.title}</h4>
+                <div className="text-xs text-gray-500 mt-1">{card.header.author} · {card.generated_at.replace('T', ' ')}</div>
+              </div>
+              {/* 可信度进度条 —— 东厂监正评分 */}
+              <div className="text-right ml-4">
+                <div className="text-[11px] text-gray-500 mb-1">可信度</div>
+                <div className="text-2xl font-bold text-amber-400">{(card.header.confidence * 100).toFixed(0)}<span className="text-sm">%</span></div>
+                <div className="w-20 h-1.5 bg-gray-800 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400 rounded-full" style={{ width: `${card.header.confidence * 100}%` }} />
+                </div>
+              </div>
+            </div>
+
+            {/* 主题先行 —— Coze 风格：一句话主线，信息密度爆表 */}
+            <div className="mb-4">
+              <div className="text-[11px] text-amber-500/70 mb-1.5 uppercase tracking-wider">▎主线 · MAIN THEME</div>
+              <div className="text-base font-semibold text-gray-100 leading-relaxed">{card.body.main_theme}</div>
+            </div>
+
+            {/* 盘面快照 —— 看得到：结构化数据 */}
+            <div className="mb-4 p-3 rounded-lg bg-gray-900/60 border border-gray-800">
+              <div className="text-[11px] text-amber-500/70 mb-1 uppercase tracking-wider">▎盘面快照 · SNAPSHOT</div>
+              <div className="text-sm text-gray-300 font-mono">{card.body.snapshot}</div>
+            </div>
+
+            {/* 多模块编号区 —— Coze 复盘排版：8大模块风格，关键数据加粗 */}
+            {card.body.key_factors.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[11px] text-amber-500/70 mb-2 uppercase tracking-wider">▎核心料 · KEY FACTORS</div>
+                <div className="space-y-1.5">
+                  {card.body.key_factors.map((f, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm">
+                      <span className="text-amber-500 font-bold min-w-[20px]">{i + 1}.</span>
+                      <span className="text-gray-400 min-w-[60px]">{f.factor}</span>
+                      <span className="text-gray-100 font-semibold flex-1">{f.value}</span>
+                      <span className="text-[10px] text-gray-600">{f.source}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 涨跌幅榜 —— A股涨红跌绿 */}
+            {(card.body.top_gainers.length > 0 || card.body.top_losers.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <div className="p-3 rounded-lg bg-gray-900/60 border border-gray-800">
+                  <div className="text-[11px] text-red-400/70 mb-2 uppercase tracking-wider">▎涨幅榜 TOP5</div>
+                  <div className="space-y-1">
+                    {card.body.top_gainers.map((g, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-300">{g.name} <span className="text-[10px] text-gray-600">{g.code}</span></span>
+                        <span className="font-bold" style={{ color: '#f85149' }}>+{g.change_pct.toFixed(2)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg bg-gray-900/60 border border-gray-800">
+                  <div className="text-[11px] text-green-400/70 mb-2 uppercase tracking-wider">▎跌幅榜 TOP5</div>
+                  <div className="space-y-1">
+                    {card.body.top_losers.map((l, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-300">{l.name} <span className="text-[10px] text-gray-600">{l.code}</span></span>
+                        <span className="font-bold" style={{ color: '#3fb950' }}>{l.change_pct.toFixed(2)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 风险提示 —— 有边界：风险明示 */}
+            <div className="mb-4 p-3 rounded-lg bg-red-950/30 border border-red-900/50">
+              <div className="text-[11px] text-red-400/80 mb-1 uppercase tracking-wider">⚠ 风险与边界 · RISK</div>
+              <div className="text-sm text-red-200/90">{card.body.risk}</div>
+            </div>
+
+            {/* 连续追踪 —— 可追踪：3日表现链 + 失效条件 */}
+            <div className="mb-4 p-3 rounded-lg bg-gray-900/40 border border-gray-800">
+              <div className="text-[11px] text-amber-500/70 mb-2 uppercase tracking-wider">▎连续追踪 · TRACE</div>
+              <div className="space-y-1 mb-2">
+                {card.trace.last_3_days.map((d, i) => (
+                  <div key={i} className="text-xs text-gray-400 flex items-center gap-2">
+                    <span className="text-amber-500/60">●</span> {d}
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs text-gray-500 pt-2 border-t border-gray-800">
+                <span className="text-gray-400">失效条件：</span>{card.trace.if_wrong}
+              </div>
+            </div>
+
+            {/* Footer —— 下一张卡 + 呈报人 */}
+            <div className="flex items-center justify-between pt-3 border-t border-gray-800">
+              <div className="text-xs text-gray-500">
+                <span className="text-gray-400">下一张：</span>{card.footer.next_card}
+              </div>
+              <div className="text-xs text-amber-500/70 italic">{card.footer.author}</div>
+            </div>
+          </div>
+        ) : isLoading ? (
+          <div className="p-12 flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
+            <div className="text-sm text-gray-400">锦衣卫正在调取全市场行情并呈报{active === 'morning' ? '晨报' : '复盘'}卡...</div>
+          </div>
+        ) : (
+          <div className="p-12 flex flex-col items-center justify-center gap-3">
+            <Clock className="w-8 h-8 text-gray-600" />
+            <div className="text-sm text-gray-500">点击上方时点生成卡片</div>
+          </div>
+        )}
+      </div>
+
+      {/* 刷新按钮 */}
+      {card && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => fetchCard(active)}
+            disabled={isLoading}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm font-medium shadow-lg transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            重新呈报{active === 'morning' ? '晨报卡' : '复盘卡'}
+          </button>
+        </div>
+      )}
+
+      {/* 方法论说明 */}
+      <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 leading-relaxed">
+        <div className="font-semibold text-gray-600 dark:text-gray-300 mb-2">📌 三套方法论融合</div>
+        <div>• <b>通达信爆款四要素</b>：听得懂(style_tag) + 看得到(snapshot) + 可追踪(trace) + 有边界(risk)</div>
+        <div>• <b>Coze 复盘排版</b>：主题先行 + 多模块编号 + 关键数据加粗 + 可执行建议</div>
+        <div>• <b>A股配色</b>：涨红 #f85149 / 跌绿 #3fb950 / 深色底 #0b0e11（模拟锦衣卫夜行卷轴）</div>
+        <div className="mt-1 text-gray-400">数据源：AKShare 全市场实时行情 + AGNES LLM agnes-2.0-flash 生成主线/风险</div>
+      </div>
+    </div>
+  );
+}
+
 export default InvestmentResearchPage;
