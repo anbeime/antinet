@@ -14,6 +14,10 @@ function getPlugins() {
 export default defineConfig({
   plugins: getPlugins(),
   server: {
+    watch: {
+      usePolling: true,
+      interval: 1000,
+    },
     proxy: {
       '/cdn': {
         target: 'https://cdn.jsdelivr.net',
