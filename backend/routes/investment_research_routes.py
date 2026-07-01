@@ -20,6 +20,8 @@ try:
         get_real_company_price,
         call_agnes_llm,
         call_agnes_llm_json,
+        search_all_stocks,
+        fetch_company_profile,
         USE_REAL_DATA,
     )
     _REAL_DATA_READY = True
@@ -38,6 +40,12 @@ except Exception as _e:
         return None
 
     def call_agnes_llm_json(*a, **kw):
+        return None
+
+    def search_all_stocks(*a, **kw):
+        return []
+
+    def fetch_company_profile(*a, **kw):
         return None
 
 router = APIRouter(prefix="/api/investment-research", tags=["投研场景"])
@@ -640,17 +648,52 @@ async def list_companies(
 
 @router.get("/companies/{code}", response_model=CompanyProfile)
 async def get_company(code: str):
-    """单个公司详情（含真实最新价覆盖）"""
+    """
+    单个公司详情
+
+    数据源策略：
+    1. 优先在演示 _COMPANIES 中找（含完整评级/目标价/行业等富信息）
+    2. 找不到则调用 fetch_company_profile 拉取 A 股全市场任意股票档案
+    3. 都失败则 404
+    """
     company = next((c for c in _COMPANIES if c["code"] == code), None)
-    if not company:
-        raise HTTPException(status_code=404, detail="公司不存在")
-    enriched = dict(company)
+    if company:
+        enriched = dict(company)
+        if USE_REAL_DATA:
+            real_price = get_real_company_price(code)
+            if real_price:
+                enriched["current_price"] = real_price["current_price"]
+                enriched["change_pct"] = real_price["change_pct"]
+        return enriched
+
+    # 演示数据找不到 → 尝试全市场拉取
     if USE_REAL_DATA:
-        real_price = get_real_company_price(code)
-        if real_price:
-            enriched["current_price"] = real_price["current_price"]
-            enriched["change_pct"] = real_price["change_pct"]
-    return enriched
+        profile = fetch_company_profile(code)
+        if profile:
+            return CompanyProfile(**profile)
+
+    raise HTTPException(status_code=404, detail=f"公司 {code} 不存在且无法从全市场获取")
+
+
+@router.get("/stocks/search")
+async def search_stocks(keyword: str, limit: int = 20):
+    """
+    A 股全市场股票搜索（AKShare 新浪源，5500+ 只股票）
+
+    :param keyword: 公司名 / 代码片段（如 "平安"、"招商"、"600036"）
+    :param limit: 最多返回条数（默认 20）
+    :return: {keyword, total, results: [{code, sina_code, name, price, change_pct}]}
+    """
+    if not keyword.strip():
+        raise HTTPException(status_code=400, detail="搜索关键词不能为空")
+    limit = max(1, min(limit, 50))
+    results = search_all_stocks(keyword, limit=limit) if USE_REAL_DATA else []
+    return {
+        "keyword": keyword,
+        "total": len(results),
+        "source": "akshare_sina" if results else "none",
+        "results": results,
+    }
 
 
 @router.get("/reports", response_model=List[ResearchReport])
@@ -1364,7 +1407,17 @@ async def generate_ai_brief(req: AIBriefRequest):
     opportunities = _match_opportunities(kw)
     risks = _match_risks(kw)
 
-    # 兜底：如果完全没匹配，用全量数据生成通用简报
+    # === 全市场兜底：演示数据没匹配到 → 用 AKShare 全市场搜索 ===
+    if not companies and USE_REAL_DATA:
+        # 把关键词当作股票名/代码搜索全市场
+        market_results = search_all_stocks(req.query, limit=3)
+        if market_results:
+            for s in market_results[:2]:  # 最多取 2 只
+                profile = fetch_company_profile(s["code"])
+                if profile:
+                    companies.append(profile)
+
+    # 仍无任何匹配 → 用全量演示数据生成通用简报
     if not companies and not reports and not opportunities and not risks:
         companies = _COMPANIES[:3]
         reports = _REPORTS[:2]
@@ -2004,14 +2057,22 @@ async def get_company_technicals(code: str, days: int = 60):
     支撑压力位、3 天走势预测与操作建议。
 
     数据源策略（优先真实 → 失败回退模拟）：
-    1. AKShare 新浪日 K 线（前复权，免 Token）—— 真实历史数据
+    1. AKShare 新浪日 K 线（前复权，免 Token）—— 真实历史数据，支持任意 A 股股票
     2. 失败时回退到 _gen_klines 确定性生成器 —— 模拟数据
 
+    支持 A 股全市场任意股票（不仅限于 _COMPANIES 中的 12 只演示股票）。
     参考 anbeime/skill 仓库的 stock-analysis 与 finance-mcp 能力。
     """
+    # 先在演示 _COMPANIES 找；找不到则尝试全市场拉取档案
     company = next((c for c in _COMPANIES if c["code"] == code), None)
     if not company:
-        raise HTTPException(status_code=404, detail="公司不存在")
+        # 全市场拉取任意股票档案
+        if USE_REAL_DATA:
+            profile = fetch_company_profile(code)
+            if profile:
+                company = profile
+        if not company:
+            raise HTTPException(status_code=404, detail=f"公司 {code} 不存在且无法从全市场获取")
 
     days = max(30, min(days, 120))
 

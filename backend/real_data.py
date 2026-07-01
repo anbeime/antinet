@@ -261,6 +261,161 @@ def call_agnes_llm_json(prompt: str, system_prompt: str = "") -> Optional[Dict[s
 
 
 # ============================================================
+# 全市场股票搜索 + 任意公司档案
+# ============================================================
+_all_stocks_cache: Optional[Tuple[float, List[Dict[str, Any]]]] = None
+ALL_STOCKS_CACHE_TTL = 600  # 全市场列表缓存 10 分钟
+
+
+def _parse_sina_code(raw_code: str) -> Optional[Tuple[str, str, str]]:
+    """
+    解析新浪源代码字段（如 'sh600519' / 'sz000001' / 'bj920000'）。
+
+    :return: (sina_code, display_code, market) 或 None（不支持的市场）
+        - sina_code: 'sh600519'（用于 ak.stock_zh_a_daily）
+        - display_code: '600519.SH'（用于演示数据格式兼容）
+        - market: 'sh' / 'sz' / 'bj'
+    """
+    raw = raw_code.strip().lower()
+    if len(raw) < 4:
+        return None
+    market = raw[:2]
+    num = raw[2:]
+    if market not in ("sh", "sz", "bj"):
+        return None
+    if not num.isdigit():
+        return None
+    if market == "bj":
+        return None  # 北交所暂不支持（sina 源拉不到 K 线）
+    display_code = num + "." + market.upper()
+    return (raw, display_code, market)
+
+
+def _load_all_stocks() -> Optional[List[Dict[str, Any]]]:
+    """
+    加载 A 股全市场股票列表（新浪源 stock_zh_a_spot，含 5500+ 只股票）。
+    返回统一字段：[{code, name, price, change_pct, sina_code}, ...]
+    """
+    global _all_stocks_cache
+    if not USE_REAL_DATA:
+        return None
+    cached = _all_stocks_cache
+    if cached and cached[0] > time.time():
+        return cached[1]
+    try:
+        import akshare as ak
+        df = ak.stock_zh_a_spot()
+        if df is None or len(df) == 0:
+            return None
+        stocks: List[Dict[str, Any]] = []
+        for _, row in df.iterrows():
+            raw_code = str(row.get("代码", "")).strip()
+            name = str(row.get("名称", "")).strip()
+            if not raw_code or not name:
+                continue
+            # 过滤 ST、*ST、新股（N 开头）
+            if name.startswith(("ST", "*ST", "N")):
+                continue
+            parsed = _parse_sina_code(raw_code)
+            if not parsed:
+                continue  # 不支持的市场（如 bj）
+            sina_code, display_code, market = parsed
+            try:
+                price = float(row.get("最新价", 0) or 0)
+            except (TypeError, ValueError):
+                price = 0.0
+            try:
+                chg = float(row.get("涨跌幅", 0) or 0)
+            except (TypeError, ValueError):
+                chg = 0.0
+            stocks.append({
+                "code": display_code,
+                "sina_code": sina_code,
+                "name": name,
+                "price": price,
+                "change_pct": chg,
+            })
+        _all_stocks_cache = (time.time() + ALL_STOCKS_CACHE_TTL, stocks)
+        logger.info(f"[真实数据] 全市场股票列表加载 {len(stocks)} 只")
+        return stocks
+    except Exception as e:
+        logger.warning(f"_load_all_stocks 失败: {type(e).__name__} {str(e)[:200]}")
+        return None
+
+
+def search_all_stocks(keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """
+    在 A 股全市场搜索股票（按名称或代码模糊匹配）。
+
+    :param keyword: 搜索关键词（公司名/拼音/代码片段）
+    :param limit: 最多返回条数
+    :return: [{code, sina_code, name, price, change_pct}, ...]
+    """
+    if not USE_REAL_DATA:
+        return []
+    kw = keyword.strip().lower()
+    if not kw or len(kw) < 1:
+        return []
+    all_stocks = _load_all_stocks()
+    if not all_stocks:
+        return []
+    matched = []
+    for s in all_stocks:
+        # 优先名称包含 / 代码包含
+        if kw in s["name"].lower() or kw in s["code"].lower() or kw in s["sina_code"]:
+            matched.append(s)
+            if len(matched) >= limit:
+                break
+    return matched
+
+
+def fetch_company_profile(code: str) -> Optional[Dict[str, Any]]:
+    """
+    拉取任意 A 股公司的最小档案（用于不在 _COMPANIES 演示列表中的股票）。
+
+    :return: {code, name, sector, current_price, change_pct, market_cap, ...} 或 None
+    """
+    if not USE_REAL_DATA:
+        return None
+    sina_code = _normalize_code(code)
+    # 名称从全市场列表找
+    all_stocks = _load_all_stocks()
+    name = code
+    if all_stocks:
+        for s in all_stocks:
+            if s["sina_code"] == sina_code or s["code"].upper() == code.upper():
+                name = s["name"]
+                break
+    # 实时价
+    price_info = get_real_company_price(code)
+    if not price_info:
+        return None
+    return {
+        "code": code.upper() if "." in code else _to_display_code(sina_code),
+        "name": name,
+        "sector": "其他",  # 全市场数据无行业字段，默认"其他"
+        "market_cap": "—",
+        "current_price": price_info["current_price"],
+        "change_pct": price_info["change_pct"],
+        "pe_ratio": None,
+        "pb_ratio": None,
+        "rating": "中性",  # 未在演示评级体系中的股票默认中性
+        "target_price": None,
+        "tags": ["全市场"],
+        "summary": f"{name}（{code}）— 数据来源：AKShare 新浪实时行情",
+    }
+
+
+def _to_display_code(sina_code: str) -> str:
+    """sh600519 → 600519.SH"""
+    if sina_code.startswith("sh"):
+        return sina_code[2:] + ".SH"
+    if sina_code.startswith("sz"):
+        return sina_code[2:] + ".SZ"
+    return sina_code.upper()
+
+
+# ============================================================
 # 调试入口
 # ============================================================
 if __name__ == "__main__":
