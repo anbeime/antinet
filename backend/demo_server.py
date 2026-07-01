@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
-锦衣卫投研卡片 - Demo Server (公众号版)
+锦衣卫投研卡片 - Demo Server (公众号版 - AKShare真实数据)
 提供 /api/investment-research/cards/review 复盘卡端点
-参考: https://www.coze.cn/s/k8FI3r3CRes/
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
-import random
+import akshare as ak
+import pandas as pd
+import logging
 
-app = FastAPI(title="锦衣卫投研卡片 Demo Server - 公众号版")
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="锦衣卫投研卡片 - AKShare真实数据版")
 
 # CORS 配置
 app.add_middleware(
@@ -21,124 +26,283 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def generate_public_account_review_card():
-    """生成公众号版复盘卡数据"""
-    now = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    
-    # 模拟指数数据
-    indices = [
-        {"name": "上证指数", "code": "SH000001", "close": round(random.uniform(4080, 4150), 2), "change": round(random.uniform(-0.5, 1.2), 2), "volume": round(random.uniform(15000, 18000), 0)},
-        {"name": "深证成指", "code": "SZ399001", "close": round(random.uniform(15800, 16500), 2), "change": round(random.uniform(-1.5, 0.5), 2), "volume": round(random.uniform(18000, 21000), 0)},
-        {"name": "创业板指", "code": "SZ399006", "close": round(random.uniform(4200, 4400), 2), "change": round(random.uniform(-2.5, 0.5), 2), "volume": round(random.uniform(9000, 11000), 0)},
-        {"name": "科创50", "code": "SH000688", "close": round(random.uniform(2100, 2200), 2), "change": round(random.uniform(-3.0, 0.5), 2), "volume": round(random.uniform(2000, 2500), 0)},
-        {"name": "沪深300", "code": "SH000300", "close": round(random.uniform(4900, 5100), 2), "change": round(random.uniform(-1.0, 0.5), 2), "volume": round(random.uniform(10000, 12000), 0)},
-        {"name": "中证500", "code": "SH000905", "close": round(random.uniform(8900, 9200), 2), "change": round(random.uniform(-0.5, 1.0), 2), "volume": round(random.uniform(7000, 8000), 0)},
-        {"name": "中证1000", "code": "SH000852", "close": round(random.uniform(8700, 9000), 2), "change": round(random.uniform(-0.3, 1.2), 2), "volume": round(random.uniform(7000, 8500), 0)},
-        {"name": "北证50", "code": "BJ899050", "close": round(random.uniform(1200, 1300), 2), "change": round(random.uniform(-0.5, 2.0), 2), "volume": round(random.uniform(200, 300), 0)},
-    ]
-    
-    # 计算剪刀差
-    sh_change = indices[0]["change"]
-    kcb_change = indices[3]["change"]
-    scissors_diff = round(sh_change - kcb_change, 2)
-    
-    # 全市场个股数据
-    total_stocks = 5513
-    up_count = random.randint(3500, 4500)
-    down_count = total_stocks - up_count - random.randint(30, 100)
-    flat_count = total_stocks - up_count - down_count
-    
-    limit_up = random.randint(150, 250)
-    limit_down = random.randint(10, 30)
-    net_limit_up = limit_up - limit_down
-    
-    # 涨停梯队
-    first_board = random.randint(100, 150)
-    second_board = random.randint(15, 30)
-    third_board = random.randint(3, 8)
-    fourth_plus = random.randint(0, 3)
-    
-    # 行业主线
-    industry_themes = [
-        {
-            "name": "氟化工 + PVDF",
-            "change": round(random.uniform(8, 10), 2),
-            "leaders": ["多氟多", "中矿资源", "阳谷华泰"],
-            "logic": "制冷剂第三代新一轮涨价 + 磷酸铁锂粘结剂 PVDF 补库预期"
-        },
-        {
-            "name": "农业养殖",
-            "change": round(random.uniform(6, 8), 2),
-            "leaders": ["益生股份", "朗源股份"],
-            "logic": "夏秋 CPI 反弹预期 + 生猪供给收缩自我强化，资金抱团低估值+抗通胀组合"
-        },
-        {
-            "name": "保险",
-            "change": round(random.uniform(6, 8), 2),
-            "leaders": ["中国人寿"],
-            "logic": "预期利率上行 + 保险举牌高股息的独立逻辑"
+def get_real_market_data():
+    """获取AKShare真实市场数据"""
+    try:
+        # 1. 获取A股全市场实时行情
+        logger.info("获取A股实时行情...")
+        stock_df = ak.stock_zh_a_spot_em()
+        
+        # 计算涨跌家数
+        up_count = len(stock_df[stock_df['涨跌幅'] > 0])
+        down_count = len(stock_df[stock_df['涨跌幅'] < 0])
+        flat_count = len(stock_df[stock_df['涨跌幅'] == 0])
+        total_stocks = len(stock_df)
+        
+        # 涨停跌停（A股涨停约9.9%，跌停约-9.9%，ST股约5%）
+        limit_up = len(stock_df[stock_df['涨跌幅'] >= 9.5])
+        limit_down = len(stock_df[stock_df['涨跌幅'] <= -9.5])
+        net_limit_up = limit_up - limit_down
+        
+        # 涨幅超5%
+        over_5pct = len(stock_df[stock_df['涨跌幅'] >= 5])
+        
+        # 平均涨幅
+        avg_change = round(stock_df['涨跌幅'].mean(), 2)
+        
+        # 涨跌幅榜TOP5
+        top_gainers_df = stock_df.nlargest(5, '涨跌幅')[['代码', '名称', '涨跌幅', '最新价', '成交额']]
+        top_gainers = []
+        for _, row in top_gainers_df.iterrows():
+            # 判断行业（简化处理）
+            industry = guess_industry(row['名称'])
+            top_gainers.append({
+                "name": row['名称'],
+                "code": row['代码'],
+                "change": round(row['涨跌幅'], 2),
+                "price": round(row['最新价'], 2),
+                "industry": industry
+            })
+        
+        top_losers_df = stock_df.nsmallest(5, '涨跌幅')[['代码', '名称', '涨跌幅', '最新价', '成交额']]
+        top_losers = []
+        for _, row in top_losers_df.iterrows():
+            industry = guess_industry(row['名称'])
+            top_losers.append({
+                "name": row['名称'],
+                "code": row['代码'],
+                "change": round(row['涨跌幅'], 2),
+                "price": round(row['最新价'], 2),
+                "industry": industry
+            })
+        
+        # 2. 获取主要指数行情
+        logger.info("获取指数行情...")
+        indices = get_indices_data()
+        
+        # 计算剪刀差
+        sh_change = 0.0
+        kcb_change = 0.0
+        for idx in indices:
+            if idx['name'] == '上证指数':
+                sh_change = idx['change']
+            if idx['name'] == '科创50':
+                kcb_change = idx['change']
+        scissors_diff = round(sh_change - kcb_change, 2)
+        
+        # 3. 获取行业板块涨幅榜
+        logger.info("获取行业板块...")
+        industry_themes = get_industry_themes()
+        
+        # 4. 涨停梯队分析
+        logger.info("分析涨停梯队...")
+        limit_up_stocks = stock_df[stock_df['涨跌幅'] >= 9.5].copy()
+        limit_up_structure = analyze_limit_up_structure(limit_up_stocks)
+        
+        # 5. 判断情绪和生成标题
+        sentiment, headline = determine_sentiment(
+            scissors_diff, sh_change, kcb_change, 
+            up_count, down_count, limit_up, limit_down,
+            indices[0]['volume'] if indices else 0
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "indices": indices,
+                "scissors_diff": scissors_diff,
+                "total_stocks": total_stocks,
+                "up_count": up_count,
+                "down_count": down_count,
+                "flat_count": flat_count,
+                "up_down_ratio": round(up_count / down_count, 2) if down_count > 0 else 0,
+                "limit_up": limit_up,
+                "limit_down": limit_down,
+                "net_limit_up": net_limit_up,
+                "over_5pct": over_5pct,
+                "avg_change": avg_change,
+                "top_gainers": top_gainers,
+                "top_losers": top_losers,
+                "industry_themes": industry_themes,
+                "limit_up_structure": limit_up_structure,
+                "sentiment": sentiment,
+                "headline": headline,
+            }
         }
-    ]
+        
+    except Exception as e:
+        logger.error(f"获取数据失败: {e}")
+        return {"success": False, "error": str(e)}
+
+def get_indices_data():
+    """获取主要指数数据"""
+    try:
+        # 目标指数代码
+        target_indices = {
+            '上证指数': 'sh000001',
+            '深证成指': 'sz399001',
+            '创业板指': 'sz399006',
+            '科创50': 'sh000688',
+            '沪深300': 'sh000300',
+            '中证500': 'sh000905',
+            '中证1000': 'sh000852',
+            '北证50': 'bj899050',
+        }
+        
+        indices = []
+        
+        # 获取上证系列指数
+        try:
+            sh_df = ak.stock_zh_index_spot_em(symbol="上证系列指数")
+            for name, code in target_indices.items():
+                if code.startswith('sh'):
+                    match = sh_df[sh_df['代码'] == code[2:]]  # 去掉sh前缀
+                    if len(match) > 0:
+                        row = match.iloc[0]
+                        indices.append({
+                            "name": name,
+                            "code": code,
+                            "close": round(float(row['最新价']), 2),
+                            "change": round(float(row['涨跌幅']), 2),
+                            "volume": round(float(row['成交额']) / 1e8, 0) if pd.notna(row['成交额']) else 0,
+                        })
+        except Exception as e:
+            logger.warning(f"上证指数获取失败: {e}")
+        
+        # 获取深证系列指数
+        try:
+            sz_df = ak.stock_zh_index_spot_em(symbol="深证系列指数")
+            for name, code in target_indices.items():
+                if code.startswith('sz'):
+                    match = sz_df[sz_df['代码'] == code[2:]]
+                    if len(match) > 0:
+                        row = match.iloc[0]
+                        indices.append({
+                            "name": name,
+                            "code": code,
+                            "close": round(float(row['最新价']), 2),
+                            "change": round(float(row['涨跌幅']), 2),
+                            "volume": round(float(row['成交额']) / 1e8, 0) if pd.notna(row['成交额']) else 0,
+                        })
+        except Exception as e:
+            logger.warning(f"深证指数获取失败: {e}")
+        
+        # 北证50
+        try:
+            bj_df = ak.stock_zh_index_spot_em(symbol="北证系列指数")
+            match = bj_df[bj_df['代码'] == '899050']
+            if len(match) > 0:
+                row = match.iloc[0]
+                indices.append({
+                    "name": "北证50",
+                    "code": "bj899050",
+                    "close": round(float(row['最新价']), 2),
+                    "change": round(float(row['涨跌幅']), 2),
+                    "volume": round(float(row['成交额']) / 1e8, 0) if pd.notna(row['成交额']) else 0,
+                })
+        except Exception as e:
+            logger.warning(f"北证指数获取失败: {e}")
+        
+        # 按预设顺序排序
+        ordered = []
+        for name in ['上证指数', '深证成指', '创业板指', '科创50', '沪深300', '中证500', '中证1000', '北证50']:
+            for idx in indices:
+                if idx['name'] == name:
+                    ordered.append(idx)
+                    break
+        
+        return ordered
+        
+    except Exception as e:
+        logger.error(f"指数数据获取失败: {e}")
+        return []
+
+def get_industry_themes():
+    """获取行业板块涨幅榜"""
+    try:
+        # 获取行业板块行情
+        sector_df = ak.stock_board_industry_spot_em()
+        
+        # 取涨幅TOP10
+        top_sectors = sector_df.nlargest(10, '涨跌幅')
+        
+        themes = []
+        for _, row in top_sectors.head(3).iterrows():
+            sector_name = row['板块名称']
+            sector_change = round(float(row['涨跌幅']), 2)
+            
+            # 尝试获取板块领涨股
+            leaders = []
+            try:
+                detail_df = ak.stock_board_industry_cons_em(symbol=sector_name)
+                leader_df = detail_df.nlargest(3, '涨跌幅')
+                for _, lr in leader_df.iterrows():
+                    leaders.append(lr['名称'])
+            except:
+                pass
+            
+            themes.append({
+                "name": sector_name,
+                "change": sector_change,
+                "leaders": leaders[:3] if leaders else [],
+                "logic": f"板块涨幅{sector_change}%，资金轮动热点"
+            })
+        
+        return themes
+        
+    except Exception as e:
+        logger.warning(f"行业板块获取失败: {e}")
+        return []
+
+def analyze_limit_up_structure(limit_up_df):
+    """分析涨停梯队结构"""
+    total = len(limit_up_df)
     
-    # 涨跌幅榜
-    top_gainers = [
-        {"name": "多氟多", "code": "002407.SZ", "change": round(random.uniform(18, 22), 2), "industry": "氟化工"},
-        {"name": "朗源股份", "code": "300175.SZ", "change": round(random.uniform(18, 21), 2), "industry": "农业"},
-        {"name": "益生股份", "code": "002458.SZ", "change": round(random.uniform(15, 20), 2), "industry": "养殖"},
-        {"name": "中国人寿", "code": "601628.SH", "change": round(random.uniform(6, 10), 2), "industry": "保险"},
-        {"name": "中矿资源", "code": "002738.SZ", "change": round(random.uniform(18, 21), 2), "industry": "氟化工"},
-    ]
+    # 简化处理：无法直接判断连板数，返回估算
+    # 实际连板需要历史数据对比
+    first_board = int(total * 0.65)  # 约65%首板
+    second_board = int(total * 0.2)  # 约20%二板
+    third_board = int(total * 0.1)   # 约10%三板
+    fourth_plus = total - first_board - second_board - third_board
     
-    top_losers = [
-        {"name": "阳光电源", "code": "300274.SZ", "change": round(random.uniform(-15, -8), 2), "industry": "光伏"},
-        {"name": "欧林生物", "code": "688319.SH", "change": round(random.uniform(-12, -6), 2), "industry": "生物医药"},
-        {"name": "卡倍亿", "code": "300863.SZ", "change": round(random.uniform(-18, -10), 2), "industry": "新能源"},
-        {"name": "恒运昌", "code": "688785.SH", "change": round(random.uniform(-12, -6), 2), "industry": "科创板"},
-        {"name": "宁德时代", "code": "300750.SZ", "change": round(random.uniform(-5, -2), 2), "industry": "锂电池"},
-    ]
+    return {
+        "total": total,
+        "first_board": max(0, first_board),
+        "second_board": max(0, second_board),
+        "third_board": max(0, third_board),
+        "fourth_plus": max(0, fourth_plus),
+        "analysis": "涨停梯队结构分析（估算）"
+    }
+
+def guess_industry(name):
+    """根据股票名称猜测行业"""
+    industry_map = {
+        '氟': '氟化工',
+        '锂': '锂电池',
+        '矿': '矿业',
+        '药': '医药',
+        '生物': '生物医药',
+        '养': '养殖',
+        '农': '农业',
+        '保': '保险',
+        '券': '券商',
+        '银': '银行',
+        '光': '光伏',
+        '电': '电力',
+        '芯': '芯片',
+        '科': '科技',
+    }
+    for key, ind in industry_map.items():
+        if key in name:
+            return ind
+    return '其他'
+
+def determine_sentiment(scissors_diff, sh_change, kcb_change, up_count, down_count, limit_up, limit_down, total_volume):
+    """判断市场情绪和生成标题"""
     
-    # 量化回测数据
-    backtest_samples = [
-        {"date": "2022-02-08", "next_sh": 0.80, "next_zz1000": 1.85, "next_kcb50": 0.53},
-        {"date": "2022-04-06", "next_sh": -1.36, "next_zz1000": -2.11, "next_kcb50": -2.14},
-        {"date": "2022-06-14", "next_sh": 0.50, "next_zz1000": -0.20, "next_kcb50": -0.72},
-        {"date": "2023-05-04", "next_sh": -0.48, "next_zz1000": -1.19, "next_kcb50": -1.40},
-        {"date": "2024-01-26", "next_sh": -0.90, "next_zz1000": -2.60, "next_kcb50": -2.75},
-        {"date": "2024-10-10", "next_sh": -2.53, "next_zz1000": -4.19, "next_kcb50": -5.79},
-        {"date": "2024-10-16", "next_sh": -1.02, "next_zz1000": -0.31, "next_kcb50": 0.39},
-        {"date": "2026-01-29", "next_sh": -0.87, "next_zz1000": -0.90, "next_kcb50": 0.13},
-    ]
-    
-    # 计算胜率
-    sh_win_rate = sum(1 for s in backtest_samples if s["next_sh"] > 0) / len(backtest_samples) * 100
-    zz1000_win_rate = sum(1 for s in backtest_samples if s["next_zz1000"] > 0) / len(backtest_samples) * 100
-    kcb50_win_rate = sum(1 for s in backtest_samples if s["next_kcb50"] > 0) / len(backtest_samples) * 100
-    
-    avg_sh_next = round(sum(s["next_sh"] for s in backtest_samples) / len(backtest_samples), 2)
-    avg_zz1000_next = round(sum(s["next_zz1000"] for s in backtest_samples) / len(backtest_samples), 2)
-    avg_kcb50_next = round(sum(s["next_kcb50"] for s in backtest_samples) / len(backtest_samples), 2)
-    
-    # 策略建议
-    strategies = [
-        {"title": "仓位管理", "content": "明日不加仓、不追高。今日高标止步3板，情绪并非极度亢奋，但广度赚钱效应会诱导追涨盘——历史上这种日子的次日常见结构是\"高开低走 → 尾盘绿盘\"。"},
-        {"title": "持仓处理", "content": "手上已有的养殖/保险/氟化工首板股，明日盯放量炸板——3连板板块（氟化工）若继续封板可持有；一旦分歧就减半仓。"},
-        {"title": "风险规避", "content": "科创板不宜抄底——回测显示5日胜率仅25%，且2024-10-10那次单日-5.79%的极端案例仍在近月记忆里。"},
-        {"title": "观察窗口", "content": "明日重点看上证能否守住4100整数关口 + 涨停家数能否维持150家以上。若两者同破，本轮分歧应视为顶部信号而非中继信号。"},
-    ]
-    
-    # 风险提示
-    risk_warnings = [
-        "本文数据来源：AKShare 实时行情接口，仅供研究复盘",
-        "量化回测样本量仅8个，存在小样本统计噪声，不构成任何买卖建议",
-        "A股极端行情下历史规律可能失效，实盘前请自行验证并做好止损纪律",
-        "投资有风险，入市需谨慎",
-    ]
-    
-    # 判断情绪
-    if scissors_diff >= 2.5 and sh_change > 0:
+    if scissors_diff >= 2.5 and sh_change > 0 and kcb_change < 0:
         sentiment = "极致分化"
-        headline = f"{round(indices[0]['volume'] + indices[1]['volume'] + indices[2]['volume'], 0)}万亿\"分裂日\"：科创50跌{abs(kcb_change)}%｜涨停{limit_up}家"
+        headline = f"{int(total_volume)}万亿\"分裂日\"：科创50跌{abs(kcb_change):.1f}%｜涨停{limit_up}家"
     elif up_count > down_count * 2:
         sentiment = "偏多"
         headline = f"多头占优：涨跌比{up_count}:{down_count}｜涨停{limit_up}家"
@@ -149,43 +313,89 @@ def generate_public_account_review_card():
         sentiment = "震荡"
         headline = f"震荡分化：涨跌比{up_count}:{down_count}｜剪刀差{scissors_diff}%"
     
-    return {
+    return sentiment, headline
+
+def get_backtest_data():
+    """获取量化回测历史数据（预设）"""
+    return [
+        {"date": "2022-02-08", "next_sh": 0.80, "next_zz1000": 1.85, "next_kcb50": 0.53},
+        {"date": "2022-04-06", "next_sh": -1.36, "next_zz1000": -2.11, "next_kcb50": -2.14},
+        {"date": "2022-06-14", "next_sh": 0.50, "next_zz1000": -0.20, "next_kcb50": -0.72},
+        {"date": "2023-05-04", "next_sh": -0.48, "next_zz1000": -1.19, "next_kcb50": -1.40},
+        {"date": "2024-01-26", "next_sh": -0.90, "next_zz1000": -2.60, "next_kcb50": -2.75},
+        {"date": "2024-10-10", "next_sh": -2.53, "next_zz1000": -4.19, "next_kcb50": -5.79},
+        {"date": "2024-10-16", "next_sh": -1.02, "next_zz1000": -0.31, "next_kcb50": 0.39},
+        {"date": "2026-01-29", "next_sh": -0.87, "next_zz1000": -0.90, "next_kcb50": 0.13},
+    ]
+
+@app.get("/")
+async def root():
+    return {"message": "锦衣卫投研卡片运行中 (AKShare真实数据)", "port": 8000, "data_source": "AKShare"}
+
+@app.get("/api/investment-research/cards/review")
+async def get_review_card():
+    """获取复盘卡 - AKShare真实数据"""
+    now = datetime.now()
+    
+    # 获取真实市场数据
+    market_result = get_real_market_data()
+    
+    if not market_result["success"]:
+        # 返回错误信息
+        return {
+            "header": {
+                "title": "数据获取失败",
+                "date": now.strftime("%Y-%m-%d"),
+                "error": market_result["error"]
+            },
+            "meta": {
+                "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+                "data_source": "AKShare (获取失败)"
+            }
+        }
+    
+    data = market_result["data"]
+    
+    # 量化回测数据
+    backtest_samples = get_backtest_data()
+    sh_win_rate = sum(1 for s in backtest_samples if s["next_sh"] > 0) / len(backtest_samples) * 100
+    zz1000_win_rate = sum(1 for s in backtest_samples if s["next_zz1000"] > 0) / len(backtest_samples) * 100
+    kcb50_win_rate = sum(1 for s in backtest_samples if s["next_kcb50"] > 0) / len(backtest_samples) * 100
+    avg_sh_next = round(sum(s["next_sh"] for s in backtest_samples) / len(backtest_samples), 2)
+    avg_zz1000_next = round(sum(s["next_zz1000"] for s in backtest_samples) / len(backtest_samples), 2)
+    avg_kcb50_next = round(sum(s["next_kcb50"] for s in backtest_samples) / len(backtest_samples), 2)
+    
+    # 构建复盘卡
+    card = {
         "header": {
-            "title": headline,
-            "subtitle": f"{backtest_samples[0]['date']}样本回测胜率仅{int(sh_win_rate)}%，明日谨防补跌",
-            "date": date_str,
+            "title": data["headline"],
+            "subtitle": f"历史回测胜率仅{int(sh_win_rate)}%，明日谨防补跌",
+            "date": now.strftime("%Y-%m-%d"),
             "weekday": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][now.weekday()],
             "data_source": "AKShare 实时行情",
-            "confidence": round(random.uniform(0.6, 0.85), 2),
-            "sentiment": sentiment,
+            "sentiment": data["sentiment"],
         },
         "body": {
-            "summary": f"今日A股上演经典\"三层撕裂\"剧本：上证红、科创绿、个股欢。上证与科创50剪刀差扩大到+{scissors_diff}%，创近3.5年新高。",
+            "summary": f"今日A股{data['sentiment']}：涨跌比{data['up_count']}:{data['down_count']}，涨停{data['limit_up']}家，跌停{data['limit_down']}家。",
             "market_snapshot": {
-                "indices": indices,
-                "scissors_diff": scissors_diff,
-                "total_volume": round(sum(i["volume"] for i in indices[:2]), 0),
-                "total_stocks": total_stocks,
-                "up_count": up_count,
-                "down_count": down_count,
-                "flat_count": flat_count,
-                "up_down_ratio": round(up_count / down_count, 2),
-                "limit_up": limit_up,
-                "limit_down": limit_down,
-                "net_limit_up": net_limit_up,
-                "over_5pct_count": random.randint(600, 900),
+                "indices": data["indices"],
+                "scissors_diff": data["scissors_diff"],
+                "total_volume": sum(idx['volume'] for idx in data['indices'][:2]) if data['indices'] else 0,
+                "total_stocks": data["total_stocks"],
+                "up_count": data["up_count"],
+                "down_count": data["down_count"],
+                "flat_count": data["flat_count"],
+                "up_down_ratio": data["up_down_ratio"],
+                "limit_up": data["limit_up"],
+                "limit_down": data["limit_down"],
+                "net_limit_up": data["net_limit_up"],
+                "over_5pct_count": data["over_5pct"],
+                "avg_change": data["avg_change"],
             },
-            "industry_themes": industry_themes,
-            "limit_up_structure": {
-                "total": limit_up,
-                "first_board": first_board,
-                "second_board": second_board,
-                "third_board": third_board,
-                "fourth_plus": fourth_plus,
-                "analysis": "\"广度赚钱效应爆表 + 深度接力被砸\"的典型格局。资金选择在场内做大幅轮动而非接力打高，说明短线资金对上方阻力位仍心存戒备。",
-            },
-            "top_gainers": top_gainers,
-            "top_losers": top_losers,
+            "industry_themes": data["industry_themes"],
+            "limit_up_structure": data["limit_up_structure"],
+            "top_gainers": data["top_gainers"],
+            "top_losers": data["top_losers"],
         },
         "quant": {
             "signal": "上证收涨 + 上证与科创50剪刀差 ≥ 2.5%",
@@ -199,35 +409,36 @@ def generate_public_account_review_card():
                 "avg_zz1000_next": avg_zz1000_next,
                 "avg_kcb50_next": avg_kcb50_next,
             },
-            "conclusion": f"过去3.5年出现\"大小盘剪刀差≥2.5%且上证收涨\"的极致分化日之后，次日三大指数胜率全部低于40%：上证{int(sh_win_rate)}%（平均{avg_sh_next}%）、中证1000仅{int(zz1000_win_rate)}%（平均{avg_zz1000_next}%）、科创50{int(kcb50_win_rate)}%（平均{avg_kcb50_next}%）。方向一致偏空——分歧日之后，往往紧跟\"补跌日\"。",
+            "conclusion": f"过去3.5年\"剪刀差≥2.5%且上证收涨\"后，次日胜率：上证{int(sh_win_rate)}%、中证1000{int(zz1000_win_rate)}%、科创50{int(kcb50_win_rate)}%。",
         },
-        "strategy": strategies,
-        "risk": risk_warnings,
+        "strategy": [
+            {"title": "仓位管理", "content": "明日不加仓、不追高。分歧日之后常见\"高开低走\"结构。"},
+            {"title": "持仓处理", "content": "持有强势板块首板股，盯放量炸板，分歧就减半仓。"},
+            {"title": "风险规避", "content": "科创板不宜抄底——回测显示5日胜率仅25%。"},
+            {"title": "观察窗口", "content": "看上证能否守住4100 + 涨停家数能否维持150家以上。"},
+        ],
+        "risk": [
+            "数据来源：AKShare 实时行情接口，仅供研究复盘",
+            "量化回测样本量有限，不构成买卖建议",
+            "A股极端行情下历史规律可能失效",
+            "投资有风险，入市需谨慎",
+        ],
         "trace": {
             "last_3_days": [
-                {"date": now.strftime("%m/%d"), "summary": headline, "sentiment": sentiment}
+                {"date": now.strftime("%m/%d"), "summary": data["headline"], "sentiment": data["sentiment"]}
             ],
             "invalidation_rule": "上证跌破4100 + 涨停家数<150，则多头逻辑失效",
         },
         "meta": {
             "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "version": "公众号版 v1.0",
+            "version": "AKShare真实数据版 v1.0",
             "data_source": "AKShare 实时行情",
-            "web_sources": ["AKShare", "Coze知识库"],
-            "style": "公众号专业版",
+            "web_sources": ["AKShare"],
         }
     }
-
-@app.get("/")
-async def root():
-    return {"message": "锦衣卫投研卡片 Demo Server 运行中 (公众号版)", "port": 8000}
-
-@app.get("/api/investment-research/cards/review")
-async def get_review_card():
-    """获取复盘卡 - 公众号版"""
-    card = generate_public_account_review_card()
+    
     return card
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "timestamp": datetime.now().isoformat(), "data_source": "AKShare"}
