@@ -919,6 +919,9 @@ class WatchlistItem(BaseModel):
     added_at: str
     note: Optional[str] = None
     alert_price: Optional[float] = None
+    current_price: Optional[float] = None
+    change_pct: Optional[float] = None
+    alert_triggered: Optional[bool] = None
 
 
 class WatchlistAdd(BaseModel):
@@ -936,17 +939,27 @@ _WATCHLIST: List[Dict[str, Any]] = [
 
 @router.get("/watchlist", response_model=List[WatchlistItem])
 async def get_watchlist():
-    """自选股列表（含实时价格与预警检查）"""
+    """自选股列表（含实时价格与预警检查，非演示股票拉取全市场实时价）"""
     result = []
     for item in _WATCHLIST:
         company = next((c for c in _COMPANIES if c["code"] == item["code"]), None)
+        if company:
+            price = company["current_price"]
+            change = company["change_pct"]
+        elif USE_REAL_DATA:
+            rp = get_real_company_price(item["code"])
+            price = rp["current_price"] if rp else None
+            change = rp["change_pct"] if rp else None
+        else:
+            price = None
+            change = None
         entry = {
             **item,
-            "current_price": company["current_price"] if company else None,
-            "change_pct": company["change_pct"] if company else None,
+            "current_price": price,
+            "change_pct": change,
             "alert_triggered": (
-                company and item.get("alert_price") is not None
-                and company["current_price"] <= item["alert_price"]
+                price is not None and item.get("alert_price") is not None
+                and price <= item["alert_price"]
             ),
         }
         result.append(entry)
@@ -955,15 +968,20 @@ async def get_watchlist():
 
 @router.post("/watchlist", response_model=WatchlistItem)
 async def add_to_watchlist(payload: WatchlistAdd):
-    """添加自选股"""
+    """添加自选股（支持 A 股全市场，非演示股票自动拉取真实名称）"""
     if any(w["code"] == payload.code for w in _WATCHLIST):
         raise HTTPException(status_code=409, detail="该股票已在自选列表中")
     company = next((c for c in _COMPANIES if c["code"] == payload.code), None)
-    if not company:
+    if company:
+        name = company["name"]
+    elif USE_REAL_DATA:
+        profile = fetch_company_profile(payload.code)
+        name = profile["name"] if profile else payload.code
+    else:
         raise HTTPException(status_code=404, detail="公司不存在")
     item = {
         "code": payload.code,
-        "name": company["name"],
+        "name": name,
         "added_at": datetime.now().isoformat(timespec="seconds"),
         "note": payload.note,
         "alert_price": payload.alert_price,
@@ -1251,9 +1269,11 @@ async def search_all(q: str, limit: int = 20):
 
     results = []
 
-    # 搜公司
+    # 搜公司（演示数据）
+    matched_demo_companies = False
     for c in _COMPANIES:
         if kw in c["name"].lower() or kw in c["code"].lower() or any(kw in t.lower() for t in c["tags"]):
+            matched_demo_companies = True
             results.append({
                 "type": "company",
                 "id": c["code"],
@@ -1261,6 +1281,19 @@ async def search_all(q: str, limit: int = 20):
                 "subtitle": f"{c['code']} · {c['sector']} · {c['rating']}",
                 "url": f"/investment-research?tab=companies&code={c['code']}",
                 "relevance": 0.95,
+            })
+
+    # 演示数据没匹配到 → 全市场搜索（AKShare 新浪源，5500+ 只股票）
+    if not matched_demo_companies and USE_REAL_DATA:
+        market_stocks = search_all_stocks(q, limit=10)
+        for s in market_stocks:
+            results.append({
+                "type": "stock_market",
+                "id": s["code"],
+                "title": s["name"],
+                "subtitle": f"{s['code']} · 现价 {s['price']:.2f} · {s['change_pct']:+.2f}% · 全市场实时",
+                "url": f"/investment-research?tab=technicals&code={s['code']}",
+                "relevance": 0.92,
             })
 
     # 搜研报

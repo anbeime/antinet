@@ -741,6 +741,11 @@ const InvestmentResearchPage: React.FC = () => {
               onSectorChange={setCompanySector}
               onRatingChange={setCompanyRating}
               onViewFinancials={loadCompanyFinancials}
+              onSelectStock={(code, name) => {
+                setActiveTab('technicals');
+                loadCompanyTechnicals(code, 60);
+                toast.success(`已加载 ${name} 技术分析`);
+              }}
             />
           )}
           {activeTab === 'reports' && (
@@ -805,6 +810,18 @@ const InvestmentResearchPage: React.FC = () => {
             searching={searching}
             onSearch={handleSearch}
             onClose={() => { setShowGlobalSearch(false); setSearchResults([]); setSearchQuery(''); }}
+            onSelectResult={(r) => {
+              // 关闭搜索框
+              setShowGlobalSearch(false);
+              setSearchResults([]);
+              setSearchQuery('');
+              // 公司 / 全市场股票 → 跳技术分析 Tab 并加载
+              if (r.type === 'company' || r.type === 'stock_market') {
+                setActiveTab('technicals');
+                loadCompanyTechnicals(r.id, 60);
+                toast.success(`已加载 ${r.title} 技术分析`);
+              }
+            }}
           />
         )}
       </div>
@@ -1005,7 +1022,7 @@ function CompaniesTab({
   companies, sectors, ratings,
   keyword, sector, rating,
   onKeywordChange, onSectorChange, onRatingChange,
-  onViewFinancials,
+  onViewFinancials, onSelectStock,
 }: {
   companies: CompanyProfile[];
   sectors: string[];
@@ -1015,7 +1032,30 @@ function CompaniesTab({
   onSectorChange: (v: string) => void;
   onRatingChange: (v: string) => void;
   onViewFinancials: (code: string) => void;
+  onSelectStock: (code: string, name: string) => void;
 }) {
+  // 全市场股票搜索（当演示公司未匹配时，搜索 A 股全市场）
+  const [marketResults, setMarketResults] = useState<Array<{code: string; name: string; price: number; change_pct: number}>>([]);
+  const [marketSearching, setMarketSearching] = useState(false);
+
+  useEffect(() => {
+    const kw = keyword.trim();
+    if (!kw) { setMarketResults([]); return; }
+    setMarketSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${getApiBaseUrl()}/api/investment-research/stocks/search?keyword=${encodeURIComponent(kw)}&limit=8`);
+        if (resp.ok) {
+          const data = await resp.json();
+          setMarketResults(data.results || []);
+        }
+      } catch { /* 静默 */ } finally {
+        setMarketSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
   return (
     <div className="space-y-4">
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3">
@@ -1023,11 +1063,38 @@ function CompaniesTab({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder="搜索公司名称 / 代码"
+            placeholder="搜索公司名称 / 代码（支持 A 股全市场）"
             value={keyword}
             onChange={(e) => onKeywordChange(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           />
+          {marketSearching && (
+            <RefreshCw className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
+          )}
+          {/* 全市场搜索下拉 */}
+          {keyword.trim() && marketResults.length > 0 && (
+            <div className="absolute z-30 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-72 overflow-y-auto">
+              <div className="px-3 py-1.5 text-[11px] text-gray-400 border-b border-gray-100 dark:border-gray-700">全市场搜索结果（点击查看技术分析）</div>
+              {marketResults.map((s) => (
+                <button
+                  key={s.code}
+                  onClick={() => { onSelectStock(s.code, s.name); onKeywordChange(''); }}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-indigo-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium text-gray-800 dark:text-gray-100">{s.name}</span>
+                    <span className="text-xs text-gray-500">{s.code}</span>
+                  </span>
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-600 dark:text-gray-300">{s.price.toFixed(2)}</span>
+                    <span className={s.change_pct >= 0 ? 'text-red-600' : 'text-green-600'}>
+                      {s.change_pct >= 0 ? '+' : ''}{s.change_pct.toFixed(2)}%
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Filter className="w-4 h-4 text-gray-400" />
@@ -1657,6 +1724,30 @@ function WatchlistTab({
   onRemove: (code: string) => void;
   onViewFinancials: (code: string) => void;
 }) {
+  // 全市场股票搜索（用于添加自选）
+  const [watchSearch, setWatchSearch] = useState('');
+  const [watchResults, setWatchResults] = useState<Array<{code: string; name: string; price: number; change_pct: number}>>([]);
+  const [watchSearching, setWatchSearching] = useState(false);
+  const [selectedName, setSelectedName] = useState('');
+
+  useEffect(() => {
+    const kw = watchSearch.trim();
+    if (!kw) { setWatchResults([]); return; }
+    setWatchSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const resp = await fetch(`${getApiBaseUrl()}/api/investment-research/stocks/search?keyword=${encodeURIComponent(kw)}&limit=8`);
+        if (resp.ok) {
+          const data = await resp.json();
+          setWatchResults(data.results || []);
+        }
+      } catch { /* 静默 */ } finally {
+        setWatchSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [watchSearch]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1673,14 +1764,52 @@ function WatchlistTab({
             <button onClick={onToggleAdd} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
           </div>
           <div className="space-y-3">
-            <select
-              value={newWatch.code}
-              onChange={(e) => setNewWatch((n) => ({ ...n, code: e.target.value }))}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
-            >
-              <option value="">选择公司（必填）</option>
-              {companies.map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
-            </select>
+            {/* 全市场股票搜索（替代原下拉选择） */}
+            <div className="relative">
+              <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">股票（必填，支持 A 股全市场搜索）</label>
+              {newWatch.code ? (
+                <div className="flex items-center justify-between px-3 py-2 text-sm rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20">
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{selectedName || newWatch.code} <span className="text-xs text-gray-500">{newWatch.code}</span></span>
+                  <button onClick={() => { setNewWatch((n) => ({ ...n, code: '' })); setSelectedName(''); setWatchSearch(''); }} className="text-amber-600 hover:text-amber-700 text-xs">更换</button>
+                </div>
+              ) : (
+                <>
+                  <div className="relative">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      value={watchSearch}
+                      onChange={(e) => setWatchSearch(e.target.value)}
+                      placeholder="搜索股票名称或代码，如 招商银行 / 600036 / 300085"
+                      className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    {watchSearching && <RefreshCw size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />}
+                  </div>
+                  {watchSearch.trim() && watchResults.length > 0 && (
+                    <div className="absolute z-30 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                      {watchResults.map((s) => (
+                        <button
+                          key={s.code}
+                          onClick={() => { setNewWatch((n) => ({ ...n, code: s.code })); setSelectedName(s.name); setWatchSearch(''); setWatchResults([]); }}
+                          className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-amber-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium text-gray-800 dark:text-gray-100">{s.name}</span>
+                            <span className="text-xs text-gray-500">{s.code}</span>
+                          </span>
+                          <span className="flex items-center gap-2 text-xs">
+                            <span className="text-gray-600 dark:text-gray-300">{s.price.toFixed(2)}</span>
+                            <span className={s.change_pct >= 0 ? 'text-red-600' : 'text-green-600'}>
+                              {s.change_pct >= 0 ? '+' : ''}{s.change_pct.toFixed(2)}%
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
             <input type="text" placeholder="备注（可选）" value={newWatch.note}
               onChange={(e) => setNewWatch((n) => ({ ...n, note: e.target.value }))}
               className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-amber-400"
@@ -2113,20 +2242,22 @@ function CompanyFinancialsModal({ code, financials, companies, onClose }: {
 // ============================================================
 // 子组件：全局搜索 Modal
 // ============================================================
-function GlobalSearchModal({ query, setQuery, results, searching, onSearch, onClose }: {
+function GlobalSearchModal({ query, setQuery, results, searching, onSearch, onClose, onSelectResult }: {
   query: string;
   setQuery: (v: string) => void;
   results: SearchResult[];
   searching: boolean;
   onSearch: () => void;
   onClose: () => void;
+  onSelectResult: (r: SearchResult) => void;
 }) {
   const typeStyles: Record<string, { bg: string; text: string; label: string }> = {
-    company:     { bg: 'bg-blue-100 dark:bg-blue-900/40',       text: 'text-blue-700 dark:text-blue-300',       label: '公司' },
-    report:      { bg: 'bg-emerald-100 dark:bg-emerald-900/40',  text: 'text-emerald-700 dark:text-emerald-300', label: '研报' },
-    opportunity: { bg: 'bg-amber-100 dark:bg-amber-900/40',      text: 'text-amber-700 dark:text-amber-300',     label: '机会' },
-    risk:        { bg: 'bg-red-100 dark:bg-red-900/40',          text: 'text-red-700 dark:text-red-300',         label: '风险' },
-    note:        { bg: 'bg-violet-100 dark:bg-violet-900/40',   text: 'text-violet-700 dark:text-violet-300',   label: '卡片' },
+    company:      { bg: 'bg-blue-100 dark:bg-blue-900/40',       text: 'text-blue-700 dark:text-blue-300',       label: '公司' },
+    stock_market: { bg: 'bg-purple-100 dark:bg-purple-900/40',   text: 'text-purple-700 dark:text-purple-300',   label: '全市场股票' },
+    report:       { bg: 'bg-emerald-100 dark:bg-emerald-900/40', text: 'text-emerald-700 dark:text-emerald-300', label: '研报' },
+    opportunity:  { bg: 'bg-amber-100 dark:bg-amber-900/40',     text: 'text-amber-700 dark:text-amber-300',     label: '机会' },
+    risk:         { bg: 'bg-red-100 dark:bg-red-900/40',         text: 'text-red-700 dark:text-red-300',         label: '风险' },
+    note:         { bg: 'bg-violet-100 dark:bg-violet-900/40',   text: 'text-violet-700 dark:text-violet-300',   label: '卡片' },
   };
 
   return (
@@ -2157,7 +2288,11 @@ function GlobalSearchModal({ query, setQuery, results, searching, onSearch, onCl
               {results.map((r, i) => {
                 const s = typeStyles[r.type] || typeStyles.company;
                 return (
-                  <div key={`${r.type}-${r.id}-${i}`} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer">
+                  <div
+                    key={`${r.type}-${r.id}-${i}`}
+                    onClick={() => onSelectResult(r)}
+                    className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/40 cursor-pointer"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
