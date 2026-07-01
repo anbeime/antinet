@@ -2973,6 +2973,7 @@ type JinYiWeiCard = {
   };
   trace: { last_3_days: string[]; if_wrong: string };
   footer: { next_card: string; author: string };
+  web_sources: Array<{ title: string; url: string; snippet: string }>;
   generated_at: string;
 };
 
@@ -3149,6 +3150,33 @@ function JinYiWeiCardTab() {
               <div className="text-sm text-red-200/90">{card.body.risk}</div>
             </div>
 
+            {/* 信息来源 —— AnySearch 联网补充 */}
+            {card.web_sources && card.web_sources.length > 0 && (
+              <div className="mb-4 p-3 rounded-lg bg-gray-900/60 border border-gray-800">
+                <div className="text-[11px] text-blue-400/70 mb-2 uppercase tracking-wider">🌐 联网信息来源 · AnySearch</div>
+                <div className="space-y-2">
+                  {card.web_sources.map((s, i) => (
+                    <a
+                      key={i}
+                      href={s.url || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block group"
+                    >
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="text-blue-400 font-bold min-w-[20px]">{i + 1}.</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-gray-200 group-hover:text-blue-400 transition-colors font-medium truncate">{s.title}</div>
+                          {s.snippet && <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{s.snippet}</div>}
+                          {s.url && <div className="text-[10px] text-gray-600 mt-0.5 truncate">{s.url}</div>}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 连续追踪 —— 可追踪：3日表现链 + 失效条件 */}
             <div className="mb-4 p-3 rounded-lg bg-gray-900/40 border border-gray-800">
               <div className="text-[11px] text-amber-500/70 mb-2 uppercase tracking-wider">▎连续追踪 · TRACE</div>
@@ -3205,7 +3233,7 @@ function JinYiWeiCardTab() {
         <div>• <b>通达信爆款四要素</b>：听得懂(style_tag) + 看得到(snapshot) + 可追踪(trace) + 有边界(risk)</div>
         <div>• <b>Coze 复盘排版</b>：主题先行 + 多模块编号 + 关键数据加粗 + 可执行建议</div>
         <div>• <b>A股配色</b>：涨红 #f85149 / 跌绿 #3fb950 / 深色底 #0b0e11（模拟锦衣卫夜行卷轴）</div>
-        <div className="mt-1 text-gray-400">数据源：AKShare 全市场实时行情 + AGNES LLM agnes-2.0-flash 生成主线/风险</div>
+        <div className="mt-1 text-gray-400">数据源：AKShare 全市场实时行情 + AGNES LLM agnes-2.0-flash 生成主线/风险 + AnySearch 联网信息来源</div>
       </div>
     </div>
   );

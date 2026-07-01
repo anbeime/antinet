@@ -416,6 +416,108 @@ def _to_display_code(sina_code: str) -> str:
 
 
 # ============================================================
+# AnySearch 联网搜索（完善卡片信息来源）
+# AnySearch 是统一实时搜索引擎，支持通用搜索/垂直领域搜索/并行批量搜索/URL内容提取
+# 通过 MCP JSON-RPC 2.0 接口调用，Bearer 认证
+# ============================================================
+ANYSEARCH_API_KEY = os.environ.get("ANYSEARCH_API_KEY", "as_sk_c17325cc2e2bea3d5a5cdc80c9d1cac2")
+ANYSEARCH_ENDPOINT = "https://api.anysearch.com/mcp"
+
+# 搜索结果缓存 10 分钟（避免相同 query 重复调用）
+_search_cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+SEARCH_CACHE_TTL = 600
+
+
+def anysearch_web(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+    """
+    AnySearch 通用联网搜索（用于完善投研卡片信息来源）。
+
+    :param query: 搜索关键词（如「贵州茅台 2026年业绩」「半导体设备 主线」）
+    :param max_results: 最多返回条数
+    :return: [{title, url, snippet}, ...] 或空列表（失败/无结果）
+    """
+    if not ANYSEARCH_API_KEY:
+        return []
+    kw = query.strip()
+    if not kw:
+        return []
+
+    cache_key = f"{kw}|{max_results}"
+    cached = _search_cache.get(cache_key)
+    if cached and cached[0] > time.time():
+        return cached[1]
+
+    import urllib.request
+
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+            "name": "search",
+            "arguments": {"query": kw, "max_results": max_results},
+        },
+        "id": int(time.time() * 1000) % 1000000,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        ANYSEARCH_ENDPOINT,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {ANYSEARCH_API_KEY}",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        results = _parse_anysearch_results(data, max_results)
+        _search_cache[cache_key] = (time.time() + SEARCH_CACHE_TTL, results)
+        logger.info(f"[AnySearch] 查询「{kw}」返回 {len(results)} 条")
+        return results
+    except Exception as e:
+        logger.warning(f"[AnySearch] 查询「{kw}」失败: {type(e).__name__} {str(e)[:150]}")
+        return []
+
+
+def _parse_anysearch_results(data: Dict[str, Any], max_results: int) -> List[Dict[str, Any]]:
+    """解析 AnySearch MCP 返回的搜索结果文本，提取标题/URL/摘要"""
+    content = (data.get("result") or {}).get("content") or []
+    if not content:
+        return []
+    text = ""
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            text += block.get("text", "")
+    if not text:
+        return []
+
+    # 文本格式：### 1. 标题 \n- **URL**: xxx \n- 摘要...
+    results: List[Dict[str, Any]] = []
+    blocks = text.split("### ")
+    for blk in blocks[1:]:  # 跳过开头非结果部分
+        lines = blk.strip().split("\n")
+        if not lines:
+            continue
+        title = lines[0].strip()
+        url = ""
+        snippet_parts = []
+        for ln in lines[1:]:
+            ln = ln.strip()
+            if ln.startswith("- **URL**:") or ln.startswith("- URL:"):
+                url = ln.split(":", 1)[1].strip().lstrip("*").strip()
+            elif ln.startswith("- "):
+                snippet_parts.append(ln[2:].strip())
+        snippet = " ".join(snippet_parts)[:200]
+        if title:
+            results.append({"title": title, "url": url, "snippet": snippet})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+# ============================================================
 # 调试入口
 # ============================================================
 if __name__ == "__main__":

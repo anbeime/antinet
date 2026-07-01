@@ -22,6 +22,7 @@ try:
         call_agnes_llm_json,
         search_all_stocks,
         fetch_company_profile,
+        anysearch_web,
         USE_REAL_DATA,
     )
     _REAL_DATA_READY = True
@@ -47,6 +48,9 @@ except Exception as _e:
 
     def fetch_company_profile(*a, **kw):
         return None
+
+    def anysearch_web(*a, **kw):
+        return []
 
 router = APIRouter(prefix="/api/investment-research", tags=["投研场景"])
 
@@ -2207,6 +2211,7 @@ class JinYiWeiCard(BaseModel):
     body: Dict[str, Any]  # snapshot, main_theme, key_factors, risk
     trace: Dict[str, Any]  # last_3_days, if_wrong
     footer: Dict[str, Any]  # next_card, author
+    web_sources: List[Dict[str, Any]] = []  # AnySearch 联网信息来源（标题/URL/摘要）
     generated_at: str
 
 
@@ -2365,6 +2370,16 @@ def _build_jinyiwei_card(card_kind: str, snap: Optional[Dict[str, Any]]) -> JinY
     _record_card_history(card_kind, main_theme, sentiment)
     trace = _build_trace(card_kind, if_wrong)
 
+    # AnySearch 联网补充信息来源（千户·采风并行取数）
+    web_sources: List[Dict[str, Any]] = []
+    try:
+        if snap and snap["top_gainers"]:
+            top_name = snap["top_gainers"][0]["name"]
+            search_q = f"{top_name} {today} 利好 催化" if card_kind == "morning" else f"A股 {today} 盘面 主线 复盘"
+            web_sources = anysearch_web(search_q, max_results=4)
+    except Exception:
+        pass
+
     if card_kind == "morning":
         title = f"{today} 投研晨报 · 锦衣卫采风"
         trigger = "盘前 08:30 / 手动触发"
@@ -2399,6 +2414,7 @@ def _build_jinyiwei_card(card_kind: str, snap: Optional[Dict[str, Any]]) -> JinY
         },
         trace=trace,
         footer={"next_card": next_card, "author": author},
+        web_sources=web_sources,
         generated_at=datetime.now().isoformat(timespec="seconds"),
     )
 
