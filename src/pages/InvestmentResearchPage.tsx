@@ -708,7 +708,7 @@ const InvestmentResearchPage: React.FC = () => {
 
         {/* Tab content */}
         <div>
-          {activeTab === 'overview' && <OverviewTab dashboard={dashboard} companies={companies} reports={reports} opportunities={opportunities} risks={risks} notes={notes} />}
+          {activeTab === 'overview' && <OverviewTab dashboard={dashboard} companies={companies} reports={reports} opportunities={opportunities} risks={risks} notes={notes} onNavigate={setActiveTab} onViewReport={setSelectedReport} />}
           {activeTab === 'ai-brief' && (
             <AIBriefTab
               brief={aiBrief}
@@ -842,6 +842,8 @@ function OverviewTab({
   opportunities,
   risks,
   notes,
+  onNavigate,
+  onViewReport,
 }: {
   dashboard: DashboardSummary | null;
   companies: CompanyProfile[];
@@ -849,14 +851,16 @@ function OverviewTab({
   opportunities: MarketOpportunity[];
   risks: RiskWarning[];
   notes: ResearchNote[];
+  onNavigate: (tab: TabKey) => void;
+  onViewReport: (report: ResearchReport) => void;
 }) {
   const stats = [
-    { label: '覆盖公司', value: dashboard?.total_companies ?? companies.length, icon: <Building2 className="w-5 h-5" />, color: 'from-indigo-500 to-blue-600' },
-    { label: '研究报告', value: dashboard?.total_reports ?? reports.length, icon: <FileText className="w-5 h-5" />, color: 'from-emerald-500 to-teal-600' },
-    { label: '市场机会', value: dashboard?.opportunity_count ?? opportunities.length, icon: <Zap className="w-5 h-5" />, color: 'from-amber-500 to-orange-600' },
-    { label: '风险预警', value: dashboard?.risk_warning_count ?? risks.length, icon: <AlertTriangle className="w-5 h-5" />, color: 'from-rose-500 to-red-600' },
-    { label: '研究卡片', value: notes.length, icon: <Tag className="w-5 h-5" />, color: 'from-violet-500 to-purple-600' },
-    { label: '活跃策略', value: dashboard?.active_strategies ?? 0, icon: <BarChart3 className="w-5 h-5" />, color: 'from-cyan-500 to-sky-600' },
+    { label: '覆盖公司', value: dashboard?.total_companies ?? companies.length, icon: <Building2 className="w-5 h-5" />, color: 'from-indigo-500 to-blue-600', tab: 'companies' as TabKey },
+    { label: '研究报告', value: dashboard?.total_reports ?? reports.length, icon: <FileText className="w-5 h-5" />, color: 'from-emerald-500 to-teal-600', tab: 'reports' as TabKey },
+    { label: '市场机会', value: dashboard?.opportunity_count ?? opportunities.length, icon: <Zap className="w-5 h-5" />, color: 'from-amber-500 to-orange-600', tab: 'opportunities' as TabKey },
+    { label: '风险预警', value: dashboard?.risk_warning_count ?? risks.length, icon: <AlertTriangle className="w-5 h-5" />, color: 'from-rose-500 to-red-600', tab: 'risks' as TabKey },
+    { label: '研究卡片', value: notes.length, icon: <Tag className="w-5 h-5" />, color: 'from-violet-500 to-purple-600', tab: 'notes' as TabKey },
+    { label: '活跃策略', value: dashboard?.active_strategies ?? 0, icon: <BarChart3 className="w-5 h-5" />, color: 'from-cyan-500 to-sky-600', tab: 'portfolio' as TabKey },
   ];
 
   return (
@@ -864,13 +868,17 @@ function OverviewTab({
       {/* 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {stats.map((s) => (
-          <div key={s.label} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-sm">
+          <button
+            key={s.label}
+            onClick={() => onNavigate(s.tab)}
+            className="text-left bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer"
+          >
             <div className={`inline-flex p-2 rounded-xl bg-gradient-to-br ${s.color} text-white shadow-md mb-3`}>
               {s.icon}
             </div>
             <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{s.label}</div>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -879,12 +887,18 @@ function OverviewTab({
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">行业热度</h2>
-            <span className="text-xs text-gray-500 dark:text-gray-400">基于覆盖公司数 + 研报数</span>
+            <button onClick={() => onNavigate('sectors')} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer">
+              查看全部 <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
           {dashboard?.hot_sectors?.length ? (
             <div className="space-y-3">
               {dashboard.hot_sectors.slice(0, 8).map((s) => (
-                <div key={s.name} className="flex items-center justify-between">
+                <button
+                  key={s.name}
+                  onClick={() => onNavigate('sectors')}
+                  className="w-full flex items-center justify-between text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 -mx-1 px-1 py-0.5 rounded-lg transition-colors cursor-pointer"
+                >
                   <div className="flex items-center gap-3 flex-1">
                     <span className="text-sm text-gray-800 dark:text-gray-200 min-w-[7rem]">{s.name}</span>
                     <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
@@ -897,7 +911,7 @@ function OverviewTab({
                   <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-3 w-16 text-right">
                     {s.heat_score.toFixed(1)}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -934,11 +948,20 @@ function OverviewTab({
       {/* 最新研报 + 机会 + 风险摘要 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm lg:col-span-2">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">最新研究报告</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">最新研究报告</h2>
+            <button onClick={() => onNavigate('reports')} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer">
+              查看全部 <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
           {reports.length ? (
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {reports.slice(0, 4).map((r) => (
-                <div key={r.id} className="py-3 flex items-start justify-between gap-4">
+                <button
+                  key={r.id}
+                  onClick={() => onViewReport(r)}
+                  className="w-full py-3 flex items-start justify-between gap-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 -mx-2 px-2 rounded-lg transition-colors cursor-pointer"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{r.title}</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -953,7 +976,7 @@ function OverviewTab({
                     </div>
                   </div>
                   <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-1" />
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -963,19 +986,26 @@ function OverviewTab({
 
         <div className="space-y-6">
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-              <Zap className="w-4 h-4 text-amber-500" /> 最新机会
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-amber-500" /> 最新机会
+              </h2>
+              <button onClick={() => onNavigate('opportunities')} className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">查看全部</button>
+            </div>
             {opportunities.length ? (
               <div className="space-y-2">
                 {opportunities.slice(0, 3).map((o) => (
-                  <div key={o.id} className="p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-amber-50/40 dark:bg-amber-900/10">
+                  <button
+                    key={o.id}
+                    onClick={() => onNavigate('opportunities')}
+                    className="w-full p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-amber-50/40 dark:bg-amber-900/10 text-left hover:shadow-md transition-shadow cursor-pointer"
+                  >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{o.title}</span>
                       <span className="text-xs font-bold text-amber-600 ml-2">{o.score}</span>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{o.sector} · {o.signal_type}</div>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -984,21 +1014,28 @@ function OverviewTab({
           </div>
 
           <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-500" /> 风险预警
-            </h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-500" /> 风险预警
+              </h2>
+              <button onClick={() => onNavigate('risks')} className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">查看全部</button>
+            </div>
             {risks.length ? (
               <div className="space-y-2">
                 {risks.slice(0, 3).map((r) => {
                   const s = riskLevelStyles[r.level] || riskLevelStyles.medium;
                   return (
-                    <div key={r.id} className={`p-3 rounded-xl border ${s.border} ${s.bg}`}>
+                    <button
+                      key={r.id}
+                      onClick={() => onNavigate('risks')}
+                      className={`w-full p-3 rounded-xl border ${s.border} ${s.bg} text-left hover:shadow-md transition-shadow cursor-pointer`}
+                    >
                       <div className="flex items-center justify-between">
                         <span className={`text-sm font-semibold ${s.text} truncate`}>{r.title}</span>
                         <span className={`text-[11px] px-1.5 py-0.5 rounded ${s.text} bg-white/60 dark:bg-gray-900/40 ml-2`}>{s.label}</span>
                       </div>
                       <div className={`text-xs mt-1 ${s.text} opacity-80 line-clamp-2`}>{r.description}</div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -1011,7 +1048,12 @@ function OverviewTab({
 
       {/* 研究卡片 */}
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">最新研究卡片</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">最新研究卡片</h2>
+          <button onClick={() => onNavigate('notes')} className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 cursor-pointer">
+            查看全部 <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
         <NoteGrid notes={notes.slice(0, 8)} />
       </div>
     </div>
