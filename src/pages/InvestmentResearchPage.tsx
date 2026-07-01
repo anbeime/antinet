@@ -2501,7 +2501,7 @@ function TechnicalsTab({
             )}
           </div>
           {searchResults.length > 0 && (
-            <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+            <div className="absolute z-30 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-72 overflow-y-auto">
               {searchResults.map((s) => (
                 <button
                   key={s.code}
@@ -2524,6 +2524,11 @@ function TechnicalsTab({
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+          {searchKeyword.trim() && !searching && searchResults.length === 0 && (
+            <div className="absolute z-30 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+              未找到匹配的股票，请检查代码或名称（仅支持沪深 A 股，不含北交所/ST）
             </div>
           )}
         </div>

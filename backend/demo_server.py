@@ -32,6 +32,20 @@ app.add_middleware(
 app.include_router(investment_router)
 
 
+# 启动时异步预加载全市场股票列表（约 10s），避免用户首次搜索等待
+@app.on_event("startup")
+async def _preload_all_stocks():
+    import threading
+    def _load():
+        try:
+            from real_data import _load_all_stocks
+            stocks = _load_all_stocks()
+            print(f"[预加载] 全市场股票列表加载完成: {len(stocks) if stocks else 0} 只")
+        except Exception as e:
+            print(f"[预加载] 全市场股票列表加载失败: {e}")
+    threading.Thread(target=_load, daemon=True).start()
+
+
 @app.get("/", tags=["健康检查"])
 async def root():
     return {
