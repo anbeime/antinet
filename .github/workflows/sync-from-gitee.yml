@@ -46,10 +46,10 @@ jobs:
         run: |
           GITEE_COMMIT=$(git rev-parse gitee/${{ env.GITEE_BRANCH }})
           GITHUB_COMMIT=$(git rev-parse origin/${{ env.GITHUB_BRANCH }})
-          
+
           echo "Gitee commit: $GITEE_COMMIT"
           echo "GitHub commit: $GITHUB_COMMIT"
-          
+
           if [ "$GITEE_COMMIT" = "$GITHUB_COMMIT" ]; then
             echo "No updates found. Repositories are in sync."
             echo "has_updates=false" >> "$GITHUB_OUTPUT"
@@ -59,27 +59,13 @@ jobs:
             echo "gitee_commit=$GITEE_COMMIT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge Gitee Changes
+      - name: Reset to Gitee and Push
         if: steps.check_updates.outputs.has_updates == 'true'
         run: |
-          # Configure git to handle merges
-          git config pull.rebase false
-          
-          # Merge Gitee changes into local branch
-          git merge gitee/${{ env.GITEE_BRANCH }} -m "sync: merge updates from Gitee
-          
-          Source: ${{ env.GITEE_REPO }}
-          Commit: ${{ steps.check_updates.outputs.gitee_commit }}"
-
-      - name: Push to GitHub
-        if: steps.check_updates.outputs.has_updates == 'true'
-        run: |
-          # Push with error handling
-          if ! git push origin ${{ env.GITHUB_BRANCH }}; then
-            echo "Push failed, attempting to pull and re-merge..."
-            git pull origin ${{ env.GITHUB_BRANCH }} --no-rebase || git pull origin ${{ env.GITHUB_BRANCH }} --rebase
-            git push origin ${{ env.GITHUB_BRANCH }}
-          fi
+          # Reset local main to Gitee's main, overwriting any divergence
+          git checkout ${{ env.GITHUB_BRANCH }}
+          git reset --hard gitee/${{ env.GITEE_BRANCH }}
+          git push origin ${{ env.GITHUB_BRANCH }} --force
           echo "Successfully synced from Gitee to GitHub!"
 
       - name: Create Sync Summary
