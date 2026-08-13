@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: write
+  # 推送的提交包含 .github/workflows/* 时，GitHub 要求令牌具备 workflows 权限
+  workflows: write
 
 env:
   GITEE_REPO: https://gitee.com/anbeime/zhiyi.git
