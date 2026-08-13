@@ -22,24 +22,34 @@ env:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    
+    env:
+      GIT_TERMINAL_PROMPT: 0   # 无凭据时禁止卡在交互式密码提示
     steps:
+      # 必须先 checkout：在 runner 上建立 .git 工作区并配置 origin 推送凭据
+      - name: Checkout GitHub Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Add Gitee Remote and Fetch
         run: |
-          git remote add gitee ${{ env.GITEE_REPO }}
-          git fetch gitee ${{ env.GITEE_BRANCH }}
-          git fetch origin ${{ env.GITHUB_BRANCH }}
+          # Gitee 仓库为公开仓库，fetch 无需凭据；remote add 做幂等处理
+          git remote add gitee "$GITEE_REPO" || git remote set-url gitee "$GITEE_REPO"
+          git fetch gitee "$GITEE_BRANCH"
+          git fetch origin "$GITHUB_BRANCH"
 
       - name: Check for Updates
         id: check_updates
         run: |
-          GITEE_COMMIT=$(git rev-parse gitee/${{ env.GITEE_BRANCH }})
-          GITHUB_COMMIT=$(git rev-parse origin/${{ env.GITHUB_BRANCH }})
+          GITEE_COMMIT=$(git rev-parse "gitee/$GITEE_BRANCH")
+          GITHUB_COMMIT=$(git rev-parse "origin/$GITHUB_BRANCH")
 
           echo "Gitee commit: $GITEE_COMMIT"
           echo "GitHub commit: $GITHUB_COMMIT"
@@ -56,9 +66,9 @@ jobs:
       - name: Reset to Gitee and Push
         if: steps.check_updates.outputs.has_updates == 'true'
         run: |
-          # Use git push with refspec to force-push Gitee's branch directly to GitHub
-          # This avoids issues with detached HEAD / missing local branches
-          git push origin "refs/remotes/gitee/${{ env.GITEE_BRANCH }}:refs/heads/${{ env.GITHUB_BRANCH }}" --force
+          # 直接将 Gitee 的远程跟踪分支强制推送到 GitHub 对应分支（单向镜像）
+          # 说明：这会覆盖 GitHub 分支上「仅存在于 GitHub」的提交
+          git push origin "refs/remotes/gitee/$GITEE_BRANCH:refs/heads/$GITHUB_BRANCH" --force
           echo "Successfully synced from Gitee to GitHub!"
 
       - name: Create Sync Summary
@@ -80,3 +90,5 @@ jobs:
           echo "## Sync Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "ℹ️ No updates found. Repositories are already in sync." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Checked at:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
